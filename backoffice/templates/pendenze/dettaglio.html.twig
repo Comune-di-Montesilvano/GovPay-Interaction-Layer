@@ -559,9 +559,14 @@
           Mostra tentativi di pagamento <span class="badge bg-secondary">{{ rppCount }}</span>
         </button>
         {% set hasHistory = (r.datiAllegati is defined and (r.datiAllegati.sorgente is defined or r.datiAllegati.operatore is defined or (r.datiAllegati.storico is defined and r.datiAllegati.storico is iterable))) %}
-        <button class="btn btn-sm btn-outline-secondary" type="button" 
+        <button class="btn btn-sm btn-outline-secondary me-2 mr-2" type="button" 
           {% if not hasHistory %}disabled aria-disabled="true"{% else %}data-bs-toggle="collapse" data-bs-target="#historyCollapse" aria-expanded="false" aria-controls="historyCollapse"{% endif %}>
           Sorgente e storico
+        </button>
+        {% set hasNotifiche = (r.datiAllegati is defined and r.datiAllegati.notifiche is defined and r.datiAllegati.notifiche is iterable and r.datiAllegati.notifiche|length > 0) %}
+        <button class="btn btn-sm btn-outline-secondary" type="button" 
+          {% if not hasNotifiche %}disabled aria-disabled="true"{% else %}data-bs-toggle="collapse" data-bs-target="#notificheCollapse" aria-expanded="false" aria-controls="notificheCollapse"{% endif %}>
+          Notifiche <span class="badge bg-secondary">{{ hasNotifiche ? r.datiAllegati.notifiche|length : 0 }}</span>
         </button>
       </div>
       <div class="collapse" id="historyCollapse">
@@ -588,6 +593,51 @@
             {% endif %}
         </div>
       </div>
+      {% if hasNotifiche %}
+      <div class="collapse" id="notificheCollapse">
+        <div class="card-body border-bottom">
+            <h5 class="card-title h6">Notifiche Inviate</h5>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr>
+                            <th>Data/Ora</th>
+                            <th>Tipo</th>
+                            <th>Canale</th>
+                            <th>Destinatario</th>
+                            <th>Esito</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for notifica in r.datiAllegati.notifiche|reverse %}
+                        <tr>
+                            <td><small>{{ notifica.timestamp|date('d/m/Y H:i:s') }}</small></td>
+                            <td>{{ notifica.tipo|default('N/A')|replace({'_': ' '})|title }}</td>
+                            <td>
+                                {% if notifica.canale == 'email' %}
+                                    <i class="bi bi-envelope"></i> Email
+                                {% elseif notifica.canale == 'app_io' %}
+                                    <i class="bi bi-phone"></i> App IO
+                                {% else %}
+                                    {{ notifica.canale|default('N/A') }}
+                                {% endif %}
+                            </td>
+                            <td><small>{{ notifica.destinatario|default('N/A') }}</small></td>
+                            <td>
+                                {% if notifica.esito == 'OK' %}
+                                    <span class="badge bg-success">OK</span>
+                                {% else %}
+                                    <span class="badge bg-danger">{{ notifica.esito|default('ERRORE') }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+      {% endif %}
       {% if rppCount > 0 %}
       <div class="collapse" id="rtCollapse">
         <div class="card-body">

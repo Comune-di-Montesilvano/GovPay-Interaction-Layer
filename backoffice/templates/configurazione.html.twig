@@ -29,6 +29,7 @@
     <a class="nav-link {{ currentTab == 'tipologie_esterne' ? 'active' : '' }}" href="/configurazione?tab=tipologie_esterne"><i class="fas fa-external-link-alt me-2"></i>Tipologie esterne</a>
         <a class="nav-link {{ currentTab == 'gestionali' ? 'active' : '' }}" href="/configurazione?tab=gestionali"><i class="fas fa-cog me-2"></i>Gestionali</a>
         <a class="nav-link {{ currentTab == 'templates' ? 'active' : '' }}" href="/configurazione?tab=templates"><i class="fas fa-file-invoice me-2"></i>Template Pendenze</a>
+    <a class="nav-link {{ currentTab == 'servizi_io' ? 'active' : '' }}" href="/configurazione?tab=servizi_io"><i class="fas fa-mobile-alt me-2"></i>Servizi App IO</a>
   <a class="nav-link {{ currentTab == 'info' ? 'active' : '' }}" href="/configurazione?tab=info"><i class="fas fa-info-circle me-2"></i>Info</a>
   <a class="nav-link {{ currentTab == 'logs' ? 'active' : '' }}" href="/configurazione?tab=logs"><i class="fas fa-file-alt me-2"></i>Logs</a>
         <a class="nav-link {{ currentTab == 'applicazioni' ? 'active' : '' }}" href="/configurazione?tab=applicazioni"><i class="fas fa-puzzle-piece me-2"></i>Applicazioni</a>
@@ -285,6 +286,17 @@
         {% endif %}
         {% set elenco = entrate.risultati|default([]) %}
         {% if elenco and elenco|length > 0 %}
+          {% if current_user and current_user.role == 'superadmin' and io_services|default([])|length > 0 %}
+          <form method="post" action="/configurazione/tipologie/io-service/bulk-save" id="formBulkIoService">
+          <div class="d-flex flex-wrap gap-2 align-items-center mb-3 p-2 bg-light rounded border">
+            <div class="flex-grow-1 small text-muted">
+              <i class="fas fa-mobile-alt me-1"></i> Associazioni <strong>App IO</strong>: modifica le selezioni nelle tipologie e premi <strong>Salva configurazioni IO</strong> per aggiornare tutte in un colpo solo.
+            </div>
+            <button type="submit" class="btn btn-sm btn-success">
+              <i class="fas fa-save me-1"></i> Salva configurazioni IO
+            </button>
+          </div>
+          {% endif %}
           <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
             <div class="flex-grow-1">
               <input id="entrateSearch" type="search" class="form-control form-control-sm" placeholder="Cerca per descrizione, IBAN, codice o ID" aria-label="Cerca tipologie di entrata">
@@ -487,12 +499,36 @@
                           <span class="text-danger small d-flex align-items-center"><i class="fas fa-info-circle me-1"></i> Imposta un URL esterno per poter attivare localmente quando GovPay è disattivo.</span>
                         {% endif %}
                       </div>
+                      <div class="d-flex flex-column gap-3 mt-3">
+                        <div class="d-flex align-items-start gap-2 flex-wrap">
+                          {% if current_user and current_user.role == 'superadmin' and io_services|default([])|length > 0 %}
+                          <div class="flex-grow-1" style="min-width:260px">
+                            <label for="ioservice_{{ eid }}" class="text-muted"><i class="fas fa-mobile-alt me-1"></i>Servizio App IO associato</label>
+                            <select id="ioservice_{{ eid }}" name="io_service_id[{{ idEnt }}]" class="form-select form-select-sm"
+                              {% if not (current_user and current_user.role == 'superadmin') %}disabled{% endif %}>
+                              <option value="">-- Nessuno (usa predefinito) --</option>
+                              {% for svc in io_services|default([]) %}
+                                <option value="{{ svc.id }}" {% if (io_services_tipologie[idEnt].id|default(null)) == svc.id %}selected{% endif %}>
+                                  {{ svc.nome }}{% if svc.is_default %} ★{% endif %}
+                                </option>
+                              {% endfor %}
+                            </select>
+                            <div class="form-text">Solo per soggetti di tipo Persona Fisica (F) durante la creazione pendenza.</div>
+                          </div>
+                          {% elseif current_user and current_user.role == 'superadmin' %}
+                          <div class="text-muted small"><i class="fas fa-mobile-alt me-1"></i>Nessun servizio App IO configurato. <a href="/configurazione?tab=servizi_io">Aggiungi un servizio</a>.</div>
+                          {% endif %}
+                        </div>
+                      </div>
                     {% endif %}
                   </div>
                 </div>
               </div>
             {% endfor %}
           </div>
+          {% if current_user and current_user.role == 'superadmin' and io_services|default([])|length > 0 %}
+          </form>{# fine formBulkIoService #}
+          {% endif %}
           <p id="noEntrateResults" class="text-muted small mt-2 d-none">Nessun risultato corrispondente al filtro.</p>
           <script>
             (function(){
@@ -1372,6 +1408,158 @@
               </div>
             {% else %}
               <div class="alert alert-info py-2 small mb-0">Nessun template configurato per questo dominio.</div>
+            {% endif %}
+          </div>
+        </div>
+      {% elseif currentTab == 'servizi_io' %}
+        <div class="card shadow-sm mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Servizi App IO</h2>
+            <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseNewIoService" aria-expanded="false" aria-controls="collapseNewIoService">
+              <i class="fas fa-plus me-1"></i> Nuovo Servizio
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="collapse mb-4" id="collapseNewIoService">
+              <div class="card card-body bg-light border-0">
+                <h6 class="mb-3">Crea Nuovo Servizio App IO</h6>
+                <form method="post" action="/configurazione/io-services" class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">Nome*</label>
+                    <input type="text" name="nome" class="form-control form-control-sm" required placeholder="Es. Servizio Principale">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">ID Servizio (IO)*</label>
+                    <input type="text" name="id_service" class="form-control form-control-sm" required placeholder="Es. 01ARZ3NDEKTSN4FFFSUQFW0C5">
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-label form-label-sm">Descrizione</label>
+                    <textarea name="descrizione" class="form-control form-control-sm" rows="2" placeholder="Descrizione del servizio..."></textarea>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">API Key Primaria*</label>
+                    <input type="password" name="api_key_primaria" class="form-control form-control-sm" required placeholder="chiave API">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">API Key Secondaria</label>
+                    <input type="password" name="api_key_secondaria" class="form-control form-control-sm" placeholder="chiave API backup">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label form-label-sm">Codice Catalogo</label>
+                    <input type="text" name="codice_catalogo" class="form-control form-control-sm" placeholder="Es. 000000000000000">
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check mt-4">
+                      <input type="checkbox" name="is_default" value="1" class="form-check-input" id="newIoServiceDefault">
+                      <label class="form-check-label form-label-sm" for="newIoServiceDefault">
+                        Imposta come predefinito
+                      </label>
+                    </div>
+                  </div>
+                  <div class="col-12 text-end">
+                    <button type="submit" class="btn btn-sm btn-success">Crea Servizio</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {% if io_services and io_services|length > 0 %}
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>ID Servizio</th>
+                      <th>Status</th>
+                      <th class="text-end">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for svc in io_services %}
+                      <tr>
+                        <td>
+                          <strong>{{ svc.nome }}</strong>
+                          {% if svc.is_default %}
+                            <span class="badge bg-success ms-1">Predefinito</span>
+                          {% endif %}
+                        </td>
+                        <td class="font-monospace small">{{ svc.id_service }}</td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#editIoService{{ svc.id }}" aria-expanded="false" aria-controls="editIoService{{ svc.id }}">
+                            <i class="fas fa-edit"></i> Modifica
+                          </button>
+                        </td>
+                        <td class="text-end">
+                          <div class="btn-group">
+                            {% if not svc.is_default %}
+                              <form action="/configurazione/io-services/{{ svc.id }}/set-default" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-info" title="Imposta come predefinito">
+                                  <i class="fas fa-star"></i>
+                                </button>
+                              </form>
+                            {% endif %}
+                            <form action="/configurazione/io-services/{{ svc.id }}/delete" method="post" class="d-inline" onsubmit="return confirm('Sei sicuro di voler eliminare questo servizio IO?');">
+                              <button type="submit" class="btn btn-sm btn-outline-danger" title="Elimina">
+                                <i class="fas fa-trash"></i>
+                              </button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                      
+                      <!-- Collapse Edit IO Service -->
+                      <tr>
+                        <td colspan="4" class="p-0 border-0">
+                          <div class="collapse" id="editIoService{{ svc.id }}">
+                            <div class="card card-body bg-light rounded-0 border-top-0 border-bottom">
+                              <form method="post" action="/configurazione/io-services/{{ svc.id }}/update" class="row g-2">
+                                <div class="col-md-4">
+                                  <label class="form-label form-label-sm">Nome</label>
+                                  <input type="text" name="nome" class="form-control form-control-sm" value="{{ svc.nome }}" required>
+                                </div>
+                                <div class="col-md-4">
+                                  <label class="form-label form-label-sm">ID Servizio</label>
+                                  <input type="text" name="id_service" class="form-control form-control-sm" value="{{ svc.id_service }}" required>
+                                </div>
+                                <div class="col-md-4">
+                                  <label class="form-label form-label-sm">Codice Catalogo</label>
+                                  <input type="text" name="codice_catalogo" class="form-control form-control-sm" value="{{ svc.codice_catalogo|default('') }}">
+                                </div>
+                                <div class="col-md-12">
+                                  <label class="form-label form-label-sm">Descrizione</label>
+                                  <textarea name="descrizione" class="form-control form-control-sm" rows="2">{{ svc.descrizione|default('') }}</textarea>
+                                </div>
+                                <div class="col-md-6">
+                                  <label class="form-label form-label-sm">API Key Primaria</label>
+                                  <input type="password" name="api_key_primaria" class="form-control form-control-sm" value="{{ svc.api_key_primaria }}" required>
+                                  <div class="form-text small text-danger mt-1">⚠️ Visibile in chiaro nel DB</div>
+                                </div>
+                                <div class="col-md-6">
+                                  <label class="form-label form-label-sm">API Key Secondaria</label>
+                                  <input type="password" name="api_key_secondaria" class="form-control form-control-sm" value="{{ svc.api_key_secondaria|default('') }}">
+                                </div>
+                                <div class="col-md-6">
+                                  <div class="form-check">
+                                    <input type="checkbox" name="is_default" value="1" class="form-check-input" id="ioServiceDefault{{ svc.id }}" {% if svc.is_default %}checked{% endif %}>
+                                    <label class="form-check-label form-label-sm" for="ioServiceDefault{{ svc.id }}">
+                                      Imposta come predefinito
+                                    </label>
+                                  </div>
+                                </div>
+                                <div class="col-md-6 d-flex align-items-end justify-content-end">
+                                  <button type="submit" class="btn btn-sm btn-primary">Salva Modifiche</button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="alert alert-info py-2 small mb-0">Nessun servizio App IO configurato.</div>
             {% endif %}
           </div>
         </div>

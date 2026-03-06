@@ -2081,6 +2081,103 @@ if (!function_exists('frontoffice_stream_avviso_pdf')) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Link firmati HMAC (stateless, scadenza 2 anni dalla firma)
+// Env: FRONTOFFICE_LINK_SIGNING_KEY (consigliato in produzione)
+// ─────────────────────────────────────────────────────────────────────────────
+if (!function_exists('frontoffice_link_signing_key')) {
+    function frontoffice_link_signing_key(): string
+    {
+        $key = frontoffice_env_value('FRONTOFFICE_LINK_SIGNING_KEY', '');
+        if ($key === '') {
+            // Fallback deterministico basato su segreti già presenti — solo per sviluppo
+            $fallback = frontoffice_env_value('APP_SECRET', '')
+                . frontoffice_env_value('ID_DOMINIO', '')
+                . 'gil-link-signing-fallback';
+            $key = hash('sha256', $fallback);
+        }
+        return $key;
+    }
+}
+
+if (!function_exists('frontoffice_sign_link')) {
+    /**
+     * Genera un array di query params da aggiungere all'URL: ['expires' => ..., 'sig' => ...]
+     * $params: array associativo con i parametri payload da firmare (es. ['cf' => ..., 'iuv' => ...])
+     * $ttlSeconds: durata validità (default 2 anni = 63072000 secondi)
+     */
+    function frontoffice_sign_link(array $params, int $ttlSeconds = 63072000 /* 60*60*24*365*2 = 2 anni */): array
+    {
+        $expires = time() + $ttlSeconds;
+        $params['expires'] = (string)$expires;
+        ksort($params);
+        $payload = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+        $sig = hash_hmac('sha256', $payload, frontoffice_link_signing_key());
+        return array_merge($params, ['sig' => $sig]);
+    }
+}
+
+if (!function_exists('frontoffice_verify_link')) {
+    /**
+     * Verifica la firma e la scadenza di un URL firmato.
+     * $params: i query param ricevuti (inclusi 'expires' e 'sig')
+     * Ritorna true se valido, false altrimenti.
+     */
+    function frontoffice_verify_link(array $params): bool
+    {
+        $sig = $params['sig'] ?? '';
+        if ($sig === '') {
+            return false;
+        }
+        $expires = (int)($params['expires'] ?? 0);
+        if ($expires === 0 || time() > $expires) {
+            return false;
+        }
+        $check = $params;
+        unset($check['sig']);
+        ksort($check);
+        $payload = http_build_query($check, '', '&', PHP_QUERY_RFC3986);
+        $expected = hash_hmac('sha256', $payload, frontoffice_link_signing_key());
+        return hash_equals($expected, $sig);
+    }
+}
+
+if (!function_exists('frontoffice_generate_pdf_link')) {
+    /**
+     * Genera URL firmato per il download del PDF avviso via CF+IUV.
+     */
+    function frontoffice_generate_pdf_link(string $codiceFiscale, string $iuv, string $baseUrl = ''): string
+    {
+        $params = frontoffice_sign_link(['cf' => $codiceFiscale, 'iuv' => $iuv]);
+        $base = rtrim($baseUrl, '/');
+        return $base . '/link/avviso?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    }
+}
+
+if (!function_exists('frontoffice_generate_ricevuta_link')) {
+    /**
+     * Genera URL firmato per il download della ricevuta via IUV+IUR.
+     */
+    function frontoffice_generate_ricevuta_link(string $iuv, string $iur, string $baseUrl = ''): string
+    {
+        $params = frontoffice_sign_link(['iuv' => $iuv, 'iur' => $iur]);
+        $base = rtrim($baseUrl, '/');
+        return $base . '/link/ricevuta?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    }
+}
+
+if (!function_exists('frontoffice_generate_checkout_link')) {
+    /**
+     * Genera URL firmato per il checkout immediato via CF+IUV.
+     */
+    function frontoffice_generate_checkout_link(string $codiceFiscale, string $iuv, string $baseUrl = ''): string
+    {
+        $params = frontoffice_sign_link(['cf' => $codiceFiscale, 'iuv' => $iuv, 'action' => 'checkout']);
+        $base = rtrim($baseUrl, '/');
+        return $base . '/link/checkout?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    }
+}
+
 $entityName = trim($env('APP_ENTITY_NAME', 'Comune di Montesilvano'));
 $entitySuffix = trim($env('APP_ENTITY_SUFFIX', 'Provincia di Pescara'));
 $entityGovernment = trim($env('APP_ENTITY_GOVERNMENT', 'Regione Abruzzo'));
@@ -3268,6 +3365,169 @@ $routeDefinition = null;
 
 if ($method === 'GET' && preg_match('#^/avvisi/([^/]+)/([^/]+)$#', $normalizedPath, $match)) {
     frontoffice_stream_avviso_pdf(rawurldecode($match[1]), rawurldecode($match[2]));
+    return;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route: GET /link/avviso — Download PDF avviso tramite link firmato (CF+IUV)
+// ─────────────────────────────────────────────────────────────────────────────
+if ($method === 'GET' && $normalizedPath === '/link/avviso') {
+    $qp = $_GET;
+    if (!frontoffice_verify_link($qp)) {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
+        Logger::getInstance()->warning('Link avviso non valido o scaduto', [
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'expires' => $qp['expires'] ?? '',
+        ]);
+        return;
+    }
+    $cf = trim((string)($qp['cf'] ?? ''));
+    $iuv = trim((string)($qp['iuv'] ?? ''));
+    if ($cf === '' || $iuv === '') {
+        http_response_code(400);
+        echo 'Parametri mancanti.';
+        return;
+    }
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    if ($idDominio === '') {
+        http_response_code(503);
+        echo 'Configurazione mancante: ID_DOMINIO non impostato.';
+        return;
+    }
+    // Recupera la pendenza per verificare ownership CF → IUV
+    $pendenza = frontoffice_fetch_pendenza_by_avviso($idDominio, $iuv);
+    if ($pendenza === null) {
+        http_response_code(404);
+        echo 'Avviso non trovato.';
+        return;
+    }
+    $pendenzaCf = strtoupper(trim((string)(
+        $pendenza['soggettoPagatore']['codiceFiscale']
+        ?? $pendenza['anagrafica']['codiceFiscale']
+        ?? ''
+    )));
+    if ($pendenzaCf === '' || !hash_equals(strtoupper($cf), $pendenzaCf)) {
+        http_response_code(403);
+        echo 'Accesso non autorizzato.';
+        Logger::getInstance()->warning('Mismatch CF nel link avviso', [
+            'iuv' => substr($iuv, -4),
+        ]);
+        return;
+    }
+    $numeroAvviso = (string)(
+        $pendenza['numeroAvviso']
+        ?? $pendenza['numero_avviso']
+        ?? $iuv
+    );
+    frontoffice_stream_avviso_pdf($idDominio, $numeroAvviso);
+    return;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route: GET /link/ricevuta — Download ricevuta tramite link firmato (IUV+IUR)
+// ─────────────────────────────────────────────────────────────────────────────
+if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
+    $qp = $_GET;
+    if (!frontoffice_verify_link($qp)) {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
+        Logger::getInstance()->warning('Link ricevuta non valido o scaduto', [
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'expires' => $qp['expires'] ?? '',
+        ]);
+        return;
+    }
+    $iuv = trim((string)($qp['iuv'] ?? ''));
+    $iur = trim((string)($qp['iur'] ?? ''));
+    if ($iuv === '' || $iur === '') {
+        http_response_code(400);
+        echo 'Parametri mancanti.';
+        return;
+    }
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    if ($idDominio === '') {
+        http_response_code(503);
+        echo 'Configurazione mancante: ID_DOMINIO non impostato.';
+        return;
+    }
+    frontoffice_stream_ricevuta_pdf($idDominio, $iuv, $iur);
+    return;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route: GET /link/checkout — Checkout immediato tramite link firmato (CF+IUV)
+// ─────────────────────────────────────────────────────────────────────────────
+if ($method === 'GET' && $normalizedPath === '/link/checkout') {
+    $qp = $_GET;
+    if (!frontoffice_verify_link($qp)) {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
+        Logger::getInstance()->warning('Link checkout non valido o scaduto', [
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'expires' => $qp['expires'] ?? '',
+        ]);
+        return;
+    }
+    $cf = trim((string)($qp['cf'] ?? ''));
+    $iuv = trim((string)($qp['iuv'] ?? ''));
+    if ($cf === '' || $iuv === '') {
+        http_response_code(400);
+        echo 'Parametri mancanti.';
+        return;
+    }
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    if ($idDominio === '') {
+        http_response_code(503);
+        echo 'Configurazione mancante: ID_DOMINIO non impostato.';
+        return;
+    }
+    // Recupera la pendenza e verifica ownership CF → IUV
+    $pendenza = frontoffice_fetch_pendenza_by_avviso($idDominio, $iuv);
+    if ($pendenza === null) {
+        http_response_code(404);
+        echo 'Avviso non trovato.';
+        return;
+    }
+    $pendenzaCf = strtoupper(trim((string)(
+        $pendenza['soggettoPagatore']['codiceFiscale']
+        ?? $pendenza['anagrafica']['codiceFiscale']
+        ?? ''
+    )));
+    if ($pendenzaCf === '' || !hash_equals(strtoupper($cf), $pendenzaCf)) {
+        http_response_code(403);
+        echo 'Accesso non autorizzato.';
+        Logger::getInstance()->warning('Mismatch CF nel link checkout', [
+            'iuv' => substr($iuv, -4),
+        ]);
+        return;
+    }
+    $stato = strtoupper(trim((string)($pendenza['stato'] ?? $pendenza['statoPendenza'] ?? '')));
+    if (!in_array($stato, ['NON_ESEGUITA', 'ESEGUITA_PARZIALE'], true)) {
+        http_response_code(400);
+        echo 'Pendenza non pagabile (stato: ' . htmlspecialchars($stato, ENT_QUOTES, 'UTF-8') . ').';
+        return;
+    }
+    $idPendenza = (string)($pendenza['idPendenza'] ?? '');
+    if ($idPendenza === '') {
+        http_response_code(503);
+        echo 'Impossibile determinare l\'identificativo della pendenza.';
+        return;
+    }
+    // Aggiungi alla sessione whitelist per il checkout (prevenzione CSRF)
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $key = 'authorized_checkout_pendenze';
+    $authList = (isset($_SESSION[$key]) && is_array($_SESSION[$key])) ? $_SESSION[$key] : [];
+    $authList[$idPendenza] = time();
+    if (count($authList) > 50) {
+        $authList = array_slice($authList, -50, null, true);
+    }
+    $_SESSION[$key] = $authList;
+    // Redirect al checkout pagoPA
+    $checkoutUrl = '/pagamento-avviso/checkout?idPendenza=' . rawurlencode($idPendenza);
+    header('Location: ' . $checkoutUrl, true, 302);
     return;
 }
 

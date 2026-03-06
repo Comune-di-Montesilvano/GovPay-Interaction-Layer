@@ -768,6 +768,19 @@ class ConfigurazioneController
             }
         }
 
+        // Carica i servizi App IO
+        $ioServices = [];
+        $ioServicesTipologie = [];
+        if ($canEditConfig) {
+            try {
+                $ioRepo = new \App\Database\IoServiceRepository();
+                $ioServices = $ioRepo->listAll();
+                $ioServicesTipologie = $ioRepo->getAllTipologiaServices();
+            } catch (\Throwable $e) {
+                $errors[] = 'Errore caricamento servizi App IO: ' . $e->getMessage();
+            }
+        }
+
         $pendenzaTemplates = [];
         $tipologiePendenze = [];
         if ($tab === 'templates' && $canManageUsers) {
@@ -821,6 +834,8 @@ class ConfigurazioneController
             'operatori_pagination' => $operatoriPagination,
             'dominio_json' => $dominioJson,
             'tipologie_esterne' => $externalTypes,
+            'io_services' => $ioServices,
+            'io_services_tipologie' => $ioServicesTipologie,
             'backoffice_base' => rtrim($backofficeUrl, '/'),
             'tab' => $tab,
             'logs_lines' => $logsLines,
@@ -1689,6 +1704,259 @@ class ConfigurazioneController
                 'user_id' => $_SESSION['user']['id'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+        }
+
+        return $this->redirectToTab($response, 'tipologie');
+    }
+
+    // =========================================================================
+    // App IO Services Methods
+    // =========================================================================
+
+    public function createIoService(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        $params = (array)($request->getParsedBody() ?? []);
+        
+        try {
+            $nome = trim((string)($params['nome'] ?? ''));
+            $descrizione = trim((string)($params['descrizione'] ?? ''));
+            $id_service = trim((string)($params['id_service'] ?? ''));
+            $api_key_primaria = trim((string)($params['api_key_primaria'] ?? ''));
+            $api_key_secondaria = trim((string)($params['api_key_secondaria'] ?? ''));
+            $codice_catalogo = trim((string)($params['codice_catalogo'] ?? ''));
+            $is_default = isset($params['is_default']) && $params['is_default'] === '1';
+
+            if ($nome === '' || $id_service === '' || $api_key_primaria === '') {
+                $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Campi obbligatori mancanti'];
+                return $this->redirectToTab($response, 'servizi_io');
+            }
+
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $ioRepo->create(
+                $nome,
+                $descrizione !== '' ? $descrizione : null,
+                $id_service,
+                $api_key_primaria,
+                $api_key_secondaria !== '' ? $api_key_secondaria : null,
+                $codice_catalogo !== '' ? $codice_catalogo : null,
+                $is_default
+            );
+
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Servizio IO creato con successo'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore creazione servizio IO', [
+                'error' => $e->getMessage(),
+                'user_id' => $_SESSION['user']['id'] ?? null,
+            ]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore creazione servizio: ' . $e->getMessage()];
+        }
+
+        return $this->redirectToTab($response, 'servizi_io');
+    }
+
+    public function updateIoService(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        $id = (int)($args['id'] ?? 0);
+        if ($id <= 0) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID servizio non valido'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        $params = (array)($request->getParsedBody() ?? []);
+        
+        try {
+            $nome = trim((string)($params['nome'] ?? ''));
+            $descrizione = trim((string)($params['descrizione'] ?? ''));
+            $id_service = trim((string)($params['id_service'] ?? ''));
+            $api_key_primaria = trim((string)($params['api_key_primaria'] ?? ''));
+            $api_key_secondaria = trim((string)($params['api_key_secondaria'] ?? ''));
+            $codice_catalogo = trim((string)($params['codice_catalogo'] ?? ''));
+            $is_default = isset($params['is_default']) && $params['is_default'] === '1';
+
+            if ($nome === '' || $id_service === '' || $api_key_primaria === '') {
+                $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Campi obbligatori mancanti'];
+                return $this->redirectToTab($response, 'servizi_io');
+            }
+
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $ioRepo->update(
+                $id,
+                $nome,
+                $descrizione !== '' ? $descrizione : null,
+                $id_service,
+                $api_key_primaria,
+                $api_key_secondaria !== '' ? $api_key_secondaria : null,
+                $codice_catalogo !== '' ? $codice_catalogo : null,
+                $is_default
+            );
+
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Servizio IO aggiornato con successo'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore aggiornamento servizio IO', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'user_id' => $_SESSION['user']['id'] ?? null,
+            ]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore aggiornamento: ' . $e->getMessage()];
+        }
+
+        return $this->redirectToTab($response, 'servizi_io');
+    }
+
+    public function deleteIoService(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        $id = (int)($args['id'] ?? 0);
+        if ($id <= 0) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID servizio non valido'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        try {
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $ioRepo->delete($id);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Servizio IO eliminato con successo'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore eliminazione servizio IO', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'user_id' => $_SESSION['user']['id'] ?? null,
+            ]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore eliminazione: ' . $e->getMessage()];
+        }
+
+        return $this->redirectToTab($response, 'servizi_io');
+    }
+
+    public function setDefaultIoService(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        $id = (int)($args['id'] ?? 0);
+        if ($id <= 0) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID servizio non valido'];
+            return $this->redirectToTab($response, 'servizi_io');
+        }
+
+        try {
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $ioRepo->setDefault($id);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Servizio IO impostato come predefinito'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore impostazione servizio IO predefinito', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'user_id' => $_SESSION['user']['id'] ?? null,
+            ]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+
+        return $this->redirectToTab($response, 'servizi_io');
+    }
+
+    public function setTipologiaIoService(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'tipologie');
+        }
+
+        $idEntrata = (string)($args['idEntrata'] ?? '');
+        if ($idEntrata === '') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID tipologia non valido'];
+            return $this->redirectToTab($response, 'tipologie');
+        }
+
+        $params = (array)($request->getParsedBody() ?? []);
+        $ioServiceId = isset($params['io_service_id']) && $params['io_service_id'] !== '' 
+            ? (int)$params['io_service_id'] 
+            : null;
+
+        try {
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $ioRepo->setTipologiaService($idEntrata, $ioServiceId);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Servizio IO associato alla tipologia'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore associazione servizio IO a tipologia', [
+                'id_entrata' => $idEntrata,
+                'error' => $e->getMessage(),
+                'user_id' => $_SESSION['user']['id'] ?? null,
+            ]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+
+        return $this->redirectToTab($response, 'tipologie');
+    }
+
+    /**
+     * Salvataggio massivo delle associazioni tipologia-servizio IO.
+     * Riceve un array io_service_id[idEntrata] => id_servizio_io|''
+     */
+    public function bulkSetTipologieIoService(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'tipologie');
+        }
+
+        $params = (array)($request->getParsedBody() ?? []);
+        $ioServiceMap = isset($params['io_service_id']) && is_array($params['io_service_id'])
+            ? $params['io_service_id']
+            : [];
+
+        $ok = 0;
+        $ko = 0;
+
+        try {
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $pdo = \App\Database\Connection::getPDO();
+            $pdo->beginTransaction();
+            try {
+                foreach ($ioServiceMap as $idEntrata => $ioServiceId) {
+                    $idEntrata = (string)$idEntrata;
+                    if ($idEntrata === '') {
+                        continue;
+                    }
+                    $serviceId = ($ioServiceId !== '' && $ioServiceId !== null)
+                        ? (int)$ioServiceId
+                        : null;
+                    $ioRepo->setTipologiaService($idEntrata, $serviceId);
+                    $ok++;
+                }
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                $pdo->rollBack();
+                throw $e;
+            }
+
+            if ($ok > 0) {
+                $_SESSION['flash'][] = ['type' => 'success', 'text' => "Configurazioni salvate: $ok tipologie aggiornate"];
+            } else {
+                $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Nessuna configurazione da salvare'];
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore salvataggio massivo associazioni IO tipologie', [
+                'error' => $e->getMessage(),
+                'user_id' => $_SESSION['user']['id'] ?? null,
+            ]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore salvataggio: ' . $e->getMessage()];
         }
 
         return $this->redirectToTab($response, 'tipologie');

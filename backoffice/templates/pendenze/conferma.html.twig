@@ -169,6 +169,33 @@
         <pre class="small">{{ params|json_encode(constant('JSON_PRETTY_PRINT'))|e }}</pre>
       </div>
 
+      {% if canali_notifica is defined and canali_notifica|length > 0 %}
+      <div class="alert alert-light border mt-3">
+        <h6 class="mb-2"><i class="fas fa-bell me-1"></i> Notifiche che verranno inviate alla conferma</h6>
+        <ul class="list-unstyled mb-0">
+          {% for canale in canali_notifica %}
+            <li class="d-flex align-items-start gap-2 mb-1">
+              {% if canale.attivo %}
+                <span class="text-success"><i class="fas fa-check-circle"></i></span>
+                <span>
+                  <strong>{{ canale.label }}</strong>
+                  {% if canale.canale == 'email' and params.soggettoPagatore.email is defined %}
+                    — <span class="text-muted">{{ params.soggettoPagatore.email }}</span>
+                  {% endif %}
+                </span>
+              {% else %}
+                <span class="text-secondary"><i class="fas fa-minus-circle"></i></span>
+                <span class="text-muted">
+                  <strong>{{ canale.label }}</strong>
+                  {% if canale.motivo is not empty %}— {{ canale.motivo }}{% endif %}
+                </span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
       <form method="post" action="/pendenze">
         {# Mantieni una copia JSON completa dei parametri per i flussi che la richiedono #}
         <input type="hidden" name="original_params" value="{{ params|json_encode|e }}">

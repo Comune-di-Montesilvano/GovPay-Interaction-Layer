@@ -2,14 +2,17 @@
 
 ### Notifiche Pendenze
 - [ ] **Email**
-    - [ ] Lato Backoffice: Invio mail al cittadino al momento della creazione pendenza.
+    - [X] Lato Backoffice: Invio mail al cittadino al momento della creazione pendenza
+        - [X] Invio email automatico al momento della creazione della pendenza
+        - [X] Inserimento dei dati notifica nei `datiAllegati` della pendenza
+        - [X] Visualizzazione in dettaglio pendenza: sezione dedicata ai dati allegati della pendenza
     - [ ] Lato Frontoffice: Inserire tasto "Invia per email" post-creazione spontaneo (accanto a "Paga ora" e "Stampa").
 - [ ] **App IO**
     - [ ] Implementazione delle medesime notifiche (Backoffice/Frontoffice) tramite App IO.
     - [ ] **Configurazione API**: Implementazione API App IO e gestione chiavi/servizi per ogni tipologia di pendenza.
 - [ ] **Integrazione Dati e UI**
-    - [ ] Inserimento esiti/log notifiche nei `datiAllegati` della pendenza (es. timestamp mail, ID notifica IO).
-    - [ ] Modifica del dettaglio pendenza per visualizzare una scheda/tab dedicata alle notifiche inviate.
+    - [X] Inserimento esiti/log notifiche nei `datiAllegati` della pendenza (es. timestamp mail, ID notifica IO).
+    - [X] Modifica del dettaglio pendenza per visualizzare una scheda/tab dedicata alle notifiche inviate.
 
 ### Sistema di Rendicontazione
 - [ ] **Automazione**
@@ -25,7 +28,7 @@
 - [ ] **Interfaccia**: Miglioramento dell'interfaccia dell'area profilo.
 - [ ] **Sicurezza**: Funzione di cambio password.
 - [ ] **Personalizzazione e Permessi**
-    - [ ] Possibilità di associare template all'utente.
+    - [X] Possibilità di associare template all'utente.
     - [ ] Associare agli utenti una tipologia di pendenza di default.
     - [ ] Sistema per limitare la visibilità delle tipologie per utente (filtro tipologie abilitate).
 - [ ] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi.
@@ -33,7 +36,7 @@
 ### Autenticazione e Identity
 - [ ] **IAM Proxy**: Sistemazione integrazione proxy IAM.
 - [ ] **CIE**: Bugfixing autenticazione con CIE.
-- [ ] **Discovery Page**: Sistemazione grafica della pagina `disco.html`.
+- [X] **Discovery Page**: Sistemazione grafica della pagina `disco.html`.
 
 ### Manutenzione e Sistema
 - [ ] **Configurazione**: Funzionalità di backup e importazione della configurazione di sistema.
@@ -56,3 +59,9 @@
     - [ ] Rimozione degli script di migrazione orfani.
     - [ ] Eliminazione definitiva della cartella `debug/`.
     - [ ] Cleanup finale e modernizzazione della struttura del repository.
+
+### Altro
+- [ ] Pagina sul frontoffice pubblica per il download della ricevuta di pagamento
+    - Meccanismo di autenticazione: IUV + ID notifica + IUR di pagamento
+- [ ] Automatismo CI/CD per creazione e pubblicazione immagini Docker su GHCR
+    - Workflow GitHub Actions: build, tag automatico, push su `ghcr.io`

@@ -318,6 +318,39 @@ return function (App $app, Twig $twig): void {
         return $controller->resetTipologia($request, $response, $args);
     });
 
+    // App IO Services - CRUD
+    $app->post('/configurazione/io-services', function($request, $response) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->createIoService($request, $response);
+    });
+
+    $app->post('/configurazione/io-services/{id}/update', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->updateIoService($request, $response, $args);
+    });
+
+    $app->post('/configurazione/io-services/{id}/delete', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->deleteIoService($request, $response, $args);
+    });
+
+    $app->post('/configurazione/io-services/{id}/set-default', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setDefaultIoService($request, $response, $args);
+    });
+
+    // Associa servizio IO a tipologia (singola)
+    $app->post('/configurazione/tipologie/{idEntrata}/io-service', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setTipologiaIoService($request, $response, $args);
+    });
+
+    // Salvataggio massivo associazioni tipologie <-> servizi IO
+    $app->post('/configurazione/tipologie/io-service/bulk-save', function($request, $response) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->bulkSetTipologieIoService($request, $response);
+    });
+
     $app->get('/users/new', function($request, $response) use ($twig) {
         if (isset($_SESSION['user'])) {
             $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
