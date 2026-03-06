@@ -431,7 +431,7 @@
                           </div>
                         </div>
                       </form>
-                      {# Form separati per azioni di ripristino (devono stare fuori dal form principale) #}
+                      {# Form separati per azioni di ripristino (vuoti, associati ai bottoni via attributo HTML5 form=...) #}
                       {% if descrLocale is not null %}
                       <form id="form_restore_descr_{{ eid }}" method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione/restore"></form>
                       {% endif %}
