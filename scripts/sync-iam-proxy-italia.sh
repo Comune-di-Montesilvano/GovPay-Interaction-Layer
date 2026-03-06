@@ -174,7 +174,7 @@ if [ -f "$PROJECT_DST/proxy_conf.yaml" ] && [ "$ENABLE_IT_WALLET" != "true" ]; t
    sed -i 's|^  - "conf/frontends/openid4vci_frontend.yaml"|  # - "conf/frontends/openid4vci_frontend.yaml"  # Disabled (ENABLE_IT_WALLET!=true)|' "$PROJECT_DST/proxy_conf.yaml"
 fi
 
-# Patch target_based_routing.yaml to add demo.spid.gov.it and fix default backend
+# Patch target_based_routing.yaml to align test IdP mappings with env flags
 if [ -f "$PROJECT_DST/conf/microservices/target_based_routing.yaml" ] && [ "$ENABLE_CIE_OIDC" != "true" ]; then
   echo "[sync-iam-proxy] Patching target_based_routing.yaml for test environment..."
   ROUTING_FILE="$PROJECT_DST/conf/microservices/target_based_routing.yaml"
@@ -185,10 +185,22 @@ if [ -f "$PROJECT_DST/conf/microservices/target_based_routing.yaml" ] && [ "$ENA
   # Change default_backend from Saml2 to spidSaml2
   sed -i 's|^  default_backend: Saml2$|  default_backend: spidSaml2|' "$ROUTING_FILE"
   
-  # Add demo.spid.gov.it mapping if not present
-  if ! grep -q "demo.spid.gov.it" "$ROUTING_FILE"; then
-    # Insert after "https://localhost:8443": "spidSaml2" line
-    sed -i '/"https:\/\/localhost:8443": "spidSaml2"/a\    "https://demo.spid.gov.it": "spidSaml2"' "$ROUTING_FILE"
+  # Keep/remove demo mapping based on SATOSA_USE_DEMO_SPID_IDP
+  if is_true "$SATOSA_USE_DEMO_SPID_IDP"; then
+    if ! grep -q '"https://demo.spid.gov.it": "spidSaml2"' "$ROUTING_FILE"; then
+      sed -i '/"https:\/\/localhost:8443": "spidSaml2"/a\    "https://demo.spid.gov.it": "spidSaml2"' "$ROUTING_FILE"
+    fi
+  else
+    sed -i '/"https:\/\/demo\.spid\.gov\.it": "spidSaml2"/d' "$ROUTING_FILE"
+  fi
+
+  # Keep/remove validator mapping based on SATOSA_USE_SPID_VALIDATOR
+  if is_true "$SATOSA_USE_SPID_VALIDATOR"; then
+    if ! grep -q '"https://validator.spid.gov.it": "spidSaml2"' "$ROUTING_FILE"; then
+      sed -i '/"https:\/\/localhost:8443": "spidSaml2"/a\    "https://validator.spid.gov.it": "spidSaml2"' "$ROUTING_FILE"
+    fi
+  else
+    sed -i '/"https:\/\/validator\.spid\.gov\.it": "spidSaml2"/d' "$ROUTING_FILE"
   fi
 fi
 
@@ -253,6 +265,27 @@ if is_true "$SATOSA_USE_DEMO_SPID_IDP"; then
   fi
 else
   echo "[sync-iam-proxy] Skipping demo SPID IdP metadata (SATOSA_USE_DEMO_SPID_IDP not set to 'true')"
+  # Clean stale demo override to avoid forcing old demo URLs from previous runs
+  rm -f "$PROJECT_DST/static/config/wallets-spid-demo-override.json"
+fi
+
+# Download SPID validator metadata if SATOSA_USE_SPID_VALIDATOR=true
+if is_true "$SATOSA_USE_SPID_VALIDATOR"; then
+  SPID_VALIDATOR_METADATA_URL="${SATOSA_SPID_VALIDATOR_METADATA_URL:-https://validator.spid.gov.it/metadata.xml}"
+  SPID_VALIDATOR_METADATA_FILE="$PROJECT_DST/metadata/idp/spid-validator.xml"
+
+  if [ ! -f "$SPID_VALIDATOR_METADATA_FILE" ] || [ "$FORCE_SYNC" = "true" ]; then
+    echo "[sync-iam-proxy] Downloading SPID validator metadata from $SPID_VALIDATOR_METADATA_URL..."
+    curl -sSL --max-time 30 "$SPID_VALIDATOR_METADATA_URL" -o "$SPID_VALIDATOR_METADATA_FILE" 2>/dev/null && \
+      echo "[sync-iam-proxy] SPID validator metadata downloaded successfully" || {
+      echo "[sync-iam-proxy] WARNING: Failed to download SPID validator metadata"
+      echo "[sync-iam-proxy] You may need to manually add validator metadata to $PROJECT_DST/metadata/idp/"
+    }
+  else
+    echo "[sync-iam-proxy] SPID validator metadata already exists"
+  fi
+else
+  echo "[sync-iam-proxy] Skipping SPID validator metadata (SATOSA_USE_SPID_VALIDATOR not set to 'true')"
 fi
 
 # Build static disco.html based on .env flags
@@ -270,6 +303,9 @@ if [ -f "$DISCO_TEMPLATE" ]; then
   fi
   if ! is_true "$SATOSA_USE_DEMO_SPID_IDP"; then
     sed -i '/SPID_DEMO_START/,/SPID_DEMO_END/d' "$DISCO_HTML"
+  fi
+  if ! is_true "$SATOSA_USE_SPID_VALIDATOR"; then
+    sed -i '/SPID_VALIDATOR_START/,/SPID_VALIDATOR_END/d' "$DISCO_HTML"
   fi
   if ! is_true "$ENABLE_CIE"; then
     sed -i '/CIE_BLOCK_START/,/CIE_BLOCK_END/d' "$DISCO_HTML"

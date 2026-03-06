@@ -197,6 +197,13 @@
                   </a>
                 </li>
                 <!-- SPID_DEMO_END -->
+                <!-- SPID_VALIDATOR_START -->
+                <li class="spid-idp-button-link" data-idp="spidvalidator">
+                  <a class="disco-idp-link" data-entity-id="https://validator.spid.gov.it">
+                    <img src="/static/spid/spid-agid-logo-lb.png" alt="SPID Validator">
+                  </a>
+                </li>
+                <!-- SPID_VALIDATOR_END -->
                 <li class="spid-idp-button-link" data-idp="arubaid">
                   <a class="disco-idp-link" data-entity-id="https://loginspid.aruba.it">
                     <img style="box-sizing: content-box;" src="/static/spid/spid-idp-arubaid.svg" onerror="this.src='/static/spid/spid-idp-arubaid.png'; this.onerror=null;" alt="Aruba ID">
