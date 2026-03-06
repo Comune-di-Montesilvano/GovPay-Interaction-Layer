@@ -121,7 +121,9 @@ class MailerService
         $timestamp = date('Y-m-d H:i:s');
         
         try {
-            $htmlBody = $this->renderPendenzaCreatedTemplate($toName, $pendenzaData, $appName, $pdfUrl, $paymentUrl);
+          $hasEmbeddedLogo = ($logoPath !== '' && file_exists($logoPath));
+          $logoSrc = (string)(getenv('APP_LOGO_SRC') ?: '');
+          $htmlBody = $this->renderPendenzaCreatedTemplate($toName, $pendenzaData, $appName, $pdfUrl, $paymentUrl, $hasEmbeddedLogo, $logoSrc);
             $textBody = $this->renderPendenzaCreatedTemplatePlain($toName, $pendenzaData, $appName, $pdfUrl, $paymentUrl);
 
             $causale = $pendenzaData['causale'] ?? 'Nuova pendenza';
@@ -133,7 +135,7 @@ class MailerService
                 ->text($textBody);
             
             // Allega il logo se specificato
-            if ($logoPath !== '' && file_exists($logoPath)) {
+            if ($hasEmbeddedLogo) {
                 $email->embedFromPath($logoPath, 'logo');
             }
 
@@ -251,13 +253,15 @@ class MailerService
         array  $pendenzaData,
         string $appName,
         string $pdfUrl,
-        string $paymentUrl
+      string $paymentUrl,
+      bool $hasEmbeddedLogo = false,
+      string $logoSrc = ''
     ): string {
         $safeToName  = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
         $safeAppName = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
         $causale     = htmlspecialchars($pendenzaData['causale'] ?? 'Nuova posizione debitoria', ENT_QUOTES, 'UTF-8');
         $importo     = number_format((float)($pendenzaData['importo'] ?? 0.0), 2, ',', '.');
-        $iuv         = htmlspecialchars((string)($pendenzaData['iuv'] ?? $pendenzaData['numeroAvviso'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $noticeCode  = htmlspecialchars($this->resolveNoticeCode($pendenzaData), ENT_QUOTES, 'UTF-8');
         $dataScadenza = '';
         if (!empty($pendenzaData['dataScadenza'])) {
             $dataScadenza = htmlspecialchars($pendenzaData['dataScadenza'], ENT_QUOTES, 'UTF-8');
@@ -285,10 +289,19 @@ HTML;
             $scadenzaInfo = "<p><strong>Data scadenza:</strong> {$dataScadenza}</p>";
         }
 
-        $iuvInfo = $iuv !== '' ? "<p><strong>IUV:</strong> {$iuv}</p>" : '';
+        $iuvInfo = $noticeCode !== '' ? "<p><strong>IUV:</strong> {$noticeCode}</p>" : '';
 
-        // Logo: usa cid:logo se disponibile, altrimenti nessuna immagine
-        $logoHtml = '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        // Logo: preferisci embed cid:logo, fallback a src configurato, poi titolo testuale.
+        $safeLogoSrc = htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8');
+        if ($hasEmbeddedLogo) {
+          $logoHtml = '<img src="cid:logo" alt="Logo ente" style="max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto;">'
+            . '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        } elseif ($safeLogoSrc !== '') {
+          $logoHtml = '<img src="' . $safeLogoSrc . '" alt="Logo ente" style="max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto;">'
+            . '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        } else {
+          $logoHtml = '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        }
 
         return <<<HTML
         <!DOCTYPE html>
@@ -348,7 +361,7 @@ HTML;
         $greeting = $toName !== '' ? "Gentile $toName," : "Gentile Interessato,";
         $causale = $pendenzaData['causale'] ?? 'Nuova posizione debitoria';
         $importo = number_format((float)($pendenzaData['importo'] ?? 0.0), 2, ',', '.');
-        $iuv = (string)($pendenzaData['iuv'] ?? $pendenzaData['numeroAvviso'] ?? '');
+        $iuv = $this->resolveNoticeCode($pendenzaData);
         $dataScadenza = $pendenzaData['dataScadenza'] ?? '';
         
         $scadenzaLine = $dataScadenza !== '' ? "\nData scadenza: $dataScadenza" : '';
@@ -369,4 +382,29 @@ HTML;
         -- {$appName}
         TEXT;
     }
+
+      /**
+       * Preferisce il codice avviso completo (18 cifre) quando disponibile.
+       */
+      private function resolveNoticeCode(array $pendenzaData): string
+      {
+        $candidates = [
+          (string)($pendenzaData['numeroAvviso'] ?? ''),
+          (string)($pendenzaData['numero_avviso'] ?? ''),
+          (string)($pendenzaData['iuvAvviso'] ?? ''),
+          (string)($pendenzaData['iuv_avviso'] ?? ''),
+          (string)($pendenzaData['noticeNumber'] ?? ''),
+          (string)($pendenzaData['notice_number'] ?? ''),
+          (string)($pendenzaData['iuv'] ?? ''),
+        ];
+
+        foreach ($candidates as $value) {
+          $normalized = trim($value);
+          if ($normalized !== '') {
+            return $normalized;
+          }
+        }
+
+        return '';
+      }
 }

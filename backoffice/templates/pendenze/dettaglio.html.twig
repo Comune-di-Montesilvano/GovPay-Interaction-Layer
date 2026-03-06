@@ -606,9 +606,11 @@
                             <th>Canale</th>
                             <th>Destinatario</th>
                             <th>Esito</th>
+                        <th class="text-end">Azioni</th>
                         </tr>
                     </thead>
                     <tbody>
+                    {% set canResendNotifiche = (r.stato|default('') not in ['ESEGUITA','ESEGUITO','RISCOSSA','INCASSATA','INCASSATO','RENDICONTATA','RENDICONTATO']) %}
                     {% for notifica in r.datiAllegati.notifiche|reverse %}
                         <tr>
                             <td><small>{{ notifica.timestamp|date('d/m/Y H:i:s') }}</small></td>
@@ -622,7 +624,7 @@
                                     {{ notifica.canale|default('N/A') }}
                                 {% endif %}
                             </td>
-                            <td><small>{{ notifica.destinatario|default('N/A') }}</small></td>
+                              <td><small>{{ notifica.destinatario|default(notifica.message_id|default('N/A')) }}</small></td>
                             <td>
                                 {% if notifica.esito == 'OK' %}
                                     <span class="badge bg-success">OK</span>
@@ -630,6 +632,17 @@
                                     <span class="badge bg-danger">{{ notifica.esito|default('ERRORE') }}</span>
                                 {% endif %}
                             </td>
+                              <td class="text-end">
+                                {% set canaleNotifica = notifica.canale|default('') %}
+                                {% if canResendNotifiche and (canaleNotifica == 'email' or canaleNotifica == 'app_io') %}
+                                  <form method="post" action="/pendenze/notifiche/reinvia/{{ idPendenza|url_encode }}" class="d-inline">
+                                    <input type="hidden" name="canale" value="{{ canaleNotifica }}">
+                                    <button type="submit" class="btn btn-outline-primary btn-sm" onclick="return confirm('Confermi il reinvio della notifica su {{ canaleNotifica == 'app_io' ? 'App IO' : 'Email' }}?')">Reinvia</button>
+                                  </form>
+                                {% else %}
+                                  <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Reinvia</button>
+                                {% endif %}
+                              </td>
                         </tr>
                     {% endfor %}
                     </tbody>

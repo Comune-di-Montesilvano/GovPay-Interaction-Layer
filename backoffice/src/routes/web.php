@@ -156,6 +156,11 @@ return function (App $app, Twig $twig): void {
         return $controller->aggiornaPendenza($request, $response, $args);
     });
 
+    $app->post('/pendenze/notifiche/reinvia/{idPendenza}', function(Request $request, Response $response, array $args) use ($twig): Response {
+        $controller = new PendenzeController($twig);
+        return $controller->reinviaNotifica($request, $response, $args);
+    });
+
     // Preview/print multi-rate document stored in session after createRateizzazione
     $app->get('/pendenze/multirata/preview', function(Request $request, Response $response) use ($twig): Response {
         // only in session

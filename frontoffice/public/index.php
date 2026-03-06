@@ -3402,12 +3402,7 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
         echo 'Avviso non trovato.';
         return;
     }
-    $pendenzaCf = strtoupper(trim((string)(
-        $pendenza['soggettoPagatore']['codiceFiscale']
-        ?? $pendenza['anagrafica']['codiceFiscale']
-        ?? ''
-    )));
-    if ($pendenzaCf === '' || !hash_equals(strtoupper($cf), $pendenzaCf)) {
+    if (!frontoffice_pendenza_belongs_to_cf($pendenza, $cf)) {
         http_response_code(403);
         echo 'Accesso non autorizzato.';
         Logger::getInstance()->warning('Mismatch CF nel link avviso', [
@@ -3489,12 +3484,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
         echo 'Avviso non trovato.';
         return;
     }
-    $pendenzaCf = strtoupper(trim((string)(
-        $pendenza['soggettoPagatore']['codiceFiscale']
-        ?? $pendenza['anagrafica']['codiceFiscale']
-        ?? ''
-    )));
-    if ($pendenzaCf === '' || !hash_equals(strtoupper($cf), $pendenzaCf)) {
+    if (!frontoffice_pendenza_belongs_to_cf($pendenza, $cf)) {
         http_response_code(403);
         echo 'Accesso non autorizzato.';
         Logger::getInstance()->warning('Mismatch CF nel link checkout', [
@@ -3514,17 +3504,19 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
         echo 'Impossibile determinare l\'identificativo della pendenza.';
         return;
     }
-    // Aggiungi alla sessione whitelist per il checkout (prevenzione CSRF)
+    // Aggiungi alla whitelist di sessione usata dalla route /pagamento-avviso/checkout.
     if (session_status() !== PHP_SESSION_ACTIVE) {
         @session_start();
     }
-    $key = 'authorized_checkout_pendenze';
-    $authList = (isset($_SESSION[$key]) && is_array($_SESSION[$key])) ? $_SESSION[$key] : [];
-    $authList[$idPendenza] = time();
-    if (count($authList) > 50) {
-        $authList = array_slice($authList, -50, null, true);
+    foreach (['frontoffice_avviso_pendenze', 'frontoffice_pendenze_whitelist', 'authorized_checkout_pendenze'] as $key) {
+        $list = (isset($_SESSION[$key]) && is_array($_SESSION[$key])) ? $_SESSION[$key] : [];
+        $list[] = $idPendenza;
+        $list = array_values(array_unique(array_filter(array_map('strval', $list), static fn($v) => trim($v) !== '')));
+        if (count($list) > 50) {
+            $list = array_slice($list, -50);
+        }
+        $_SESSION[$key] = $list;
     }
-    $_SESSION[$key] = $authList;
     // Redirect al checkout pagoPA
     $checkoutUrl = '/pagamento-avviso/checkout?idPendenza=' . rawurlencode($idPendenza);
     header('Location: ' . $checkoutUrl, true, 302);

@@ -63,10 +63,16 @@ class AppIoService
         ?string $ctaLink = null
     ): array {
         try {
+            // Default conservativo: STANDARD. Se necessario, puo essere forzato da env.
+            $featureLevelType = strtoupper((string)(getenv('APP_IO_FEATURE_LEVEL_TYPE') ?: 'STANDARD'));
+            if ($featureLevelType !== 'STANDARD' && $featureLevelType !== 'ADVANCED') {
+                $featureLevelType = 'STANDARD';
+            }
+
             // Costruisci il body JSON
             $body = [
                 'fiscal_code' => $fiscalCode,
-                'feature_level_type' => 'STANDARD',
+                'feature_level_type' => $featureLevelType,
                 'content' => [
                     'subject' => $subject,
                     'markdown' => $markdown,
@@ -85,8 +91,6 @@ class AppIoService
                     'amount' => (int)$paymentData['amount'],
                     'invalid_after_due_date' => (bool)($paymentData['invalidAfterDueDate'] ?? false),
                 ];
-                // Con payment_data il feature_level deve essere ADVANCED per abilitare la CTA "Paga ora"
-                $body['feature_level_type'] = 'ADVANCED';
             }
 
             // Aggiungi CTA link se presente (es. checkout immediato)
