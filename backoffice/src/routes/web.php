@@ -345,7 +345,13 @@ return function (App $app, Twig $twig): void {
         return $controller->setTipologiaIoService($request, $response, $args);
     });
 
-    // Salvataggio massivo associazioni tipologie <-> servizi IO
+    // Salva tutti i parametri di una tipologia in un colpo solo (descrizione, descr. estesa, servizio IO, URL esterna)
+    $app->post('/configurazione/tipologie/{idEntrata}/save', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->saveTipologia($request, $response, $args);
+    });
+
+    // Salvataggio massivo associazioni tipologie <-> servizi IO (mantenuto per retrocompatibilità)
     $app->post('/configurazione/tipologie/io-service/bulk-save', function($request, $response) use ($twig) {
         $controller = new ConfigurazioneController($twig);
         return $controller->bulkSetTipologieIoService($request, $response);

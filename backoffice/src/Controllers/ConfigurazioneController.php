@@ -1962,6 +1962,72 @@ class ConfigurazioneController
         return $this->redirectToTab($response, 'tipologie');
     }
 
+    /**
+     * Salva tutti i parametri editabili di una tipologia in un colpo solo:
+     * descrizione, descrizione estesa, servizio IO, URL esterna.
+     */
+    public function saveTipologia(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'tipologie');
+        }
+
+        $idEntrata = (string)($args['idEntrata'] ?? '');
+        $idDominio = getenv('ID_DOMINIO') ?: '';
+        if ($idEntrata === '' || $idDominio === '') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
+            return $this->redirectToTab($response, 'tipologie');
+        }
+
+        $data = (array)($request->getParsedBody() ?? []);
+
+        try {
+            $entrateRepo = new EntrateRepository();
+            $ioRepo = new \App\Database\IoServiceRepository();
+
+            // Descrizione personalizzata (se non vuota)
+            $descr = trim((string)($data['descrizione'] ?? ''));
+            if ($descr !== '') {
+                if (mb_strlen($descr) > 255) {
+                    $descr = mb_substr($descr, 0, 255);
+                }
+                $entrateRepo->updateDescrizione($idDominio, $idEntrata, $descr);
+            }
+
+            // Descrizione estesa (vuota = rimuovi)
+            $descrEstesa = trim((string)($data['descrizione_estesa'] ?? ''));
+            $entrateRepo->updateDescrizioneEstesa($idDominio, $idEntrata, $descrEstesa !== '' ? $descrEstesa : null);
+
+            // Servizio App IO (vuoto = nessuno / usa predefinito)
+            $ioServiceId = isset($data['io_service_id']) && (string)$data['io_service_id'] !== ''
+                ? (int)$data['io_service_id']
+                : null;
+            $ioRepo->setTipologiaService($idEntrata, $ioServiceId);
+
+            // URL esterna (vuota = rimuovi)
+            $url = trim((string)($data['external_url'] ?? ''));
+            $entrateRepo->setExternalUrl($idDominio, $idEntrata, $url !== '' ? $url : null);
+
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Tipologia salvata'];
+            Logger::getInstance()->info('Tipologia salvata (save-all)', [
+                'id_dominio' => $idDominio,
+                'id_entrata' => $idEntrata,
+                'user_id'    => $_SESSION['user']['id'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore salvataggio: ' . $e->getMessage()];
+            Logger::getInstance()->error('Errore salvataggio tipologia (save-all)', [
+                'id_dominio' => $idDominio,
+                'id_entrata' => $idEntrata,
+                'user_id'    => $_SESSION['user']['id'] ?? null,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
+        return $this->redirectToTab($response, 'tipologie');
+    }
+
     private function redirectToTab(Response $response, string $tab): Response
     {
         return $response->withHeader('Location', '/configurazione?tab=' . $tab)->withStatus(302);
