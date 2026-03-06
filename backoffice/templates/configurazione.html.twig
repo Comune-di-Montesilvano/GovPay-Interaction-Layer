@@ -286,17 +286,6 @@
         {% endif %}
         {% set elenco = entrate.risultati|default([]) %}
         {% if elenco and elenco|length > 0 %}
-          {% if current_user and current_user.role == 'superadmin' and io_services|default([])|length > 0 %}
-          <form method="post" action="/configurazione/tipologie/io-service/bulk-save" id="formBulkIoService">
-          <div class="d-flex flex-wrap gap-2 align-items-center mb-3 p-2 bg-light rounded border">
-            <div class="flex-grow-1 small text-muted">
-              <i class="fas fa-mobile-alt me-1"></i> Associazioni <strong>App IO</strong>: modifica le selezioni nelle tipologie e premi <strong>Salva configurazioni IO</strong> per aggiornare tutte in un colpo solo.
-            </div>
-            <button type="submit" class="btn btn-sm btn-success">
-              <i class="fas fa-save me-1"></i> Salva configurazioni IO
-            </button>
-          </div>
-          {% endif %}
           <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
             <div class="flex-grow-1">
               <input id="entrateSearch" type="search" class="form-control form-control-sm" placeholder="Cerca per descrizione, IBAN, codice o ID" aria-label="Cerca tipologie di entrata">
@@ -390,124 +379,38 @@
                       </div>
                     </div>
                     {% if current_user and current_user.role == 'superadmin' and idEnt %}
-                      <div class="row g-3 small mt-1">
-                        <div class="col-md-12">
-                          <div class="d-flex align-items-start gap-2 flex-wrap">
-                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione" class="d-flex align-items-start gap-2 flex-wrap m-0">
-                              <div class="flex-grow-1" style="min-width:260px">
-                                <label for="descr_{{ eid }}" class="text-muted">Descrizione personalizzata</label>
-                                <input id="descr_{{ eid }}" name="descrizione" type="text" maxlength="255" value="{{ descrLocale is not null ? descrLocale : descrBackoffice }}" class="form-control form-control-sm" placeholder="Inserisci descrizione personalizzata" autocomplete="off">
-                                <div class="form-text">
-                                  {% if descrLocale is not null %}
-                                    Personalizzata (originale GovPay: <span class="text-muted">{{ descrBackoffice }}</span>)
-                                  {% else %}
-                                    Nessuna personalizzazione locale. Puoi sovrascrivere la descrizione GovPay.
-                                  {% endif %}
-                                </div>
-                              </div>
-                              <div class="pt-4">
-                                <button type="submit" class="btn btn-sm btn-primary">Salva descrizione</button>
-                              </div>
-                            </form>
-                            {% if descrLocale is not null %}
-                              <form method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione/restore" class="m-0 pt-4">
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Sei sicuro di voler ripristinare la descrizione originale da GovPay?')">Ripristina GovPay</button>
-                              </form>
-                            {% endif %}
-                          </div>
-                        </div>
-                      </div>
-                    {% endif %}
-                    {% if current_user and current_user.role == 'superadmin' and idEnt %}
-                      <div class="row g-3 small mt-1">
-                        <div class="col-md-12">
-                          <div class="d-flex align-items-start gap-2 flex-wrap">
-                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione-estesa" class="d-flex align-items-start gap-2 flex-wrap m-0">
-                              <div class="flex-grow-1" style="min-width:260px">
-                                <label for="descrestesa_{{ eid }}" class="text-muted">Descrizione estesa (locale)</label>
-                                <textarea id="descrestesa_{{ eid }}" name="descrizione_estesa" class="form-control form-control-sm" rows="2" placeholder="Testo aggiuntivo (es. istruzioni/nota)" style="max-width:680px">{{ descrEstesa }}</textarea>
-                                <div class="form-text">Campo locale (non arriva da GovPay). Se vuoto viene rimosso.</div>
-                              </div>
-                              <div class="pt-4">
-                                <button type="submit" class="btn btn-sm btn-primary">Salva descrizione estesa</button>
-                              </div>
-                            </form>
-                            {% if descrEstesa is not empty %}
-                              <form method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione-estesa/restore" class="m-0 pt-4">
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Rimuovere la descrizione estesa per questa tipologia?')">Rimuovi</button>
-                              </form>
-                            {% endif %}
-                          </div>
-                        </div>
-                      </div>
-                    {% endif %}
-                    {% if current_user and current_user.role == 'superadmin' and idEnt %}
-                      <hr>
-                      <div class="d-flex flex-column gap-3">
-                        <div class="d-flex flex-wrap gap-2 align-items-center">
-                          {% if bo %}
-                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/govpay" class="m-0">
-                              <input type="hidden" name="enable" value="{{ bo ? 0 : 1 }}">
-                              <button type="submit" class="btn btn-sm {{ bo ? 'btn-warning' : 'btn-success' }}">
-                                {{ bo ? 'Disabilita su GovPay' : 'Abilita su GovPay' }}
-                              </button>
-                            </form>
-                            {% if ovr is same as(null) or ovr == true %}
-                              <form method="post" action="/configurazione/tipologie/{{ idEnt }}/override" class="m-0">
-                                <input type="hidden" name="enable" value="0">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Disattiva localmente</button>
-                              </form>
-                            {% elseif ovr == false %}
-                              <form method="post" action="/configurazione/tipologie/{{ idEnt }}/override" class="m-0">
-                                <input type="hidden" name="enable" value="1">
-                                <button type="submit" class="btn btn-sm btn-outline-success">Attiva localmente</button>
-                              </form>
-                              {% if urlPresente %}
-                                <form method="post" action="/configurazione/tipologie/{{ idEnt }}/url" class="m-0">
-                                  <input type="hidden" name="external_url" value="">
-                                  <button type="submit" class="btn btn-sm btn-outline-secondary">Reset URL</button>
-                                </form>
+                      {# Form unico per tutti i parametri editabili della tipologia #}
+                      <form id="form_save_{{ eid }}" method="post" action="/configurazione/tipologie/{{ idEnt }}/save" class="mt-2">
+                        {# Descrizione personalizzata #}
+                        <div class="row g-2 small mt-1">
+                          <div class="col-md-12">
+                            <label for="descr_{{ eid }}" class="text-muted">Descrizione personalizzata</label>
+                            <input id="descr_{{ eid }}" name="descrizione" type="text" maxlength="255" value="{{ descrLocale is not null ? descrLocale : descrBackoffice }}" class="form-control form-control-sm" placeholder="Inserisci descrizione personalizzata" autocomplete="off">
+                            <div class="form-text">
+                              {% if descrLocale is not null %}
+                                Personalizzata (originale GovPay: <span class="text-muted">{{ descrBackoffice }}</span>)
+                              {% else %}
+                                Nessuna personalizzazione locale. Puoi sovrascrivere la descrizione GovPay.
                               {% endif %}
-                            {% endif %}
-                          {% else %}
-                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/govpay" class="m-0">
-                              <input type="hidden" name="enable" value="1">
-                              <button type="submit" class="btn btn-sm btn-success">Abilita su GovPay</button>
-                            </form>
-                            {% if urlVal %}
-                              <form method="post" action="/configurazione/tipologie/{{ idEnt }}/override" class="m-0">
-                                <input type="hidden" name="enable" value="{{ ovr == true ? 0 : 1 }}">
-                                <button type="submit" class="btn btn-sm {{ ovr == true ? 'btn-outline-danger' : 'btn-outline-success' }}">
-                                  {{ ovr == true ? 'Disattiva localmente' : 'Attiva localmente' }}
-                                </button>
-                              </form>
-                            {% endif %}
-                          {% endif %}
-                          {% if not (ovr is same as(null) or ovr == false) and urlPresente %}
-                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/url" class="m-0">
-                              <input type="hidden" name="external_url" value="">
-                              <button type="submit" class="btn btn-sm btn-outline-secondary">Reset URL</button>
-                            </form>
-                          {% endif %}
-                          <form method="post" action="/configurazione/tipologie/{{ idEnt }}/url" class="m-0 d-flex align-items-center gap-2">
-                            <label for="exturl_{{ eid }}" class="small text-muted">URL esterno</label>
-                            <input id="exturl_{{ eid }}" name="external_url" type="url" class="form-control form-control-sm" style="max-width:420px" placeholder="https://..." value="{{ urlVal }}">
-                            <button type="submit" class="btn btn-sm btn-primary">Salva</button>
-                          </form>
+                            </div>
+                          </div>
                         </div>
-                        {% if not bo and not urlVal %}
-                          <span class="text-danger small d-flex align-items-center"><i class="fas fa-info-circle me-1"></i> Imposta un URL esterno per poter attivare localmente quando GovPay è disattivo.</span>
-                        {% endif %}
-                      </div>
-                      <div class="d-flex flex-column gap-3 mt-3">
-                        <div class="d-flex align-items-start gap-2 flex-wrap">
-                          {% if current_user and current_user.role == 'superadmin' and io_services|default([])|length > 0 %}
-                          <div class="flex-grow-1" style="min-width:260px">
+                        {# Descrizione estesa #}
+                        <div class="row g-2 small mt-2">
+                          <div class="col-md-12">
+                            <label for="descrestesa_{{ eid }}" class="text-muted">Descrizione estesa (locale)</label>
+                            <textarea id="descrestesa_{{ eid }}" name="descrizione_estesa" class="form-control form-control-sm" rows="2" placeholder="Testo aggiuntivo (es. istruzioni/nota)" style="max-width:680px">{{ descrEstesa }}</textarea>
+                            <div class="form-text">Campo locale (non arriva da GovPay). Se vuoto viene rimosso.</div>
+                          </div>
+                        </div>
+                        {# Servizio App IO (spostato sopra i pulsanti azione) #}
+                        {% if io_services|default([])|length > 0 %}
+                        <div class="row g-2 small mt-2">
+                          <div class="col-md-12">
                             <label for="ioservice_{{ eid }}" class="text-muted"><i class="fas fa-mobile-alt me-1"></i>Servizio App IO associato</label>
-                            <select id="ioservice_{{ eid }}" name="io_service_id[{{ idEnt }}]" class="form-select form-select-sm"
-                              {% if not (current_user and current_user.role == 'superadmin') %}disabled{% endif %}>
+                            <select id="ioservice_{{ eid }}" name="io_service_id" class="form-select form-select-sm" style="max-width:420px">
                               <option value="">-- Nessuno (usa predefinito) --</option>
-                              {% for svc in io_services|default([]) %}
+                              {% for svc in io_services %}
                                 <option value="{{ svc.id }}" {% if (io_services_tipologie[idEnt].id|default(null)) == svc.id %}selected{% endif %}>
                                   {{ svc.nome }}{% if svc.is_default %} ★{% endif %}
                                 </option>
@@ -515,20 +418,91 @@
                             </select>
                             <div class="form-text">Solo per soggetti di tipo Persona Fisica (F) durante la creazione pendenza.</div>
                           </div>
-                          {% elseif current_user and current_user.role == 'superadmin' %}
-                          <div class="text-muted small"><i class="fas fa-mobile-alt me-1"></i>Nessun servizio App IO configurato. <a href="/configurazione?tab=servizi_io">Aggiungi un servizio</a>.</div>
-                          {% endif %}
                         </div>
+                        {% else %}
+                        <div class="text-muted small mt-2"><i class="fas fa-mobile-alt me-1"></i>Nessun servizio App IO configurato. <a href="/configurazione?tab=servizi_io">Aggiungi un servizio</a>.</div>
+                        {% endif %}
+                        {# URL esterna (spostato sopra i pulsanti azione) #}
+                        <div class="row g-2 small mt-2">
+                          <div class="col-md-12">
+                            <label for="exturl_{{ eid }}" class="text-muted">URL esterno</label>
+                            <input id="exturl_{{ eid }}" name="external_url" type="url" class="form-control form-control-sm" style="max-width:420px" placeholder="https://..." value="{{ urlVal }}">
+                            <div class="form-text">URL a cui reindirizzare questa tipologia di pagamento esternamente a GovPay. Lascia vuoto per non usare un URL esterno.</div>
+                          </div>
+                        </div>
+                      </form>
+                      {# Form separati per azioni di ripristino (vuoti, associati ai bottoni via attributo HTML5 form=...) #}
+                      {% if descrLocale is not null %}
+                      <form id="form_restore_descr_{{ eid }}" method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione/restore"></form>
+                      {% endif %}
+                      {% if descrEstesa is not empty %}
+                      <form id="form_remove_estesa_{{ eid }}" method="post" action="/configurazione/tipologie/{{ idEnt }}/descrizione-estesa/restore"></form>
+                      {% endif %}
+                      <hr>
+                      {# Riga inferiore: tasto Salva + tasti di disabilitazione #}
+                      <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <button type="submit" form="form_save_{{ eid }}" class="btn btn-sm btn-primary">
+                          <i class="fas fa-save me-1"></i> Salva
+                        </button>
+                        {% if descrLocale is not null %}
+                          <button type="submit" form="form_restore_descr_{{ eid }}" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Sei sicuro di voler ripristinare la descrizione originale da GovPay?')">Ripristina descrizione GovPay</button>
+                        {% endif %}
+                        {% if descrEstesa is not empty %}
+                          <button type="submit" form="form_remove_estesa_{{ eid }}" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Rimuovere la descrizione estesa per questa tipologia?')">Rimuovi desc. estesa</button>
+                        {% endif %}
+                        <span class="text-muted small">|</span>
+                        {% if bo %}
+                          <form method="post" action="/configurazione/tipologie/{{ idEnt }}/govpay" class="m-0">
+                            <input type="hidden" name="enable" value="0">
+                            <button type="submit" class="btn btn-sm btn-warning">Disabilita su GovPay</button>
+                          </form>
+                          {% if ovr is same as(null) or ovr == true %}
+                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/override" class="m-0">
+                              <input type="hidden" name="enable" value="0">
+                              <button type="submit" class="btn btn-sm btn-outline-danger">Disattiva localmente</button>
+                            </form>
+                          {% elseif ovr == false %}
+                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/override" class="m-0">
+                              <input type="hidden" name="enable" value="1">
+                              <button type="submit" class="btn btn-sm btn-outline-success">Attiva localmente</button>
+                            </form>
+                            {% if urlPresente %}
+                              <form method="post" action="/configurazione/tipologie/{{ idEnt }}/url" class="m-0">
+                                <input type="hidden" name="external_url" value="">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Reset URL</button>
+                              </form>
+                            {% endif %}
+                          {% endif %}
+                        {% else %}
+                          <form method="post" action="/configurazione/tipologie/{{ idEnt }}/govpay" class="m-0">
+                            <input type="hidden" name="enable" value="1">
+                            <button type="submit" class="btn btn-sm btn-success">Abilita su GovPay</button>
+                          </form>
+                          {% if urlVal %}
+                            <form method="post" action="/configurazione/tipologie/{{ idEnt }}/override" class="m-0">
+                              <input type="hidden" name="enable" value="{{ ovr == true ? 0 : 1 }}">
+                              <button type="submit" class="btn btn-sm {{ ovr == true ? 'btn-outline-danger' : 'btn-outline-success' }}">
+                                {{ ovr == true ? 'Disattiva localmente' : 'Attiva localmente' }}
+                              </button>
+                            </form>
+                          {% endif %}
+                        {% endif %}
+                        {% if not (ovr is same as(null) or ovr == false) and urlPresente %}
+                          <form method="post" action="/configurazione/tipologie/{{ idEnt }}/url" class="m-0">
+                            <input type="hidden" name="external_url" value="">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">Reset URL</button>
+                          </form>
+                        {% endif %}
                       </div>
+                      {% if not bo and not urlVal %}
+                        <span class="text-danger small d-flex align-items-center mt-1"><i class="fas fa-info-circle me-1"></i> Imposta un URL esterno per poter attivare localmente quando GovPay è disattivo.</span>
+                      {% endif %}
                     {% endif %}
                   </div>
                 </div>
               </div>
             {% endfor %}
           </div>
-          {% if current_user and current_user.role == 'superadmin' and io_services|default([])|length > 0 %}
-          </form>{# fine formBulkIoService #}
-          {% endif %}
           <p id="noEntrateResults" class="text-muted small mt-2 d-none">Nessun risultato corrispondente al filtro.</p>
           <script>
             (function(){
