@@ -6,6 +6,7 @@
 {% set raw = pendenza|default({}) %}
 {% set pagatore = p.soggetto_pagatore|default({}) %}
 {% set voci = p.voci|default([]) %}
+{% set iuv_display = p.iuv|default(raw.iuv|default(raw.iuvAvviso|default(raw.iuv_avviso|default(raw.iuvPagamento|default(''))))) %}
 
 {% block content %}
   <div class="container-xxl py-4">
@@ -39,11 +40,25 @@
                 <span class="text-muted">{{ 'Numero avviso'|trans }}:</span>
                 <span class="font-monospace">{{ p.numero_avviso }}</span>
               {% endif %}
+              {% if iuv_display %}
+                <span class="text-muted">{{ 'IUV'|trans }}:</span>
+                <span class="font-monospace">{{ iuv_display }}</span>
+              {% endif %}
             </div>
 
             <dl class="row mb-0">
               <dt class="col-sm-4">{{ 'Causale'|trans }}</dt>
               <dd class="col-sm-8">{{ p.causale|default('—') }}</dd>
+
+              {% if p.numero_avviso %}
+                <dt class="col-sm-4">{{ 'Numero avviso'|trans }}</dt>
+                <dd class="col-sm-8"><span class="font-monospace">{{ p.numero_avviso }}</span></dd>
+              {% endif %}
+
+              {% if iuv_display %}
+                <dt class="col-sm-4">{{ 'IUV'|trans }}</dt>
+                <dd class="col-sm-8"><span class="font-monospace">{{ iuv_display }}</span></dd>
+              {% endif %}
 
               <dt class="col-sm-4">{{ 'Importo'|trans }}</dt>
               <dd class="col-sm-8">

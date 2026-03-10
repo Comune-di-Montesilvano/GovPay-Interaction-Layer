@@ -174,6 +174,45 @@ if [ -f "$PROJECT_DST/proxy_conf.yaml" ] && [ "$ENABLE_IT_WALLET" != "true" ]; t
    sed -i 's|^  - "conf/frontends/openid4vci_frontend.yaml"|  # - "conf/frontends/openid4vci_frontend.yaml"  # Disabled (ENABLE_IT_WALLET!=true)|' "$PROJECT_DST/proxy_conf.yaml"
 fi
 
+# Force SPID backend default ACS index for full attribute set by default.
+# Override with SATOSA_FICEP_DEFAULT_ACS_INDEX if needed.
+SPID_BACKEND_FILE="$PROJECT_DST/conf/backends/spidsaml2_backend.yaml"
+if [ -f "$SPID_BACKEND_FILE" ]; then
+  ACS_INDEX="${SATOSA_FICEP_DEFAULT_ACS_INDEX:-0}"
+  echo "[sync-iam-proxy] Setting spidSaml2 ficep_default_acs_index=$ACS_INDEX..."
+  sed -i "s|^\([[:space:]]*ficep_default_acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" "$SPID_BACKEND_FILE"
+  # Also set explicit AuthnRequest ACS index to prevent runtime fallback.
+  if grep -q "^[[:space:]]*#\s*acs_index:" "$SPID_BACKEND_FILE"; then
+    sed -i "s|^[[:space:]]*#\s*acs_index:.*|    acs_index: $ACS_INDEX|" "$SPID_BACKEND_FILE"
+  elif grep -q "^[[:space:]]*acs_index:" "$SPID_BACKEND_FILE"; then
+    sed -i "s|^\([[:space:]]*acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" "$SPID_BACKEND_FILE"
+  else
+    sed -i "/^[[:space:]]*ficep_default_acs_index:/a\    acs_index: $ACS_INDEX" "$SPID_BACKEND_FILE"
+  fi
+fi
+
+# Ensure SPID attribute maps keep both `mail` and `email` aliases.
+# Upstream sync can reset these files, so we enforce compatibility here.
+SPID_URI_MAP_FILE="$PROJECT_DST/attributes-map/satosa_spid_uri_hybrid.py"
+if [ -f "$SPID_URI_MAP_FILE" ] && ! grep -q '"mail": "mail"' "$SPID_URI_MAP_FILE"; then
+  echo "[sync-iam-proxy] Adding mail alias to satosa_spid_uri_hybrid.py..."
+  sed -i '/"mobilePhone": "mobilePhone",/a\    "mail": "mail",' "$SPID_URI_MAP_FILE"
+fi
+
+SPID_BASIC_MAP_FILE="$PROJECT_DST/attributes-map/satosa_spid_basic.py"
+if [ -f "$SPID_BASIC_MAP_FILE" ] && ! grep -q '"mail",' "$SPID_BASIC_MAP_FILE"; then
+  echo "[sync-iam-proxy] Adding mail alias to satosa_spid_basic.py..."
+  sed -i '/"mobilePhone",/a\    "mail",' "$SPID_BASIC_MAP_FILE"
+fi
+
+# Ensure SAML release prefers `email` over `mail` for frontoffice compatibility.
+INTERNAL_ATTRS_FILE="$PROJECT_DST/internal_attributes.yaml"
+if [ -f "$INTERNAL_ATTRS_FILE" ]; then
+  echo "[sync-iam-proxy] Patching internal_attributes.yaml to prefer email over mail..."
+  sed -i 's|saml: \[mail, email\]|saml: [email, mail]|g' "$INTERNAL_ATTRS_FILE"
+  sed -i 's|saml: \[mail\]|saml: [email, mail]|g' "$INTERNAL_ATTRS_FILE"
+fi
+
 # Patch target_based_routing.yaml to align test IdP mappings with env flags
 if [ -f "$PROJECT_DST/conf/microservices/target_based_routing.yaml" ] && [ "$ENABLE_CIE_OIDC" != "true" ]; then
   echo "[sync-iam-proxy] Patching target_based_routing.yaml for test environment..."

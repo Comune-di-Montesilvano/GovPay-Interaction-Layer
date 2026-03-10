@@ -362,6 +362,13 @@
           <div class="card-header">Dettagli pendenza</div>
           <div class="card-body">
             <div><span class="text-muted">Causale:</span> {{ r.causale|default(r.nome|default('—')) }}</div>
+            {% if r.numeroAvviso %}
+              <div><span class="text-muted">Numero avviso:</span> <span class="font-monospace">{{ r.numeroAvviso }}</span></div>
+            {% endif %}
+            {% set iuv_display = r.iuv|default(r.identificativoUnivocoVersamento|default('')) %}
+            {% if iuv_display %}
+              <div><span class="text-muted">IUV:</span> <span class="font-monospace">{{ iuv_display }}</span></div>
+            {% endif %}
             {% set anno_ref = r.annoRiferimento is defined ? r.annoRiferimento : (r.anno_riferimento|default('')) %}
             {% if anno_ref %}
               <div><span class="text-muted">Anno di riferimento:</span> {{ anno_ref }}</div>

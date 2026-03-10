@@ -60,7 +60,7 @@ services:
     entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
-        sh /scripts/ensure-sp-metadata.sh --force || exit 0
+        sh /scripts/ensure-sp-metadata.sh || exit 0
     profiles:
       - iam-proxy
 

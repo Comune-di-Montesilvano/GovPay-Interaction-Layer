@@ -283,7 +283,193 @@ if (!function_exists('frontoffice_get_logged_user')) {
     function frontoffice_get_logged_user(): ?array
     {
         $user = $_SESSION['frontoffice_user'] ?? null;
-        return (is_array($user) && $user !== []) ? $user : null;
+        if (!is_array($user) || $user === []) {
+            return null;
+        }
+
+        $email = trim((string)($user['email'] ?? $user['mail'] ?? $user['emailAddress'] ?? ''));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
+            $user['email'] = $email;
+        }
+
+        $fiscalNumber = trim((string)($user['fiscal_number'] ?? $user['fiscalNumber'] ?? $user['codiceFiscale'] ?? ''));
+        if ($fiscalNumber !== '') {
+            $user['fiscal_number'] = frontoffice_normalize_fiscal_number($fiscalNumber);
+        }
+
+        $_SESSION['frontoffice_user'] = $user;
+
+        return $user;
+    }
+}
+
+if (!function_exists('frontoffice_pick_attribute_value')) {
+    function frontoffice_pick_attribute_value(array $attrs, array $keys): string
+    {
+        $extract = null;
+        $extract = static function ($value) use (&$extract): string {
+            if (is_array($value)) {
+                // Support both list-like values and nested dict/object payloads.
+                foreach (['value', 'val', 'text', 'content'] as $candidateKey) {
+                    if (array_key_exists($candidateKey, $value)) {
+                        $nested = $extract($value[$candidateKey]);
+                        if ($nested !== '') {
+                            return $nested;
+                        }
+                    }
+                }
+                foreach ($value as $item) {
+                    $nested = $extract($item);
+                    if ($nested !== '') {
+                        return $nested;
+                    }
+                }
+                return '';
+            }
+
+            if (is_scalar($value) || (is_object($value) && method_exists($value, '__toString'))) {
+                return trim((string)$value);
+            }
+
+            return '';
+        };
+
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $attrs)) {
+                $picked = $extract($attrs[$k]);
+                if ($picked !== '') {
+                    return $picked;
+                }
+            }
+        }
+
+        $lowerMap = [];
+        foreach ($attrs as $k => $v) {
+            if (is_string($k)) {
+                $lowerMap[strtolower($k)] = $v;
+            }
+        }
+
+        foreach ($keys as $k) {
+            $lk = strtolower($k);
+            if (array_key_exists($lk, $lowerMap)) {
+                $picked = $extract($lowerMap[$lk]);
+                if ($picked !== '') {
+                    return $picked;
+                }
+            }
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('frontoffice_pick_email_value')) {
+    function frontoffice_pick_email_value(array $attrs): string
+    {
+        $email = frontoffice_pick_attribute_value($attrs, ['email', 'mail', 'emailAddress', 'e-mail', 'urn:oid:0.9.2342.19200300.100.1.3']);
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
+            return $email;
+        }
+
+        $extract = null;
+        $extract = static function ($value) use (&$extract): array {
+            if (is_array($value)) {
+                $out = [];
+                foreach ($value as $item) {
+                    $out = array_merge($out, $extract($item));
+                }
+                return $out;
+            }
+
+            if (is_scalar($value) || (is_object($value) && method_exists($value, '__toString'))) {
+                $v = trim((string)$value);
+                return $v !== '' ? [$v] : [];
+            }
+
+            return [];
+        };
+
+        foreach ($attrs as $value) {
+            foreach ($extract($value) as $candidate) {
+                if (filter_var($candidate, FILTER_VALIDATE_EMAIL) !== false) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('frontoffice_extract_saml_attributes_from_xml')) {
+    function frontoffice_extract_saml_attributes_from_xml(string $xml): array
+    {
+        $xml = trim($xml);
+        if ($xml === '') {
+            return [];
+        }
+
+        $doc = new \DOMDocument();
+        $loaded = @$doc->loadXML($xml);
+        if ($loaded !== true) {
+            return [];
+        }
+
+        $xp = new \DOMXPath($doc);
+        $xp->registerNamespace('saml2', 'urn:oasis:names:tc:SAML:2.0:assertion');
+        $nodes = $xp->query('//saml2:Attribute');
+        if (!$nodes) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($nodes as $attrNode) {
+            if (!$attrNode instanceof \DOMElement) {
+                continue;
+            }
+            $name = trim((string)$attrNode->getAttribute('Name'));
+            $friendly = trim((string)$attrNode->getAttribute('FriendlyName'));
+
+            $values = [];
+            foreach ($attrNode->getElementsByTagNameNS('urn:oasis:names:tc:SAML:2.0:assertion', 'AttributeValue') as $valueNode) {
+                $text = trim((string)$valueNode->textContent);
+                if ($text !== '') {
+                    $values[] = $text;
+                }
+            }
+
+            if ($values === []) {
+                continue;
+            }
+
+            foreach ([$name, $friendly] as $k) {
+                if ($k === '') {
+                    continue;
+                }
+                if (!isset($out[$k]) || !is_array($out[$k])) {
+                    $out[$k] = [];
+                }
+                $out[$k] = array_values(array_unique(array_merge($out[$k], $values)));
+            }
+        }
+
+        return $out;
+    }
+}
+
+if (!function_exists('frontoffice_normalize_fiscal_number')) {
+    function frontoffice_normalize_fiscal_number(string $raw): string
+    {
+        $value = strtoupper(trim($raw));
+        $value = preg_replace('/\s+/', '', $value);
+
+        // CIE/SPID spesso inviano il formato qualificato TINIT-<CF>.
+        if (strpos($value, 'TINIT-') === 0) {
+            $value = substr($value, 6);
+        }
+
+        return $value;
     }
 }
 
@@ -295,7 +481,7 @@ if (!function_exists('frontoffice_get_logged_user_fiscal_number')) {
             return '';
         }
         $raw = (string)($user['fiscal_number'] ?? '');
-        return strtoupper(preg_replace('/\s+/', '', trim($raw)));
+        return frontoffice_normalize_fiscal_number($raw);
     }
 }
 
@@ -1430,7 +1616,25 @@ if (!function_exists('frontoffice_stream_ricevuta_pdf')) {
 if (!function_exists('frontoffice_build_avviso_preview')) {
     function frontoffice_build_avviso_preview(array $pendenza, string $idDominio): array
     {
-        $numeroAvviso = trim((string)($pendenza['numeroAvviso'] ?? ''));
+        $numeroAvviso = trim((string)($pendenza['numeroAvviso'] ?? $pendenza['numero_avviso'] ?? ''));
+        $iuv = trim((string)($pendenza['iuv'] ?? $pendenza['iuvAvviso'] ?? $pendenza['iuv_avviso'] ?? $pendenza['iuvPagamento'] ?? ''));
+
+        if ($iuv === '' && isset($pendenza['riscossione']) && is_array($pendenza['riscossione'])) {
+            $iuv = trim((string)($pendenza['riscossione']['iuv'] ?? ''));
+        }
+
+        if ($iuv === '' && isset($pendenza['rpt']) && is_array($pendenza['rpt']) && isset($pendenza['rpt']['datiVersamento']) && is_array($pendenza['rpt']['datiVersamento'])) {
+            $iuv = trim((string)($pendenza['rpt']['datiVersamento']['identificativoUnivocoVersamento'] ?? ''));
+        }
+
+        if ($iuv === '' && isset($pendenza['rt']) && is_array($pendenza['rt']) && isset($pendenza['rt']['datiPagamento']) && is_array($pendenza['rt']['datiPagamento'])) {
+            $iuv = trim((string)($pendenza['rt']['datiPagamento']['identificativoUnivocoVersamento'] ?? ''));
+        }
+
+        if ($numeroAvviso === '' && $iuv !== '') {
+            $numeroAvviso = $iuv;
+        }
+
         $downloadUrl = ($numeroAvviso !== '' && $idDominio !== '')
             ? '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
             : null;
@@ -1453,6 +1657,7 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
 
         return [
             'numero_avviso' => $numeroAvviso,
+            'iuv' => $iuv,
             'importo' => is_numeric($importo) ? (float)$importo : null,
             'causale' => trim((string)($pendenza['causale'] ?? '')),
             'id_pendenza' => $idPendenza,
@@ -2657,40 +2862,53 @@ $routes = [
             }
 
             $attrs = $auth->getAttributes();
-            $pick = static function (array $attrs, array $keys): string {
-                foreach ($keys as $k) {
-                    if (!array_key_exists($k, $attrs)) {
-                        continue;
-                    }
-                    $v = $attrs[$k];
-                    if (is_array($v) && isset($v[0]) && is_string($v[0])) {
-                        $t = trim($v[0]);
-                        if ($t !== '') {
-                            return $t;
-                        }
-                    }
-                    if (is_string($v)) {
-                        $t = trim($v);
-                        if ($t !== '') {
-                            return $t;
-                        }
-                    }
+            $rawXmlAttrs = frontoffice_extract_saml_attributes_from_xml((string)$auth->getLastResponseXML());
+
+            $postedXmlAttrs = [];
+            $postedSamlResponse = (string)($_POST['SAMLResponse'] ?? '');
+            if ($postedSamlResponse !== '') {
+                $decodedPostedXml = base64_decode($postedSamlResponse, true);
+                if (is_string($decodedPostedXml) && $decodedPostedXml !== '') {
+                    $postedXmlAttrs = frontoffice_extract_saml_attributes_from_xml($decodedPostedXml);
                 }
-                return '';
-            };
+            }
+
+            if ($postedXmlAttrs !== []) {
+                $attrs = array_merge($postedXmlAttrs, $attrs);
+            }
+            if ($rawXmlAttrs !== []) {
+                $attrs = array_merge($rawXmlAttrs, $attrs);
+            }
+            error_log('DEBUG SPID ATTR KEYS (SAML): ' . json_encode([
+                'attrs_keys' => array_keys($attrs),
+                'xml_attrs_keys' => array_keys($rawXmlAttrs),
+                'posted_xml_attrs_keys' => array_keys($postedXmlAttrs),
+                'email_candidates' => [
+                    'email' => $attrs['email'] ?? null,
+                    'mail' => $attrs['mail'] ?? null,
+                    'emailAddress' => $attrs['emailAddress'] ?? null,
+                    'urn_mail' => $attrs['urn:oid:0.9.2342.19200300.100.1.3'] ?? null,
+                ],
+            ], JSON_UNESCAPED_UNICODE));
 
             $user = [
-                'first_name' => $pick($attrs, ['name', 'givenName', 'given_name', 'nome', 'urn:oid:2.5.4.42']),
-                'last_name' => $pick($attrs, ['familyName', 'sn', 'surname', 'cognome', 'urn:oid:2.5.4.4']),
-                'email' => $pick($attrs, ['email', 'mail', 'emailAddress', 'urn:oid:0.9.2342.19200300.100.1.3']),
-                'fiscal_number' => $pick($attrs, ['fiscalNumber', 'fiscal_number', 'codiceFiscale', 'urn:oid:2.5.4.97', 'urn:oid:1.3.6.1.4.1.4710.2.1.1']),
-                'spid_code' => $pick($attrs, ['spidCode', 'spid_code']),
+                'first_name' => frontoffice_pick_attribute_value($attrs, ['name', 'givenName', 'given_name', 'first_name', 'nome', 'urn:oid:2.5.4.42']),
+                'last_name' => frontoffice_pick_attribute_value($attrs, ['familyName', 'family_name', 'sn', 'surname', 'last_name', 'cognome', 'urn:oid:2.5.4.4']),
+                'email' => frontoffice_pick_email_value($attrs),
+                'fiscal_number' => frontoffice_normalize_fiscal_number(frontoffice_pick_attribute_value($attrs, ['fiscalNumber', 'fiscal_number', 'fiscalCode', 'fiscal_code', 'codiceFiscale', 'https://attributes.eid.gov.it/fiscal_number', 'https://attributes.spid.gov.it/fiscalNumber', 'urn:oid:2.5.4.97', 'urn:oid:1.3.6.1.4.1.4710.2.1.1'])),
+                'spid_code' => frontoffice_pick_attribute_value($attrs, ['spidCode', 'spid_code']),
                 'provider_id' => 'IAM_PROXY_ITALIA',
                 'provider_name' => 'IAM Proxy Italia',
                 'response_id' => '',
             ];
 
             $_SESSION['frontoffice_user'] = $user;
+            error_log('DEBUG SPID CALLBACK USER (SAML): ' . json_encode([
+                'email' => (string)($user['email'] ?? ''),
+                'mail' => (string)($user['mail'] ?? ''),
+                'fiscal_number' => (string)($user['fiscal_number'] ?? ''),
+                'keys' => array_keys($user),
+            ], JSON_UNESCAPED_UNICODE));
 
             $returnTo = (string)($_POST['RelayState'] ?? ($_SESSION['spid_return_to'] ?? '/'));
             unset($_SESSION['spid_return_to']);
@@ -2748,12 +2966,13 @@ $routes = [
             $attrs = $decoded['data'];
         }
 
+        $attrsForUser = (array)($attrs ?? []);
         $user = [
-            'first_name' => (string)(($attrs['name'] ?? null) ?? ($_POST['name'] ?? '')),
-            'last_name' => (string)(($attrs['familyName'] ?? null) ?? ($_POST['familyName'] ?? '')),
-            'email' => (string)(($attrs['email'] ?? null) ?? ($_POST['email'] ?? '')),
-            'fiscal_number' => (string)(($attrs['fiscalNumber'] ?? null) ?? ($_POST['fiscalNumber'] ?? '')),
-            'spid_code' => (string)(($attrs['spidCode'] ?? null) ?? ($_POST['spidCode'] ?? '')),
+            'first_name' => (string)(frontoffice_pick_attribute_value($attrsForUser, ['name', 'givenName', 'given_name', 'first_name', 'nome']) ?: ($_POST['name'] ?? $_POST['givenName'] ?? '')),
+            'last_name' => (string)(frontoffice_pick_attribute_value($attrsForUser, ['familyName', 'family_name', 'sn', 'surname', 'last_name', 'cognome']) ?: ($_POST['familyName'] ?? $_POST['surname'] ?? '')),
+            'email' => (string)(frontoffice_pick_email_value($attrsForUser) ?: ($_POST['email'] ?? $_POST['mail'] ?? $_POST['emailAddress'] ?? '')),
+            'fiscal_number' => frontoffice_normalize_fiscal_number((string)(frontoffice_pick_attribute_value($attrsForUser, ['fiscalNumber', 'fiscal_number', 'fiscalnumber', 'FiscalNumber', 'fiscalCode', 'fiscal_code', 'codiceFiscale', 'https://attributes.eid.gov.it/fiscal_number', 'https://attributes.spid.gov.it/fiscalNumber']) ?: ($_POST['fiscalNumber'] ?? $_POST['fiscal_number'] ?? $_POST['fiscalnumber'] ?? ''))),
+            'spid_code' => (string)(frontoffice_pick_attribute_value($attrsForUser, ['spidCode', 'spid_code']) ?: ($_POST['spidCode'] ?? '')),
             'provider_id' => $providerId,
             'provider_name' => $providerName,
             'response_id' => $responseId,
@@ -2764,6 +2983,12 @@ $routes = [
         }
 
         $_SESSION['frontoffice_user'] = $user;
+        error_log('DEBUG SPID CALLBACK USER (TOKEN): ' . json_encode([
+            'email' => (string)($user['email'] ?? ''),
+            'mail' => (string)($user['mail'] ?? ''),
+            'fiscal_number' => (string)($user['fiscal_number'] ?? ''),
+            'keys' => array_keys($user),
+        ], JSON_UNESCAPED_UNICODE));
         unset($_SESSION['spid_state']);
         $returnTo = (string)($_SESSION['spid_return_to'] ?? '/');
         unset($_SESSION['spid_return_to']);
@@ -2936,7 +3161,13 @@ $routes = [
             ];
         }
 
-        $user = $_SESSION['frontoffice_user'] ?? null;
+        $user = frontoffice_get_logged_user();
+        error_log('DEBUG PROFILE USER: ' . json_encode([
+            'email' => (string)($user['email'] ?? ''),
+            'mail' => (string)($user['mail'] ?? ''),
+            'fiscal_number' => (string)($user['fiscal_number'] ?? ''),
+            'keys' => is_array($user) ? array_keys($user) : [],
+        ], JSON_UNESCAPED_UNICODE));
         if (!is_array($user) || $user === []) {
             header('Location: /login?return_to=%2Fprofile', true, 302);
             exit;
@@ -4647,7 +4878,7 @@ $baseContext = [
     ],
     'app_logo' => $appLogo,
     'app_favicon' => $appFavicon,
-    'current_user' => (isset($_SESSION['frontoffice_user']) && is_array($_SESSION['frontoffice_user'])) ? $_SESSION['frontoffice_user'] : null,
+    'current_user' => frontoffice_get_logged_user(),
     'spid_enabled' => frontoffice_spid_enabled(),
     'spid_mode' => frontoffice_spid_mode(),
     'support_email' => $supportEmail,
