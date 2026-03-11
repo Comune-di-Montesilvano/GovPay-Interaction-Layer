@@ -67,14 +67,11 @@ Questo repository usa file separati per rendere la configurazione più chiara:
 ```bash
 cp .env.example .env
 cp .iam-proxy.env.example .iam-proxy.env
-cp .env.frontoffice.example .env.frontoffice
-cp .env.backoffice.example .env.backoffice
 ```
 
 Note:
 - `.env` è sempre necessario (compose + valori condivisi).
 - `.iam-proxy.env` è necessario se abiliti SPID/CIE.
-- `.env.frontoffice` e `.env.backoffice` contengono i parametri applicativi dedicati.
 
 #### Dati minimi necessari (GovPay e PagoPA Checkout)
 
