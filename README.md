@@ -114,7 +114,15 @@ GIL si integra con i seguenti servizi esterni. Tutte le credenziali vanno config
 
 ### Certificati client GovPay (mTLS)
 
-Se `AUTHENTICATION_GOVPAY=ssl` o `sslheader`, GIL autentica le chiamate verso GovPay tramite certificato X.509 client (autenticazione mTLS lato applicazione). Il certificato va posizionato nella cartella `certificate/` e il path va configurato nel `.env`:
+Se `AUTHENTICATION_GOVPAY=ssl` o `sslheader`, GIL autentica le chiamate verso GovPay tramite certificato X.509 client. I file del certificato vanno messi nella cartella `certificate/` nella root del progetto:
+
+```
+certificate/
+├── certificate.cer    ← certificato client
+└── private_key.key    ← chiave privata
+```
+
+Il Dockerfile copia automaticamente questa cartella all'interno del container in `/var/www/certificate/`. Imposta i path container nel `.env`:
 
 ```env
 GOVPAY_TLS_CERT=/var/www/certificate/certificate.cer
@@ -122,9 +130,9 @@ GOVPAY_TLS_KEY=/var/www/certificate/private_key.key
 ```
 
 > [!WARNING]
-> I file in `certificate/` **non sono versionati**. Assicurati che il container li possa leggere (permessi corretti) e che il certificato non sia scaduto. Un certificato scaduto o mancante blocca **tutte** le chiamate a GovPay senza messaggi d'errore ovvi.
+> I file in `certificate/` vengono **inclusi nell'immagine Docker** al momento della build (non montati come volume). Dopo aver aggiornato i certificati è necessario ricostruire l'immagine con `docker compose up -d --build`. Un certificato scaduto o mancante blocca silenziosamente tutte le chiamate a GovPay.
 
-Vedi [certificate/README.md](certificate/README.md) per generazione, rinnovo e troubleshooting permessi.
+Vedi [certificate/README.md](certificate/README.md) per dettagli su nomi file accettati e provenienza dei certificati.
 
 ---
 
