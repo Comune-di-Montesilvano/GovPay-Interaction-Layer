@@ -93,19 +93,17 @@ WORKDIR /var/www/html
 # ----------------------------------------------------------------------
 
 RUN mkdir -p public/assets/bootstrap-italia public/assets/fontawesome
-COPY --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
 
 # 2. Copia Font Awesome (Asset scaricati dalla Fase 1)
 ENV FA_DEST="/var/www/html/public/assets/fontawesome"
-COPY --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
-COPY --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
-COPY --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
-
-# Imposta i permessi per gli asset copiati
+COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
+COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
+COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
 RUN chmod -R 755 public/assets
 
 # (Documentativo) composer gestito nello stage vendor_builder
-COPY composer.json composer.lock* VERSION /var/www/html/
+COPY --chown=www-app:www-data composer.json composer.lock* VERSION /var/www/html/
 
 # ----------------------------------------------------------------------
 # Configurazione Finale
@@ -113,11 +111,11 @@ COPY composer.json composer.lock* VERSION /var/www/html/
 
 # Copia i certificati SSL
 RUN mkdir -p /ssl
-COPY ssl/ /ssl/ 
+COPY --chown=www-app:www-data ssl/ /ssl/ 
 
 #Copia i certificati di govpay se esistono
 RUN mkdir -p /certificate
-COPY certificate/ /var/www/certificate/
+COPY --chown=www-app:www-data certificate/ /var/www/certificate/
 
 # Copia lo script di setup nel container e rendilo eseguibile
 COPY docker-setup.sh /usr/local/bin/docker-setup.sh
@@ -125,25 +123,25 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-setup.sh && chmod 755 /usr/local/bin/
 
 # Copia e Abilita la configurazione Apache personalizzata
 RUN rm /etc/apache2/sites-enabled/000-default.conf
-COPY apache/000-default-ssl.conf /etc/apache2/sites-available/000-default.conf
+COPY --chown=root:root apache/000-default-ssl.conf /etc/apache2/sites-available/000-default.conf
 RUN a2ensite 000-default.conf
 
-COPY img /var/www/html/public/img
-COPY assets /var/www/html/public/assets
-COPY public.htaccess /var/www/html/public/.htaccess
-COPY app/ /var/www/html/app/
-COPY migrations/ /var/www/html/migrations/
+COPY --chown=www-app:www-data img /var/www/html/public/img
+COPY --chown=www-app:www-data assets /var/www/html/public/assets
+COPY --chown=www-app:www-data public.htaccess /var/www/html/public/.htaccess
+COPY --chown=www-app:www-data app/ /var/www/html/app/
+COPY --chown=www-app:www-data migrations/ /var/www/html/migrations/
 
 # Copia la sorgente dei client generati (necessario se Composer ha creato symlink per path repositories)
-COPY govpay-clients/ /var/www/html/govpay-clients/
-COPY pagopa-clients/ /var/www/html/pagopa-clients/
+COPY --chown=www-app:www-data govpay-clients/ /var/www/html/govpay-clients/
+COPY --chown=www-app:www-data pagopa-clients/ /var/www/html/pagopa-clients/
 
 # Hardening Apache: rimuove Indexes e aggiunge security headers
 RUN sed -i 's/Options Indexes FollowSymLinks/Options FollowSymLinks/g' /etc/apache2/apache2.conf && \
     printf '\n<IfModule mod_headers.c>\n  Header always set X-Content-Type-Options "nosniff"\n  Header always set X-Frame-Options "SAMEORIGIN"\n  Header always set Referrer-Policy "strict-origin-when-cross-origin"\n  Header always set X-XSS-Protection "1; mode=block"\n</IfModule>\n' > /etc/apache2/conf-enabled/security-headers.conf
 
 # (RIMOSSO cambio utente: Apache necessita privilegi iniziali per bind 443, rimane root che poi esegue worker come www-data)
-RUN useradd -r -d /var/www -g www-data www-app && chown -R www-app:www-data /var/www/html
+RUN useradd -r -d /var/www -g www-data www-app
 
 # Permessi finali già assegnati a www-app
 
@@ -152,17 +150,15 @@ EXPOSE 443
 CMD ["apache2-foreground"]
 
 FROM runtime-base AS runtime-backoffice
-COPY backoffice/ /var/www/html/backoffice/
-COPY backoffice/bin/ /var/www/html/bin/
+COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
+COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
-    && ln -s /var/www/html/backoffice/templates /var/www/html/templates
-COPY --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
+    && ln -s /var/www/html/backoffice/templates /var/www/html/templates \
+    && mkdir -p /var/www/html/backoffice/storage/logs
+COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
-RUN mkdir -p /var/www/html/backoffice/storage/logs \
-    && chown -R www-app:www-data /var/www/html
 
 FROM runtime-base AS runtime-frontoffice
-COPY frontoffice/ /var/www/html/frontoffice/
-RUN mkdir -p /var/www/html/frontoffice/storage/logs \
-    && chown -R www-app:www-data /var/www/html
+COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
+RUN mkdir -p /var/www/html/frontoffice/storage/logs

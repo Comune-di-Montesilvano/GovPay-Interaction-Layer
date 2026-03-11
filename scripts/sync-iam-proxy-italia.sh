@@ -17,15 +17,19 @@ PROJECT_DST="$REPO_ROOT/iam-proxy/iam-proxy-italia-project"
 REPO_URL="${IAM_PROXY_REPO_URL:-https://github.com/italia/iam-proxy-italia.git}"
 REF="${IAM_PROXY_REF:-master}"
 
+# Use persistent cache directory for faster sync on repeated runs
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/iam-proxy-italia"
+CACHE_REPO="$CACHE_DIR/repo.git"
+
 # Read APP_VERSION from VERSION file if not already set
 if [ -z "${APP_VERSION:-}" ] && [ -f "$REPO_ROOT/VERSION" ]; then
   APP_VERSION="$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')"
 fi
 export APP_VERSION="${APP_VERSION:-}"
 
-echo "[sync-iam-proxy] Syncing IAM Proxy Italia from $REPO_URL (ref: $REF)"
+echo "[sync-iam-proxy] Syncing IAM Proxy Italia from $REPO_URL (ref: $REF) using cache: $CACHE_REPO"
 
-# Create temp directory
+# Create temp directory (only for extraction)
 TMP_ROOT="/tmp/iam-proxy-sync-$$"
 mkdir -p "$TMP_ROOT"
 
@@ -34,20 +38,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cd "$TMP_ROOT"
+# Initialize or update persistent cache repository
+echo "[sync-iam-proxy] Syncing cache repository..."
+if [ ! -d "$CACHE_REPO" ]; then
+  echo "[sync-iam-proxy] Creating new cache repository..."
+  mkdir -p "$CACHE_DIR"
+  git clone --bare --depth 1 --branch "$REF" "$REPO_URL" "$CACHE_REPO" 2>&1 | grep -v 'Cloning into bare repository' || true
+else
+  echo "[sync-iam-proxy] Updating existing cache repository..."
+  git -C "$CACHE_REPO" fetch --depth 1 origin "$REF:$REF" 2>&1 | grep -v '^From ' || true
+fi
 
-# Clone repository with specific ref
-echo "[sync-iam-proxy] Cloning repository..."
-git clone --depth 1 --branch "$REF" "$REPO_URL" repo
+# Extract project from cache
+echo "[sync-iam-proxy] Extracting iam-proxy-italia-project..."
+mkdir -p "$TMP_ROOT/work"
+git clone "$CACHE_REPO" "$TMP_ROOT/work" --quiet --branch "$REF" --depth 1
 
-PROJECT_SRC="$TMP_ROOT/repo/iam-proxy-italia-project"
+PROJECT_SRC="$TMP_ROOT/work/iam-proxy-italia-project"
 if [ ! -d "$PROJECT_SRC" ]; then
   echo "[sync-iam-proxy] ERROR: iam-proxy-italia-project not found in repository"
   exit 1
 fi
-
-# Ensure destination exists
-mkdir -p "$PROJECT_DST"
 
 # Preserve .gitkeep if exists
 GITKEEP_TMP=""
@@ -56,26 +67,11 @@ if [ -f "$PROJECT_DST/.gitkeep" ]; then
   cp "$PROJECT_DST/.gitkeep" "$GITKEEP_TMP"
 fi
 
-# Backup existing configuration files (if you want to preserve custom changes)
-# Uncomment if you need to preserve custom configs:
-# BACKUP_FILES=("proxy_conf.yaml" "internal_attributes.yaml")
-# for file in "${BACKUP_FILES[@]}"; do
-#   if [ -f "$PROJECT_DST/$file" ]; then
-#     echo "[sync-iam-proxy] Backing up $file"
-#     cp "$PROJECT_DST/$file" "$PROJECT_DST/$file.bak"
-#   fi
-# done
-
-# Clean destination (keep only .gitkeep)
-echo "[sync-iam-proxy] Cleaning destination..."
-find "$PROJECT_DST" -mindepth 1 ! -name '.gitkeep' -delete
-
-# Copy all files from source
-echo "[sync-iam-proxy] Copying files from upstream..."
-cp -r "$PROJECT_SRC"/* "$PROJECT_DST/"
-cp -r "$PROJECT_SRC"/.??* "$PROJECT_DST/" 2>/dev/null || true
-
-echo "[sync-iam-proxy] Skipping JS overrides for disco (use upstream defaults)"
+# Remove destination and recreate (much faster than find -delete)
+echo "[sync-iam-proxy] Removing old destination and copying files from upstream..."
+rm -rf "$PROJECT_DST"
+mkdir -p "$PROJECT_DST"
+cp -r "$PROJECT_SRC"/* "$PROJECT_SRC"/.??* "$PROJECT_DST/" 2>/dev/null || true
 
 # Generate i18n JSON files from templates with environment variables
 echo "[sync-iam-proxy] Generating i18n JSON files from templates..."
@@ -180,13 +176,15 @@ SPID_BACKEND_FILE="$PROJECT_DST/conf/backends/spidsaml2_backend.yaml"
 if [ -f "$SPID_BACKEND_FILE" ]; then
   ACS_INDEX="${SATOSA_FICEP_DEFAULT_ACS_INDEX:-0}"
   echo "[sync-iam-proxy] Setting spidSaml2 ficep_default_acs_index=$ACS_INDEX..."
-  sed -i "s|^\([[:space:]]*ficep_default_acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" "$SPID_BACKEND_FILE"
-  # Also set explicit AuthnRequest ACS index to prevent runtime fallback.
-  if grep -q "^[[:space:]]*#\s*acs_index:" "$SPID_BACKEND_FILE"; then
-    sed -i "s|^[[:space:]]*#\s*acs_index:.*|    acs_index: $ACS_INDEX|" "$SPID_BACKEND_FILE"
-  elif grep -q "^[[:space:]]*acs_index:" "$SPID_BACKEND_FILE"; then
-    sed -i "s|^\([[:space:]]*acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" "$SPID_BACKEND_FILE"
-  else
+  # Batch sed operations in a single pass with in-place edit
+  sed -i.bak \
+    -e "s|^\([[:space:]]*ficep_default_acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" \
+    -e "s|^[[:space:]]*#\s*acs_index:.*|    acs_index: $ACS_INDEX|" \
+    -e "s|^\([[:space:]]*acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" \
+    "$SPID_BACKEND_FILE"
+  rm -f "$SPID_BACKEND_FILE.bak"
+  # Add acs_index only if not present and ficep_default_acs_index is found
+  if ! grep -q "^[[:space:]]*acs_index:" "$SPID_BACKEND_FILE"; then
     sed -i "/^[[:space:]]*ficep_default_acs_index:/a\    acs_index: $ACS_INDEX" "$SPID_BACKEND_FILE"
   fi
 fi
