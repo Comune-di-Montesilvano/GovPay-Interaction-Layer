@@ -563,7 +563,6 @@ if (!function_exists('frontoffice_http_get_raw')) {
             $body = curl_exec($ch);
             $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $err = curl_error($ch);
-            curl_close($ch);
             
             Logger::getInstance()->info('HTTP GET request', ['url' => $url, 'status' => $status, 'error' => $err, 'insecureSSL' => $insecureSsl]);
             
@@ -867,7 +866,6 @@ if (!function_exists('frontoffice_http_get')) {
             $body = curl_exec($ch);
             $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $err = curl_error($ch);
-            curl_close($ch);
             if (!is_string($body) || $body === '' || $status < 200 || $status >= 300) {
                 if ($err !== '') {
                     Logger::getInstance()->warning('HTTP GET fallita', ['url' => $url, 'error' => $err, 'status' => $status]);
