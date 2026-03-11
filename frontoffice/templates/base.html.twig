@@ -19,8 +19,33 @@
     <script src="/assets/bootstrap-italia/js/bootstrap-italia.bundle.min.js"></script>
     <script src="/assets/js/app.js"></script>
     <script>
+    window.GovPayUi = window.GovPayUi || {};
+    window.GovPayUi.parseJsonSafely = function (response) {
+      var contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (contentType.indexOf('application/json') !== -1) {
+        return response.json().catch(function () {
+          throw new Error('{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+        });
+      }
+
+      return response.text().then(function (raw) {
+        var trimmed = (raw || '').trim();
+        if (trimmed && trimmed.charAt(0) === '{') {
+          try {
+            return JSON.parse(trimmed);
+          } catch (_) {
+            throw new Error('{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+          }
+        }
+
+        throw new Error('{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+      });
+    };
+
     /* ── Global Cart AJAX ── */
     (function () {
+      var parseJsonSafely = window.GovPayUi.parseJsonSafely;
+
       function updateCartBadges(count) {
         document.querySelectorAll('.cart-badge').forEach(function (el) {
           el.textContent = count;
@@ -48,7 +73,7 @@
             body: body,
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
           })
-          .then(function (r) { return r.json(); })
+          .then(function (r) { return parseJsonSafely(r); })
           .then(function (data) {
             if (data.error) {
               btn.disabled = false;
@@ -58,9 +83,10 @@
             if (lbl) lbl.textContent = '{{ "Nel carrello"|trans|escape("js") }} ✓';
             updateCartBadges(data.count || 0);
           })
-          .catch(function () {
+          .catch(function (err) {
             btn.disabled = false;
-            if (lbl) lbl.textContent = '{{ "Errore, riprova"|trans|escape("js") }}';
+            if (lbl) lbl.textContent = '{{ "Servizio non disponibile"|trans|escape("js") }}';
+            alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
           });
         });
       }

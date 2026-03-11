@@ -139,6 +139,10 @@
 
 <script>
 (function () {
+  const parseJsonSafely = (window.GovPayUi && window.GovPayUi.parseJsonSafely)
+    ? window.GovPayUi.parseJsonSafely
+    : (response) => response.json();
+
   function formatEuro(cents) {
     const euros = cents / 100;
     return '€\u00a0' + euros.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -187,14 +191,21 @@
       if (!id) return;
       const body = new URLSearchParams({ idPendenza: id });
       fetch('/carrello/rimuovi', { method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => r.json())
+        .then(r => parseJsonSafely(r))
         .then(data => {
+          if (data && data.error) {
+            alert(data.error);
+            return;
+          }
           const row = document.getElementById('row-' + id);
           if (row) row.remove();
           recalcTotal();
           updateNavBadge(data.count || 0);
         })
-        .catch(() => { window.location.reload(); });
+        .catch((err) => {
+          alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+          window.location.reload();
+        });
     });
   });
 })();

@@ -346,11 +346,13 @@
 document.addEventListener('DOMContentLoaded', function() {
   const modalEl = document.getElementById('bizEventModal');
   const modalBody = document.getElementById('bizEventModalBody');
+  const MAX_BIZ_RETRY_ATTEMPTS = 3;
+  const BASE_RETRY_DELAY_MS = 1800;
   if (!modalEl) return;
   const modal = new bootstrap.Modal(modalEl);
 
   document.querySelectorAll('.js-load-receipt').forEach(function(btn) {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', async function() {
       const fc = this.dataset.fc;
       const iur = this.dataset.iur;
       const iuv = this.dataset.iuv;
@@ -360,22 +362,126 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('bizEventModalLabel').textContent = 'Ricevuta pagoPA — IUV ' + iuv;
       modal.show();
 
-      fetch('/api/biz-event?fc=' + encodeURIComponent(fc) + '&iur=' + encodeURIComponent(iur) + '&iuv=' + encodeURIComponent(iuv))
-        .then(function(resp) { return resp.json().then(function(data) { return {status: resp.status, data: data}; }); })
-        .then(function(result) {
-          if (result.data.error) {
-            var retryHint = result.data.retry ? '<br><small class="text-muted">Riprova tra qualche secondo.</small>' : '';
-            modalBody.innerHTML = '<div class="alert alert-warning mb-0">' + escapeHtml(result.data.error) + retryHint + '</div>';
-            return;
-          }
-          var d = result.data;
-          modalBody.innerHTML = buildReceiptHtml(d);
-        })
-        .catch(function(err) {
-          modalBody.innerHTML = '<div class="alert alert-danger mb-0">Errore di rete: ' + escapeHtml(err.message) + '</div>';
-        });
+      try {
+        var url = '/api/biz-event?fc=' + encodeURIComponent(fc) + '&iur=' + encodeURIComponent(iur) + '&iuv=' + encodeURIComponent(iuv);
+        var result = await fetchBizEventWithRetry(url, iuv);
+
+        if (result.error) {
+          var retryHint = result.retry ? '<br><small class="text-muted">Il sistema e\' momentaneamente occupato. Riprova tra poco.</small>' : '';
+          modalBody.innerHTML = '<div class="alert alert-warning mb-0">' + escapeHtml(result.error) + retryHint + '</div>';
+          return;
+        }
+
+        modalBody.innerHTML = buildReceiptHtml(result);
+      } catch (err) {
+        modalBody.innerHTML = '<div class="alert alert-danger mb-0">'
+          + escapeHtml(err.userMessage || 'Servizio ricevute temporaneamente non disponibile. Riprova tra qualche secondo.')
+          + '</div>';
+      }
     });
   });
+
+  async function fetchBizEventWithRetry(url, iuv) {
+    var lastError = null;
+
+    for (var attempt = 1; attempt <= MAX_BIZ_RETRY_ATTEMPTS; attempt++) {
+      showLoadingState(iuv, attempt, MAX_BIZ_RETRY_ATTEMPTS);
+      try {
+        var resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        var result = await parseBizEventResponse(resp);
+
+        if (result.data && result.data.error) {
+          if (result.data.retry && attempt < MAX_BIZ_RETRY_ATTEMPTS) {
+            await waitBeforeRetry(attempt, MAX_BIZ_RETRY_ATTEMPTS);
+            continue;
+          }
+          return result.data;
+        }
+
+        if (!resp.ok) {
+          var statusErr = new Error('HTTP ' + resp.status);
+          statusErr.retriable = isRetryableStatus(resp.status);
+          statusErr.userMessage = friendlyErrorForStatus(resp.status);
+          throw statusErr;
+        }
+
+        return result.data;
+      } catch (err) {
+        lastError = err;
+        var canRetry = (err.retriable !== false) && (attempt < MAX_BIZ_RETRY_ATTEMPTS);
+        if (canRetry) {
+          await waitBeforeRetry(attempt, MAX_BIZ_RETRY_ATTEMPTS);
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    var fallbackErr = new Error('Servizio ricevute temporaneamente non disponibile.');
+    fallbackErr.userMessage = 'Servizio ricevute temporaneamente non disponibile. Riprova tra qualche secondo.';
+    throw fallbackErr;
+  }
+
+  async function parseBizEventResponse(resp) {
+    var contentType = (resp.headers.get('content-type') || '').toLowerCase();
+    if (contentType.indexOf('application/json') !== -1) {
+      return { status: resp.status, data: await resp.json() };
+    }
+
+    var raw = await resp.text();
+    var trimmed = raw.trim();
+
+    if (trimmed && trimmed.charAt(0) === '{') {
+      try {
+        return { status: resp.status, data: JSON.parse(trimmed) };
+      } catch (_) {
+        // Fall through to user-friendly error below.
+      }
+    }
+
+    var parseErr = new Error('Unexpected non-JSON response');
+    parseErr.retriable = resp.status === 429 || isRetryableStatus(resp.status) || trimmed.toLowerCase().indexOf('<!doctype') === 0;
+    parseErr.userMessage = 'Il servizio ricevute sta rispondendo in modo anomalo. Attendi qualche secondo: riproviamo automaticamente.';
+    throw parseErr;
+  }
+
+  function showLoadingState(iuv, attempt, maxAttempts) {
+    var attemptText = (attempt > 1) ? '<small class="text-muted d-block">Tentativo ' + attempt + ' di ' + maxAttempts + '</small>' : '';
+    modalBody.innerHTML = '<div class="text-center py-4">'
+      + '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Caricamento...</span></div>'
+      + '<p class="mt-2 text-muted mb-1">Caricamento ricevuta IUV ' + escapeHtml(iuv || '—') + ' in corso...</p>'
+      + attemptText
+      + '</div>';
+  }
+
+  async function waitBeforeRetry(attempt, maxAttempts) {
+    var waitMs = BASE_RETRY_DELAY_MS * attempt;
+    var sec = Math.ceil(waitMs / 1000);
+    modalBody.innerHTML = '<div class="alert alert-info mb-0">'
+      + '<strong>Servizio momentaneamente occupato.</strong><br>'
+      + 'Nuovo tentativo tra ' + sec + ' secondi (' + attempt + '/' + maxAttempts + ').'
+      + '</div>';
+    await sleep(waitMs);
+  }
+
+  function isRetryableStatus(status) {
+    return status === 429 || status === 502 || status === 503 || status === 504;
+  }
+
+  function friendlyErrorForStatus(status) {
+    if (status === 404) return 'Ricevuta non trovata per questo IUV/IUR.';
+    if (status === 429) return 'Troppe richieste ravvicinate. Attendi qualche secondo e riprova.';
+    if (isRetryableStatus(status)) return 'Servizio ricevute temporaneamente non disponibile. Riprova tra qualche secondo.';
+    return 'Impossibile recuperare la ricevuta in questo momento. Riprova tra poco.';
+  }
+
+  function sleep(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+  }
 
   function buildReceiptHtml(d) {
     var totalAmt = d.total_amount || d.amount;
