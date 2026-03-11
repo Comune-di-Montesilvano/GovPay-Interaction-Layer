@@ -23,10 +23,6 @@
       <input class="form-control" type="text" name="last_name" value="{{ edit_user.last_name|default('') }}">
     </div>
     <div class="mb-3">
-      <label class="form-label">Nuova password (opzionale)</label>
-  <input class="form-control" type="password" name="password" autocomplete="new-password">
-    </div>
-    <div class="mb-3">
       <label class="form-label">Ruolo</label>
       {# If current user is admin and editing self, disallow changing role to prevent privilege escalation/demotion #}
       {% set is_self = current_user is defined and current_user.id == edit_user.id %}
@@ -43,6 +39,47 @@
             <div class="alert alert-warning mt-2">Non puoi declassarti: ci deve essere almeno un altro superadmin nel sistema.</div>
         {% endif %}
     </div>
+
+    {# ── Tipologia di default ────────────────────────────────── #}
+    {% if all_tipologie is defined and all_tipologie|length > 0 %}
+    <div class="mb-3">
+      <label for="default_id_entrata" class="form-label">Tipologia di default</label>
+      <select class="form-select" id="default_id_entrata" name="default_id_entrata">
+        <option value="">— Nessuna —</option>
+        {% for tip in all_tipologie %}
+          <option value="{{ tip.id_entrata }}" {% if edit_user.default_id_entrata == tip.id_entrata %}selected{% endif %}>
+            {{ tip.descrizione }}
+          </option>
+        {% endfor %}
+      </select>
+      <div class="form-text">La tipologia di default sarà pre-selezionata nei form di creazione pendenze.</div>
+    </div>
+    {% endif %}
+
+    {# ── Tipologie abilitate (filtro) ────────────────────────── #}
+    {% if current_user is defined and current_user.role in ['admin', 'superadmin'] and all_tipologie is defined and all_tipologie|length > 0 %}
+    <div class="mb-3">
+      <label class="form-label">Tipologie abilitate</label>
+      <div class="border rounded p-3" style="max-height:250px;overflow-y:auto;">
+        {% if all_tipologie|length == 0 %}
+          <p class="text-muted small">Nessuna tipologia disponibile nel dominio.</p>
+        {% else %}
+          {% for tip in all_tipologie %}
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="tip_{{ tip.id_entrata }}" 
+                     name="enabled_tipologie[]" value="{{ tip.id_entrata }}"
+                     {% if tip.id_entrata in user_tipologie_ids %}checked{% endif %}>
+              <label class="form-check-label" for="tip_{{ tip.id_entrata }}">
+                {{ tip.descrizione }}
+              </label>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+      <div class="form-text mt-2">Se nessuna è selezionata, l'utente vedrà tutte le tipologie disponibili nel dominio.</div>
+    </div>
+    {% endif %}
+
     <button class="btn btn-primary" type="submit">Salva</button>
     <a class="btn btn-outline-secondary" href="/configurazione?tab=utenti">Annulla</a>
   </form>

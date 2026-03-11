@@ -29,6 +29,75 @@ class EntrateRepository
     }
 
     /**
+     * Restituisce le tipologie abilitate per un utente specifico in un dominio.
+     * Se l'utente è admin/superadmin oppure non ha tipologie assegnate: restituisce tutte.
+     * Altrimenti: solo quelle assegnate tramite entrate_tipologie_users.
+     *
+     * @return array<int,array{id_entrata:string,descrizione:string}>
+     */
+    public function listAbilitateByDominioForUser(string $idDominio, int $userId, string $userRole): array
+    {
+        // Admin e superadmin vedono sempre tutto
+        if (in_array($userRole, ['admin', 'superadmin'], true)) {
+            return $this->listAbilitateByDominio($idDominio);
+        }
+
+        // Controlla se l'utente ha tipologie assegnate
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) as cnt FROM entrate_tipologie_users WHERE user_id = :uid AND id_dominio = :dom');
+        $stmt->execute([':uid' => $userId, ':dom' => $idDominio]);
+        $row = $stmt->fetch();
+        $hasAssignments = $row && (int)($row['cnt'] ?? 0) > 0;
+
+        if (!$hasAssignments) {
+            // Se nessuna assegnazione: vede tutte
+            return $this->listAbilitateByDominio($idDominio);
+        }
+
+        // Ha assegnazioni: filtra solo quelle
+        $sql = 'SELECT et.id_entrata, COALESCE(et.descrizione_locale, et.descrizione) AS descrizione, et.tipo_contabilita
+                FROM entrate_tipologie et
+                INNER JOIN entrate_tipologie_users etu ON et.id_dominio = etu.id_dominio AND et.id_entrata = etu.id_entrata
+                WHERE et.id_dominio = :dom AND etu.user_id = :uid AND et.abilitato_backoffice = 1 AND et.external_url IS NULL
+                ORDER BY COALESCE(et.descrizione_locale, et.descrizione) ASC';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':dom' => $idDominio, ':uid' => $userId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Restituisce gli ID entrata abilitati per un utente in un dominio.
+     *
+     * @return array<int,string>
+     */
+    public function getEnabledTipologieForUser(int $userId, string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id_entrata FROM entrate_tipologie_users WHERE user_id = :uid AND id_dominio = :dom ORDER BY id_entrata ASC');
+        $stmt->execute([':uid' => $userId, ':dom' => $idDominio]);
+        return $stmt->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * Imposta le tipologie abilitate per un utente in un dominio.
+     */
+    public function setEnabledTipologieForUser(int $userId, string $idDominio, array $idEntrate): void
+    {
+        // Elimina le assegnazioni precedenti
+        $stmt = $this->pdo->prepare('DELETE FROM entrate_tipologie_users WHERE user_id = :uid AND id_dominio = :dom');
+        $stmt->execute([':uid' => $userId, ':dom' => $idDominio]);
+
+        if (empty($idEntrate)) {
+            return;
+        }
+
+        // Inserisce le nuove assegnazioni
+        $sql = 'INSERT INTO entrate_tipologie_users (id_dominio, id_entrata, user_id) VALUES (:dom, :entrata, :uid)';
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($idEntrate as $idEntrata) {
+            $stmt->execute([':dom' => $idDominio, ':entrata' => $idEntrata, ':uid' => $userId]);
+        }
+    }
+
+    /**
      * Upsert di una tipologia proveniente dal Backoffice
     * @param array{idEntrata?:string,tipoEntrata?:array,ibanAccredito?:string,codiceContabilita?:string,tipoBollo?:string,abilitato?:bool} $e
      */

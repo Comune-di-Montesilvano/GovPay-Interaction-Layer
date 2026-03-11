@@ -149,8 +149,8 @@ class UsersController
                 ];
             }
         }
-        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente aggiornato'];
-        return $response->withHeader('Location', $this->usersHome())->withStatus(302);
+        // Return request with success flag; route handler will save tipologies and redirect
+        return $request->withAttribute('success', true);
     }
 
     public function disable(Request $request, Response $response, array $args): Response

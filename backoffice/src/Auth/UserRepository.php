@@ -55,10 +55,19 @@ class UserRepository
 
     public function findById(int $id): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id, email, password_hash, role, first_name, last_name, is_disabled, disabled_at, created_at, updated_at FROM users WHERE id = :id LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, email, password_hash, role, first_name, last_name, is_disabled, disabled_at, created_at, updated_at, default_id_entrata FROM users WHERE id = :id LIMIT 1');
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
         return $row ?: null;
+    }
+
+    /**
+     * Imposta la tipologia di pendenza di default per un utente.
+     */
+    public function setDefaultTipologia(int $id, ?string $idEntrata): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET default_id_entrata = :entrata, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':entrata' => $idEntrata, ':id' => $id]);
     }
 
     public function updatePasswordById(int $id, string $newPassword): void

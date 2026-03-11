@@ -41,7 +41,7 @@ class MassivePendenzeController
         $tipologie = [];
         $idDominio = getenv('ID_DOMINIO') ?: '';
         if ($idDominio) {
-            try { $repo = new EntrateRepository(); $tipologie = $repo->listAbilitateByDominio($idDominio); } catch (\Throwable $e) {}
+            try { $repo = new EntrateRepository(); $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user')); } catch (\Throwable $e) {}
         }
         return $this->twig->render($response, 'pendenze/inserimento_massivo.html.twig', [
             'batch_list' => $batches,
@@ -128,7 +128,7 @@ class MassivePendenzeController
         // Tipologie
         $tipologie = [];
         $idDominio = getenv('ID_DOMINIO') ?: '';
-        if ($idDominio) { try { $tipologie = (new EntrateRepository())->listAbilitateByDominio($idDominio); } catch (\Throwable $e) {} }
+        if ($idDominio) { try { $tipologie = (new EntrateRepository())->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user')); } catch (\Throwable $e) {} }
         return $this->twig->render($response, 'pendenze/inserimento_massivo.html.twig', [
             'preview' => [
                 'batch_id' => $batchId,

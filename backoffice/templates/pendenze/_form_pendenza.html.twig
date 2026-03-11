@@ -17,7 +17,10 @@
       <select id="idTipoPendenza" name="idTipoPendenza" required aria-label="Tipologia pendenza" {{ is_edit_mode ? 'disabled' : '' }}>
         <option value="">-- seleziona --</option>
         {% for t in tipologie_pendenze|default([]) %}
-          <option value="{{ t.id_entrata }}" {% if old.idTipoPendenza is defined and old.idTipoPendenza == t.id_entrata %}selected{% endif %}>{{ t.nome|default(t.descrizione)|e }}</option>
+          <option value="{{ t.id_entrata }}" 
+            {% if old.idTipoPendenza is defined and old.idTipoPendenza == t.id_entrata %}selected
+            {% elseif old.idTipoPendenza is not defined and current_user.default_id_entrata is defined and current_user.default_id_entrata == t.id_entrata %}selected
+            {% endif %}>{{ t.nome|default(t.descrizione)|e }}</option>
         {% endfor %}
       </select>
       {% if is_edit_mode %}

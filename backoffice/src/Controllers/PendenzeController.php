@@ -238,7 +238,7 @@ class PendenzeController
             if ($idDominio) {
                 try {
                     $repo = new EntrateRepository();
-                    $tipologie = $repo->listAbilitateByDominio($idDominio);
+                    $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                 } catch (\Throwable $e) {
                     // ignore
                 }
@@ -331,7 +331,7 @@ class PendenzeController
             if ($idDominio) {
                 try {
                     $repo = new EntrateRepository();
-                    $tipologie = $repo->listAbilitateByDominio($idDominio);
+                    $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                 } catch (\Throwable $e) {}
             }
             $templates = [];
@@ -364,7 +364,7 @@ class PendenzeController
             if ($idDominio) {
                 try {
                     $repo = new EntrateRepository();
-                    $tipologie = $repo->listAbilitateByDominio($idDominio);
+                    $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                 } catch (\Throwable $e) {}
             }
             $templates = [];
@@ -401,7 +401,7 @@ class PendenzeController
                 if ($idDominio) {
                     try {
                         $repo = new EntrateRepository();
-                        $tipologie = $repo->listAbilitateByDominio($idDominio);
+                        $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                     } catch (\Throwable $e) {}
                 }
                 $templates = [];
@@ -658,7 +658,7 @@ class PendenzeController
         if ($idDominio) {
             try {
                 $repo = new EntrateRepository();
-                $tipologie = $repo->listAbilitateByDominio($idDominio);
+                $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
             } catch (\Throwable $e) {}
         }
             $templates = [];
@@ -753,7 +753,7 @@ class PendenzeController
         if ($idDominio !== '') {
             try {
                 $repo = new EntrateRepository();
-                $tipologie = $repo->listAbilitateByDominio($idDominio);
+                $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
             } catch (\Throwable $e) {
                 $tipologie = [];
             }
@@ -1065,7 +1065,7 @@ class PendenzeController
         if ($idDominio) {
             try {
                 $repo = new EntrateRepository();
-                $tipologie = $repo->listAbilitateByDominio($idDominio);
+                $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
             } catch (\Throwable $e) {
                 // Non blocchiamo la pagina: se il repository fallisce mostriamo comunque il form vuoto
                 $tipologie = [];
@@ -2532,7 +2532,7 @@ class PendenzeController
         if ($idDominio) {
             try {
                 $repo = new EntrateRepository();
-                $tipologie = $repo->listAbilitateByDominio($idDominio);
+                $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
             } catch (\Throwable $e) {
                 // ignore
             }
@@ -3046,7 +3046,7 @@ class PendenzeController
         if ($idDominio) {
             try {
                 $repo = new EntrateRepository();
-                $tipologie = $repo->listAbilitateByDominio($idDominio);
+                $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
             } catch (\Throwable $e) {
                 $tipologie = [];
             }
@@ -3425,7 +3425,7 @@ class PendenzeController
             if ($idDominio) {
                 try {
                     $repo = new EntrateRepository();
-                    $tipologie = $repo->listAbilitateByDominio($idDominio);
+                    $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                 } catch (\Throwable $e) {}
             }
             $defaultAnno = (int)date('Y');

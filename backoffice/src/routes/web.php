@@ -13,6 +13,7 @@ use App\Controllers\FlussiController;
 use App\Controllers\PendenzeController;
 use App\Controllers\StatisticheController;
 use App\Controllers\UsersController;
+use App\Database\PendenzaTemplateRepository;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
@@ -202,10 +203,83 @@ return function (App $app, Twig $twig): void {
 
     // Profile
     $app->get('/profile', function($request, $response) use ($twig) {
-        if (isset($_SESSION['user'])) {
-            $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
+        $sessionUser = $_SESSION['user'] ?? null;
+        if (!$sessionUser) {
+            return $response->withHeader('Location', '/login')->withStatus(302);
         }
-        return $twig->render($response, 'profile.html.twig');
+        $twig->getEnvironment()->addGlobal('current_user', $sessionUser);
+        $userId = (int)($sessionUser['id'] ?? 0);
+        $userRepo = new UserRepository();
+        $profileUser = $userId > 0 ? $userRepo->findById($userId) : $sessionUser;
+        $templateRepo = new PendenzaTemplateRepository();
+        $userTemplates = $userId > 0 ? $templateRepo->getTemplatesForUser($userId) : [];
+        
+        // Load default tipologia description
+        $userDefaultTipologiaDesc = null;
+        if (!empty($profileUser['default_id_entrata'])) {
+            $entrateRepo = new EntrateRepository();
+            $tipologia = $entrateRepo->findById($profileUser['default_id_entrata']);
+            $userDefaultTipologiaDesc = $tipologia ? $tipologia['descrizione'] : null;
+        }
+        
+        $tab = (string)($request->getQueryParams()['tab'] ?? 'info');
+        if (!in_array($tab, ['info', 'password', 'templates'], true)) {
+            $tab = 'info';
+        }
+        return $twig->render($response, 'profile.html.twig', [
+            'profile_user'               => $profileUser,
+            'user_templates'             => $userTemplates,
+            'user_default_tipologia_desc' => $userDefaultTipologiaDesc,
+            'tab'                        => $tab,
+            'flash_profile'              => null,
+            'error_profile'              => null,
+        ]);
+    });
+
+    // Profile - cambio password
+    $app->post('/profile/change-password', function($request, $response) use ($twig) {
+        $sessionUser = $_SESSION['user'] ?? null;
+        if (!$sessionUser) {
+            return $response->withHeader('Location', '/login')->withStatus(302);
+        }
+        $twig->getEnvironment()->addGlobal('current_user', $sessionUser);
+        $userId = (int)($sessionUser['id'] ?? 0);
+        $userRepo = new UserRepository();
+        $profileUser = $userRepo->findById($userId);
+        $templateRepo = new PendenzaTemplateRepository();
+        $userTemplates = $templateRepo->getTemplatesForUser($userId);
+
+        $data            = (array)($request->getParsedBody() ?? []);
+        $currentPassword = $data['current_password'] ?? '';
+        $newPassword     = $data['new_password'] ?? '';
+        $confirmPassword = $data['new_password_confirm'] ?? '';
+
+        $renderError = function(string $msg) use ($twig, $response, $profileUser, $userTemplates): Response {
+            return $twig->render($response, 'profile.html.twig', [
+                'profile_user'   => $profileUser,
+                'user_templates' => $userTemplates,
+                'tab'            => 'password',
+                'flash_profile'  => null,
+                'error_profile'  => $msg,
+            ]);
+        };
+
+        if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
+            return $renderError('Tutti i campi sono obbligatori.');
+        }
+        if (!$userRepo->verifyPassword($currentPassword, $profileUser['password_hash'] ?? '')) {
+            return $renderError('La password attuale non è corretta.');
+        }
+        if (strlen($newPassword) < 8) {
+            return $renderError('La nuova password deve essere di almeno 8 caratteri.');
+        }
+        if ($newPassword !== $confirmPassword) {
+            return $renderError('La nuova password e la conferma non coincidono.');
+        }
+
+        $userRepo->updatePasswordById($userId, $newPassword);
+        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Password aggiornata con successo.'];
+        return $response->withHeader('Location', '/profile?tab=password')->withStatus(302);
     });
 
     // Configurazione (solo superadmin): mostra il risultato di Backoffice /configurazioni
@@ -393,7 +467,28 @@ return function (App $app, Twig $twig): void {
         if (isset($_SESSION['user'])) {
             $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
         }
-        return $twig->render($response, 'users/edit.html.twig', ['edit_user' => $editUser]);
+        
+        // Carica tipologie per il dominio
+        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $allTipologie = [];
+        $userTipologie = [];
+        if ($idDominio && $editUser) {
+            try {
+                $entrateRepo = new \App\Database\EntrateRepository();
+                $allTipologie = $entrateRepo->listAbilitateByDominio($idDominio);
+                $userId = (int)($editUser['id'] ?? 0);
+                if ($userId > 0) {
+                    $userTipologie = $entrateRepo->getEnabledTipologieForUser($userId, $idDominio);
+                }
+            } catch (\Throwable $e) {}
+        }
+        
+        return $twig->render($response, 'users/edit.html.twig', [
+            'edit_user' => $editUser,
+            'all_tipologie' => $allTipologie,
+            'user_tipologie_ids' => $userTipologie,
+            'id_dominio' => $idDominio,
+        ]);
     });
 
     $app->post('/users/{id}/edit', function($request, $response, $args) use ($twig) {
@@ -408,10 +503,56 @@ return function (App $app, Twig $twig): void {
             if (isset($_SESSION['user'])) {
                 $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
             }
-            return $twig->render($response, 'users/edit.html.twig', ['error' => $error, 'edit_user' => $editUser]);
+            
+            // Ricaricare tipologie in caso di errore
+            $idDominio = getenv('ID_DOMINIO') ?: '';
+            $allTipologie = [];
+            $userTipologie = [];
+            if ($idDominio && $editUser) {
+                try {
+                    $entrateRepo = new \App\Database\EntrateRepository();
+                    $allTipologie = $entrateRepo->listAbilitateByDominio($idDominio);
+                    $userId = (int)($editUser['id'] ?? 0);
+                    if ($userId > 0) {
+                        $userTipologie = $entrateRepo->getEnabledTipologieForUser($userId, $idDominio);
+                    }
+                } catch (\Throwable $e) {}
+            }
+            
+            return $twig->render($response, 'users/edit.html.twig', [
+                'error' => $error,
+                'edit_user' => $editUser,
+                'all_tipologie' => $allTipologie,
+                'user_tipologie_ids' => $userTipologie,
+                'id_dominio' => $idDominio,
+            ]);
         }
-        // fallback
-        return $response->withHeader('Location', '/users')->withStatus(302);
+        
+        // Successo: salvare la tipologia default e il filtro tipologie
+        $userId = (int)($args['id'] ?? 0);
+        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $data = (array)($request->getParsedBody() ?? []);
+        $defaultTipologia = $data['default_id_entrata'] ?? null;
+        $tipologieIds = (array)($data['enabled_tipologie'] ?? []);
+        
+        try {
+            $userRepo = new \App\Auth\UserRepository();
+            if (!empty($defaultTipologia)) {
+                $userRepo->setDefaultTipologia($userId, (string)$defaultTipologia);
+            } else {
+                $userRepo->setDefaultTipologia($userId, null);
+            }
+            
+            if ($idDominio) {
+                $entrateRepo = new \App\Database\EntrateRepository();
+                $entrateRepo->setEnabledTipologieForUser($userId, $idDominio, $tipologieIds);
+            }
+        } catch (\Throwable $e) {
+            // Log ma prosegui (non è critico)
+        }
+        
+        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente aggiornato'];
+        return $response->withHeader('Location', '/configurazione?tab=utenti')->withStatus(302);
     });
 
     $app->post('/users/{id}/disable', function($request, $response, $args) {

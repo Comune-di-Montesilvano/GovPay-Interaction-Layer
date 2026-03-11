@@ -131,4 +131,21 @@ class PendenzaTemplateRepository
         ]);
         return $stmt->fetchAll();
     }
+
+    /**
+     * Restituisce tutti i template assegnati a un utente, indipendentemente dal dominio.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getTemplatesForUser(int $userId): array
+    {
+        $sql = "SELECT pt.*
+                FROM pendenza_template pt
+                INNER JOIN pendenza_template_users ptu ON pt.id = ptu.template_id
+                WHERE ptu.user_id = :user_id
+                ORDER BY pt.titolo ASC";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':user_id' => $userId]);
+        return $stmt->fetchAll();
+    }
 }

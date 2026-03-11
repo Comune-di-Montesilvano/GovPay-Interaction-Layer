@@ -26,7 +26,7 @@
     - [ ] Inserimento del tasto "Rendiconta flusso" nel dettaglio flusso per permettere il bypass manuale.
 
 ### Gestione Profilo Utente
-- [ ] **Interfaccia**: Miglioramento dell'interfaccia dell'area profilo.
+- [X] **Interfaccia**: Miglioramento dell'interfaccia dell'area profilo.
 - [X] **Sicurezza**: Funzione di cambio password.
 - [ ] **Personalizzazione e Permessi**
     - [X] Possibilità di associare template all'utente.

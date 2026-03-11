@@ -82,6 +82,15 @@ $statements = [
         FOREIGN KEY (template_id) REFERENCES pendenza_template(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+
+    // entrate_tipologie_users
+    "CREATE TABLE IF NOT EXISTS entrate_tipologie_users (
+        id_dominio VARCHAR(64) NOT NULL,
+        id_entrata VARCHAR(128) NOT NULL,
+        user_id INT UNSIGNED NOT NULL,
+        PRIMARY KEY (id_dominio, id_entrata, user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 ];
 
 foreach ($statements as $sql) {
@@ -170,6 +179,18 @@ try {
     if (!$has) {
         $pdo->exec("ALTER TABLE users ADD COLUMN disabled_at DATETIME NULL AFTER updated_at");
         echo "Added column disabled_at to users\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+// Aggiunge colonna default_id_entrata per tipologia di default
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'default_id_entrata'");
+    $has = $stmt ? $stmt->fetch() : false;
+    if (!$has) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN default_id_entrata VARCHAR(128) NULL AFTER disabled_at");
+        echo "Added column default_id_entrata to users\n";
     }
 } catch (Throwable $e) {
     // non fatale
