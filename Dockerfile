@@ -68,7 +68,7 @@ RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interacti
 ######################################################################
 # STAGE 3: Runtime (Apache + PHP) harden
 ######################################################################
-FROM php:8.4-apache-trixie AS runtime-base
+FROM php:8.5-apache-trixie AS runtime-base
 
 # Installazione delle dipendenze di sistema e PHP (inclusi unzip e wget)
 ARG DEBIAN_FRONTEND=noninteractive
