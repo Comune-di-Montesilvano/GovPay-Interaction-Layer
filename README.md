@@ -66,14 +66,14 @@ Questo repository usa file separati per rendere la configurazione più chiara:
 
 ```bash
 cp .env.example .env
-cp .env.iam-proxy.example .env.iam-proxy
+cp .iam-proxy.env.example .iam-proxy.env
 cp .env.frontoffice.example .env.frontoffice
 cp .env.backoffice.example .env.backoffice
 ```
 
 Note:
 - `.env` è sempre necessario (compose + valori condivisi).
-- `.env.iam-proxy` è necessario se abiliti SPID/CIE.
+- `.iam-proxy.env` è necessario se abiliti SPID/CIE.
 - `.env.frontoffice` e `.env.backoffice` contengono i parametri applicativi dedicati.
 
 #### Dati minimi necessari (GovPay e PagoPA Checkout)
@@ -161,7 +161,7 @@ Contiene:
 - porta HTTPS
 - dati DB backoffice
 
-### `.env.iam-proxy`
+### `.iam-proxy.env`
 
 Contiene:
 - URL pubblici e metadata SAML2 del proxy IAM
@@ -185,7 +185,7 @@ Il sistema di autenticazione usa **IAM Proxy Italia (SATOSA)** come componente s
 **Variabili interne** (non modificare a meno di rinominare i servizi docker):
 - `IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL`: `https://satosa-nginx:443/Saml2IDP/metadata`
 
-**Altri parametri** (UI/metadata/chiavi) sono in [.env.iam-proxy](.env.iam-proxy) e sono già valorizzati negli example.
+**Altri parametri** (UI/metadata/chiavi) sono in [.iam-proxy.env](.iam-proxy.env) e sono già valorizzati negli example.
 
 ### Configurazione IAM Proxy SATOSA
 - `iam-proxy-italia` (SATOSA uWSGI)
@@ -357,7 +357,7 @@ Definisci chiaramente gli URL pubblici (quelli che useranno gli utenti e/o AgID)
 - Proxy SPID/CIE (es. `https://login.ente.it`)
 
 Poi imposta:
-- in `.env.iam-proxy`:
+- in `.iam-proxy.env`:
    - `IAM_PROXY_PUBLIC_BASE_URL=https://login.ente.it`
 - in `.env.frontoffice`:
    - `FRONTOFFICE_PUBLIC_BASE_URL=https://pagamenti.ente.it`
@@ -526,7 +526,7 @@ GovPay-Interaction-Layer/
 ├── ssl/                      # cert HTTPS del server (browser → app)
 ├── certificate/              # cert client GovPay (app → GovPay)
 ├── .env                      # da creare (base)
-├── .env.iam-proxy            # da creare (SPID/CIE)
+├── .iam-proxy.env            # da creare (SPID/CIE)
 ├── .env.frontoffice          # da creare
 └── .env.backoffice           # da creare
 ```

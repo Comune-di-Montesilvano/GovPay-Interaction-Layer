@@ -270,7 +270,7 @@ services:
       - APP_ENTITY_NAME=${APP_ENTITY_NAME}
       - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
     env_file:
-      # - .env.frontoffice (rimosso: usare .env e .env.iam-proxy)
+      # - .env.frontoffice (rimosso: usare .env e .iam-proxy.env)
       - .env.iam-proxy
     restart: on-failure:3
     healthcheck:

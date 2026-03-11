@@ -7,7 +7,7 @@ Dall'analisi dei file, risulta che il profilo `iam-proxy` (SATOSA) è attivo nel
 ## Analisi Tecnica
 1. **Modalità Corrente**: Il frontoffice usa `php-proxy` perché la variabile `FRONTOFFICE_AUTH_PROXY_TYPE` non è definita.
 2. **Causa Errore**: Mancano `SPID_PROXY_PUBLIC_BASE_URL` e `SPID_PROXY_CLIENT_ID` (richiesti per `php-proxy`).
-3. **Soluzione Proposta**: Switch alla modalità `iam-proxy-saml2` che utilizza SATOSA, già configurato in [`.env.iam-proxy`](.env.iam-proxy).
+3. **Soluzione Proposta**: Switch alla modalità `iam-proxy-saml2` che utilizza SATOSA, già configurato in [`.iam-proxy.env`](.iam-proxy.env).
 
 ## Diagramma di Flusso (Configurazione)
 
@@ -36,11 +36,11 @@ FRONTOFFICE_AUTH_PROXY_TYPE=iam-proxy-saml2
 # URL pubblico del frontoffice (es. https://frontoffice.esempio.it)
 FRONTOFFICE_PUBLIC_BASE_URL=https://localhost:8444
 
-# Variabili ereditate da .env.iam-proxy (assicurarsi che siano visibili al container frontoffice)
+# Variabili ereditate da .iam-proxy.env (assicurarsi che siano visibili al container frontoffice)
 SPID_PROXY_PUBLIC_BASE_URL=https://login.mirkochip.eu
 ```
 
-### 2. Verifica [`.env.iam-proxy`](.env.iam-proxy)
+### 2. Verifica [`.iam-proxy.env`](.iam-proxy.env)
 Assicurarsi che le seguenti variabili siano corrette per l'ambiente di rete:
 - `IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL`: dovrebbe puntare a `https://satosa-nginx:443/Saml2IDP/metadata` (comunicazione interna tra container).
 

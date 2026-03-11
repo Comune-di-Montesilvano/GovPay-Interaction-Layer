@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.*.example
+.iam-proxy.env
+!.iam-proxy.env.example
 *.log
 *.pid
 
@@ -59,5 +61,4 @@ iam-proxy/spid-certs/*
 .local/
 /iam-proxy/nginx/html/static/*
 !/iam-proxy/nginx/html/static/.gitkeep
-
 
