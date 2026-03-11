@@ -1,15 +1,389 @@
 # GovPay Interaction Layer (GIL)
 
 Piattaforma containerizzata (PHP/Apache + UI) per migliorare il flusso di lavoro degli enti che usano GovPay come soluzione PagoPA.
+
 Include:
 - **Backoffice** per operatori (gestione pendenze, flussi di rendicontazione, ricevute pagoPA on-demand)
 - **Frontoffice** cittadini/sportello
 - (Opzionale) **proxy SPID/CIE** integrabile via profilo Docker Compose
 
-Repository: https://github.com/mirkochipdotcom/GovPay-Interaction-Layer.git
-
+Repository: https://github.com/mirkochipdotcom/GovPay-Interaction-Layer.git  
 License: European Union Public Licence v1.2 (EUPL-1.2)
-SPDX-License-Identifier: EUPL-1.2
+
+---
+
+## Indice
+
+- [Avvio rapido](#avvio-rapido)
+- [Configurazione: .env](#configurazione-env)
+- [SPID/CIE (opzionale)](#spidcie-opzionale)
+- [Setup produzione](#setup-produzione)
+- [Processi batch](#processi-batch)
+- [Funzionalità Backoffice](#funzionalità-backoffice)
+- [Workflow di sviluppo](#workflow-di-sviluppo)
+- [Troubleshooting](#troubleshooting)
+- [Struttura del progetto](#struttura-del-progetto)
+
+---
+
+## Avvio rapido
+
+### Prerequisiti
+
+- Docker Desktop (o Docker Engine + plugin `docker compose`)
+- Git
+- Porte libere sul tuo host (default): `8443` (backoffice), `8444` (frontoffice)
+
+### 1. Clona il repository
+
+```bash
+git clone https://github.com/mirkochipdotcom/GovPay-Interaction-Layer.git
+cd GovPay-Interaction-Layer
+```
+
+### 2. Crea il file `.env`
+
+Il file `.env` non è versionato per motivi di sicurezza. Usa il file d'esempio come base:
+
+```bash
+cp .env.example .env
+```
+
+Compila le variabili secondo le tue esigenze. Il file è commentato sezione per sezione.
+
+### 3. Avvia i container
+
+```bash
+# primo avvio (o dopo modifiche a Dockerfile/composer)
+docker compose up -d --build
+
+# avvii successivi
+docker compose up -d
+```
+
+### 4. Primo accesso
+
+- Backoffice: https://localhost:8443
+- Frontoffice: https://localhost:8444
+
+Se non hai certificati TLS personalizzati in `ssl/`, vengono generati self-signed automaticamente; il browser mostrerà un avviso (normale in locale). Vedi [ssl/README.md](ssl/README.md).
+
+### 5. Credenziali iniziali
+
+Al primo avvio viene creato un utente `superadmin` con le credenziali configurate in `.env`:
+
+```env
+ADMIN_EMAIL=admin@ente.gov.it
+ADMIN_PASSWORD=password_sicura
+```
+
+Il seed è idempotente: viene eseguito solo se non esiste ancora un superadmin nel DB.
+
+---
+
+## Configurazione: `.env`
+
+Il file `.env` è il punto unico di configurazione per Docker Compose e per tutti i servizi applicativi. Usa `.env.example` come base:
+
+```bash
+cp .env.example .env
+```
+
+Il file `.env.example` contiene tutte le variabili disponibili con commenti esplicativi sezione per sezione. Le variabili minime obbligatorie per usare le funzioni principali sono:
+
+- `ID_DOMINIO`, `ID_A2A`, `APP_ENTITY_IPA_CODE` — identità ente
+- `GOVPAY_*_URL` + `AUTHENTICATION_GOVPAY` + credenziali — connessione a GovPay
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD` — superadmin iniziale
+- `PAGOPA_CHECKOUT_EC_BASE_URL` + `PAGOPA_CHECKOUT_SUBSCRIPTION_KEY` — pagamenti online
+- `BIZ_EVENTS_HOST` + `BIZ_EVENTS_API_KEY` — ricevute on-demand
+
+Vedi [certificate/README.md](certificate/README.md) per i certificati client GovPay (`ssl`/`sslheader`).
+
+---
+
+## SPID/CIE (opzionale)
+
+Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)** e si avvia con il profilo Docker Compose `iam-proxy`.
+
+> **Stato attuale**: SPID è funzionante. L'integrazione CIE OIDC è in fase di sviluppo/test e non è ancora abilitata nel frontoffice.
+
+### Prerequisiti aggiuntivi
+
+- Porta libera: `9445` (proxy IAM, configurabile con `IAM_PROXY_HTTP_PORT`)
+- Certificati SPID in `iam-proxy/spid-certs/` (generati automaticamente al primo avvio se mancanti)
+
+### 1. Configura `.iam-proxy.env`
+
+Copia l'example e personalizza le variabili essenziali:
+
+```bash
+cp .iam-proxy.env.example .iam-proxy.env
+```
+
+Variabili essenziali da modificare:
+
+```env
+# URL pubblico del proxy, visto dal browser
+# DEV: https://127.0.0.1:9445  |  PROD: https://login.ente.gov.it
+IAM_PROXY_PUBLIC_BASE_URL=https://127.0.0.1:9445
+
+# Secret di cifratura SATOSA — genera valori random >= 32 caratteri
+SATOSA_SALT=cambia_questo_valore_random_32_chars
+SATOSA_STATE_ENCRYPTION_KEY=cambia_questo_valore_random_32_chars
+SATOSA_ENCRYPTION_KEY=cambia_questo_valore_random_32_chars
+SATOSA_USER_ID_HASH_SALT=cambia_questo_valore_random_32_chars
+
+# Dati ente per metadata SPID
+SATOSA_ORGANIZATION_DISPLAY_NAME_IT=Nome Ente
+SATOSA_ORGANIZATION_IDENTIFIER=PA:IT-CODICEIPA
+SATOSA_CONTACT_PERSON_EMAIL_ADDRESS=supporto@ente.gov.it
+
+# Abilita SPID (CIE OIDC non ancora integrato nel frontoffice)
+ENABLE_SPID=true
+ENABLE_CIE=false
+ENABLE_CIE_OIDC=false
+```
+
+Il file `.iam-proxy.env.example` contiene tutte le variabili disponibili con commenti.
+
+### 2. Avvia il profilo iam-proxy
+
+```bash
+docker compose --profile iam-proxy up -d --build
+```
+
+Al primo avvio il servizio `iam-proxy-init` scarica SATOSA da GitHub e genera la directory di istanza in `.local/iam-proxy-italia-project/` (ignorata da git).
+
+Per inizializzare manualmente (es. debug su Windows):
+```powershell
+# Task VS Code: "init-iam-proxy-italia-force"
+powershell -ExecutionPolicy Bypass -File .\scripts\init-iam-proxy-italia.ps1 -Force
+```
+
+### 3. Endpoint esposti da SATOSA
+
+> [!IMPORTANT]
+> SATOSA espone due set di metadata con scopi distinti. Usare l'endpoint sbagliato è la causa più comune di errori di configurazione.
+
+| Endpoint | A cosa serve | Va inviato ad AgID? |
+|---|---|:---:|
+| `/Saml2IDP/metadata` | Metadata IdP lato frontoffice (uso interno) | ❌ No |
+| `/spidSaml2/metadata` | Metadata SP verso gli IdP SPID | ✅ **Sì** |
+| `/static/disco.html` | Pagina di discovery (scelta IdP) | ❌ No |
+
+**Esempi in locale:**
+```
+https://localhost:9445/Saml2IDP/metadata    ← uso interno (frontoffice → SATOSA)
+https://localhost:9445/spidSaml2/metadata   ← da inviare ad AgID per attestazione SPID
+https://localhost:9445/static/disco.html    ← pagina di scelta IdP
+```
+
+> [!WARNING]
+> L'path `/spSaml2/metadata` (senza "id") non esiste e restituisce 302. Il path corretto è `/spidSaml2/metadata`.
+
+### 4. Metadata Service Provider (frontoffice)
+
+SATOSA ha bisogno dei metadata del frontoffice (Service Provider) per accettare le richieste di autenticazione. Vengono generati automaticamente in `iam-proxy/metadata-sp/` al primo avvio.
+
+Per rigenerarli manualmente (es. dopo aver cambiato `FRONTOFFICE_PUBLIC_BASE_URL`):
+
+```bash
+docker compose --profile iam-proxy run --rm init-sp-metadata
+docker compose --profile iam-proxy restart iam-proxy-italia
+```
+
+> [!WARNING]
+> **Non modificare manualmente** i file in `iam-proxy/metadata-sp/`. Sono firmati digitalmente: qualsiasi modifica manuale invalida la firma e SATOSA li rifiuterà. Modifica le variabili d'ambiente e rigenera sempre tramite il container.
+
+I metadata SP del frontoffice sono **interni a SATOSA** e non vanno inviati ad AgID. Ad AgID si inviano i metadata al path `/spidSaml2/metadata`.
+
+---
+
+## Setup produzione
+
+### URL pubblici
+
+In produzione evita `localhost`/`127.0.0.1` — finiscono nei redirect e nei metadata SAML.
+
+Imposta nel `.env`:
+```env
+BACKOFFICE_PUBLIC_BASE_URL=https://backoffice.ente.gov.it
+FRONTOFFICE_PUBLIC_BASE_URL=https://pagamenti.ente.gov.it
+```
+
+E nel `.iam-proxy.env` (se usi SPID):
+```env
+IAM_PROXY_PUBLIC_BASE_URL=https://login.ente.gov.it
+```
+
+### Certificati TLS
+
+Per HTTPS server (browser → applicazione), metti i certificati validi in `ssl/`:
+- `ssl/server.crt`
+- `ssl/server.key`
+
+Vedi [ssl/README.md](ssl/README.md) per dettagli e troubleshooting permessi.
+
+I certificati in `certificate/` sono distinti: servono per l'autenticazione client verso GovPay (mTLS app → GovPay). Vedi [certificate/README.md](certificate/README.md).
+
+### Reverse proxy
+
+Pattern consigliato: reverse proxy pubblico (porta 443) → container interno.
+
+Header da preservare:
+```
+Host: <hostname pubblico>
+X-Forwarded-Proto: https
+X-Forwarded-For: <IP client>
+```
+
+Imposta `SSL=false` nel `.env` se il reverse proxy termina TLS e il container riceve HTTP interno.
+
+---
+
+## Processi batch
+
+### Inserimento massivo pendenze
+
+Lo script elabora i lotti caricati via interfaccia web (stato `PENDING`) e li invia a GovPay.
+
+```bash
+# Esecuzione manuale
+docker exec govpay-interaction-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
+```
+
+**Schedulazione crontab** (ogni 5 minuti):
+```cron
+*/5 * * * * docker exec govpay-interaction-backoffice php /var/www/html/scripts/cron_pendenze_massive.php >> /var/log/gil_cron.log 2>&1
+```
+
+**Schedulazione systemd timer** (consigliato in produzione):
+
+`/etc/systemd/system/gil-pendenze.service`:
+```ini
+[Unit]
+Description=GIL Inserimento Massivo Pendenze
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec govpay-interaction-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
+```
+
+`/etc/systemd/system/gil-pendenze.timer`:
+```ini
+[Unit]
+Description=GIL Pendenze ogni 5 minuti
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+```
+
+---
+
+## Funzionalità Backoffice
+
+### Gestione Pendenze
+
+- Ricerca, inserimento singolo e massivo.
+- Dettaglio con azioni: annullamento, stralcio, riattivazione.
+- Storico modifiche in `datiAllegati`; origine e operatore tracciati.
+
+### Flussi di Rendicontazione
+
+- Ricerca per data, PSP, stato con paginazione e filtri.
+- Dettaglio flusso con IUV, causale, importo, esito.
+- **Ricevute on-demand (Biz Events)**: per pagamenti "orfani" (senza dati GovPay locali), un pulsante carica la ricevuta pagoPA via AJAX mostrando debitore, pagatore, PSP, importi e trasferimenti.
+
+### Statistiche
+
+Dashboard con grafici e indicatori.
+
+---
+
+## Workflow di sviluppo
+
+```bash
+# Rebuild dopo modifiche a PHP/composer/asset
+docker compose up -d --build
+
+# Log in tempo reale
+docker compose logs -f
+
+# Shell nel container backoffice
+docker compose exec govpay-interaction-backoffice bash
+```
+
+Struttura codice:
+- `backoffice/` — applicazione backoffice
+- `frontoffice/` — applicazione frontoffice
+- `app/` — librerie PHP condivise
+- `backoffice/templates/` e `frontoffice/templates/` — template Twig
+
+---
+
+## Troubleshooting
+
+### Variabili "annidate" nei file env
+
+Docker Compose **non espande** variabili del tipo `FOO="${BAR}"` negli `env_file`. Usa valori espliciti.
+
+### Script `.sh` e line ending
+
+Gli script devono usare LF (non CRLF). Questo repository forza i line ending via `.gitattributes`.
+
+### Container backoffice non parte
+
+Controlla i log: `docker compose logs govpay-interaction-backoffice`
+
+Cause comuni:
+- `.env` mancante o con variabili obbligatorie vuote
+- certificati in `ssl/` non leggibili dal container (vedi [ssl/README.md](ssl/README.md))
+- database non ancora pronto (il container riprova automaticamente)
+
+---
+
+## Struttura del progetto
+
+```
+GovPay-Interaction-Layer/
+├── docker-compose.yml
+├── Dockerfile
+├── .env                      # da creare (non versionato)
+├── .iam-proxy.env            # da creare (solo se usi SPID/CIE)
+├── .iam-proxy.env.example    # template per .iam-proxy.env
+├── backoffice/               # applicazione backoffice (Slim 4 + Twig)
+├── frontoffice/              # applicazione frontoffice
+├── app/                      # codice PHP condiviso
+├── iam-proxy/                # proxy SPID/CIE (SATOSA) — vedi iam-proxy/PERSONALIZZAZIONE.md
+├── ssl/                      # certificati TLS server (browser → app) — vedi ssl/README.md
+├── certificate/              # certificati client GovPay (app → GovPay) — vedi certificate/README.md
+├── img/                      # immagini/loghi — vedi img/README.md
+├── scripts/                  # script di utilità (cron, init)
+├── migrations/               # migrazioni DB
+├── govpay-clients/           # client API GovPay generati
+├── pagopa-clients/           # client API pagoPA generati
+└── debug/                    # tool debug (montati solo in sviluppo)
+```
+
+---
+
+## Contribuire
+
+1. Fork del repository
+2. Crea un branch: `git checkout -b feature/nuova-funzionalita`
+3. Commit: `git commit -m "feat: descrizione"`
+4. Push: `git push origin feature/nuova-funzionalita`
+5. Apri una Pull Request
+
+## Supporto
+
+- Issues: https://github.com/mirkochipdotcom/GovPay-Interaction-Layer/issues
+
 
 ---
 
@@ -62,48 +436,34 @@ cd GovPay-Interaction-Layer
 
 ### 2) Crea i file di configurazione
 
-Questo repository usa file separati per rendere la configurazione più chiara:
+Questo repository richiede due file di configurazione:
 
 ```bash
-cp .env.example .env
+# File di configurazione principale (compose + applicativo)
+touch .env
+
+# File di configurazione IAM Proxy (solo se abiliti SPID/CIE)
 cp .iam-proxy.env.example .iam-proxy.env
 ```
 
-Note:
-- `.env` è sempre necessario (compose + valori condivisi).
-- `.iam-proxy.env` è necessario se abiliti SPID/CIE.
+**Note**:
+- `.env` contiene tutte le variabili necessarie a compose e ai servizi applicativi (backoffice, frontoffice, database). Questo file **non è versionato** per motivi di sicurezza: devi crearlo manualmente nel tuo ambiente configurando i valori secondo le tue esigenze.
+- `.iam-proxy.env` ha un file example; copialo se abiliti il profilo `iam-proxy` (vedi sotto).
 
 #### Dati minimi necessari (GovPay e PagoPA Checkout)
 
-L'app si avvia anche lasciando gli example, ma per usare davvero le funzioni principali servono endpoint e credenziali reali.
+L'app si avvia anche lasciando i valori di default, ma per usare effettivamente le funzioni principale servono endpoint e credenziali reali.
 
-GovPay:
+**Obbligatorio**: Compila almeno:
+- `ID_DOMINIO`, `ID_A2A`, `APP_ENTITY_IPA_CODE` (identità ente)
+- URL API GovPay (`GOVPAY_*_URL`) e autenticazione (`AUTHENTICATION_GOVPAY` + credenziali)
+- Credenziali superadmin iniziale (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
 
-- Identità ente/app: `ID_DOMINIO` (CF/P.IVA ente creditore) e `ID_A2A` (id applicazione).
-- Endpoint API: compila i `GOVPAY_*_URL` nel `.env` (pendenze/pagamenti/ragioneria/backoffice).
-- Autenticazione: scegli `AUTHENTICATION_GOVPAY` e configura di conseguenza:
-   - `basic` / `form`: imposta `GOVPAY_USER` e `GOVPAY_PASSWORD`.
-   - `ssl` / `sslheader`: monta i certificati client in `certificate/` e imposta `GOVPAY_TLS_CERT` e `GOVPAY_TLS_KEY` (opzionale `GOVPAY_TLS_KEY_PASSWORD`).
+**Per pagamenti online** (Checkout): `PAGOPA_CHECKOUT_EC_BASE_URL` + `PAGOPA_CHECKOUT_SUBSCRIPTION_KEY`
 
-PagoPA Checkout (EC API):
+**Per ricevute on-demand** (Biz Events nel dettaglio flusso): `BIZ_EVENTS_HOST` + `BIZ_EVENTS_API_KEY`
 
-- `PAGOPA_CHECKOUT_EC_BASE_URL` (DEV/PROD).
-- `PAGOPA_CHECKOUT_SUBSCRIPTION_KEY` (header `Ocp-Apim-Subscription-Key`, deve restare server-side).
-- `PAGOPA_CHECKOUT_COMPANY_NAME` (nome ente mostrato nel checkout).
-- (Opzionale) `PAGOPA_CHECKOUT_RETURN_OK_URL`, `PAGOPA_CHECKOUT_RETURN_CANCEL_URL`, `PAGOPA_CHECKOUT_RETURN_ERROR_URL`.
-
-pagoPA Biz Events (Ricevute EC):
-
-- `BIZ_EVENTS_HOST`: Base URL dell'API Biz Events Service.
-  - DEV: `https://api.dev.platform.pagopa.it/bizevents/service/v1`
-  - PROD: `https://api.platform.pagopa.it/bizevents/service/v1`
-- `BIZ_EVENTS_API_KEY`: Subscription key per il servizio Biz Events (header `Ocp-Apim-Subscription-Key`).
-
-Queste variabili sono necessarie per la funzionalità di recupero ricevute on-demand nel dettaglio flusso del Backoffice.
-
-Approfondimenti:
-- certificati GovPay: `certificate/README.md`
-- configurazione Checkout e Biz Events: `pagopa-clients/README.md`
+Dettagli completi: vedi tabella sopra e file di commenti nel docker-compose.
 
 ### 3) Avvia i container
 
@@ -137,34 +497,125 @@ Il seed è idempotente: viene creato solo se non esiste già un superadmin nel D
 
 ## Configurazione: file .env
 
-### `.env` (compose + condivisi)
+### Variabili essenziali del `.env`
 
-Contiene:
-- porte esposte (`BACKOFFICE_HTTPS_PORT`, `FRONTOFFICE_HTTPS_PORT`, …)
-- profili Docker Compose (`COMPOSE_PROFILES`)
-- configurazione DB (`DB_*`)
-- configurazione GovPay (URL, auth, certificati)
+Il file `.env` è il punto unico di configurazione per compose e per tutti i servizi applicativi.
 
-### `.env.frontoffice`
+#### Porte e routing
 
-Contiene:
-- base URL pubblico del frontoffice (`FRONTOFFICE_PUBLIC_BASE_URL`)
-- parametri SAML SP (certificati, callback)
-- dati DB dedicati ai cittadini
+```env
+# Porta HTTPS per backoffice (default 8443)
+BACKOFFICE_HTTP_PORT=8443
 
-### `.env.backoffice`
+# Porta HTTPS per frontoffice (default 8444)
+FRONTOFFICE_HTTP_PORT=8444
 
-Contiene:
-- porta HTTPS
-- dati DB backoffice
+# URL pubblici (frontend accede a questi URL)
+BACKOFFICE_PUBLIC_BASE_URL=https://localhost:8443
+FRONTOFFICE_PUBLIC_BASE_URL=https://localhost:8444
+```
 
-### `.iam-proxy.env`
+#### Database locale (MariaDB)
 
-Contiene:
-- URL pubblici e metadata SAML2 del proxy IAM
-- impostazioni SATOSA (UI, metadata, chiavi)
-- abilitazioni UI (SPID/CIE)
-- configurazione MongoDB
+```env
+DB_ROOT_PASSWORD=root_password_sicura
+DB_NAME=govpay_backoffice
+DB_USER=govpay_bo
+DB_PASSWORD=password_sicura
+DB_USER_CITTADINI=govpay_fo
+DB_PASSWORD_CITTADINI=password_sicura
+```
+
+#### Ente e configurazione applicativa
+
+```env
+# Identificatives ente
+ID_DOMINIO=codice_fiscale_ente           # PA / P.IVA dell'ente
+ID_A2A=id_app_govpay                     # ID applicazione su GovPay
+APP_ENTITY_IPA_CODE=d_x000               # Codice IPA ente (trovabile su indicePA)
+
+# Dati organizzazione (mostrati nell'interfaccia)
+APP_ENTITY_NAME=Nome Ente Creditore
+APP_ENTITY_SUFFIX=(Provincia)
+APP_ENTITY_GOVERNMENT=true # se è PA
+APP_ENTITY_URL=https://ente.gov.it
+APP_LOGO_SRC=https://ente.gov.it/logo.png
+APP_LOGO_TYPE=image/png
+
+# Contatti supporto
+APP_SUPPORT_EMAIL=supporto@ente.gov.it
+APP_SUPPORT_PHONE=+39 XXXXXXXXXX
+APP_SUPPORT_HOURS=Lun-Ven 09:00-17:00
+APP_SUPPORT_LOCATION=Via esempio, NN, CAP Città
+```
+
+#### GovPay: credenziali e endpoint
+
+```env
+# Tipo di autenticazione verso GovPay
+AUTHENTICATION_GOVPAY=basic              # opzioni: basic, form, ssl, sslheader
+
+# Se AUTHENTICATION_GOVPAY=basic o form:
+GOVPAY_USER=username_su_govpay
+GOVPAY_PASSWORD=password_govpay
+
+# Se AUTHENTICATION_GOVPAY=ssl o sslheader:
+GOVPAY_TLS_CERT=certificate/client.crt
+GOVPAY_TLS_KEY=certificate/client.key
+GOVPAY_TLS_KEY_PASSWORD=                 # opzionale se chiave non è cifrata
+
+# URL API GovPay (completa con il tuo host/porta)
+GOVPAY_PENDENZE_URL=https://govpay.example.org/govpay/api/v1/pendenze
+GOVPAY_PAGAMENTI_URL=https://govpay.example.org/govpay/api/v1/pagamenti
+GOVPAY_RAGIONERIA_URL=https://govpay.example.org/govpay/api/v1/ragioneria
+GOVPAY_BACKOFFICE_URL=https://govpay.example.org/govpay/api/v1/backoffice
+GOVPAY_PENDENZE_PATCH_URL=https://govpay.example.org/govpay/api/v1/pendenze
+```
+
+#### PagoPA Checkout e Biz Events (ricevute on-demand)
+
+```env
+# pagoPA Checkout EC API
+PAGOPA_CHECKOUT_EC_BASE_URL=https://api.dev.platform.pagopa.it/checkout/ec/v1
+PAGOPA_CHECKOUT_SUBSCRIPTION_KEY=subscription-key-acquistata
+PAGOPA_CHECKOUT_COMPANY_NAME=Nome Ente
+
+# URL di return (opzionali, usati dal modulo Checkout)
+PAGOPA_CHECKOUT_RETURN_OK_URL=https://localhost:8444/pagamento-ok
+PAGOPA_CHECKOUT_RETURN_CANCEL_URL=https://localhost:8444/pagamento-annullato
+PAGOPA_CHECKOUT_RETURN_ERROR_URL=https://localhost:8444/pagamento-errore
+
+# pagoPA Biz Events API (per ricevute)
+BIZ_EVENTS_HOST=https://api.dev.platform.pagopa.it/bizevents/service/v1
+BIZ_EVENTS_API_KEY=subscription-key-bizevents
+```
+
+#### Email (notifiche backoffice)
+
+```env
+BACKOFFICE_MAILER_DSN=smtp://user:pass@smtp.example.org:587?encryption=tls
+BACKOFFICE_MAILER_FROM_ADDRESS=noreply@ente.gov.it
+BACKOFFICE_MAILER_FROM_NAME=GovPay Backoffice
+```
+
+#### Credenziali iniziali (superadmin al primo avvio)
+
+```env
+ADMIN_EMAIL=admin@ente.gov.it
+ADMIN_PASSWORD=password_superadmin_sicura_>=12_chars
+```
+
+#### Debug (opzionale, solo development)
+
+```env
+APP_DEBUG=false           # Mostra stack trace su errori (mai true in prod!)
+ENABLE_DEBUG_TOOL=false   # Abilita toolbar debug al backoffice
+SSL=false                 # Se con reverse proxy HTTP interno
+```
+
+---
+
+## Configurazione: file `.iam-proxy.env`
 
 ---
 
@@ -172,25 +623,82 @@ Contiene:
 
 Il sistema di autenticazione usa **IAM Proxy Italia (SATOSA)** come componente standard.
 
+### Configurazione minima IAM Proxy
+
+Se usi il profilo Docker Compose `iam-proxy`, compila nel `.iam-proxy.env`:
+
+```env
+# URL pubblico del proxy SPID/CIE (visto dal browser)
+# Esempi:
+# - DEV locale: https://127.0.0.1:9445
+# - PROD: https://login.ente.gov.it (senza porta se 443)
+IAM_PROXY_PUBLIC_BASE_URL=https://127.0.0.1:9445
+
+# Secret per SATOSA (genera random string >= 32 chars)
+SATOSA_SALT=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
+SATOSA_STATE_ENCRYPTION_KEY=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
+SATOSA_ENCRYPTION_KEY=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
+SATOSA_USER_ID_HASH_SALT=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
+
+# Ente / contact person (per metadata SPID)
+SATOSA_ORGANIZATION_DISPLAY_NAME_IT=Nome Ente
+SATOSA_ORGANIZATION_IDENTIFIER=PA:IT-XXXX  # PA:IT-<codice IPA>
+SATOSA_CONTACT_PERSON_EMAIL_ADDRESS=supporto@ente.gov.it
+
+# Abilitazioni (true/false)
+ENABLE_SPID=true
+ENABLE_CIE=true
+ENABLE_CIE_OIDC=false  # Non ancora integrato nel frontoffice
+```
+
+Copia il file example se non esiste già:
+```bash
+cp .iam-proxy.env.example .iam-proxy.env
+```
+
+### Avvio IAM Proxy
+
+Con profilo `iam-proxy`:
+
+```bash
+docker compose --profile iam-proxy up -d --build
+```
+
+Prime volte, il servizio `iam-proxy-init` scarica SATOSA da GitHub e genera i file di istanza in `.local/iam-proxy-italia-project/` (cartella riservata allo strumento, ignorata da git).
+
 ### Configurazione IAM Proxy
-
-**Variabile principale**:
-- `IAM_PROXY_PUBLIC_BASE_URL`: URL pubblico usato dal browser per accedere al proxy SPID/CIE
-   - Esempio DEV: `https://127.0.0.1:9445`
-   - Esempio PROD: `https://login.comune.it` (senza porta se è standard 443)
-
-**Variabili interne** (non modificare a meno di rinominare i servizi docker):
-- `IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL`: `https://satosa-nginx:443/Saml2IDP/metadata`
-
-**Altri parametri** (UI/metadata/chiavi) sono in [.iam-proxy.env](.iam-proxy.env) e sono già valorizzati negli example.
-
-### Configurazione IAM Proxy SATOSA
 - `iam-proxy-italia` (SATOSA uWSGI)
 - `satosa-nginx` (TLS + static + reverse uWSGI)
 
 La directory di istanza di SATOSA viene generata in **`.local/iam-proxy-italia-project/`** (fuori dal repository) per mantenere il repository pulito.
 
-Nota importante: **questa parte è pensata per avvio/validazione dello stack**. L'integrazione del frontoffice (che oggi parla con il proxy PHP via `/proxy-home.php` e `/proxy.php`) richiede un adattamento applicativo per usare i nuovi endpoint SATOSA.
+Nota importante: L'integrazione del frontoffice con il proxy PHP via `/proxy-home.php` è legacy. Per nuove integrazioni, utilizza gli endpoint SATOSA direttamente secondo gli example disponibili.
+
+### Avvio rapido SPID/CIE (locale)
+
+1) **Configure il `.iam-proxy.env`** (vedi sezione "Configurazione minima IAM Proxy" sopra)
+
+2) **Avvia con profilo iam-proxy**:
+
+   ```bash
+   docker compose --profile iam-proxy up -d --build
+   ```
+
+3) **Endpoint principali esposti da SATOSA**:
+
+   | Endpoint | Scopo | Chi lo usa |  
+   |---|---|---|  
+   | `/Saml2IDP/metadata` | Metadata IdP di SATOSA | Il frontoffice (SP interno) |  
+   | `/spidSaml2/metadata` | Metadata SP di SATOSA verso SPID | IdP SPID/CIE, aggiungere al registro SPID |  
+   | `/static/disco.html` | Pagina discovery (scelta IdP) | Browser utente |
+
+   **Esempio su localhost**: `https://localhost:9445/spidSaml2/metadata` ← **invia ad AgID per attestazione SPID**
+
+4) **Metadata Service Provider (frontoffice)**: I metadata SP del frontoffice vengono generati automaticamente in `iam-proxy/metadata-sp/` basandosi su `FRONTOFFICE_PUBLIC_BASE_URL` e `ID_DOMINIO`. Se cambiano gli URL pubblici, rigenerare con:
+
+   ```bash
+   docker compose --profile iam-proxy run --rm init-sp-metadata
+   ```
 
 ### Avvio rapido (locale)
 
@@ -258,70 +766,20 @@ I metadata SP sono generati dinamicamente in base all'ambiente e **non sono vers
 - **Entity ID**: Dipende da `FRONTOFFICE_PUBLIC_BASE_URL` (es. `https://127.0.0.1:8444/saml/sp` per dev locale)
 - **Assertion Consumer Service**: `{FRONTOFFICE_PUBLIC_BASE_URL}/spid/callback`
 
-#### Generazione dei metadata SP
+#### Rigenerazione dei metadata SP
 
-I metadata SP vengono generati automaticamente al primo avvio se non esistono. Per rigenerarli manualmente:
-
-**Opzione 1: Usando il container frontoffice (raccomandato)**
+I metadata SP vengono generati automaticamente al primo avvio via il servizio `init-sp-metadata`. Per rigenerarli manualmente (ad esempio dopo aver cambiato `FRONTOFFICE_PUBLIC_BASE_URL`):
 
 ```bash
-# 1. Genera i metadata usando le variabili d'ambiente del container
-docker compose exec govpay-interaction-frontoffice php -r '
-require_once "/var/www/html/vendor/autoload.php";
-use OneLogin\Saml2\Settings;
+# Rigenera i metadata usando le variabili d'ambiente del container
+docker compose --profile iam-proxy run --rm init-sp-metadata
 
-$frontofficeBaseUrl = getenv("FRONTOFFICE_PUBLIC_BASE_URL") ?: "https://127.0.0.1:8444";
-$spEntityId = rtrim($frontofficeBaseUrl, "/") . "/saml/sp";
-$acsUrl = rtrim($frontofficeBaseUrl, "/") . "/spid/callback";
-
-$settings = [
-    "strict" => false,
-    "sp" => [
-        "entityId" => $spEntityId,
-        "assertionConsumerService" => ["url" => $acsUrl, "binding" => "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"],
-        "singleLogoutService" => ["url" => rtrim($frontofficeBaseUrl, "/") . "/spid/logout", "binding" => "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"],
-        "NameIDFormat" => "urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
-    ],
-    "idp" => ["entityId" => "http://placeholder", "singleSignOnService" => ["url" => "http://placeholder"], "x509cert" => "placeholder"],
-    "security" => ["authnRequestsSigned" => false, "wantAssertionsSigned" => true, "wantMessagesSigned" => true]
-];
-
-$settingsObj = new Settings($settings);
-echo $settingsObj->getSPMetadata();
-' > iam-proxy/metadata-sp/frontoffice_sp.xml
-
-# 2. Crea anche la versione senza estensione .xml (pysaml2 legge entrambe)
-cp iam-proxy/metadata-sp/frontoffice_sp.xml iam-proxy/metadata-sp/frontoffice_sp
-
-# 3. Riavvia SATOSA per caricare i nuovi metadata
+# Poi riavvia SATOSA per caricare i nuovi metadata
 docker compose --profile iam-proxy restart iam-proxy-italia
 ```
 
-**Opzione 2: Modifica manuale del file XML**
-
-Edita direttamente `iam-proxy/metadata-sp/frontoffice_sp.xml`:
-
-```xml
-<?xml version="1.0"?>
-<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
-                     validUntil="2027-02-03T15:14:13Z"
-                     cacheDuration="PT604800S"
-                     entityID="https://TUO_DOMINIO/saml/sp">
-    <md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" 
-                        protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
-        <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
-                                Location="https://TUO_DOMINIO/spid/logout" />
-        <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
-        <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
-                                     Location="https://TUO_DOMINIO/spid/callback"
-                                     index="1" />
-    </md:SPSSODescriptor>
-</md:EntityDescriptor>
-```
-
-Poi:
-1. Copia il file anche come `frontoffice_sp` (senza estensione): `cp iam-proxy/metadata-sp/frontoffice_sp.xml iam-proxy/metadata-sp/frontoffice_sp`
-2. Riavvia `iam-proxy-italia`: `docker compose --profile iam-proxy restart iam-proxy-italia`
+> [!WARNING]
+> **Non modificare manualmente** i file XML in `iam-proxy/metadata-sp/`. I metadata SP sono firmati digitalmente: qualsiasi modifica manuale invalida la firma e SATOSA rifiuterà i metadata corrotti. Modifica sempre le variabili d'ambiente e rigenera via container.
 
 #### Note importanti per AgID
 
