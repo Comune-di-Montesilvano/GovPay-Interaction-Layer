@@ -220,7 +220,7 @@ services:
       - APP_VERSION=${APP_VERSION}
       - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
     env_file:
-      - .env.iam-proxy
+      - .iam-proxy.env
     volumes:
       - ./iam-proxy:/iam-proxy
       - ./scripts:/scripts:ro
@@ -271,7 +271,7 @@ services:
       - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
     env_file:
       # - .env.frontoffice (rimosso: usare .env e .iam-proxy.env)
-      - .env.iam-proxy
+      - .iam-proxy.env
     restart: on-failure:3
     healthcheck:
       test: [ "CMD", "test", "-f", "/satosa_proxy/entrypoint.sh" ]
@@ -299,7 +299,7 @@ services:
     env_file:
       # Permette a nginx di leggere SATOSA_UNKNOW_ERROR_REDIRECT_PAGE
       # per configurare il redirect su errori 403 (es. annullamento login SPID/CIE)
-      - .env.iam-proxy
+      - .iam-proxy.env
     volumes:
       - ./iam-proxy/nginx/conf.d:/satosa_config_templates:ro
       - ./iam-proxy/nginx/html:/usr/share/nginx/html:ro
@@ -336,7 +336,7 @@ services:
     profiles:
       - iam-proxy
     env_file:
-      - .env.iam-proxy
+      - .iam-proxy.env
     volumes:
       - satosa_mongo_data:/data/db
     restart: unless-stopped
