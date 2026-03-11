@@ -9,7 +9,7 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
 
       - name: Debug struttura client generati
@@ -54,7 +54,7 @@ jobs:
           EOF
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@v3
         with:
           php-version: '8.4'
           extensions: mbstring, pdo_mysql, intl, zip
