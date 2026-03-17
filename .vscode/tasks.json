@@ -11,24 +11,6 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "init-iam-proxy-italia",
-			"type": "shell",
-			"command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\init-iam-proxy-italia.ps1",
-			"args": [],
-			"isBackground": false,
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "init-iam-proxy-italia-force",
-			"type": "shell",
-			"command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\init-iam-proxy-italia.ps1 -Force",
-			"args": [],
-			"isBackground": false,
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
 			"label": "up-iam-proxy",
 			"type": "shell",
 			"command": "docker compose --profile iam-proxy up -d",
@@ -55,9 +37,17 @@
 			"group": "build"
 		},
 		{
-			"label": "init-sp-metadata-clean",
+			"label": "setup-sp",
 			"type": "shell",
-			"command": "docker compose run --rm init-sp-metadata",
+			"command": "powershell -ExecutionPolicy Bypass -File .\\metadata\\setup-sp.ps1",
+			"isBackground": false,
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "setup-sp-force",
+			"type": "shell",
+			"command": "powershell -ExecutionPolicy Bypass -File .\\metadata\\setup-sp.ps1 -Force",
 			"isBackground": false,
 			"group": "build",
 			"problemMatcher": []
@@ -65,11 +55,11 @@
 		{
 			"label": "up-iam-proxy-with-metadata",
 			"type": "shell",
-			"command": "echo 'Starting iam-proxy with fresh SP metadata'",
+			"command": "echo 'Starting iam-proxy with local metadata setup'",
 			"isBackground": false,
 			"group": "build",
 			"dependsOn": [
-				"init-sp-metadata-clean",
+				"setup-sp",
 				"up-iam-proxy"
 			],
 			"problemMatcher": []

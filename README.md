@@ -145,7 +145,7 @@ Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)** e si avvia con il p
 ### Prerequisiti aggiuntivi
 
 - Porta libera: `9445` (proxy IAM, configurabile con `IAM_PROXY_HTTP_PORT`)
-- Certificati SPID in `iam-proxy/spid-certs/` (generati automaticamente al primo avvio se mancanti)
+- Certificati SPID nel volume Docker `govpay_spid_certs` (generati automaticamente da `metadata/setup-sp.*` se mancanti)
 
 ### 1. Configura `.iam-proxy.env`
 
@@ -187,12 +187,11 @@ Il file `.iam-proxy.env.example` contiene tutte le variabili disponibili con com
 docker compose --profile iam-proxy up -d --build
 ```
 
-Al primo avvio il servizio `iam-proxy-init` scarica SATOSA da GitHub e genera la directory di istanza in `.local/iam-proxy-italia-project/` (ignorata da git).
+Al primo avvio il servizio `sync-iam-proxy` scarica SATOSA da GitHub e aggiorna la directory di istanza in `iam-proxy/iam-proxy-italia-project/`.
 
-Per inizializzare manualmente (es. debug su Windows):
+Prima di avviare il profilo `iam-proxy`, genera cert e metadata locali:
 ```powershell
-# Task VS Code: "init-iam-proxy-italia-force"
-powershell -ExecutionPolicy Bypass -File .\scripts\init-iam-proxy-italia.ps1 -Force
+powershell -ExecutionPolicy Bypass -File .\metadata\setup-sp.ps1
 ```
 
 ### 3. Endpoint esposti da SATOSA
@@ -216,21 +215,38 @@ https://localhost:9445/static/disco.html    ← pagina di scelta IdP
 > [!WARNING]
 > L'path `/spSaml2/metadata` (senza "id") non esiste e restituisce 302. Il path corretto è `/spidSaml2/metadata`.
 
-### 4. Metadata Service Provider (frontoffice)
+### 4. Mappa metadata (distinzione operativa)
 
-SATOSA ha bisogno dei metadata del frontoffice (Service Provider) per accettare le richieste di autenticazione. Vengono generati automaticamente in `iam-proxy/metadata-sp/` al primo avvio.
+| Tipo metadata | Dove si genera | Dove lo trovi | Chi lo usa | Va inviato ad AgID? |
+|---|---|---|---|:---:|
+| **Metadata Frontoffice SP interno** (`frontoffice_sp.xml`) | Automatico all'avvio profilo `iam-proxy` (service `init-frontoffice-sp-metadata` + `refresh-frontoffice-sp-metadata`) | Volume Docker `frontoffice_sp_metadata` (mount in SATOSA `/satosa_proxy/metadata/sp/frontoffice_sp.xml`) | SATOSA per riconoscere il Frontoffice come SP chiamante | ❌ No |
+| **Metadata SATOSA IdP interno** (`/Saml2IDP/metadata`) | Runtime SATOSA (dinamico) | `https://<iam-proxy>/Saml2IDP/metadata` | Frontoffice (config `IAM_PROXY_SAML2_IDP_METADATA_URL*`) | ❌ No |
+| **Metadata SATOSA SPID pubblico** (`/spidSaml2/metadata`) | Runtime SATOSA (dinamico) | `https://<iam-proxy>/spidSaml2/metadata` | Federazione SPID / AgID / IdP SPID | ✅ **Sì** |
+
+In breve: `frontoffice_sp.xml` serve solo nel canale interno Frontoffice → SATOSA; ad AgID si invia il metadata pubblico esposto da SATOSA a `/spidSaml2/metadata`.
+
+Per esportare una copia locale del metadata pubblico da inviare ad AgID (consigliato):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\metadata\setup-sp.ps1 -MetadataOnly
+```
+
+In produzione usa il dominio pubblico del proxy (es. `https://login.ente.gov.it/spidSaml2/metadata`).
+
+### 5. Metadata Service Provider (frontoffice)
+
+SATOSA ha bisogno dei metadata del frontoffice (Service Provider) per accettare le richieste di autenticazione. Sono generati automaticamente all'avvio e mantenuti in volume Docker interno (`frontoffice_sp_metadata`), senza file nel repository.
 
 Per rigenerarli manualmente (es. dopo aver cambiato `FRONTOFFICE_PUBLIC_BASE_URL`):
 
-```bash
-docker compose --profile iam-proxy run --rm init-sp-metadata
-docker compose --profile iam-proxy restart iam-proxy-italia
+```powershell
+docker compose --profile iam-proxy up -d --force-recreate init-frontoffice-sp-metadata refresh-frontoffice-sp-metadata iam-proxy-italia
 ```
 
 > [!WARNING]
-> **Non modificare manualmente** i file in `iam-proxy/metadata-sp/`. Sono firmati digitalmente: qualsiasi modifica manuale invalida la firma e SATOSA li rifiuterà. Modifica le variabili d'ambiente e rigenera sempre tramite il container.
+> Il metadata interno Frontoffice SP non e' piu' su filesystem di progetto. Qualsiasi rigenerazione interna passa dai servizi Docker `init-frontoffice-sp-metadata` / `refresh-frontoffice-sp-metadata`.
 
-I metadata SP del frontoffice sono **interni a SATOSA** e non vanno inviati ad AgID. Ad AgID si inviano i metadata al path `/spidSaml2/metadata`.
+I metadata SP del frontoffice sono **interni a SATOSA** e non vanno inviati ad AgID. Ad AgID si inviano i metadata al path `/spidSaml2/metadata` (esportabili localmente in `metadata/agid/satosa_spid_public_metadata.xml`).
 
 ---
 
@@ -395,10 +411,11 @@ GovPay-Interaction-Layer/
 ├── frontoffice/              # applicazione frontoffice
 ├── app/                      # codice PHP condiviso
 ├── iam-proxy/                # proxy SPID/CIE (SATOSA) — vedi iam-proxy/PERSONALIZZAZIONE.md
+├── metadata/                 # setup metadata/cert SPID (setup-sp.ps1/setup-sp.sh)
 ├── ssl/                      # certificati TLS server (browser → app) — vedi ssl/README.md
 ├── certificate/              # certificati client GovPay (app → GovPay) — vedi certificate/README.md
 ├── img/                      # immagini/loghi — vedi img/README.md
-├── scripts/                  # script di utilità (cron, init)
+├── scripts/                  # script di utilità runtime (cron, sync iam-proxy)
 ├── migrations/               # migrazioni DB
 ├── govpay-clients/           # client API GovPay generati
 ├── pagopa-clients/           # client API pagoPA generati

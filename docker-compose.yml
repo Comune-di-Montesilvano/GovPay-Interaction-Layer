@@ -1,69 +1,4 @@
 services:
-  # Servizio di utility che genera i metadata SP al primo avvio
-  init-spid-cert:
-    image: alpine:latest
-    container_name: govpay-init-spid-cert
-    volumes:
-      - ./iam-proxy/spid-certs:/certs
-      - ./scripts:/scripts:ro
-    entrypoint: [ "/bin/sh", "-c" ]
-    command:
-      - |
-        if [ -f /certs/privkey.pem ] && [ -f /certs/cert.pem ]; then
-          echo "[INFO] SPID cert già presente, skip generazione";
-          exit 0;
-        fi
-        apk add --no-cache bash openssl curl jq
-        export COMMON_NAME="$${SPID_CERT_COMMON_NAME:-$${APP_ENTITY_NAME:-GovPay}}"
-        export DAYS="$${SPID_CERT_DAYS:-365}"
-        export ENTITY_ID="$${SPID_CERT_ENTITY_ID:-$${FRONTOFFICE_PUBLIC_BASE_URL:-https://127.0.0.1:8444}/saml/sp}"
-        export KEY_LEN="$${SPID_CERT_KEY_SIZE:-3072}"
-        export LOCALITY_NAME="$${SPID_CERT_LOCALITY_NAME:-Roma}"
-        export ORGANIZATION_IDENTIFIER="$${SPID_CERT_ORG_ID:-PA:IT-$${APP_ENTITY_IPA_CODE:-c_x000}}"
-        export ORGANIZATION_NAME="$${SPID_CERT_ORG_NAME:-$${APP_ENTITY_NAME:-GovPay}}"
-        export MD_ALG="sha256"
-
-        cd /certs
-        bash /scripts/spid-gencert-public.sh
-        # Crea symlink o copia con naming SATOSA-compatibile (cert.pem, privkey.pem)
-        cp /certs/crt.pem /certs/cert.pem
-        cp /certs/key.pem /certs/privkey.pem
-        # Fix permessi chiave privata poichè openssl genera con permessi 600 di default (root) e uwsgi in IAM non può leggerla
-        chmod 644 /certs/*.pem
-        # Opzionale: pulizia dei file temporanei
-        rm -f /certs/crt.pem /certs/key.pem /certs/csr.pem
-    env_file:
-      - .env
-    profiles:
-      - iam-proxy
-
-  init-sp-metadata:
-    image: govpay-interaction-frontoffice:latest
-    container_name: govpay-init-sp-metadata
-    volumes:
-      - ./scripts/ensure-sp-metadata.sh:/scripts/ensure-sp-metadata.sh:ro
-      - ./iam-proxy/metadata-sp:/metadata/sp
-      - ./iam-proxy/metadata-sp:/var/www/html/metadata-sp
-      - ./iam-proxy/spid-certs:/var/www/html/spid-certs
-    environment:
-      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
-      - APP_ENTITY_NAME=${APP_ENTITY_NAME}
-      - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
-      - ID_DOMINIO=${ID_DOMINIO}
-      - APP_SUPPORT_PHONE=${APP_SUPPORT_PHONE}
-      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-https://satosa-nginx:443/Saml2IDP/metadata}
-      - FRONTOFFICE_SAML_SP_X509CERT=/var/www/html/spid-certs/cert.pem
-      - FRONTOFFICE_SAML_SP_PRIVATEKEY=/var/www/html/spid-certs/privkey.pem
-    depends_on:
-      init-spid-cert:
-        condition: service_completed_successfully
-    entrypoint: [ "/bin/sh", "-c" ]
-    command:
-      - |
-        sh /scripts/ensure-sp-metadata.sh || exit 0
-    profiles:
-      - iam-proxy
-
   govpay-interaction-backoffice:
     build:
       context: .
@@ -76,8 +11,8 @@ services:
       # Monta solo la cartella debug per sviluppo live
       - ./debug:/var/www/html/public/debug
       - ./VERSION:/var/www/html/VERSION:ro
-      - ./iam-proxy/metadata-sp:/var/www/html/metadata-sp:ro
-      - ./iam-proxy/metadata-sp:/metadata/sp:ro
+      - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
+      - frontoffice_sp_metadata:/metadata/sp:ro
       - ./scripts:/var/www/html/scripts
     environment:
       - SSL=${SSL}
@@ -150,9 +85,9 @@ services:
       # Monta solo la cartella debug per sviluppo live
       - ./debug:/var/www/html/public/debug
       - ./VERSION:/var/www/html/VERSION:ro
-      - ./iam-proxy/metadata-sp:/var/www/html/metadata-sp:ro
-      - ./iam-proxy/metadata-sp:/metadata/sp:ro
-      - ./iam-proxy/spid-certs:/var/www/html/spid-certs:ro
+      - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
+      - frontoffice_sp_metadata:/metadata/sp:ro
+      - spid_certs:/var/www/html/spid-certs:ro
     environment:
       - SSL=${SSL}
       - APACHE_SERVER_NAME=${APACHE_SERVER_NAME}
@@ -163,7 +98,7 @@ services:
       - DB_NAME=${DB_NAME_CITTADINI}
       - DB_USER=${DB_USER_CITTADINI}
       - DB_PASSWORD=${DB_PASSWORD_CITTADINI}
-      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE}
+      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}
       - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
       - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
       - APP_ENTITY_NAME=${APP_ENTITY_NAME}
@@ -201,7 +136,7 @@ services:
       - COMPOSE_PROFILES=${COMPOSE_PROFILES}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://satosa-nginx:80/Saml2IDP/metadata}
       - IAM_PROXY_PUBLIC_BASE_URL=${IAM_PROXY_PUBLIC_BASE_URL}
-      - IAM_PROXY_DEBUG=${IAM_PROXY_DEBUG}
+      - IAM_PROXY_DEBUG=${IAM_PROXY_DEBUG:-false}
     depends_on:
       - db
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
@@ -234,6 +169,69 @@ services:
     profiles:
       - iam-proxy
 
+  init-frontoffice-sp-metadata:
+    image: govpay-interaction-frontoffice:latest
+    container_name: init-frontoffice-sp-metadata
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sh /scripts/ensure-sp-metadata.sh
+    volumes:
+      - ./metadata/ensure-sp-metadata.sh:/scripts/ensure-sp-metadata.sh:ro
+      - frontoffice_sp_metadata:/metadata/sp
+      - frontoffice_sp_metadata:/var/www/html/metadata-sp
+      - spid_certs:/var/www/html/spid-certs:ro
+    environment:
+      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
+      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-365}
+      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
+      - FRONTOFFICE_SAML_SP_X509CERT=/var/www/html/spid-certs/cert.pem
+      - FRONTOFFICE_SAML_SP_PRIVATEKEY=/var/www/html/spid-certs/privkey.pem
+      - APP_ENTITY_NAME=${APP_ENTITY_NAME}
+      - APP_ENTITY_SUFFIX=${APP_ENTITY_SUFFIX}
+      - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
+      - APP_ENTITY_URL=${APP_ENTITY_URL}
+      - APP_SUPPORT_EMAIL=${APP_SUPPORT_EMAIL}
+      - APP_SUPPORT_PHONE=${APP_SUPPORT_PHONE}
+      - ID_DOMINIO=${ID_DOMINIO}
+    profiles:
+      - iam-proxy
+
+  refresh-frontoffice-sp-metadata:
+    image: govpay-interaction-frontoffice:latest
+    container_name: refresh-frontoffice-sp-metadata
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          sh /scripts/ensure-sp-metadata.sh || true
+          sleep ${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}
+        done
+    volumes:
+      - ./metadata/ensure-sp-metadata.sh:/scripts/ensure-sp-metadata.sh:ro
+      - frontoffice_sp_metadata:/metadata/sp
+      - frontoffice_sp_metadata:/var/www/html/metadata-sp
+      - spid_certs:/var/www/html/spid-certs:ro
+    environment:
+      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
+      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-365}
+      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
+      - FRONTOFFICE_SAML_SP_X509CERT=/var/www/html/spid-certs/cert.pem
+      - FRONTOFFICE_SAML_SP_PRIVATEKEY=/var/www/html/spid-certs/privkey.pem
+      - APP_ENTITY_NAME=${APP_ENTITY_NAME}
+      - APP_ENTITY_SUFFIX=${APP_ENTITY_SUFFIX}
+      - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
+      - APP_ENTITY_URL=${APP_ENTITY_URL}
+      - APP_SUPPORT_EMAIL=${APP_SUPPORT_EMAIL}
+      - APP_SUPPORT_PHONE=${APP_SUPPORT_PHONE}
+      - ID_DOMINIO=${ID_DOMINIO}
+    depends_on:
+      init-frontoffice-sp-metadata:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    profiles:
+      - iam-proxy
+
   iam-proxy-italia:
     image: ghcr.io/italia/iam-proxy-italia:latest
     container_name: iam-proxy-italia
@@ -241,6 +239,62 @@ services:
       - /bin/bash
       - -c
       - |
+        # Watchdog sulla scadenza del metadata SP del Frontoffice caricato da SATOSA.
+        # Non riguarda i metadata pubblici di SATOSA (/Saml2IDP/metadata, /spidSaml2/metadata).
+        FRONTOFFICE_SP_METADATA_FILE="$${FRONTOFFICE_SP_METADATA_FILE:-/satosa_proxy/metadata/sp/frontoffice_sp.xml}"
+        FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS="$${FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS:-604800}"
+        FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS="$${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}"
+
+        metadata_expiry_watchdog() {
+          while true; do
+            python - "$$FRONTOFFICE_SP_METADATA_FILE" "$$FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS" <<'PY'
+        import datetime as dt
+        import os
+        import sys
+        import xml.etree.ElementTree as ET
+
+        metadata_file = sys.argv[1]
+        warn_window = int(sys.argv[2])
+
+        def log_error(msg: str):
+          print(f"[ERROR] [metadata-expiry-watchdog] {msg}", flush=True)
+
+        if not os.path.exists(metadata_file):
+          log_error(f"metadata file not found: {metadata_file}")
+          sys.exit(0)
+
+        try:
+          root = ET.parse(metadata_file).getroot()
+          valid_until_raw = root.attrib.get("validUntil", "").strip()
+          if not valid_until_raw:
+            log_error(f"validUntil missing in metadata: {metadata_file}")
+            sys.exit(0)
+
+          # Accept format like 2026-03-18T15:25:24Z
+          valid_until = dt.datetime.strptime(valid_until_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+          now = dt.datetime.now(dt.timezone.utc)
+          remaining = int((valid_until - now).total_seconds())
+
+          if remaining <= warn_window:
+            days = remaining // 86400
+            hours = (remaining % 86400) // 3600
+            if remaining <= 0:
+              log_error(f"SP metadata EXPIRED at {valid_until_raw} (file={metadata_file})")
+            else:
+              log_error(
+                f"SP metadata expires soon at {valid_until_raw} (remaining={remaining}s ~ {days}d {hours}h, file={metadata_file})"
+              )
+        except Exception as ex:
+          log_error(f"cannot parse metadata expiry from {metadata_file}: {ex}")
+        PY
+            sleep "$$FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS"
+          done
+        }
+
+        if [ "$$FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS" -gt 0 ] 2>/dev/null; then
+          metadata_expiry_watchdog &
+        fi
+
         if [ -f /satosa_proxy/patch_saml2.py ]; then
           echo "[INFO] Applying SAML2 patch..."
           python /satosa_proxy/patch_saml2.py
@@ -255,14 +309,14 @@ services:
     volumes:
       - ./iam-proxy/iam-proxy-italia-project:/satosa_proxy
       - ./iam-proxy/patch_saml2.py:/satosa_proxy/patch_saml2.py:ro
-      - ./iam-proxy/metadata-sp:/satosa_proxy/metadata/sp:ro
-      - ./iam-proxy/spid-certs:/satosa_proxy/pki # certificati SPID-compliant generati da init-spid-cert
+      - frontoffice_sp_metadata:/satosa_proxy/metadata/sp:ro
+      - spid_certs:/satosa_proxy/pki
     profiles:
       - iam-proxy
     depends_on:
       sync-iam-proxy:
         condition: service_completed_successfully
-      init-sp-metadata:
+      init-frontoffice-sp-metadata:
         condition: service_completed_successfully
     environment:
       # Config minima per esecuzione container (valori dettagliati/secret in .env)
@@ -350,3 +404,7 @@ networks:
 volumes:
   db_data:
   satosa_mongo_data:
+  frontoffice_sp_metadata:
+  spid_certs:
+    external: true
+    name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}

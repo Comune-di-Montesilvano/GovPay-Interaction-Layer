@@ -8,16 +8,18 @@ if [ -d "/metadata/sp" ]; then
 else
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
     PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-    METADATA_SP_DIR="${PROJECT_ROOT}/iam-proxy/metadata-sp"
+    METADATA_SP_DIR="${PROJECT_ROOT}/.local/frontoffice-sp-metadata"
 fi
 if [ -d "/var/www/html/spid-certs" ]; then
     SPID_CERTS_DIR="/var/www/html/spid-certs"
 else
-    SPID_CERTS_DIR="${PROJECT_ROOT}/iam-proxy/spid-certs"
+    SPID_CERTS_DIR="${PROJECT_ROOT}/.local/spid-certs"
 fi
 FRONTOFFICE_PUBLIC_BASE_URL="${FRONTOFFICE_PUBLIC_BASE_URL:-https://127.0.0.1:8444}"
-DEFAULT_SP_CERT_PATH="${SPID_CERTS_DIR}/sp-signing.crt"
-DEFAULT_SP_KEY_PATH="${SPID_CERTS_DIR}/sp-signing.key"
+FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS="${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-365}"
+FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS="${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}"
+DEFAULT_SP_CERT_PATH="${SPID_CERTS_DIR}/cert.pem"
+DEFAULT_SP_KEY_PATH="${SPID_CERTS_DIR}/privkey.pem"
 FRONTOFFICE_SAML_SP_X509CERT="${FRONTOFFICE_SAML_SP_X509CERT:-$DEFAULT_SP_CERT_PATH}"
 FRONTOFFICE_SAML_SP_PRIVATEKEY="${FRONTOFFICE_SAML_SP_PRIVATEKEY:-$DEFAULT_SP_KEY_PATH}"
 METADATA_BASENAME="frontoffice_sp.xml"
@@ -47,6 +49,39 @@ if [ "$MODE_NEW" -eq 1 ]; then
 fi
 
 METADATA_FILE="${METADATA_SP_DIR}/${METADATA_BASENAME}"
+
+metadata_is_expired() {
+    _file="$1"
+    if [ ! -f "$_file" ]; then
+        return 0
+    fi
+
+    php -r '
+        $f = $argv[1];
+        libxml_use_internal_errors(true);
+        $xml = @simplexml_load_file($f);
+        if ($xml === false) {
+            exit(2);
+        }
+        $attrs = $xml->attributes();
+        $validUntil = isset($attrs["validUntil"]) ? (string)$attrs["validUntil"] : "";
+        if ($validUntil === "") {
+            exit(2);
+        }
+        $validTs = strtotime($validUntil);
+        if ($validTs === false) {
+            exit(2);
+        }
+        exit($validTs <= time() ? 0 : 1);
+    ' "$_file"
+    _status=$?
+
+    # 0=expired, 1=valid, 2=parse error => treat as expired to force regeneration
+    if [ "$_status" -eq 1 ]; then
+        return 1
+    fi
+    return 0
+}
 
 if [ "$MODE_NEW" -eq 1 ] && [ -f "$METADATA_FILE" ]; then
     TS="$(date +%Y%m%d%H%M%S)"
@@ -87,11 +122,17 @@ FRONTOFFICE_SAML_SP_PRIVATEKEY="$(normalize_cert_path "$FRONTOFFICE_SAML_SP_PRIV
 
 export FRONTOFFICE_SAML_SP_X509CERT
 export FRONTOFFICE_SAML_SP_PRIVATEKEY
+export FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS
+export FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS
 
-# Se il file esiste già, non rigenerare (modalità idempotente)
+# Se il file esiste già, non rigenerare salvo che sia scaduto
 if [ -f "$METADATA_FILE" ] && [ "$FORCE_OVERWRITE" -ne 1 ]; then
-    echo "[INFO] Metadata SP già presente"
-    exit 0
+    if metadata_is_expired "$METADATA_FILE"; then
+        echo "[WARN] Metadata SP presenti ma scaduti/corrotti: rigenerazione automatica"
+    else
+        echo "[INFO] Metadata SP già presente"
+        exit 0
+    fi
 fi
 
 echo "[INFO] Generando metadata SP per: $FRONTOFFICE_PUBLIC_BASE_URL"
@@ -135,11 +176,21 @@ if (!class_exists('OneLogin\Saml2\Settings')) {
     $fiscalCode = getenv('ID_DOMINIO') ?: '00000000000';
     $ipaCode = getenv('APP_ENTITY_IPA_CODE') ?: 'c_x000';
     
+    $validityDays = (int)(getenv('FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS') ?: '365');
+    if ($validityDays < 1) {
+        $validityDays = 1;
+    }
+    $cacheSeconds = (int)(getenv('FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS') ?: '604800');
+    if ($cacheSeconds < 60) {
+        $cacheSeconds = 60;
+    }
+    $validUntil = gmdate('Y-m-d\TH:i:s\Z', time() + ($validityDays * 86400));
+
     $metadata = <<<XML
 <?xml version="1.0"?>
 <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
-                     validUntil="2027-02-03T15:14:13Z"
-                     cacheDuration="PT604800S"
+                     validUntil="$validUntil"
+                     cacheDuration="PT{$cacheSeconds}S"
                      entityID="$spEntityId">
     <md:SPSSODescriptor AuthnRequestsSigned="true" WantAssertionsSigned="true" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
         <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
@@ -185,6 +236,16 @@ XML;
 $frontofficeBaseUrl = isset($argv[1]) ? $argv[1] : 'https://127.0.0.1:8444';
 $spEntityId = rtrim($frontofficeBaseUrl, '/') . '/saml/sp';
 $acsUrl = rtrim($frontofficeBaseUrl, '/') . '/spid/callback';
+$validityDays = (int)(getenv('FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS') ?: '365');
+if ($validityDays < 1) {
+    $validityDays = 1;
+}
+$cacheSeconds = (int)(getenv('FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS') ?: '604800');
+if ($cacheSeconds < 60) {
+    $cacheSeconds = 60;
+}
+$validUntil = gmdate('Y-m-d\\TH:i:s\\Z', time() + ($validityDays * 86400));
+$validUntilTs = time() + ($validityDays * 86400);
 
 $orgName = getenv('APP_ENTITY_NAME') ?: 'GovPay';
 $orgSuffix = getenv('APP_ENTITY_SUFFIX') ?: '';
@@ -330,8 +391,8 @@ try {
         $spData,
         (bool)($securityData['authnRequestsSigned'] ?? false),
         (bool)($securityData['wantAssertionsSigned'] ?? false),
-        null,
-        null,
+        $validUntilTs,
+        $cacheSeconds,
         $contacts,
         $organization
     );

@@ -170,6 +170,16 @@ if [ -f "$PROJECT_DST/proxy_conf.yaml" ] && [ "$ENABLE_IT_WALLET" != "true" ]; t
    sed -i 's|^  - "conf/frontends/openid4vci_frontend.yaml"|  # - "conf/frontends/openid4vci_frontend.yaml"  # Disabled (ENABLE_IT_WALLET!=true)|' "$PROJECT_DST/proxy_conf.yaml"
 fi
 
+# Explicitly disable OIDCOP frontend unless requested.
+# This frontend requires dedicated OIDC OP Mongo variables that are often not set in SPID-only setups.
+if [ -f "$PROJECT_DST/proxy_conf.yaml" ] && [ "$ENABLE_OIDCOP" != "true" ]; then
+  echo "[sync-iam-proxy] Disabling OIDCOP frontend (ENABLE_OIDCOP!=true)..."
+  # Backup original if not exists
+  [ ! -f "$PROJECT_DST/proxy_conf.yaml.original" ] && cp "$PROJECT_DST/proxy_conf.yaml" "$PROJECT_DST/proxy_conf.yaml.original"
+
+  sed -i 's|^  - "conf/frontends/oidcop_frontend.yaml"|  # - "conf/frontends/oidcop_frontend.yaml"  # Disabled (ENABLE_OIDCOP!=true)|' "$PROJECT_DST/proxy_conf.yaml"
+fi
+
 # Force SPID backend default ACS index for full attribute set by default.
 # Override with SATOSA_FICEP_DEFAULT_ACS_INDEX if needed.
 SPID_BACKEND_FILE="$PROJECT_DST/conf/backends/spidsaml2_backend.yaml"
