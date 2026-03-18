@@ -85,6 +85,39 @@ function Test-SpidCertsPresent {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Write-PrettyXmlFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$XmlContent,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    try {
+        $xmlDoc = New-Object System.Xml.XmlDocument
+        $xmlDoc.PreserveWhitespace = $false
+        $xmlDoc.LoadXml($XmlContent)
+
+        $settings = New-Object System.Xml.XmlWriterSettings
+        $settings.Indent = $true
+        $settings.IndentChars = '  '
+        $settings.NewLineChars = "`n"
+        $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
+        $settings.OmitXmlDeclaration = $false
+        $settings.Encoding = [System.Text.UTF8Encoding]::new($false)
+
+        $writer = [System.Xml.XmlWriter]::Create($OutputPath, $settings)
+        try {
+            $xmlDoc.Save($writer)
+        }
+        finally {
+            $writer.Close()
+        }
+    }
+    catch {
+        Write-Warning "Cannot pretty-format XML metadata: $($_.Exception.Message). Saving raw content."
+        Set-Content -Path $OutputPath -Value $XmlContent -Encoding UTF8
+    }
+}
+
 Write-Host '========================================================'
 Write-Host '  GovPay Interaction Layer - Setup SP SPID'
 Write-Host '========================================================'
@@ -177,7 +210,7 @@ if (-not $CertsOnly) {
         throw "Cannot fetch SATOSA public metadata from $publicMetadataUrl after $maxRetries attempts"
     }
 
-    Set-Content -Path $AgidMetadataFile -Value $metadata -Encoding UTF8
+    Write-PrettyXmlFile -XmlContent $metadata -OutputPath $AgidMetadataFile
 
     Write-Host ''
     Write-Host '[OK] Public metadata exported for AgID:'

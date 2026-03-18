@@ -101,6 +101,24 @@
         padding: 1rem;
       }
     }
+
+    .button-cie {
+      background-color: #003D8F;
+    }
+
+    .mi-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 0.75rem;
+    }
+
+    .mi-brand span {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #555;
+      letter-spacing: 0.05em;
+    }
   </style>
 </head>
 <body>
@@ -148,11 +166,11 @@
         <button class="nav-link h-100 px-4 active" id="tab-spid" data-bs-toggle="tab" data-bs-target="#panel-spid" type="button" role="tab" aria-controls="panel-spid" aria-selected="true">SPID</button>
       </li>
       <!-- SPID_BLOCK_END -->
-      <!-- CIE_BLOCK_START -->
+      <!-- CIE_OIDC_BLOCK_START -->
       <li class="nav-item text-sm-center" role="presentation">
         <button class="nav-link h-100 px-4" id="tab-cie" data-bs-toggle="tab" data-bs-target="#panel-cie" type="button" role="tab" aria-controls="panel-cie" aria-selected="false" tabindex="-1">CIE</button>
       </li>
-      <!-- CIE_BLOCK_END -->
+      <!-- CIE_OIDC_BLOCK_END -->
     </ul>
 
     <div class="tab-content" id="tab-content">
@@ -265,7 +283,7 @@
       </div>
       <!-- SPID_BLOCK_END -->
 
-      <!-- CIE_BLOCK_START -->
+      <!-- CIE_OIDC_BLOCK_START -->
       <div class="tab-pane fade" id="panel-cie" role="tabpanel" aria-labelledby="tab-cie">
         <h3 class="visually-hidden">Accedi con identità digitale CIE</h3>
         <p class="mt-3">La <strong>Carta d'Identità Elettronica</strong> (CIE) è il documento personale che attesta l'identità del cittadino. Dotata di microprocessore, oltre a comprovare l'identità personale, permette l'accesso ai servizi digitali della Pubblica Amministrazione.</p>
@@ -277,15 +295,26 @@
             </a>
           </div>
           <div class="col-12 col-md-6 text-center">
-            <a class="d-inline-block my-3 disco-idp-link" data-entity-id="https://idserver.servizicie.interno.gov.it/idp/profile/SAML2/POST/SSO">
-              <img class="img-fluid" src="/static/cie/cie_button.png" onerror="this.src='/static/cie/cie_white.svg'; this.onerror=null;" alt="Entra con CIE">
-              <span class="visually-hidden">Accedi con identità digitale CIE</span>
+            <a class="d-inline-block my-3 disco-idp-link italia-it-button italia-it-button-size-m button-cie" data-entity-id="${CIE_OIDC_PROVIDER_URL}">
+              <span class="italia-it-button-icon">
+                <img src="/static/cie/cie_white.svg" alt="">
+              </span>
+              <span class="italia-it-button-text">Entra con CIE</span>
             </a>
           </div>
         </div>
-        <img class="img-fluid mx-auto d-block mt-2" src="/static/cie/MI_logo.png" onerror="this.style.display='none'; this.onerror=null;" alt="Logo del Ministero dell'Interno">
+        <div class="text-center">
+          <div class="mi-brand">
+            <svg width="30" height="20" viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect width="1" height="2" x="0" fill="#009246"/>
+              <rect width="1" height="2" x="1" fill="#ffffff"/>
+              <rect width="1" height="2" x="2" fill="#ce2b37"/>
+            </svg>
+            <span>MINISTERO DELL'INTERNO</span>
+          </div>
+        </div>
       </div>
-      <!-- CIE_BLOCK_END -->
+      <!-- CIE_OIDC_BLOCK_END -->
 
       <!-- IT_WALLET_BLOCK_START -->
       <div class="tab-pane fade" id="panel-itwallet" role="tabpanel">

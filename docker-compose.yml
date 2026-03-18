@@ -159,12 +159,13 @@ services:
     volumes:
       - ./iam-proxy:/iam-proxy
       - ./scripts:/scripts:ro
+      - ./metadata/cieoidc-keys:/metadata/cieoidc-keys:ro
     working_dir: /scripts
     command:
       - /bin/sh
       - -c
       - |
-        apk add --no-cache bash git curl unzip openssl gettext
+        apk add --no-cache bash git curl unzip openssl gettext python3
         bash /scripts/sync-iam-proxy-italia.sh
     profiles:
       - iam-proxy

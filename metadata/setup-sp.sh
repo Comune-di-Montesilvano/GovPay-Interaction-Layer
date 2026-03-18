@@ -85,6 +85,36 @@ spid_certs_present() {
     docker run --rm -v "$SPID_CERTS_DOCKER_VOLUME:/certs" alpine:latest sh -c "test -s /certs/cert.pem && test -s /certs/privkey.pem" >/dev/null 2>&1
 }
 
+pretty_print_xml_file() {
+    local xml_file="$1"
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$xml_file" <<'PY'
+import sys
+from xml.dom import minidom
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    raw = f.read()
+
+dom = minidom.parseString(raw.encode("utf-8"))
+pretty = dom.toprettyxml(indent="  ", newl="\n", encoding="utf-8").decode("utf-8")
+lines = [line for line in pretty.splitlines() if line.strip()]
+
+with open(path, "w", encoding="utf-8", newline="\n") as f:
+    f.write("\n".join(lines) + "\n")
+PY
+        return 0
+    fi
+
+    if command -v xmllint >/dev/null 2>&1; then
+        xmllint --format "$xml_file" > "$xml_file.tmp" && mv "$xml_file.tmp" "$xml_file"
+        return 0
+    fi
+
+    return 1
+}
+
 echo "========================================================"
 echo "  GovPay Interaction Layer — Setup SP SPID"
 echo "========================================================"
@@ -173,6 +203,10 @@ if [[ "$CERTS_ONLY" -eq 0 ]]; then
         if [[ "$ok" -ne 1 ]]; then
             echo "[ERROR] Impossibile esportare metadata pubblico SATOSA" >&2
             exit 1
+        fi
+
+        if ! pretty_print_xml_file "$AGID_METADATA_FILE"; then
+            echo "[WARN] Nessun formatter XML disponibile (python3/xmllint). Metadata salvato non formattato." >&2
         fi
 
     echo ""

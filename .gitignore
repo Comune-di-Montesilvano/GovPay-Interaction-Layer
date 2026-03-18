@@ -51,6 +51,14 @@ img/favicon.png
 !/iam-proxy/iam-proxy-italia-project/.gitkeep
 metadata/agid/*
 !metadata/agid/.gitkeep
+metadata/cieoidc/*
+!metadata/cieoidc/.gitkeep
+!metadata/cieoidc/README.md
+metadata/oidc/*
+
+# CIE OIDC keys: generate once per deployment, never commit (contain private keys)
+metadata/cieoidc-keys/*
+!metadata/cieoidc-keys/.gitkeep
 
 # Local directory for runtime data (outside repository)
 .local/

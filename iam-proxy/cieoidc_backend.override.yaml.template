@@ -61,39 +61,23 @@ config:
           - A192GCM
           - A256GCM
 
+  # NOTA: I blocchi JWKS vengono iniettati da scripts/sync-iam-proxy-italia.sh
+  # leggendo le chiavi generate da metadata/setup-cie-oidc.sh (metadata/cieoidc-keys/).
+  # NON modificare i placeholder qui sotto manualmente.
   jwks:
     federation: &jwks_federation
-      - d: "Npw19klvaNLdUWZRwe4MjPIgD8AH5BjfU5_dM05Gb6lBRWQKSWNlqP8bET-oZbWSw3zMaOAy2-k2GnYVXBYKu9WnjFFFPlbH-sVPfdKQLYzEABmxR_aaeSHrnDfKozTtFsYEgtI_WoGEaxPoE0P-Ds11Tp9h9ovZM48sDGnEdyjopnLPEZBR6VinP_yF1kfDg0kcIPmM1ZchIqJrnQpoKWeVTXtFFGrVqOAYmm4xBfP4U8TEimbeJJuYkJ9gLNnRDg_FC-ZPUiBIXigWZsEeJyevymP-NH4lq3osLgFOq0sqPxS3zkDwx9tWfT5UyqrCCortiQd2dxKzxZlEEvlQAQ"
-        e: "AQAB"
-        kid: "wL_LmP8UjLVN-sAeoZ7KGEMJfBkFtbNLd24eDD9RGCs"
-        kty: "RSA"
-        n: "6SDksa64IjBk7HNQC7x5C9nMARGaanfaUm3wC2WulwG_8a5aIy4CEwXN2LENkCyypODqWZcTAwCzWsiihVN9kDcEs7UNu-X1WokK252D7_DRY-FXI8AB3P0CxTngs0k-OjcmbxqVW2U8G56rJFp4G_CYA4vzBoAP_5skFBt-4a5lYJlBfJ2gJlE0vh4_46oyNuUT9kmKauR7npVSHjBUSxYyDELzoaPmvR7SkX4sJe0MK39HES6s4no9G7BraLp75eOwEQmHgEhESWscSOf_CmC5ALnzWJ3FcFhxgsuMkdjoU7bH09y8pdKs64kR2znxs-yIWrPFW8hJKnySc2fk8w"
-        p: "-1JcdcT2FdwavmPqtfOEKFUGBM9hhvwgX7KyCwl8tmresJQz8pNDkILMeKJf8ZCDVU7v4_i4C_P8oe41f2_SDsv9AIYh09zu_tQsMMdH_lqNx0YP8Yv25N5KOxnSOBO837SieFZ2xkbolXXIV7WIHrdFiyAOMOSWlETEO6JNu_M"
-        q: "7XfVt4ArSMLmRvvSl11yDF25t1aR3ylUmwZgLAJTNo76j-zo8Q2Ty7GfCIQmLOhOZTkwqnrbmwEBMEBsomWZFh_j90CLMyn1ccYUjiTI4CHJOTLMA8rYVWeArYkqek1jC4TQ9e1PkRrPcEvq2Tak8GFsBhnhOCzejJrMDgqkcwE"
+      - __CIE_OIDC_JWK_FEDERATION_YAML__
 
     core: &jwks_core
-      - use: "sig"
-        d: "n_ePK5DdOxqArf75tDGaViYrXDqRVk8zyl2dfKiiR0dXQJK7tbzJtHoGQeH4E-sw3_-Bc7OKY7DcbBWgHTijMRWj9LkAu9uCvqqGMaAroWH0aBcUmZAsNjcyUIyJ3_JRcNfUDiX3nVg67qe4ZWnMDogowaVZv3aXJiCvKE8aJK4BV_nF3Nt5R6zUYpjZQ8T1GDZCV3vza3qglDrXe8zoc-p8cLs3rJn7tMVSJVznCIqOfeM1VIg0I3n2bubYOx88sckHuDnfXTiTDlyq5IwDyBHmiIe3fpu-c4e1tiBmbOf2IqDCaX8SdpnU2gTj9YlZtRNqmh3NB_rksBKWLz3uIQ"
-        e: "AQAB"
-        kid: "YhuIJU6o15EUCyqA0LHEqJd-xVPJgoyW5wZ1o4padWs"
-        kty: "RSA"
-        n: "uXfJA-wTlTCA4FdsoE0qZfmKIgedmarrtWgQbElKbWg9RDR7Z8JVBaRLFqwyfyG1JJFm64G51cBJwLIFwWoF7nxsH9VYLm5ocjAnsR4RhlfVE0y_60wjf8skJgBRpiXQPlwH9jDGaqVE_PEBTObDO5w3XourD1F360-v5cLDLRHdFJIitdEVtqATqY5DglRDaKiBhis7a5_1bk839PDLaQhju4XJk4tvDy5-LVkMy5sP2zU6-1tJdA-VmaBZLXy9n0967FGIWmMzpafrBMOuHFcUOH56o-clDah_CITH1dq2D64K0MYhEpACO2p8AH4K8Q6YuJ1dnkVDDwZp2C84sQ"
-        p: "5PA7lJEDd3vrw5hlolFzvjvRriOu1SMHXx9Y52AgpOeQ6MnE1pO8qwn33lwYTSPGYinaq4jS3FKF_U5vOZltJAGBMa4ByEvAROJVCh958rKVRWKIqVXLOi8Gk11kHbVKw6oDXAd8Qt_y_ff8k_K6jW2EbWm1K6kfTvTMzoHkqrU"
-        q: "z2QeMH4WtrdiWUET7JgZNX0TbcaVBgd2Gpo8JHnfnGOUsvO_euKGgqpCcxiWVXSlqffQyTgVzl4iMROP8bEaQwvueHurtziMDSy9Suumyktu3PbGgjqu_izRim8Xlg7sz8Hs2quJPII_fQ8BCoaWpg30osFZqCBarQM7CWhxR40"
-
-      - use: "enc"
-        alg: "RSA-OAEP"
-        d: "Agb1P-F-bVupnNWH_5ZYh-8S7qb5I500yyjS6A9dVfvs736BGZYhQc5uoZQtrglwzgIA96uOmwW3h6Mx-469h1gTny3FE3vrmNEvIKogRRATssxMR8VWXU4Nma6gz4jp0MlgApKKPhPmkBrN925i9a_ODNeBI9dSKYP-Y4RPJb5RWBj2SwL62AwfSAYD012qUQAOw9uYP9c2gIA2sWRnNG0ufe6YTh0UDZub3B34BCoMf8Cr0cZZ4AvjVqoPBWWLZm265TDRHmJ3cS8EdMsSYCzQSaMy5B2wEwGmilO14TiNroDN1UcdoANhmXC9lzZWYx8Iz6BYH4ybk4fwGinEWQ"
-        e: "AQAB"
-        kid: "dlDtBxB1sKzY5hZTxJRLpvKVLeWHy5QYsFTSxETF5qM"
-        kty: "RSA"
-        n: "rZDx5jxztL4RL4obgFtOZCCelabRolJo_WHdvHVM0Pe5M1rCYXmcnGq5I2M7MdXrFHLa_Yl5rAzkxKyFgpB48vkmqIGNl8NX-6c95XDMQttHmp_atrPnKyJ0E2Zk1ZTomZMWnQCIXQYfcJI2x4W5Mjyh8Ip0ZDDUiqlYsADkHCThj0q6RjJRXtmK_rrt1-tcHOQbIHDVKXYACMWOzUr1YDGWgrFjPu2D2QAXmO3qxhaqIdABwim6XKuLYwzTlIeHJyeEZQiVLEY_Notu5GVQGeL8qMnW3SsqBw7rMYxKgLOcSk2-2J5_orToRNy0x1LQfMtHG3ic8KcFefV7UZeR3w"
-        p: "7-9WcW5dg64vEAok88rZESb9ZXP6FgPMrZ2wCIDxP3XxhqQlaVANE2bSBLQYrwxCpKlIznCJOvOY2FALhBcF5GKdBhUrBhs7Iz46ACr2HKr7mQ5EiigDwMmdIJ5LGJL-RVevP2Ye4QxOWQbn3jttc9fsj2Pw3FjYaeUurs9AnUs"
-        q: "uS__hm1ZVGN1FPmT6LfiM5-_xPmZwNwKRWV02e4drqa_qXQgbaMzZoSAc4duXXXgbyXc7LaJF4_fqR3Cpr1rXsXMTuJf9rb0uN4wZ9awZgmwbBx1JM2ikoQt08xvdxuH_7_0j584Ta7Go1TO2XX1QII06nr7EkVJ8HJqsE665T0"
+      - __CIE_OIDC_JWK_CORE_SIG_YAML__
+      - __CIE_OIDC_JWK_CORE_ENC_YAML__
 
   metadata: &metadata
     federation_entity:
       federation_resolve_endpoint: ${CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT}
+      federation_fetch_endpoint: ${CIE_OIDC_FEDERATION_FETCH_ENDPOINT}
+      federation_trust_mark_status_endpoint: ${CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT}
+      federation_list_endpoint: ${CIE_OIDC_FEDERATION_LIST_ENDPOINT}
       organization_name: ${CIE_OIDC_ORGANIZATION_NAME}
       homepage_uri: ${CIE_OIDC_HOMEPAGE_URI}
       policy_uri: ${CIE_OIDC_POLICY_URI}
@@ -131,13 +115,32 @@ config:
       code_challenge:
         length: 64
         method: "S256"
+      # Usato internamente dal backend SATOSA (authorization_endpoint.py:186)
       claim:
         id_token:
+          sub:
+            essential: true
           family_name:
             essential: true
           given_name:
             essential: true
         userinfo:
+          sub: null
+          given_name: null
+          family_name: null
+          email: null
+          https://attributes.eid.gov.it/fiscal_number: null
+      # Campo standard OIDC Federation incluso nell'entity configuration
+      claims:
+        id_token:
+          sub:
+            essential: true
+          family_name:
+            essential: true
+          given_name:
+            essential: true
+        userinfo:
+          sub: null
           given_name: null
           family_name: null
           email: null
@@ -163,11 +166,53 @@ config:
         jwks_federation: *jwks_federation
         jwks_core: *jwks_core
         entity_type: openid_relying_party
-        entity_configuration_exp: 2800
+        entity_configuration_exp: 63072000
         default_sig_alg: *default_sign_alg #RS256
         authority_hints:
           - ${CIE_OIDC_AUTHORITY_HINT_URL}
         trust_marks: []
+    federation_resolve_endpoint:
+      module: backends.cieoidc.endpoints.federation_resolve_endpoint
+      class: FederationResolveHandler
+      routes:
+        - /resolve
+      config:
+        metadata: *metadata
+        jwks_federation: *jwks_federation
+        jwks_core: *jwks_core
+        entity_type: openid_relying_party
+        entity_configuration_exp: 63072000
+        default_sig_alg: *default_sign_alg
+        authority_hints:
+          - ${CIE_OIDC_AUTHORITY_HINT_URL}
+        trust_marks: []
+    federation_fetch_endpoint:
+      module: backends.cieoidc.endpoints.federation_fetch_endpoint
+      class: FederationFetchHandler
+      routes:
+        - /fetch
+      config:
+        metadata: *metadata
+        jwks_federation: *jwks_federation
+        jwks_core: *jwks_core
+        entity_type: openid_relying_party
+        entity_configuration_exp: 63072000
+        default_sig_alg: *default_sign_alg
+        authority_hints:
+          - ${CIE_OIDC_AUTHORITY_HINT_URL}
+        trust_marks: []
+    federation_trust_mark_status_endpoint:
+      module: backends.cieoidc.endpoints.federation_trust_mark_status_endpoint
+      class: FederationTrustMarkStatusHandler
+      routes:
+        - /trust_mark_status
+      config: {}
+    federation_list_endpoint:
+      module: backends.cieoidc.endpoints.federation_list_endpoint
+      class: FederationListHandler
+      routes:
+        - /list
+      config: {}
     authorization_endpoint:
       module: backends.cieoidc.endpoints.authorization_endpoint
       class: AuthorizationHandler
@@ -176,12 +221,13 @@ config:
       config:
         db_config: *db_config
         entity_type: openid_relying_party
-        entity_configuration_exp: 2800
+        entity_configuration_exp: 63072000
         default_sig_alg: RS256
         metadata: *metadata
         jwks_federation: *jwks_federation
         jwks_core: *jwks_core
         prompt: "consent login"
+        acr_values: "https://www.cartaidentita.interno.gov.it/livello-autenticazione/loa2"
 
     authorization_callback_endpoint:
       module: backends.cieoidc.endpoints.authorization_callback_endpoint
@@ -190,7 +236,7 @@ config:
         - /oidc/callback
       config:
         entity_type: openid_relying_party
-        entity_configuration_exp: 2800
+        entity_configuration_exp: 63072000
         default_sig_alg: RS256
         db_config: *db_config
         metadata: *metadata
@@ -230,7 +276,7 @@ config:
         - /extend_session
       config:
         entity_type: openid_relying_party
-        entity_configuration_exp: 2800
+        entity_configuration_exp: 63072000
         default_sig_alg: RS256
         metadata: *metadata
         jwks_federation: *jwks_federation

@@ -4,14 +4,21 @@ Questa cartella contiene gli script per:
 
 - generare manualmente il metadata pubblico SATOSA da inviare ad AgID
 - gestire i certificati SPID-compliant in un volume Docker dedicato
+- esportare manualmente Entity Configuration e JWKS CIE OIDC
 
 ## Struttura
 
 ```
 metadata/
-  setup-sp.sh        ← script da eseguire prima di docker compose up
-  setup-sp.ps1       ← equivalente PowerShell (Windows)
-  agid/              ← output metadata pubblico SATOSA per AgID (gitignored)
+  setup-sp.sh           ← genera certificati SPID + metadata AgID (prima di docker compose up)
+  setup-sp.ps1          ← equivalente PowerShell (Windows)
+  setup-cie-oidc.sh     ← genera chiavi JWK CIE OIDC (prima di sync-iam-proxy-italia.sh)
+  setup-cie-oidc.ps1    ← equivalente PowerShell (Windows)
+  agid/                 ← output metadata pubblico SATOSA per AgID (gitignored)
+  export-cieoidc.sh     ← export manuale artifact CIE OIDC (Linux/macOS/WSL)
+  export-cieoidc.ps1    ← export manuale artifact CIE OIDC (Windows)
+  cieoidc/              ← output CIE OIDC (entity config, jwks, riepilogo) (gitignored)
+  cieoidc-keys/         ← chiavi JWK private CIE OIDC generate per deployment (gitignored)
 ```
 
 ## Utilizzo
@@ -22,18 +29,23 @@ metadata/
 ```powershell
 # 1. Copia e configura le variabili d'ambiente
 Copy-Item .env.example .env
-# (edita .env: FRONTOFFICE_PUBLIC_BASE_URL, APP_ENTITY_*, SPID_CERT_*, ecc.)
+# (edita .env: FRONTOFFICE_PUBLIC_BASE_URL, APP_ENTITY_*, SPID_CERT_*, CIE_OIDC_*, ecc.)
 
-# 2. Genera certificati e metadata pubblico AgID
+# 2. Genera chiavi JWK CIE OIDC (univoche per deployment, bloccate finché non ri-federi)
+.\metadata\setup-cie-oidc.ps1
+
+# 3. Genera certificati SPID e metadata pubblico AgID
 .\metadata\setup-sp.ps1
 
-# 3. Avvia i servizi
+# 4. Avvia i servizi
 docker compose up -d
 ```
 
 **Linux / macOS / WSL / Git Bash:**
 ```bash
 cp .env.example .env
+# (edita .env)
+bash metadata/setup-cie-oidc.sh
 bash metadata/setup-sp.sh
 docker compose up -d
 ```
@@ -55,6 +67,60 @@ docker compose up -d --force-recreate iam-proxy-italia
 
 ```powershell
 .\metadata\setup-sp.ps1 -MetadataOnly
+```
+
+### Setup chiavi JWK CIE OIDC (da fare UNA VOLTA per deployment)
+
+```powershell
+.\metadata\setup-cie-oidc.ps1
+```
+```bash
+bash metadata/setup-cie-oidc.sh
+```
+
+Le chiavi vengono salvate in `metadata/cieoidc-keys/` (gitignored) e sono bloccate.
+Rieseguire senza `-Force` non fa nulla. Una volta federate, rigenerare le chiavi rompe
+la federazione finché l'Entity Statement non è scaduto.
+
+### Export manuale CIE OIDC (per onboarding alla federazione)
+
+```powershell
+.\metadata\export-cieoidc.ps1
+```
+
+Per esportare direttamente dagli endpoint pubblici:
+
+```powershell
+.\metadata\export-cieoidc.ps1 -FromPublic
+```
+
+Output generato in `metadata/cieoidc/`:
+
+- `entity-configuration.jwt`
+- `entity-configuration.json`
+- `jwks-federation-public.json`
+- `jwks-rp.json`
+- `jwks-rp.jose`
+- `component-values.env`
+
+Nel file `component-values.env` trovi anche la scadenza dell'Entity Statement:
+
+- `ENTITY_STATEMENT_EXP_UTC`
+- `ENTITY_STATEMENT_EXP_DAYS_REMAINING`
+
+**Nota**: l'export è bloccato se già presente e non scaduto. Usa `-Force` solo
+in caso di rinnovo consapevole della federazione.
+
+### Rinnovo chiavi CIE OIDC (solo a scadenza Entity Statement)
+
+```powershell
+# ATTENZIONE: eseguire solo quando l'Entity Statement è scaduto o stai rinnovando
+.\metadata\setup-cie-oidc.ps1 -Force -IKnowWhatIAmDoing
+.\metadata\export-cieoidc.ps1 -Force
+```
+```bash
+bash metadata/setup-cie-oidc.sh --force --i-know-what-i-am-doing
+bash metadata/export-cieoidc.sh --force
 ```
 
 ## Distinzione fondamentale
@@ -81,7 +147,9 @@ docker compose up -d --force-recreate iam-proxy-italia
 ## Note
 
 - **`metadata/agid/satosa_spid_public_metadata.xml`** — file locale pronto da inviare ad AgID.
+- **`metadata/cieoidc/*`** — artifact locali per onboarding CIE OIDC (Entity Configuration/JWKS).
 - **Chiave privata SPID**: resta nel volume Docker certificati, non va inviata ad AGID né inclusa nel metadata.
+- **Chiavi JWK CIE OIDC**: salvate in `metadata/cieoidc-keys/` (gitignored). Non condividere, non committare.
 - Il metadata interno Frontoffice SP è gestito automaticamente all'avvio e non viene più salvato nel repository.
 - I file generati sono ignorati da git (`.gitignore`).
-- Su **Windows**: usa Git Bash oppure WSL per eseguire `setup-sp.sh`. Richiede Docker Desktop attivo.
+- Su **Windows**: usa Git Bash oppure WSL per eseguire `setup-sp.sh` e `setup-cie-oidc.sh`. Richiede Docker Desktop attivo.

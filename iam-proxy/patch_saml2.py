@@ -26,6 +26,46 @@ Fix: se SATOSA_CANCEL_REDIRECT_URL (priorità) o SATOSA_UNKNOW_ERROR_REDIRECT_PA
 """
 import sys
 import glob
+import os
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Patch 3: CieOidcRp authorization_endpoint — Redirect → JS window.location
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Il reverse proxy esterno intercetta i redirect HTTP 302 verso provider esterni.
+# Restituire una pagina HTML 200 con window.location.replace() fa sì che sia
+# il browser a navigare direttamente verso il provider CIE OIDC.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_AUTHZ_PATH = "/satosa_proxy/backends/cieoidc/endpoints/authorization_endpoint.py"
+
+if not os.path.exists(_AUTHZ_PATH):
+    print(f"[patch_cieoidc_authz] {_AUTHZ_PATH} not found — skipping patch 3")
+else:
+    print(f"[patch_cieoidc_authz] Patching {_AUTHZ_PATH}")
+    with open(_AUTHZ_PATH) as _f:
+        _authz_content = _f.read()
+    _OLD3 = "        resp = Redirect(url)\n\n        return resp\n"
+    _NEW3 = '''        _js_url = json.dumps(url)
+        resp = Response(
+            message=f"<!DOCTYPE html><html><head><meta charset='utf-8'><script>window.location.replace({_js_url});</script></head><body></body></html>".encode("utf-8"),
+            status="200 OK",
+            content="text/html; charset=utf-8",
+        )
+
+        return resp
+'''
+    if _OLD3 not in _authz_content:
+        if "_js_url = json.dumps(url)" in _authz_content:
+            print("[patch_cieoidc_authz] Already patched, nothing to do.")
+        else:
+            print("[patch_cieoidc_authz] WARNING: expected pattern not found — skipping.")
+    else:
+        _authz_content = _authz_content.replace(_OLD3, _NEW3, 1)
+        with open(_AUTHZ_PATH, "w") as _f:
+            _f.write(_authz_content)
+        print("[patch_cieoidc_authz] Patch applied: Redirect → JS window.location.")
+
 
 # Find the actual pysaml2 path (Python version may vary)
 candidates = glob.glob("/.venv/lib/python*/site-packages/saml2/assertion.py")
