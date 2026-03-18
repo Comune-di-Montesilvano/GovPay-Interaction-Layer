@@ -61,7 +61,9 @@ jobs:
           coverage: xdebug
 
       - name: Avvia servizi con Docker Compose
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+        run: |
+          docker volume create govpay_spid_certs
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress
