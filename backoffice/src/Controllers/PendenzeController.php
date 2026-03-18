@@ -577,7 +577,7 @@ class PendenzeController
                         if ($signedPdfUrl !== '') {
                             $markdown .= "[Scarica il PDF dell'avviso](" . $signedPdfUrl . ")\n\n";
                         }
-                        $markdown .= "Usa il pulsante **Paga ora** per effettuare il pagamento.";
+                        // Rimosso link "Paga ora" testuale: il tasto ufficiale è nel paymentData (fix 5)
 
                         // Costruisci payment_data: preferisci numero avviso/iuv avviso (18 cifre).
                         $paymentData = null;
@@ -1582,6 +1582,178 @@ class PendenzeController
         // Memorizza il documento sintetico in sessione per il rendering/stampa
         if (session_status() !== PHP_SESSION_ACTIVE) @session_start();
         $_SESSION['multi_rate_document'] = $multi;
+
+        // ── Notifiche rateizzazione ───────────────────────────────────────────
+        $payerForNotify       = $merged['soggettoPagatore'] ?? [];
+        $payerEmail           = trim((string)($payerForNotify['email'] ?? ''));
+        $payerAnagrafica      = trim((string)($payerForNotify['anagrafica'] ?? ''));
+        $payerCf              = trim((string)($payerForNotify['identificativo'] ?? ''));
+        $payerTipo            = strtoupper((string)($payerForNotify['tipo'] ?? 'F'));
+        $originalCausaleForNotify = trim((string)($orig['causale'] ?? 'Pagamento rateizzato'));
+        $idTipoPendenzaNotify = (string)($orig['idTipoPendenza'] ?? '');
+        $notifyAppName        = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+        $frontofficeUrl       = $this->resolveFrontofficePublicBaseUrl($request);
+        $idDominioNotify      = $merged['idDominio'] ?? (getenv('ID_DOMINIO') ?: '');
+        $numeroDocumento      = (string)($multi['documento']['identificativo'] ?? '');
+        $multiratePdfUrl      = ($frontofficeUrl !== '' && $numeroDocumento !== '')
+            ? $this->buildMultiratePdfUrl($frontofficeUrl, $numeroDocumento)
+            : '';
+
+        // 1. Email: un'unica email di riepilogo del piano rateale
+        if ($payerEmail !== '' && filter_var($payerEmail, FILTER_VALIDATE_EMAIL)) {
+            try {
+                $mailer      = \App\Services\MailerService::forSuite('backoffice');
+                $ratesForEmail = [];
+                foreach ($multi['rates'] as $rate) {
+                    $rAvviso  = (string)($rate['numeroAvviso'] ?? '');
+                    $ratePdf  = ($frontofficeUrl !== '' && $rAvviso !== '')
+                        ? $this->buildPdfDownloadUrl($frontofficeUrl, $idDominioNotify, $payerCf, '', $rAvviso)
+                        : '';
+                    $ratePay  = ($frontofficeUrl !== '' && $rAvviso !== '')
+                        ? $this->buildCheckoutStartUrl($frontofficeUrl, $payerCf, '', $rAvviso)
+                        : '';
+                    $ratesForEmail[] = [
+                        'indice'       => $rate['indice'] ?? null,
+                        'importo'      => $rate['importo'] ?? null,
+                        'dataScadenza' => $rate['dataScadenza'] ?? null,
+                        'dataValidita' => $rate['dataValidita'] ?? null,
+                        'numeroAvviso' => $rAvviso !== '' ? $rAvviso : null,
+                        'pdfUrl'       => $ratePdf,
+                        'paymentUrl'   => $ratePay,
+                    ];
+                }
+                $emailData = [
+                    'causale'         => $originalCausaleForNotify,
+                    'tipologia'       => $idTipoPendenzaNotify,
+                    'importo_totale'  => $originalTotal,
+                    'multiratePdfUrl' => $multiratePdfUrl,
+                    'rates'           => $ratesForEmail,
+                ];
+                $notifResult = $mailer->sendRateizzazioneNotification(
+                    $payerEmail,
+                    $payerAnagrafica,
+                    $emailData,
+                    $notifyAppName,
+                    $this->resolveEmbeddedLogoPath()
+                );
+                if ($notifResult['esito'] === 'OK') {
+                    if (!empty($created)) {
+                        $this->addNotificationToPendenza((string)$created[0], $notifResult, 'Notifica email rateizzazione');
+                    }
+                    $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Email di riepilogo rateizzazione inviata al cittadino'];
+                } else {
+                    $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Email non inviata: ' . ($notifResult['errore'] ?? 'errore sconosciuto')];
+                }
+            } catch (\Throwable $e) {
+                Logger::getInstance()->error('Eccezione email notifica rateizzazione', ['exception' => $e->getMessage()]);
+                $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Impossibile inviare email di notifica rateizzazione'];
+            }
+        }
+
+        // 2. App IO: una notifica per ogni rata individuale
+        if (!empty($created) && $payerTipo === 'F' && $payerCf !== '') {
+            try {
+                $ioRepo    = new \App\Database\IoServiceRepository();
+                $idTipo    = $orig['idTipoPendenza'] ?? null;
+                $ioService = $ioRepo->getTipologiaService($idTipo) ?? $ioRepo->findDefault();
+
+                if ($ioService) {
+                    $ioSvc    = new \App\Services\AppIoService();
+                    $numRates = count($multi['rates']);
+                    $ioErrors       = 0;
+
+                    foreach ($multi['rates'] as $i => $rate) {
+                        $rIdx        = $rate['indice'] ?? ($i + 1);
+                        $rateImporto = is_numeric(str_replace(',', '.', (string)($rate['importo'] ?? 0)))
+                                       ? (float)str_replace(',', '.', (string)$rate['importo']) : 0.0;
+                        $rateScadenza = $rate['dataScadenza'] ?? null;
+                        $rateAvviso   = $rate['numeroAvviso'] ?? null;
+                        $rateId       = (string)($rate['idPendenza'] ?? '');
+
+                        $ioSubject = substr(
+                            'Pendenza PagoPA - ' . $originalCausaleForNotify . " (Rata {$rIdx} di {$numRates})",
+                            0, 120
+                        );
+                        $rateDataValidita = $rate['dataValidita'] ?? null;
+
+                        $markdown  = "## Pendenza PagoPA\n\n";
+                        $markdown .= "**Causale**: {$originalCausaleForNotify} (Rata {$rIdx} di {$numRates})\n\n";
+                        if ($idTipoPendenzaNotify !== '') {
+                            $markdown .= "**Tipologia**: {$idTipoPendenzaNotify}\n\n";
+                        }
+                        $markdown .= "**Importo**: € " . number_format($rateImporto, 2, ',', '.') . "\n\n";
+                        if ($rateAvviso !== null && $rateAvviso !== '') {
+                            $markdown .= "**Numero avviso**: {$rateAvviso}\n\n";
+                        }
+                        // Scadenza con fallback su dataValidita (fix 2/6)
+                        $effectiveScadenza = (($rateScadenza !== null && $rateScadenza !== '') ? $rateScadenza : $rateDataValidita);
+                        if ($effectiveScadenza !== null && $effectiveScadenza !== '') {
+                            $markdown .= "**Scadenza**: {$effectiveScadenza}\n\n";
+                        }
+                        if ($frontofficeUrl !== '' && $rateAvviso !== null && $rateAvviso !== '') {
+                            $ratePdfUrl = $this->buildPdfDownloadUrl($frontofficeUrl, $idDominioNotify, $payerCf, '', $rateAvviso);
+                            if ($ratePdfUrl !== '') {
+                                $markdown .= "[Scarica il PDF dell'avviso]({$ratePdfUrl})\n\n";
+                            }
+                            // Rimosso link "Paga ora" testuale: il tasto ufficiale è nel paymentData (fix 5)
+                        }
+
+                        $dueDate     = null;
+                        $paymentData = null;
+                        // dataValidita come fallback per dueDate (fix 6)
+                        if ($effectiveScadenza !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $effectiveScadenza)) {
+                            $dueDate = $effectiveScadenza . 'T00:00:00Z';
+                        }
+                        if ($rateAvviso !== null && $rateAvviso !== '') {
+                            $paymentData = [
+                                'noticeNumber'        => $rateAvviso,
+                                'amount'              => (int)round($rateImporto * 100),
+                                'invalidAfterDueDate' => false,
+                            ];
+                        }
+
+                        $ioResult = $ioSvc->sendMessage(
+                            (string)$ioService['api_key_primaria'],
+                            $payerCf,
+                            $ioSubject,
+                            $markdown,
+                            $dueDate,
+                            $paymentData
+                        );
+
+                        if (($ioResult['esito'] ?? 'KO') === 'OK' && $rateId !== '') {
+                            $ioNotification = [
+                                'timestamp'    => date('Y-m-d H:i:s'),
+                                'esito'        => 'OK',
+                                'canale'       => 'app_io',
+                                'destinatario' => $ioResult['id'] ?? 'N/A',
+                                'message_id'   => $ioResult['id'] ?? null,
+                            ];
+                            $this->addNotificationToPendenza($rateId, $ioNotification, "Notifica App IO rata {$rIdx}");
+                        } else {
+                            $ioErrors++;
+                            Logger::getInstance()->warning('Errore notifica App IO rata rateizzazione', [
+                                'idPendenza' => $rateId,
+                                'rata'       => $rIdx,
+                                'errore'     => $ioResult['errore'] ?? 'sconosciuto',
+                            ]);
+                        }
+                    }
+
+                    $sent = $numRates - $ioErrors;
+                    if ($sent > 0) {
+                        $_SESSION['flash'][] = ['type' => 'info', 'text' => "Notifiche App IO inviate per {$sent} di {$numRates} rate"];
+                    }
+                    if ($ioErrors > 0) {
+                        $_SESSION['flash'][] = ['type' => 'warning', 'text' => "{$ioErrors} notifiche App IO non inviate"];
+                    }
+                }
+            } catch (\Throwable $e) {
+                Logger::getInstance()->error('Eccezione notifiche App IO rateizzazione', ['exception' => $e->getMessage()]);
+                $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Impossibile inviare notifiche App IO per le rate'];
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         if (!empty($created)) {
             foreach ($created as $c) {
@@ -3284,7 +3456,7 @@ class PendenzeController
             if ($signedPdfUrl !== '') {
                 $markdown .= "[Scarica il PDF dell'avviso](" . $signedPdfUrl . ")\n\n";
             }
-            $markdown .= "Usa il pulsante **Paga ora** per effettuare il pagamento.";
+            // Rimosso link "Paga ora" testuale: il tasto ufficiale è nel paymentData (fix 5)
 
             $paymentData = null;
             // Reinvio App IO: usa prioritariamente il numero avviso per valorizzare payment_data.
@@ -4050,6 +4222,16 @@ class PendenzeController
         ]);
 
         return $baseUrl . '/link/checkout?' . http_build_query($signedParams, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    private function buildMultiratePdfUrl(string $frontofficeBaseUrl, string $numeroDocumento): string
+    {
+        $baseUrl = rtrim(trim($frontofficeBaseUrl), '/');
+        if ($baseUrl === '' || $numeroDocumento === '') {
+            return '';
+        }
+        $signedParams = $this->buildSignedLinkParams(['doc' => $numeroDocumento]);
+        return $baseUrl . '/link/documento?' . http_build_query($signedParams, '', '&', PHP_QUERY_RFC3986);
     }
 
     private function extractStringByPath(array $data, array $path): string

@@ -19,6 +19,10 @@ metadata/
   export-cieoidc.ps1    ← export manuale artifact CIE OIDC (Windows)
   cieoidc/              ← output CIE OIDC (entity config, jwks, riepilogo) (gitignored)
   cieoidc-keys/         ← chiavi JWK private CIE OIDC generate per deployment (gitignored)
+
+scripts/
+  check-cie-oidc-federation-endpoints.sh  ← testa gli endpoint pubblici OIDC Federation
+  check-cie-oidc-federation-endpoints.ps1 ← equivalente PowerShell
 ```
 
 ## Utilizzo
@@ -122,6 +126,26 @@ in caso di rinnovo consapevole della federazione.
 bash metadata/setup-cie-oidc.sh --force --i-know-what-i-am-doing
 bash metadata/export-cieoidc.sh --force
 ```
+
+### Onboarding CIE OIDC e Test della Federazione
+
+Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazione CIE **è necessario completare il processo di onboarding** sulla Federazione CIE.
+
+1. **Test degli endpoint pubblici**: l'Identity Provider deve poter scaricare l'Entity Configuration esposta dal tuo IAM Proxy.
+   ```powershell
+   .\scripts\check-cie-oidc-federation-endpoints.ps1 -BaseUrl "https://iltuodominio.it/CieOidcRp"
+   ```
+   Tutte le chiamate (eccetto forse POST a `trust_mark_status`) dovrebbero restituire HTTP 200.
+
+2. **Scelta dell'ambiente (Collaudo o Produzione)**:
+   Modifica nel file `.iam-proxy.env` gli endpoint puntando a **Collaudo** (`preproduzione.oidc.*`) in fase di test, o a **Produzione** per la messa in onda definitiva (vedi config predefinita). Dopo un cambio, riavvia il container `iam-proxy-italia`.
+
+3. **Registrazione Portale Federazione**:
+   Recati sul portale CIE per gli sviluppatori ed effettua l'onboarding. Ti sarà richiesto di fornire l'URL del tuo *Client ID* (la rotta root configurata in `CIE_OIDC_CLIENT_ID` senza slash finale).
+
+4. **Tempi di Propagazione**:
+   Una volta completata la registrazione nel Registry, l'Identity Provider può impiegare **diverse ore (fino a 24h)** per aggiornare la cache e fidarsi del nuovo Relying Party. Durante questo periodo visualizzerai l'errore: **"L'applicazione a cui hai acceduto non è registrata"**. Questo è il comportamento atteso per la federazione OIDC e bisogna semplicemente attendere.
+
 
 ## Distinzione fondamentale
 

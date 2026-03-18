@@ -129,7 +129,10 @@
         const diff = (sumCents - totalCents) / 100;
         const sum = (sumCents/100).toFixed(2);
         alert('La somma delle rate (' + sum + ') non corrisponde esattamente all\'importo totale (' + (totalCents/100).toFixed(2) + '). Differenza: ' + diff.toFixed(2) + ' €. Correggi gli importi prima di procedere.');
+        return;
       }
+      var submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Invio in corso\u2026'; }
     });
 
     document.getElementById('recalcBtn').addEventListener('click', function(){

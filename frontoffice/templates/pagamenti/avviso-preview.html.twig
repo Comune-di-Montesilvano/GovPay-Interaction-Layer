@@ -151,7 +151,7 @@
               {% if avviso.is_payable and avviso.id_pendenza %}
                 <button
                   type="button"
-                  class="btn btn-secondary btn-lg"
+                  class="btn btn-primary btn-lg"
                   id="btn-cart-add"
                   data-id="{{ avviso.id_pendenza }}"
                   data-added="{{ (cart_items_ids is defined and avviso.id_pendenza in cart_items_ids) ? '1' : '0' }}"
@@ -170,7 +170,7 @@
 
               {# — Paga subito — #}
               {% if avviso.is_payable and avviso.checkout_url %}
-                <a class="btn btn-primary btn-lg" href="{{ avviso.checkout_url }}">
+                <a class="btn btn-outline-primary btn-lg" href="{{ avviso.checkout_url }}">
                   <i class="fa-solid fa-bolt me-1"></i>{{ 'Paga subito'|trans }}
                 </a>
               {% endif %}

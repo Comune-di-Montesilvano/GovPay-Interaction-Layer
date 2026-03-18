@@ -2284,6 +2284,47 @@ if (!function_exists('frontoffice_stream_avviso_pdf')) {
     }
 }
 
+if (!function_exists('frontoffice_stream_documento_pdf')) {
+    /**
+     * Scarica da GovPay Pendenze v2 il PDF multi-rata per il documento indicato.
+     * Endpoint: GET /documenti/{idDominio}/{numeroDocumento}/avvisi
+     * Usato dalla route GET /link/documento (link firmato).
+     */
+    function frontoffice_stream_documento_pdf(string $numeroDocumento): void
+    {
+        $pendenzeUrl = frontoffice_env_value('GOVPAY_PENDENZE_URL', '');
+        $idDominio   = frontoffice_env_value('ID_DOMINIO', '');
+        if ($pendenzeUrl === '' || $idDominio === '' || $numeroDocumento === '') {
+            http_response_code(400);
+            echo 'Parametri mancanti o GOVPAY_PENDENZE_URL/ID_DOMINIO non configurati.';
+            return;
+        }
+        try {
+            $options = frontoffice_govpay_client_options();
+            $options['headers']['Accept'] = 'application/pdf';
+            $options['headers']['Connection'] = 'close';
+            if ($auth = frontoffice_basic_auth()) {
+                $options['auth'] = $auth;
+            }
+            $client = new Client($options);
+            $url = rtrim($pendenzeUrl, '/') . '/documenti/'
+                . rawurlencode($idDominio) . '/' . rawurlencode($numeroDocumento) . '/avvisi';
+            $resp = $client->request('GET', $url);
+            header('Content-Type: ' . ($resp->getHeaderLine('Content-Type') ?: 'application/pdf'));
+            header('Content-Disposition: attachment; filename="avvisi-' . rawurlencode($numeroDocumento) . '.pdf"');
+            header('Cache-Control: no-store');
+            echo (string)$resp->getBody();
+        } catch (ClientException $e) {
+            $status = $e->getResponse() ? $e->getResponse()->getStatusCode() : 502;
+            http_response_code($status);
+            echo 'Errore scaricamento documento: ' . Logger::sanitizeErrorForDisplay($e->getMessage());
+        } catch (\Throwable $e) {
+            http_response_code(502);
+            echo 'Errore scaricamento documento: ' . Logger::sanitizeErrorForDisplay($e->getMessage());
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Link firmati HMAC (stateless, scadenza 2 anni dalla firma)
 // Env: FRONTOFFICE_LINK_SIGNING_KEY (consigliato in produzione)
@@ -3648,6 +3689,30 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Route: GET /link/documento — Download PDF multi-rata tramite link firmato
+// ─────────────────────────────────────────────────────────────────────────────
+if ($method === 'GET' && $normalizedPath === '/link/documento') {
+    $qp = $_GET;
+    if (!frontoffice_verify_link($qp)) {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
+        Logger::getInstance()->warning('Link documento non valido o scaduto', [
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'expires' => $qp['expires'] ?? '',
+        ]);
+        return;
+    }
+    $numeroDocumento = trim((string)($qp['doc'] ?? ''));
+    if ($numeroDocumento === '') {
+        http_response_code(400);
+        echo 'Parametri mancanti.';
+        return;
+    }
+    frontoffice_stream_documento_pdf($numeroDocumento);
+    return;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Route: GET /link/ricevuta — Download ricevuta tramite link firmato (IUV+IUR)
 // ─────────────────────────────────────────────────────────────────────────────
 if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
@@ -4646,6 +4711,55 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)$#', $normalizedPath, $m
     }
 }
 
+// ─── POST /carrello/aggiungi-multiplo ────────────────────────────────────────
+// Aggiunge più pendenze al carrello (form submit da pendenze list) e reindirizza
+// al carrello. Non chiama PagoPA checkout direttamente.
+if ($method === 'POST' && $normalizedPath === '/carrello/aggiungi-multiplo') {
+    $rawIds = $_POST['pendenze'] ?? [];
+    if (!is_array($rawIds)) {
+        $rawIds = [$rawIds];
+    }
+    $rawIds = array_values(array_unique(array_filter(array_map('strval', $rawIds), static fn ($v) => trim($v) !== '')));
+
+    if (count($rawIds) === 0) {
+        header('Location: /pendenze');
+        return;
+    }
+
+    $whitelistKeys = ['frontoffice_pendenze_whitelist', 'frontoffice_avviso_pendenze', 'frontoffice_spontaneo_pendenze'];
+    $whitelist = [];
+    foreach ($whitelistKeys as $k) {
+        if (isset($_SESSION[$k]) && is_array($_SESSION[$k])) {
+            $whitelist = array_merge($whitelist, $_SESSION[$k]);
+        }
+    }
+    $whitelist = array_values(array_unique(array_map('strval', $whitelist)));
+
+    $loggedUser = frontoffice_get_logged_user();
+    $loggedCf = $loggedUser !== null ? frontoffice_get_logged_user_fiscal_number() : '';
+
+    foreach (array_slice($rawIds, 0, 5) as $pid) {
+        if (!in_array($pid, $whitelist, true)) {
+            continue;
+        }
+        $detail = frontoffice_fetch_pagamenti_detail($pid);
+        if (!$detail) {
+            continue;
+        }
+        if ($loggedCf !== '' && !frontoffice_pendenza_belongs_to_cf($detail, $loggedCf)) {
+            continue;
+        }
+        $state = strtoupper((string)($detail['stato'] ?? ''));
+        if (!frontoffice_is_pendenza_payable($state)) {
+            continue;
+        }
+        frontoffice_cart_add($pid, $detail);
+    }
+
+    header('Location: /carrello');
+    return;
+}
+
 // ─── POST /carrello/aggiungi (AJAX) ──────────────────────────────────────────
 if ($method === 'POST' && $normalizedPath === '/carrello/aggiungi') {
     header('Content-Type: application/json; charset=utf-8');
@@ -4883,6 +4997,7 @@ $baseContext = [
     'support_hours' => $env('APP_SUPPORT_HOURS', 'Lun-Ven 9:00-18:00'),
     'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Montesilvano (PE)'),
     'cart_count' => frontoffice_cart_count(),
+    'cart_items_ids' => array_keys(frontoffice_cart_items()),
     'current_locale' => $currentLocale,
     'app_version' => (function () {
         $candidates = [

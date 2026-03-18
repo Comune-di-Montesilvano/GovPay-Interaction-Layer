@@ -98,8 +98,27 @@
                 <span class="sr-only">{{ 'Scarica ricevuta'|trans }}</span>
               </a>
             {% endif %}
+            {% if p.is_payable and p.id_pendenza %}
+              <button
+                type="button"
+                class="btn btn-primary"
+                id="btn-cart-add"
+                data-id="{{ p.id_pendenza }}"
+                data-added="{{ p.id_pendenza in cart_items_ids|default([]) ? '1' : '0' }}"
+                aria-label="{{ 'Aggiungi al carrello'|trans }}"
+              >
+                <i class="fa-solid fa-cart-shopping me-1"></i>
+                <span id="btn-cart-label">
+                  {% if p.id_pendenza in cart_items_ids|default([]) %}
+                    {{ 'Nel carrello ✓'|trans }}
+                  {% else %}
+                    {{ 'Aggiungi al carrello'|trans }}
+                  {% endif %}
+                </span>
+              </button>
+            {% endif %}
             {% if p.is_payable and p.checkout_url %}
-              <a class="btn btn-outline-primary" href="{{ p.checkout_url }}" target="_blank" rel="noopener">{{ 'Paga su pagoPA'|trans }}</a>
+              <a class="btn btn-outline-secondary" href="{{ p.checkout_url }}" target="_blank" rel="noopener">{{ 'Paga su pagoPA'|trans }}</a>
             {% endif %}
           </div>
         </div>

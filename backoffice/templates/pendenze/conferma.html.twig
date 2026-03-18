@@ -238,7 +238,7 @@
 
           <div class="d-flex gap-2">
             {# If parts are present, submit to create-rateizzazione so controller will create rates; otherwise submit to /pendenze #}
-            <button type="submit" class="btn btn-primary" {% if params.parts is defined and params.parts|length > 0 %}formaction="/pendenze/create-rateizzazione" formmethod="post"{% endif %}>Conferma e crea</button>
+            <button type="submit" class="btn btn-primary" id="btnConfermaECrea" {% if params.parts is defined and params.parts|length > 0 %}formaction="/pendenze/create-rateizzazione" formmethod="post"{% endif %}>Conferma e crea</button>
             <!-- Modifica: reinvia gli stessi parametri via POST a /pendenze/inserimento -->
             <button type="submit" formaction="/pendenze/inserimento" formmethod="post" class="btn btn-outline-secondary">Modifica</button>
             <button type="submit" formaction="/pendenze/rateizza" formmethod="post" class="btn btn-outline-warning">Rateizza</button>
@@ -246,4 +246,24 @@
       </form>
     </div>
   </div>
+
+  {# Overlay di caricamento — appare al click di "Conferma e crea" e blocca ulteriori submit #}
+  <div id="overlayCaricamento" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:8px; padding:32px 40px; text-align:center; box-shadow:0 4px 24px rgba(0,0,0,0.18); min-width:220px;">
+      <div class="spinner-border text-primary" role="status" style="width:2.5rem; height:2.5rem;"></div>
+      <div style="margin-top:16px; font-weight:600; color:#333;">Invio in corso&hellip;</div>
+      <div style="font-size:13px; color:#888; margin-top:4px;">Attendere prego</div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var btn = document.getElementById('btnConfermaECrea');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+      // L'overlay copre l'intera pagina (z-index 9999) e impedisce ulteriori click.
+      // Non disabilitiamo i bottoni qui: farlo nel click handler annullerebbe la submission.
+      document.getElementById('overlayCaricamento').style.display = 'flex';
+    });
+  })();
+  </script>
 {% endblock %}

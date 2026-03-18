@@ -59,7 +59,7 @@
     #carrello-bar.visible { display: flex; }
     #carrello-bar .bar-info { font-size: .95rem; }
     #carrello-bar .bar-info strong { font-size: 1.1rem; }
-    #carrello-bar .btn-paga {
+    #carrello-bar .btn-aggiungi {
       background: #f5a623;
       color: #05193d;
       font-weight: 700;
@@ -68,7 +68,7 @@
       padding: 10px 28px;
       font-size: 1rem;
     }
-    #carrello-bar .btn-paga:disabled { opacity: .5; cursor: not-allowed; }
+    #carrello-bar .btn-aggiungi:disabled { opacity: .5; cursor: not-allowed; }
     /* Checkbox column */
     .col-sel { width: 44px; }
     .row-payable:hover { background: rgba(9, 26, 62, 0.03); }
@@ -144,7 +144,7 @@
       <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span class="fw-semibold">{{ 'Elenco'|trans }}</span>
         <span class="text-muted small" id="carrello-hint" style="display:none">
-          <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Seleziona fino a 5 pendenze pagabili e clicca "Paga selezionate"'|trans }}
+          <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Seleziona fino a 5 pendenze pagabili e aggiungile al carrello'|trans }}
         </span>
       </div>
       <div class="card-body p-0">
@@ -220,6 +220,19 @@
                     </td>
                     <td class="text-end">
                       <div class="btn-group" role="group" aria-label="{{ 'Azioni pendenza'|trans|escape('html_attr') }}">
+                        {% if is_payable and p.id_pendenza %}
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-primary btn-cart-row"
+                            data-id="{{ p.id_pendenza }}"
+                            title="{{ 'Aggiungi al carrello'|trans }}"
+                            aria-label="{{ 'Aggiungi al carrello'|trans }}"
+                            {{ p.id_pendenza in cart_items_ids|default([]) ? 'disabled' : '' }}
+                          >
+                            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+                            <span class="sr-only">{{ 'Aggiungi al carrello'|trans }}</span>
+                          </button>
+                        {% endif %}
                         {% if p.detail_url %}
                           <a class="btn btn-sm btn-outline-primary" href="{{ p.detail_url }}">
                             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -270,8 +283,11 @@
     </div>
     <div class="d-flex align-items-center gap-3">
       <button type="button" class="btn btn-outline-light btn-sm" id="deseleziona-btn">{{ 'Deseleziona tutto'|trans }}</button>
-      <button type="submit" form="carrello-form" class="btn-paga" id="paga-btn">
-        <i class="fa-solid fa-lock me-1"></i>{{ 'Paga selezionate'|trans }}
+      <button type="submit" form="carrello-form" formaction="/carrello/aggiungi-multiplo" class="btn-aggiungi" id="aggiungi-btn">
+        <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Aggiungi al carrello'|trans }}
+      </button>
+      <button type="submit" form="carrello-form" formaction="/carrello/checkout" class="btn btn-outline-light btn-sm">
+        <i class="fa-solid fa-bolt me-1"></i>{{ 'Paga selezionate'|trans }}
       </button>
     </div>
   </div>
@@ -336,6 +352,38 @@
     if (checkboxes.length > 0 && hint) hint.style.display = '';
 
     update();
+  })();
+
+  // ── Per-row cart AJAX buttons ──
+  (function () {
+    document.querySelectorAll('.btn-cart-row').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.dataset.id;
+        if (!id || btn.disabled) return;
+        btn.disabled = true;
+        var body = new URLSearchParams({ idPendenza: id });
+        fetch('/carrello/aggiungi', {
+          method: 'POST',
+          body: body,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
+        .then(function (data) {
+          if (data.error) { btn.disabled = false; alert(data.error); return; }
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-success');
+          btn.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i><span class="sr-only">{{ "Nel carrello ✓"|trans }}</span>';
+          document.querySelectorAll('.cart-badge').forEach(function (el) {
+            el.textContent = data.count || 0;
+            el.style.display = (data.count || 0) > 0 ? '' : 'none';
+          });
+        })
+        .catch(function (err) {
+          btn.disabled = false;
+          alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+        });
+      });
+    });
   })();
   </script>
 {% endblock %}

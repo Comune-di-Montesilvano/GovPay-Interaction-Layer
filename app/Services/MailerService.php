@@ -46,7 +46,7 @@ class MailerService
 
         $dsn       = (string)(getenv("{$prefix}_MAILER_DSN")       ?: 'null://null');
         $fromAddr  = (string)(getenv("{$prefix}_MAILER_FROM_ADDRESS") ?: 'noreply@example.com');
-        $fromName  = (string)(getenv("{$prefix}_MAILER_FROM_NAME")    ?: 'GIL');
+        $fromName  = (string)(getenv("{$prefix}_MAILER_FROM_NAME") ?: (getenv('APP_ENTITY_NAME') ?: 'GIL'));
 
         $transport = Transport::fromDsn($dsn);
         $mailer    = new Mailer($transport);
@@ -262,34 +262,42 @@ class MailerService
         $causale     = htmlspecialchars($pendenzaData['causale'] ?? 'Nuova posizione debitoria', ENT_QUOTES, 'UTF-8');
         $importo     = number_format((float)($pendenzaData['importo'] ?? 0.0), 2, ',', '.');
         $noticeCode  = htmlspecialchars($this->resolveNoticeCode($pendenzaData), ENT_QUOTES, 'UTF-8');
+        // dataValidita fallback (fix 2)
         $dataScadenza = '';
         if (!empty($pendenzaData['dataScadenza'])) {
             $dataScadenza = htmlspecialchars($pendenzaData['dataScadenza'], ENT_QUOTES, 'UTF-8');
+        } elseif (!empty($pendenzaData['dataValidita'])) {
+            $dataScadenza = htmlspecialchars($pendenzaData['dataValidita'], ENT_QUOTES, 'UTF-8');
         }
-        
+
         $greeting = $safeToName !== '' ? 'Gentile <strong>' . $safeToName . '</strong>,' : 'Gentile Interessato,';
-        
+
         $actionButtons = '';
         if ($paymentUrl !== '' || $pdfUrl !== '') {
             $safePdfUrl = htmlspecialchars($pdfUrl, ENT_QUOTES, 'UTF-8');
             $safePaymentUrl = htmlspecialchars($paymentUrl, ENT_QUOTES, 'UTF-8');
-            
+
             $pdfButton = $pdfUrl !== '' ? "<a href=\"{$safePdfUrl}\" class=\"btn btn-secondary\" style=\"background:#6c757d; margin-right:8px;\">Scarica PDF avviso</a>" : '';
             $payButton = $paymentUrl !== '' ? "<a href=\"{$safePaymentUrl}\" class=\"btn\">Paga ora</a>" : '';
-            
+
             $actionButtons = <<<HTML
               <p style="text-align:center; margin:24px 0;">
                 {$pdfButton}{$payButton}
               </p>
 HTML;
         }
-        
+
         $scadenzaInfo = '';
         if ($dataScadenza !== '') {
             $scadenzaInfo = "<p><strong>Data scadenza:</strong> {$dataScadenza}</p>";
         }
 
         $iuvInfo = $noticeCode !== '' ? "<p><strong>IUV:</strong> {$noticeCode}</p>" : '';
+
+        // Tipologia pendenza (fix 7)
+        $tipologiaInfo = !empty($pendenzaData['idTipoPendenza'])
+            ? '<p><strong>Tipologia:</strong> ' . htmlspecialchars((string)$pendenzaData['idTipoPendenza'], ENT_QUOTES, 'UTF-8') . '</p>'
+            : '';
 
         // Logo: preferisci embed cid:logo, fallback a src configurato, poi titolo testuale.
         $safeLogoSrc = htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8');
@@ -335,7 +343,8 @@ HTML;
               <p>è stata creata una nuova posizione debitoria a tuo carico. Di seguito i dettagli:</p>
               <div class="info-box">
                 <p><strong>Causale:</strong> {$causale}</p>
-                <p><strong>Importo:</strong> € {$importo}</p>
+                <p><strong>Importo:</strong> &euro; {$importo}</p>
+                {$tipologiaInfo}
                 {$iuvInfo}
                 {$scadenzaInfo}
               </div>
@@ -379,6 +388,237 @@ HTML;
 
         Utilizza i link qui sopra per scaricare l'avviso o procedere direttamente al pagamento online.
 
+        -- {$appName}
+        TEXT;
+    }
+
+    /**
+     * Invia un'unica email di riepilogo per un piano di rateizzazione.
+     *
+     * @param string $toEmail    Email del destinatario
+     * @param string $toName     Nome del destinatario
+     * @param array  $data       ['causale', 'importo_totale', 'rates' => [['indice','importo','dataScadenza','numeroAvviso']]]
+     * @param string $appName    Nome dell'applicazione
+     * @param string $logoPath   Path del file logo da allegare (opzionale)
+     * @return array ['timestamp', 'esito', 'destinatario', 'canale', 'errore']
+     */
+    public function sendRateizzazioneNotification(
+        string $toEmail,
+        string $toName,
+        array  $data,
+        string $appName = '',
+        string $logoPath = ''
+    ): array {
+        if ($appName === '') {
+            $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+        }
+
+        $timestamp = date('Y-m-d H:i:s');
+
+        try {
+            $hasEmbeddedLogo = ($logoPath !== '' && file_exists($logoPath));
+            $logoSrc = (string)(getenv('APP_LOGO_SRC') ?: '');
+            $htmlBody = $this->renderRateizzazioneTemplate($toName, $data, $appName, $hasEmbeddedLogo, $logoSrc);
+            $textBody = $this->renderRateizzazioneTemplatePlain($toName, $data, $appName);
+
+            $causale = $data['causale'] ?? 'Piano di rateizzazione';
+            $numRate = count($data['rates'] ?? []);
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($toEmail, $toName))
+                ->subject("Piano di rateizzazione PagoPA - \"$causale\" ($numRate rate)")
+                ->html($htmlBody)
+                ->text($textBody);
+
+            if ($hasEmbeddedLogo) {
+                $email->embedFromPath($logoPath, 'logo');
+            }
+
+            $this->mailer->send($email);
+
+            return [
+                'timestamp'    => $timestamp,
+                'esito'        => 'OK',
+                'destinatario' => $toEmail,
+                'canale'       => 'email',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'timestamp'    => $timestamp,
+                'esito'        => 'ERRORE',
+                'destinatario' => $toEmail,
+                'canale'       => 'email',
+                'errore'       => $e->getMessage(),
+            ];
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Template notifica rateizzazione (HTML + testo)
+    // -------------------------------------------------------------------------
+
+    private function renderRateizzazioneTemplate(
+        string $toName,
+        array  $data,
+        string $appName,
+        bool   $hasEmbeddedLogo = false,
+        string $logoSrc = ''
+    ): string {
+        $safeToName   = htmlspecialchars($toName,  ENT_QUOTES, 'UTF-8');
+        $safeAppName  = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $causale      = htmlspecialchars($data['causale'] ?? 'Piano di rateizzazione', ENT_QUOTES, 'UTF-8');
+        $importoTot   = number_format((float)($data['importo_totale'] ?? 0.0), 2, ',', '.');
+        $rates        = $data['rates'] ?? [];
+        $numRate      = count($rates);
+        $tipologia    = htmlspecialchars($data['tipologia'] ?? '', ENT_QUOTES, 'UTF-8');
+        $tipologiaInfo = $tipologia !== '' ? "<p><strong>Tipologia:</strong> {$tipologia}</p>" : '';
+
+        $greeting = $safeToName !== '' ? 'Gentile <strong>' . $safeToName . '</strong>,' : 'Gentile Interessato,';
+
+        $safeLogoSrc = htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8');
+        if ($hasEmbeddedLogo) {
+            $logoHtml = '<img src="cid:logo" alt="Logo ente" style="max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto;">'
+                . '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        } elseif ($safeLogoSrc !== '') {
+            $logoHtml = '<img src="' . $safeLogoSrc . '" alt="Logo ente" style="max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto;">'
+                . '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        } else {
+            $logoHtml = '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        }
+
+        // Multi-rate PDF download button (fix 3)
+        $multiratePdfUrl = htmlspecialchars($data['multiratePdfUrl'] ?? '', ENT_QUOTES, 'UTF-8');
+        $allRatesBtn = '';
+        if ($multiratePdfUrl !== '') {
+            $allRatesBtn = '<p style="text-align:center; margin:16px 0;">'
+                . '<a href="' . $multiratePdfUrl . '" style="display:inline-block; padding:10px 24px; background:#0b3d91; color:#fff; text-decoration:none; border-radius:4px; font-size:14px; font-weight:600;">'
+                . 'Scarica avviso unico (tutte le rate)</a></p>';
+        }
+
+        // Card-style rate list — mobile-friendly (fix 4)
+        $rateCards = '';
+        foreach ($rates as $rate) {
+            $idx    = (int)($rate['indice'] ?? 0);
+            $imp    = number_format((float)(str_replace(',', '.', (string)($rate['importo'] ?? 0))), 2, ',', '.');
+            // dataValidita fallback (fix 2)
+            $scadRaw = ($rate['dataScadenza'] ?? null) ?: ($rate['dataValidita'] ?? null);
+            $scad    = ($scadRaw !== null && $scadRaw !== '') ? htmlspecialchars((string)$scadRaw, ENT_QUOTES, 'UTF-8') : null;
+            $avviso  = htmlspecialchars((string)($rate['numeroAvviso'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $pdfUrl  = htmlspecialchars((string)($rate['pdfUrl'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $payUrl  = htmlspecialchars((string)($rate['paymentUrl'] ?? ''), ENT_QUOTES, 'UTF-8');
+
+            $scadLine  = $scad !== null
+                ? '<div style="font-size:13px; color:#555; margin-bottom:4px;">Scadenza: ' . $scad . '</div>'
+                : '';
+            $avvisoLine = $avviso !== ''
+                ? '<div style="font-size:11px; font-family:monospace; color:#888; margin-bottom:8px;">N. Avviso: ' . $avviso . '</div>'
+                : '';
+
+            $btns = '';
+            if ($pdfUrl !== '') {
+                $btns .= '<a href="' . $pdfUrl . '" style="display:inline-block; margin:2px 4px 2px 0; padding:6px 12px; background:#6c757d; color:#fff; text-decoration:none; border-radius:4px; font-size:12px; font-weight:600;">Scarica PDF</a>';
+            }
+            if ($payUrl !== '') {
+                $btns .= '<a href="' . $payUrl . '" style="display:inline-block; margin:2px 0; padding:6px 12px; background:#0b3d91; color:#fff; text-decoration:none; border-radius:4px; font-size:12px; font-weight:600;">Paga ora</a>';
+            }
+            $btnsDiv = $btns !== '' ? '<div>' . $btns . '</div>' : '';
+
+            $rateCards .= '<div style="border:1px solid #ddd; border-radius:6px; padding:12px 16px; margin-bottom:12px;">'
+                        . '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+                        . '<span style="font-weight:700; color:#0b3d91;">Rata ' . $idx . '</span>'
+                        . '<span style="font-weight:700; font-size:16px;">&euro; ' . $imp . '</span>'
+                        . '</div>'
+                        . $scadLine
+                        . $avvisoLine
+                        . $btnsDiv
+                        . '</div>' . "\n";
+        }
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Piano di rateizzazione - {$causale}</title>
+          <style>
+            body { margin:0; padding:0; background:#f4f7fa; font-family: 'Helvetica Neue', Arial, sans-serif; color:#333; }
+            .wrapper { max-width:560px; margin:40px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+            .header { background:#0b3d91; padding:28px 32px; text-align:center; }
+            .body { padding:32px; }
+            .body p { line-height:1.6; margin:0 0 16px; }
+            .info-box { background:#f8f9fa; border-left:4px solid #0b3d91; padding:16px; margin:16px 0; border-radius:4px; }
+            .info-box p { margin:8px 0; }
+            .footer { background:#f4f7fa; padding:18px 32px; text-align:center; font-size:12px; color:#999; }
+          </style>
+        </head>
+        <body>
+          <div class="wrapper">
+            <div class="header">{$logoHtml}</div>
+            <div class="body">
+              <p>{$greeting}</p>
+              <p>è stato creato un piano di rateizzazione a tuo carico. Di seguito il riepilogo con i link per scaricare ogni avviso e avviare il pagamento:</p>
+              <div class="info-box">
+                <p><strong>Causale:</strong> {$causale}</p>
+                <p><strong>Importo totale:</strong> &euro; {$importoTot}</p>
+                <p><strong>Numero rate:</strong> {$numRate}</p>
+                {$tipologiaInfo}
+              </div>
+              {$allRatesBtn}
+              {$rateCards}
+            </div>
+            <div class="footer">&copy; {$safeAppName} · Email generata automaticamente, non rispondere.</div>
+          </div>
+        </body>
+        </html>
+        HTML;
+    }
+
+    private function renderRateizzazioneTemplatePlain(
+        string $toName,
+        array  $data,
+        string $appName
+    ): string {
+        $greeting        = $toName !== '' ? "Gentile $toName," : "Gentile Interessato,";
+        $causale         = $data['causale'] ?? 'Piano di rateizzazione';
+        $tipologia       = (string)($data['tipologia'] ?? '');
+        $importoTot      = number_format((float)($data['importo_totale'] ?? 0.0), 2, ',', '.');
+        $rates           = $data['rates'] ?? [];
+        $numRate         = count($rates);
+        $multiratePdfUrl = (string)($data['multiratePdfUrl'] ?? '');
+
+        $rateLines = '';
+        foreach ($rates as $rate) {
+            $idx     = (int)($rate['indice'] ?? 0);
+            $imp     = number_format((float)(str_replace(',', '.', (string)($rate['importo'] ?? 0))), 2, ',', '.');
+            // dataValidita fallback (fix 2)
+            $scadRaw = ($rate['dataScadenza'] ?? null) ?: ($rate['dataValidita'] ?? null);
+            $scad    = ($scadRaw !== null && $scadRaw !== '') ? (string)$scadRaw : '—';
+            $avviso  = (string)($rate['numeroAvviso'] ?? '—');
+            $rateLines .= "  Rata {$idx}: € {$imp} | Scadenza: {$scad} | N. Avviso: {$avviso}\n";
+            if (!empty($rate['pdfUrl'])) {
+                $rateLines .= "    Scarica PDF: " . $rate['pdfUrl'] . "\n";
+            }
+            if (!empty($rate['paymentUrl'])) {
+                $rateLines .= "    Paga ora:    " . $rate['paymentUrl'] . "\n";
+            }
+            $rateLines .= "\n";
+        }
+
+        $tipologiaLine    = $tipologia !== '' ? "Tipologia: {$tipologia}\n" : '';
+        $allRatesPdfLine  = $multiratePdfUrl !== '' ? "Scarica avviso unico (tutte le rate): {$multiratePdfUrl}\n\n" : '';
+
+        return <<<TEXT
+        {$greeting}
+
+        è stato creato un piano di rateizzazione a tuo carico.
+
+        Causale: {$causale}
+        {$tipologiaLine}Importo totale: € {$importoTot}
+        Numero rate: {$numRate}
+
+        {$allRatesPdfLine}Dettaglio rate:
+        {$rateLines}
         -- {$appName}
         TEXT;
     }

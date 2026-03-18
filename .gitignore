@@ -5,6 +5,7 @@
 !.iam-proxy.env.example
 *.log
 *.pid
+.claude/
 
 # SSL directory - exclude all except README
 ssl/*
