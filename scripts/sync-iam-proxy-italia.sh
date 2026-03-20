@@ -102,6 +102,59 @@ echo "[sync-iam-proxy] Skipping disco config overrides (use upstream defaults)"
 if [ -f "$REPO_ROOT/iam-proxy/cieoidc_backend.override.yaml.template" ]; then
   echo "[sync-iam-proxy] Applying CIE OIDC backend override from template..."
   mkdir -p "$PROJECT_DST/conf/backends"
+
+  # Auto-fetch CIE OIDC trust mark dalla registry (se non già impostato manualmente)
+  if [ -z "${CIE_OIDC_TRUST_MARK:-}" ]; then
+    echo "[sync-iam-proxy] Auto-fetching CIE OIDC trust mark from registry..."
+    _FETCH_URL="https://oidc.registry.servizicie.interno.gov.it/fetch?iss=https://oidc.registry.servizicie.interno.gov.it&sub=${CIE_OIDC_CLIENT_ID}"
+    _TM_RAW=$(curl -sf --max-time 15 "$_FETCH_URL" 2>/dev/null | python3 -c "
+import sys, base64, json
+jws = sys.stdin.read().strip()
+parts = jws.split('.')
+if len(parts) < 2:
+    sys.exit(0)
+pl = parts[1] + '==' * (-len(parts[1]) % 4)
+payload = json.loads(base64.urlsafe_b64decode(pl))
+tms = payload.get('trust_marks', [])
+if not tms:
+    sys.exit(0)
+tm = tms[0]
+if isinstance(tm, dict):
+    tm_id = tm.get('id', '')
+    tm_jwt = tm.get('trust_mark', '')
+else:
+    # bare string: estrai id dal payload del trust_mark JWT stesso
+    p2 = tm.split('.')
+    pl2 = p2[1] + '==' * (-len(p2[1]) % 4)
+    d2 = json.loads(base64.urlsafe_b64decode(pl2))
+    tm_id = d2.get('id', '')
+    tm_jwt = tm
+if tm_id and tm_jwt:
+    print(tm_id + '|' + tm_jwt)
+" 2>/dev/null)
+    if [ -n "$_TM_RAW" ]; then
+      CIE_OIDC_TRUST_MARK_ID="${_TM_RAW%%|*}"
+      CIE_OIDC_TRUST_MARK="${_TM_RAW##*|}"
+      echo "[sync-iam-proxy] Trust mark fetched (id: $CIE_OIDC_TRUST_MARK_ID)"
+    else
+      echo "[sync-iam-proxy] WARNING: Could not fetch trust mark from registry. trust_marks will be empty."
+      CIE_OIDC_TRUST_MARK_ID=""
+      CIE_OIDC_TRUST_MARK=""
+    fi
+  else
+    # Trust mark impostato manualmente: estrai id dal JWT payload
+    CIE_OIDC_TRUST_MARK_ID=$(python3 -c "
+import sys, base64, json
+tm = '${CIE_OIDC_TRUST_MARK}'
+p = tm.split('.')
+pl = p[1] + '==' * (-len(p[1]) % 4)
+d = json.loads(base64.urlsafe_b64decode(pl))
+print(d.get('id', ''))
+" 2>/dev/null)
+    echo "[sync-iam-proxy] Using manually configured trust mark (id: $CIE_OIDC_TRUST_MARK_ID)"
+  fi
+  export CIE_OIDC_TRUST_MARK CIE_OIDC_TRUST_MARK_ID
+
   # Default CIE OIDC values from existing env vars (if not explicitly set)
   : "${CIE_OIDC_CLIENT_NAME:=${APP_ENTITY_NAME}}"
   : "${CIE_OIDC_ORGANIZATION_NAME:=${APP_ENTITY_NAME}}"
@@ -190,6 +243,14 @@ if [ -d "$REPO_ROOT/iam-proxy/cieoidc-endpoints" ]; then
   mkdir -p "$PROJECT_DST/backends/cieoidc/endpoints"
   cp -f "$REPO_ROOT/iam-proxy/cieoidc-endpoints"/*.py "$PROJECT_DST/backends/cieoidc/endpoints/"
   echo "[sync-iam-proxy] Installed custom federation endpoint handlers"
+fi
+
+# Install custom CIE OIDC model overrides (e.g. OidcUser with optional email)
+if [ -d "$REPO_ROOT/iam-proxy/cieoidc-models" ]; then
+  echo "[sync-iam-proxy] Installing custom CIE OIDC model overrides..."
+  mkdir -p "$PROJECT_DST/backends/cieoidc/models"
+  cp -f "$REPO_ROOT/iam-proxy/cieoidc-models"/*.py "$PROJECT_DST/backends/cieoidc/models/"
+  echo "[sync-iam-proxy] Installed custom model overrides"
 fi
 
 # (Il blocco disco.html viene generato più avanti con envsubst - questo spazio è intenzionalmente vuoto)

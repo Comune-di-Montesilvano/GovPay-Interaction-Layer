@@ -372,6 +372,18 @@ if (!function_exists('frontoffice_pick_email_value')) {
             return $email;
         }
 
+        // Fallback: cerca un valore email-like negli attributi, ma escludi
+        // attributi noti che possono contenere '@' senza essere email reali
+        // (es. CIE sub: XXXXX@idserver.servizicie.interno.gov.it)
+        $excludeKeys = ['sub', 'spidCode', 'spid_code', 'fiscalNumber', 'fiscal_number',
+                        'fiscalnumber', 'FiscalNumber', 'edupersontargetedid',
+                        'eduPersonTargetedID', 'eduPersonTargetedId',
+                        'https://attributes.eid.gov.it/fiscal_number',
+                        'https://attributes.spid.gov.it/fiscalNumber',
+                        'urn:oid:2.5.4.97', 'urn:oid:1.3.6.1.4.1.4710.2.1.1'];
+        // Domini IdP noti che non sono email reali
+        $excludeDomains = ['idserver.servizicie.interno.gov.it'];
+
         $extract = null;
         $extract = static function ($value) use (&$extract): array {
             if (is_array($value)) {
@@ -390,15 +402,73 @@ if (!function_exists('frontoffice_pick_email_value')) {
             return [];
         };
 
-        foreach ($attrs as $value) {
+        foreach ($attrs as $key => $value) {
+            if (in_array($key, $excludeKeys, true)) {
+                continue;
+            }
             foreach ($extract($value) as $candidate) {
                 if (filter_var($candidate, FILTER_VALIDATE_EMAIL) !== false) {
-                    return $candidate;
+                    // Escludi domini IdP noti (non sono email reali)
+                    $domain = strtolower(substr($candidate, strrpos($candidate, '@') + 1));
+                    $skip = false;
+                    foreach ($excludeDomains as $ed) {
+                        if ($domain === $ed || str_ends_with($domain, '.' . $ed)) {
+                            $skip = true;
+                            break;
+                        }
+                    }
+                    if (!$skip) {
+                        return $candidate;
+                    }
                 }
             }
         }
 
         return '';
+    }
+}
+
+if (!function_exists('frontoffice_detect_auth_provider_name')) {
+    function frontoffice_detect_auth_provider_name($auth): string
+    {
+        if (!$auth || !method_exists($auth, 'getLastResponseXML')) {
+            return 'IAM Proxy';
+        }
+
+        $xml = (string)$auth->getLastResponseXML();
+
+        // 1. Check AuthenticatingAuthority (provided by proxy if forwarding upstream IdP)
+        if (preg_match('/<[^>:]*:AuthenticatingAuthority[^>]*>(.*?)<\/[^>:]*:AuthenticatingAuthority>/i', $xml, $matches)) {
+            $authnAuth = strtolower($matches[1]);
+            if (str_contains($authnAuth, 'cie') || str_contains($authnAuth, 'servizicie')) {
+                return 'CIE';
+            }
+            if (str_contains($authnAuth, 'eidas')) {
+                return 'eIDAS';
+            }
+            if (str_contains($authnAuth, 'spid')) {
+                return 'SPID';
+            }
+        }
+
+        // 2. Fallback text search in XML for known issuers
+        if (stripos($xml, 'demo.spid.gov.it') !== false || stripos($xml, 'validator.spid.gov.it') !== false) {
+            return 'SPID (Demo)';
+        }
+        if (stripos($xml, 'idserver.servizicie.interno.gov.it') !== false) {
+            return 'CIE';
+        }
+
+        // 3. Fallback check on attributes
+        $attrs = $auth->getAttributes() ?? [];
+        if (isset($attrs['spidCode']) || isset($attrs['spid_code'])) {
+            return 'SPID';
+        }
+        if (isset($attrs['https://attributes.eid.gov.it/fiscal_number'])) {
+            return 'CIE';
+        }
+
+        return 'SPID/CIE';
     }
 }
 
@@ -2937,7 +3007,7 @@ $routes = [
                 'fiscal_number' => frontoffice_normalize_fiscal_number(frontoffice_pick_attribute_value($attrs, ['fiscalNumber', 'fiscal_number', 'fiscalCode', 'fiscal_code', 'codiceFiscale', 'https://attributes.eid.gov.it/fiscal_number', 'https://attributes.spid.gov.it/fiscalNumber', 'urn:oid:2.5.4.97', 'urn:oid:1.3.6.1.4.1.4710.2.1.1'])),
                 'spid_code' => frontoffice_pick_attribute_value($attrs, ['spidCode', 'spid_code']),
                 'provider_id' => 'IAM_PROXY_ITALIA',
-                'provider_name' => 'IAM Proxy Italia',
+                'provider_name' => frontoffice_detect_auth_provider_name($auth),
                 'response_id' => '',
             ];
 

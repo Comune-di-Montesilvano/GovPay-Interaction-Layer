@@ -91,7 +91,6 @@ config:
       organization_name: ${CIE_OIDC_ORGANIZATION_NAME}
       client_registration_types:
         - automatic
-      jwks_uri: ${CIE_OIDC_JWKS_URI}
       signed_jwks_uri: ${CIE_OIDC_SIGNED_JWKS_URI}
       jwks: # this field is autopopulated
       contacts:
@@ -111,7 +110,7 @@ config:
       userinfo_encrypted_response_alg: *default_enc_alg #RSA-OAEP
       userinfo_encrypted_response_enc: *default_enc_enc #A128CBC-HS256
       token_endpoint_auth_method: private_key_jwt
-      scope: "openid"
+      scope: "openid email"
       code_challenge:
         length: 64
         method: "S256"
@@ -128,7 +127,8 @@ config:
           sub: null
           given_name: null
           family_name: null
-          email: null
+          email:
+            essential: true
           https://attributes.eid.gov.it/fiscal_number: null
       # Campo standard OIDC Federation incluso nell'entity configuration
       claims:
@@ -143,7 +143,8 @@ config:
           sub: null
           given_name: null
           family_name: null
-          email: null
+          email:
+            essential: true
           https://attributes.eid.gov.it/fiscal_number: null
   trust_chain:
       config:
@@ -166,11 +167,13 @@ config:
         jwks_federation: *jwks_federation
         jwks_core: *jwks_core
         entity_type: openid_relying_party
-        entity_configuration_exp: 63072000
+        entity_configuration_exp: 525600
         default_sig_alg: *default_sign_alg #RS256
         authority_hints:
           - ${CIE_OIDC_AUTHORITY_HINT_URL}
-        trust_marks: []
+        trust_marks:
+          - id: "${CIE_OIDC_TRUST_MARK_ID}"
+            trust_mark: "${CIE_OIDC_TRUST_MARK}"
     federation_resolve_endpoint:
       module: backends.cieoidc.endpoints.federation_resolve_endpoint
       class: FederationResolveHandler
@@ -181,7 +184,7 @@ config:
         jwks_federation: *jwks_federation
         jwks_core: *jwks_core
         entity_type: openid_relying_party
-        entity_configuration_exp: 63072000
+        entity_configuration_exp: 525600
         default_sig_alg: *default_sign_alg
         authority_hints:
           - ${CIE_OIDC_AUTHORITY_HINT_URL}
@@ -196,7 +199,7 @@ config:
         jwks_federation: *jwks_federation
         jwks_core: *jwks_core
         entity_type: openid_relying_party
-        entity_configuration_exp: 63072000
+        entity_configuration_exp: 525600
         default_sig_alg: *default_sign_alg
         authority_hints:
           - ${CIE_OIDC_AUTHORITY_HINT_URL}
@@ -221,13 +224,12 @@ config:
       config:
         db_config: *db_config
         entity_type: openid_relying_party
-        entity_configuration_exp: 63072000
+        entity_configuration_exp: 525600
         default_sig_alg: RS256
         metadata: *metadata
         jwks_federation: *jwks_federation
         jwks_core: *jwks_core
-        prompt: "consent login"
-        acr_values: "https://www.cartaidentita.interno.gov.it/livello-autenticazione/loa2"
+        prompt: "consent"
 
     authorization_callback_endpoint:
       module: backends.cieoidc.endpoints.authorization_callback_endpoint
@@ -236,7 +238,7 @@ config:
         - /oidc/callback
       config:
         entity_type: openid_relying_party
-        entity_configuration_exp: 63072000
+        entity_configuration_exp: 525600
         default_sig_alg: RS256
         db_config: *db_config
         metadata: *metadata
@@ -276,7 +278,7 @@ config:
         - /extend_session
       config:
         entity_type: openid_relying_party
-        entity_configuration_exp: 63072000
+        entity_configuration_exp: 525600
         default_sig_alg: RS256
         metadata: *metadata
         jwks_federation: *jwks_federation

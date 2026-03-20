@@ -13,7 +13,7 @@
 - [X] **Integrazione Dati e UI**
     - [X] Inserimento esiti/log notifiche nei `datiAllegati` della pendenza (es. timestamp mail, ID notifica IO).
     - [X] Modifica del dettaglio pendenza per visualizzare una scheda/tab dedicata alle notifiche inviate.
-    - [ ] Notifiche per pendenze rateali
+    - [X] Notifiche per pendenze rateali
 
 ### Sistema di Rendicontazione
 - [ ] **Automazione**
@@ -66,3 +66,5 @@
     - Meccanismo di autenticazione: IUV + ID notifica + IUR di pagamento
 - [ ] Automatismo CI/CD per creazione e pubblicazione immagini Docker su GHCR
     - Workflow GitHub Actions: build, tag automatico, push su `ghcr.io`
+- [ ] Integrazione eBollo 2.0 sul frontoffice
+    - [API](https://developer.pagopa.it/it/pago-pa/api/e-bollo)
