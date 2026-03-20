@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
@@ -305,11 +305,7 @@
         </div>
         <div class="text-center">
           <div class="mi-brand">
-            <svg width="30" height="20" viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect width="1" height="2" x="0" fill="#009246"/>
-              <rect width="1" height="2" x="1" fill="#ffffff"/>
-              <rect width="1" height="2" x="2" fill="#ce2b37"/>
-            </svg>
+            <img src="/static/cie/ministero@2x.png" alt="Ministero dell'Interno" style="height: 24px;">
             <span>MINISTERO DELL'INTERNO</span>
           </div>
         </div>

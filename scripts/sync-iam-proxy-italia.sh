@@ -253,6 +253,21 @@ if [ -d "$REPO_ROOT/iam-proxy/cieoidc-models" ]; then
   echo "[sync-iam-proxy] Installed custom model overrides"
 fi
 
+# Install custom static file overrides (e.g. custom CIE logos)
+if [ -d "$REPO_ROOT/iam-proxy/static-overrides" ]; then
+  echo "[sync-iam-proxy] Installing custom static assets overrides..."
+  cp -r "$REPO_ROOT/iam-proxy/static-overrides/"* "$PROJECT_DST/static/" 2>/dev/null || true
+  echo "[sync-iam-proxy] Installed custom static overrides"
+fi
+
+# Install custom CIE OIDC model overrides (e.g. OidcUser with optional email)
+if [ -d "$REPO_ROOT/iam-proxy/cieoidc-models" ]; then
+  echo "[sync-iam-proxy] Installing custom CIE OIDC model overrides..."
+  mkdir -p "$PROJECT_DST/backends/cieoidc/models"
+  cp -f "$REPO_ROOT/iam-proxy/cieoidc-models"/*.py "$PROJECT_DST/backends/cieoidc/models/"
+  echo "[sync-iam-proxy] Installed custom model overrides"
+fi
+
 # (Il blocco disco.html viene generato più avanti con envsubst - questo spazio è intenzionalmente vuoto)
 
 # Generate wallets-config.json for wallets UI filtering
