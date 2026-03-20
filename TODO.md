@@ -36,7 +36,7 @@
 
 ### Autenticazione e Identity
 - [X] **IAM Proxy**: Sistemazione integrazione proxy IAM.
-- [ ] **CIE**: Bugfixing autenticazione con CIE.
+- [X] **CIE**: Bugfixing autenticazione con CIE.
 - [X] **Discovery Page**: Sistemazione grafica della pagina `disco.html`.
 
 ### Manutenzione e Sistema

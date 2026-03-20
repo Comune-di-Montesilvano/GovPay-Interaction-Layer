@@ -305,8 +305,7 @@
         </div>
         <div class="text-center">
           <div class="mi-brand">
-            <img src="/static/cie/ministero@2x.png" alt="Ministero dell'Interno" style="height: 24px;">
-            <span>MINISTERO DELL'INTERNO</span>
+            <img src="/static/cie/ministero@2x.png" alt="Ministero dell'Interno" style="height: 42px;">
           </div>
         </div>
       </div>
