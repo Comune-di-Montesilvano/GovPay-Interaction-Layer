@@ -386,6 +386,23 @@ services:
     networks:
       - govpay-network
 
+  metadata-builder:
+    build:
+      context: .
+      dockerfile: metadata/builder/Dockerfile
+    volumes:
+      - spid_certs:/certs
+      - frontoffice_sp_metadata:/sp-metadata
+      - ./metadata/cieoidc-keys:/output/cieoidc-keys
+      - ./metadata/agid:/output/agid
+      - ./metadata/cieoidc:/output/cieoidc
+      - ./backup:/backup
+    env_file:
+      - .env
+      - .iam-proxy.env
+    networks:
+      - govpay-network
+
 networks:
   govpay-network:
     driver: bridge

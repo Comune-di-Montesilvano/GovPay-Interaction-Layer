@@ -204,9 +204,9 @@ docker compose --profile iam-proxy up -d --build
 
 Al primo avvio il servizio `sync-iam-proxy` scarica SATOSA da GitHub e popola il volume Docker `iam_proxy_project` (non più una directory locale). Il servizio `iam-proxy-italia` e `satosa-nginx` leggono da questo volume.
 
-Prima di avviare il profilo `iam-proxy`, genera cert e metadata locali:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\metadata\setup-sp.ps1
+Prima di avviare il profilo `iam-proxy`, genera cert e chiavi CIE OIDC:
+```bash
+docker compose run --rm metadata-builder setup
 ```
 
 ### 3. Endpoint esposti da SATOSA
@@ -242,8 +242,8 @@ In breve: `frontoffice_sp.xml` serve solo nel canale interno Frontoffice → SAT
 
 Per esportare una copia locale del metadata pubblico da inviare ad AgID (consigliato):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\metadata\setup-sp.ps1 -MetadataOnly
+```bash
+docker compose run --rm metadata-builder export-agid
 ```
 
 In produzione usa il dominio pubblico del proxy (es. `https://login.ente.gov.it/spidSaml2/metadata`).
