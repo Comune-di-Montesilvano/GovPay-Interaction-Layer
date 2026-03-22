@@ -19,6 +19,7 @@ License: European Union Public Licence v1.2 (EUPL-1.2)
 - [Integrazioni API esterne](#integrazioni-api-esterne)
 - [SPID/CIE (opzionale)](#spidcie-opzionale)
 - [Setup produzione](#setup-produzione)
+- [Rilasci e immagini Docker (GHCR)](#rilasci-e-immagini-docker-ghcr)
 - [Processi batch](#processi-batch)
 - [Funzionalità Backoffice](#funzionalità-backoffice)
 - [Workflow di sviluppo](#workflow-di-sviluppo)
@@ -54,13 +55,25 @@ Compila le variabili secondo le tue esigenze. Il file è commentato sezione per 
 
 ### 3. Avvia i container
 
+**Sviluppo** — build locale dalle sorgenti:
 ```bash
-# primo avvio (o dopo modifiche a Dockerfile/composer)
+# primo avvio o dopo modifiche a Dockerfile/PHP/asset
 docker compose up -d --build
 
-# avvii successivi
+# avvii successivi (nessun rebuild)
 docker compose up -d
 ```
+
+**Produzione** — usa le immagini pre-buildate da GHCR (nessun build richiesto):
+```bash
+# scarica le immagini pubblicate su GHCR
+docker compose pull
+
+# avvia i container
+docker compose up -d
+```
+
+> Vedi [Rilasci e immagini Docker (GHCR)](#rilasci-e-immagini-docker-ghcr) per i dettagli sulle immagini disponibili.
 
 ### 4. Primo accesso
 
@@ -187,7 +200,9 @@ Il file `.iam-proxy.env.example` contiene tutte le variabili disponibili con com
 docker compose --profile iam-proxy up -d --build
 ```
 
-Al primo avvio il servizio `sync-iam-proxy` scarica SATOSA da GitHub e aggiorna la directory di istanza in `iam-proxy/iam-proxy-italia-project/`.
+> `--build` rebuilda solo le immagini con `build:` locale (sync, nginx, db). Non ha effetto su `ghcr.io/italia/iam-proxy-italia` e `mongo:7` (immagini esterne). Per aggiornare quelle, usare `docker compose pull`.
+
+Al primo avvio il servizio `sync-iam-proxy` scarica SATOSA da GitHub e popola il volume Docker `iam_proxy_project` (non più una directory locale). Il servizio `iam-proxy-italia` e `satosa-nginx` leggono da questo volume.
 
 Prima di avviare il profilo `iam-proxy`, genera cert e metadata locali:
 ```powershell
@@ -290,6 +305,64 @@ X-Forwarded-For: <IP client>
 
 Imposta `SSL=false` nel `.env` se il reverse proxy termina TLS e il container riceve HTTP interno.
 
+### Immagini Docker pre-buildate
+
+In produzione non è necessario clonare il repository completo né avere un ambiente Node.js o Composer installato. Usa direttamente le immagini pubblicate su GHCR:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` su:
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice`
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice`
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-sync`
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx`
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db`
+
+Per un server di produzione sono sufficienti: `.env`, `.iam-proxy.env`, la cartella `ssl/`, `certificate/`, `metadata/cieoidc-keys/` e il `docker-compose.yml`.
+
+---
+
+## Rilasci e immagini Docker (GHCR)
+
+### Flusso di rilascio
+
+Ogni release è associata a un tag Git `vX.Y.Z`. Al push del tag, il workflow GitHub Actions `.github/workflows/docker-publish.yml` builda e pubblica automaticamente le 5 immagini Docker su GHCR con i tag `:vX.Y.Z`, `:X.Y` e `:latest`.
+
+```bash
+# Avanzare di versione
+echo "vX.Y.Z" > VERSION
+git add VERSION
+git commit -m "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
+```
+
+Il workflow parte automaticamente. Puoi seguire l'avanzamento su GitHub → Actions → "Docker Publish".
+
+### Immagini disponibili
+
+| Immagine | Scopo |
+|---|---|
+| `govpay-interaction-layer-backoffice` | Applicazione backoffice (PHP/Apache) |
+| `govpay-interaction-layer-frontoffice` | Applicazione frontoffice (PHP/Apache) |
+| `govpay-interaction-layer-iam-proxy-sync` | Setup SATOSA (one-shot, profilo iam-proxy) |
+| `govpay-interaction-layer-iam-proxy-nginx` | Reverse proxy SATOSA (Nginx) |
+| `govpay-interaction-layer-db` | Database MariaDB con schema iniziale |
+
+Registry: `ghcr.io/comune-di-montesilvano/`
+
+### Sviluppo vs produzione
+
+| | Sviluppo | Produzione |
+|---|---|---|
+| **Avvio** | `docker compose up -d --build` | `docker compose pull && docker compose up -d` |
+| **Immagini** | Build locali da Dockerfile | Pre-buildate da GHCR |
+| **Debug mount** | `docker-compose.override.yml` caricato automaticamente | Non presente (o da rimuovere) |
+| **Certificati TLS** | Self-signed (auto-generati) | Validi in `ssl/` |
+
 ---
 
 ## Processi batch
@@ -369,6 +442,13 @@ docker compose logs -f
 docker compose exec govpay-interaction-backoffice bash
 ```
 
+#### Override per sviluppo locale
+
+Il file `docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` se presente nella stessa directory. Aggiunge il mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice per utility di test live.
+
+> [!WARNING]
+> In produzione, rimuovi o non copiare `docker-compose.override.yml`. Per avviare esplicitamente senza override: `docker compose -f docker-compose.yml up -d`.
+
 Struttura codice:
 - `backoffice/` — applicazione backoffice
 - `frontoffice/` — applicazione frontoffice
@@ -403,14 +483,22 @@ Cause comuni:
 ```
 GovPay-Interaction-Layer/
 ├── docker-compose.yml
+├── docker-compose.override.yml   # override sviluppo (debug mount — non usare in prod)
 ├── Dockerfile
-├── .env                      # da creare (non versionato)
-├── .iam-proxy.env            # da creare (solo se usi SPID/CIE)
-├── .iam-proxy.env.example    # template per .iam-proxy.env
+├── .env                          # da creare (non versionato)
+├── .iam-proxy.env                # da creare (solo se usi SPID/CIE)
+├── .iam-proxy.env.example        # template per .iam-proxy.env
+├── .github/workflows/
+│   ├── ci.yml                    # CI: test PHP su push/PR
+│   └── docker-publish.yml        # CD: build e push immagini GHCR su tag vX.Y.Z
 ├── backoffice/               # applicazione backoffice (Slim 4 + Twig)
 ├── frontoffice/              # applicazione frontoffice
 ├── app/                      # codice PHP condiviso
 ├── iam-proxy/                # proxy SPID/CIE (SATOSA) — vedi iam-proxy/PERSONALIZZAZIONE.md
+│   ├── nginx/Dockerfile      # immagine govpay-iam-proxy-nginx
+│   └── sync/Dockerfile       # immagine govpay-iam-proxy-sync
+├── docker/
+│   └── db/Dockerfile         # immagine govpay-db
 ├── metadata/                 # setup metadata/cert SPID (setup-sp.ps1/setup-sp.sh)
 ├── ssl/                      # certificati TLS server (browser → app) — vedi ssl/README.md
 ├── certificate/              # certificati client GovPay (app → GovPay) — vedi certificate/README.md
@@ -419,7 +507,7 @@ GovPay-Interaction-Layer/
 ├── migrations/               # migrazioni DB
 ├── govpay-clients/           # client API GovPay generati
 ├── pagopa-clients/           # client API pagoPA generati
-└── debug/                    # tool debug (montati solo in sviluppo)
+└── debug/                    # tool debug (montati solo in sviluppo via override)
 ```
 
 ---
