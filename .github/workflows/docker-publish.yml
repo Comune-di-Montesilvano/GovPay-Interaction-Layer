@@ -74,25 +74,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── iam-proxy-sync ──────────────────────────────────────────────────
-      - name: Meta · iam-proxy-sync
-        id: meta-sync
+      # ── iam-proxy-italia ─────────────────────────────────────────────────
+      - name: Meta · iam-proxy-italia
+        id: meta-iam
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-iam-proxy-sync
+          images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-iam-proxy-italia
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - name: Build & push · iam-proxy-sync
+      - name: Build & push · iam-proxy-italia
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: iam-proxy/sync/Dockerfile
+          file: iam-proxy/Dockerfile
           push: true
-          tags: ${{ steps.meta-sync.outputs.tags }}
-          labels: ${{ steps.meta-sync.outputs.labels }}
+          tags: ${{ steps.meta-iam.outputs.tags }}
+          labels: ${{ steps.meta-iam.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

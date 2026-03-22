@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+# startup.sh — eseguito da iam-proxy-italia all'avvio.
+# Sostituisce sync-iam-proxy: applica envsubst sui template, inietta chiavi JWK CIE OIDC,
+# applica patch di configurazione, poi avvia SATOSA via entrypoint.sh.
+# Il progetto SATOSA è già in /satosa_proxy/ (baked nell'immagine Docker).
+
+set -euo pipefail
+
+SATOSA_PROXY="/satosa_proxy"
+TEMPLATES="/builder/templates"
+CIEOIDC_KEYS="/cieoidc-keys"
+SATOSA_STATIC="/satosa-static"   # volume condiviso con satosa-nginx
+
+is_true() {
+  case "${1:-}" in
+    1|true|TRUE|True|yes|YES|Yes|on|ON|On) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+echo "[startup] iam-proxy-italia startup — applicazione configurazione..."
+
+# ── i18n wallets ─────────────────────────────────────────────────────────────
+echo "[startup] Generazione wallets i18n JSON..."
+mkdir -p "$SATOSA_PROXY/static/locales/it" "$SATOSA_PROXY/static/locales/en"
+envsubst < "$TEMPLATES/wallets-it.json.template" > "$SATOSA_PROXY/static/locales/it/wallets.json"
+envsubst < "$TEMPLATES/wallets-en.json.template" > "$SATOSA_PROXY/static/locales/en/wallets.json"
+
+# ── spid_base.html ───────────────────────────────────────────────────────────
+echo "[startup] Generazione spid_base.html..."
+envsubst < "$TEMPLATES/spid_base_override.html.template" > "$SATOSA_PROXY/templates/spid_base.html"
+
+# ── wallets-config.json ──────────────────────────────────────────────────────
+echo "[startup] Generazione wallets-config.json..."
+mkdir -p "$SATOSA_PROXY/static/config"
+envsubst < "$TEMPLATES/wallets-config.json.template" > "$SATOSA_PROXY/static/config/wallets-config.json"
+
+# ── disco.html ───────────────────────────────────────────────────────────────
+echo "[startup] Generazione disco.html..."
+envsubst '${APP_LOGO_SRC} ${APP_LOGO_TYPE} ${APP_ENTITY_NAME} ${APP_ENTITY_URL} ${FRONTOFFICE_PUBLIC_BASE_URL} ${SATOSA_UI_LEGAL_URL_IT} ${SATOSA_UI_PRIVACY_URL_IT} ${SATOSA_UI_ACCESSIBILITY_URL_IT} ${SATOSA_ORGANIZATION_URL_IT} ${SATOSA_ORGANIZATION_DISPLAY_NAME_IT} ${CIE_OIDC_PROVIDER_URL} ${APP_VERSION}' \
+  < "$TEMPLATES/disco.static.html.template" > "$SATOSA_PROXY/static/disco.html"
+is_true "${ENABLE_SPID:-true}"         || sed -i '/SPID_BLOCK_START/,/SPID_BLOCK_END/d'            "$SATOSA_PROXY/static/disco.html"
+is_true "${SATOSA_USE_DEMO_SPID_IDP:-}" || sed -i '/SPID_DEMO_START/,/SPID_DEMO_END/d'             "$SATOSA_PROXY/static/disco.html"
+is_true "${SATOSA_USE_SPID_VALIDATOR:-}" || sed -i '/SPID_VALIDATOR_START/,/SPID_VALIDATOR_END/d'  "$SATOSA_PROXY/static/disco.html"
+is_true "${ENABLE_CIE_OIDC:-}"          || sed -i '/CIE_OIDC_BLOCK_START/,/CIE_OIDC_BLOCK_END/d'  "$SATOSA_PROXY/static/disco.html"
+is_true "${ENABLE_IT_WALLET:-}"          || sed -i '/IT_WALLET_BLOCK_START/,/IT_WALLET_BLOCK_END/d' "$SATOSA_PROXY/static/disco.html"
+is_true "${ENABLE_IDEM:-}"               || sed -i '/IDEM_BLOCK_START/,/IDEM_BLOCK_END/d'           "$SATOSA_PROXY/static/disco.html"
+is_true "${ENABLE_EIDAS:-}"              || sed -i '/EIDAS_BLOCK_START/,/EIDAS_BLOCK_END/d'         "$SATOSA_PROXY/static/disco.html"
+
+# ── demo SPID IdP metadata ───────────────────────────────────────────────────
+if is_true "${SATOSA_USE_DEMO_SPID_IDP:-}"; then
+  DEMO_FILE="$SATOSA_PROXY/metadata/idp/demo-spid.xml"
+  if [ ! -f "$DEMO_FILE" ]; then
+    echo "[startup] Scaricamento metadata demo SPID IdP..."
+    curl -sSL --max-time 30 "https://demo.spid.gov.it/metadata.xml" -o "$DEMO_FILE" 2>/dev/null \
+      && echo "[startup] Metadata demo SPID scaricati" \
+      || echo "[startup] WARNING: impossibile scaricare metadata demo SPID"
+  fi
+  mkdir -p "$SATOSA_PROXY/static/config"
+  envsubst < "$TEMPLATES/wallets-spid-demo-override.json.template" > "$SATOSA_PROXY/static/config/wallets-spid-demo-override.json"
+else
+  rm -f "$SATOSA_PROXY/static/config/wallets-spid-demo-override.json"
+fi
+
+# ── SPID validator metadata ──────────────────────────────────────────────────
+if is_true "${SATOSA_USE_SPID_VALIDATOR:-}"; then
+  VALIDATOR_FILE="$SATOSA_PROXY/metadata/idp/spid-validator.xml"
+  if [ ! -f "$VALIDATOR_FILE" ]; then
+    echo "[startup] Scaricamento metadata SPID validator..."
+    VALIDATOR_URL="${SATOSA_SPID_VALIDATOR_METADATA_URL:-https://validator.spid.gov.it/metadata.xml}"
+    curl -sSL --max-time 30 "$VALIDATOR_URL" -o "$VALIDATOR_FILE" 2>/dev/null \
+      && echo "[startup] Metadata SPID validator scaricati" \
+      || echo "[startup] WARNING: impossibile scaricare metadata SPID validator"
+  fi
+fi
+
+# ── cieoidc_backend.yaml ─────────────────────────────────────────────────────
+echo "[startup] Generazione cieoidc_backend.yaml..."
+
+# Auto-fetch trust mark se non già impostato
+if [ -z "${CIE_OIDC_TRUST_MARK:-}" ]; then
+  echo "[startup] Auto-fetch CIE OIDC trust mark dalla registry..."
+  _FETCH_URL="https://oidc.registry.servizicie.interno.gov.it/fetch?iss=https://oidc.registry.servizicie.interno.gov.it&sub=${CIE_OIDC_CLIENT_ID:-}"
+  _TM_RAW=$(curl -sf --max-time 15 "$_FETCH_URL" 2>/dev/null | python3 -c "
+import sys, base64, json
+jws = sys.stdin.read().strip()
+parts = jws.split('.')
+if len(parts) < 2: sys.exit(0)
+pl = parts[1] + '==' * (-len(parts[1]) % 4)
+payload = json.loads(base64.urlsafe_b64decode(pl))
+tms = payload.get('trust_marks', [])
+if not tms: sys.exit(0)
+tm = tms[0]
+if isinstance(tm, dict):
+    tm_id = tm.get('id', ''); tm_jwt = tm.get('trust_mark', '')
+else:
+    p2 = tm.split('.'); pl2 = p2[1] + '==' * (-len(p2[1]) % 4)
+    d2 = json.loads(base64.urlsafe_b64decode(pl2))
+    tm_id = d2.get('id', ''); tm_jwt = tm
+if tm_id and tm_jwt: print(tm_id + '|' + tm_jwt)
+" 2>/dev/null) || true
+  if [ -n "${_TM_RAW:-}" ]; then
+    CIE_OIDC_TRUST_MARK_ID="${_TM_RAW%%|*}"
+    CIE_OIDC_TRUST_MARK="${_TM_RAW##*|}"
+    echo "[startup] Trust mark ottenuto (id: $CIE_OIDC_TRUST_MARK_ID)"
+  else
+    echo "[startup] WARNING: impossibile ottenere trust mark dalla registry"
+    CIE_OIDC_TRUST_MARK_ID="${CIE_OIDC_TRUST_MARK_ID:-}"
+    CIE_OIDC_TRUST_MARK="${CIE_OIDC_TRUST_MARK:-}"
+  fi
+else
+  CIE_OIDC_TRUST_MARK_ID=$(python3 -c "
+import sys, base64, json
+tm = '''${CIE_OIDC_TRUST_MARK}'''
+p = tm.split('.'); pl = p[1] + '==' * (-len(p[1]) % 4)
+d = json.loads(base64.urlsafe_b64decode(pl)); print(d.get('id', ''))
+" 2>/dev/null) || CIE_OIDC_TRUST_MARK_ID=""
+  echo "[startup] Usando trust mark configurato manualmente (id: $CIE_OIDC_TRUST_MARK_ID)"
+fi
+export CIE_OIDC_TRUST_MARK CIE_OIDC_TRUST_MARK_ID
+
+# Default CIE OIDC values
+: "${CIE_OIDC_CLIENT_NAME:=${APP_ENTITY_NAME:-}}"
+: "${CIE_OIDC_ORGANIZATION_NAME:=${APP_ENTITY_NAME:-}}"
+: "${CIE_OIDC_HOMEPAGE_URI:=${APP_ENTITY_URL:-}}"
+: "${CIE_OIDC_POLICY_URI:=${SATOSA_UI_LEGAL_URL_IT:-}}"
+: "${CIE_OIDC_LOGO_URI:=${SATOSA_UI_LOGO_URL:-}}"
+: "${CIE_OIDC_CONTACT_EMAIL:=${SATOSA_CONTACT_PERSON_EMAIL_ADDRESS:-}}"
+export CIE_OIDC_CLIENT_NAME CIE_OIDC_ORGANIZATION_NAME CIE_OIDC_HOMEPAGE_URI
+export CIE_OIDC_POLICY_URI CIE_OIDC_LOGO_URI CIE_OIDC_CONTACT_EMAIL
+
+mkdir -p "$SATOSA_PROXY/conf/backends"
+envsubst < "$TEMPLATES/cieoidc_backend.override.yaml.template" > "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml"
+
+# Inject JWK keys
+JWK_FED="$CIEOIDC_KEYS/jwk-federation.json"
+JWK_SIG="$CIEOIDC_KEYS/jwk-core-sig.json"
+JWK_ENC="$CIEOIDC_KEYS/jwk-core-enc.json"
+
+if [ -f "$JWK_FED" ] && [ -f "$JWK_SIG" ] && [ -f "$JWK_ENC" ]; then
+  echo "[startup] Iniezione chiavi JWK CIE OIDC..."
+  python3 - "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml" "$JWK_FED" "$JWK_SIG" "$JWK_ENC" <<'PY'
+import sys, json
+from pathlib import Path
+
+yaml_path = Path(sys.argv[1])
+paths = {
+    "__CIE_OIDC_JWK_FEDERATION_YAML__": Path(sys.argv[2]),
+    "__CIE_OIDC_JWK_CORE_SIG_YAML__":   Path(sys.argv[3]),
+    "__CIE_OIDC_JWK_CORE_ENC_YAML__":   Path(sys.argv[4]),
+}
+FIELD_ORDER = ["use", "alg", "kty", "kid", "e", "n", "d", "p", "q"]
+
+def jwk_to_yaml_block(jwk, indent):
+    keys = sorted(jwk.keys(), key=lambda k: (FIELD_ORDER.index(k) if k in FIELD_ORDER else 99, k))
+    lines = []
+    for i, key in enumerate(keys):
+        val = json.dumps(jwk[key])
+        prefix = " " * indent + "- " if i == 0 else " " * (indent + 2)
+        lines.append(f"{prefix}{key}: {val}")
+    return "\n".join(lines)
+
+content = yaml_path.read_text(encoding="utf-8")
+for placeholder, jwk_path in paths.items():
+    jwk = json.loads(jwk_path.read_text(encoding="utf-8"))
+    new_lines = []
+    for line in content.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(f"- {placeholder}") or stripped == f"- {placeholder}":
+            indent = len(line) - len(line.lstrip())
+            new_lines.append(jwk_to_yaml_block(jwk, indent))
+        else:
+            new_lines.append(line)
+    content = "\n".join(new_lines)
+
+remaining = [p for p in paths if p in content]
+if remaining:
+    print(f"[ERROR] Placeholder JWKS non sostituiti: {remaining}", file=sys.stderr)
+    sys.exit(1)
+yaml_path.write_text(content + "\n", encoding="utf-8")
+print(f"[OK] JWKS iniettati in {yaml_path}")
+PY
+else
+  echo "[startup] WARNING: chiavi JWK CIE OIDC non trovate in $CIEOIDC_KEYS — configurazione CIE OIDC incompleta"
+fi
+
+# ── patch proxy_conf.yaml ────────────────────────────────────────────────────
+PROXY_CONF="$SATOSA_PROXY/proxy_conf.yaml"
+if [ -f "$PROXY_CONF" ]; then
+  echo "[startup] Applicazione patch proxy_conf.yaml..."
+  if ! is_true "${ENABLE_CIE_OIDC:-}"; then
+    sed -i 's|^  - "conf/backends/cieoidc_backend.yaml"|  # - "conf/backends/cieoidc_backend.yaml"  # Disabled (set ENABLE_CIE_OIDC=true)|' "$PROXY_CONF"
+    sed -i 's|^  - "conf/backends/pyeudiw_backend.yaml"|  # - "conf/backends/pyeudiw_backend.yaml"  # Disabled|' "$PROXY_CONF"
+    sed -i 's|^  - "conf/backends/saml2_backend.yaml"|  # - "conf/backends/saml2_backend.yaml"  # Disabled|' "$PROXY_CONF"
+  fi
+  is_true "${SATOSA_DISABLE_PYEUDIW_BACKEND:-}" && \
+    sed -i 's|^  - "conf/backends/pyeudiw_backend.yaml"|  # - "conf/backends/pyeudiw_backend.yaml"  # Disabled by SATOSA_DISABLE_PYEUDIW_BACKEND|' "$PROXY_CONF" || true
+  is_true "${SATOSA_DISABLE_CIEOIDC_BACKEND:-}" && \
+    sed -i 's|^  - "conf/backends/cieoidc_backend.yaml"|  # - "conf/backends/cieoidc_backend.yaml"  # Disabled by SATOSA_DISABLE_CIEOIDC_BACKEND|' "$PROXY_CONF" || true
+  ! is_true "${ENABLE_IT_WALLET:-}" && \
+    sed -i 's|^  - "conf/frontends/openid4vci_frontend.yaml"|  # - "conf/frontends/openid4vci_frontend.yaml"  # Disabled (ENABLE_IT_WALLET!=true)|' "$PROXY_CONF" || true
+  ! is_true "${ENABLE_OIDCOP:-}" && \
+    sed -i 's|^  - "conf/frontends/oidcop_frontend.yaml"|  # - "conf/frontends/oidcop_frontend.yaml"  # Disabled (ENABLE_OIDCOP!=true)|' "$PROXY_CONF" || true
+fi
+
+# ── patch spidsaml2_backend.yaml (ACS index) ─────────────────────────────────
+SPID_BACKEND="$SATOSA_PROXY/conf/backends/spidsaml2_backend.yaml"
+if [ -f "$SPID_BACKEND" ]; then
+  ACS_INDEX="${SATOSA_FICEP_DEFAULT_ACS_INDEX:-0}"
+  echo "[startup] Setting spidSaml2 ficep_default_acs_index=$ACS_INDEX..."
+  sed -i.bak \
+    -e "s|^\([[:space:]]*ficep_default_acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" \
+    -e "s|^\([[:space:]]*acs_index:[[:space:]]*\).*|\1$ACS_INDEX|" \
+    "$SPID_BACKEND"
+  rm -f "$SPID_BACKEND.bak"
+  grep -q "^[[:space:]]*acs_index:" "$SPID_BACKEND" || \
+    sed -i "/^[[:space:]]*ficep_default_acs_index:/a\    acs_index: $ACS_INDEX" "$SPID_BACKEND"
+fi
+
+# ── patch attribute maps ──────────────────────────────────────────────────────
+URI_MAP="$SATOSA_PROXY/attributes-map/satosa_spid_uri_hybrid.py"
+[ -f "$URI_MAP" ] && ! grep -q '"mail": "mail"' "$URI_MAP" && \
+  sed -i '/"mobilePhone": "mobilePhone",/a\    "mail": "mail",' "$URI_MAP" || true
+
+BASIC_MAP="$SATOSA_PROXY/attributes-map/satosa_spid_basic.py"
+[ -f "$BASIC_MAP" ] && ! grep -q '"mail",' "$BASIC_MAP" && \
+  sed -i '/"mobilePhone",/a\    "mail",' "$BASIC_MAP" || true
+
+INTERNAL_ATTRS="$SATOSA_PROXY/internal_attributes.yaml"
+if [ -f "$INTERNAL_ATTRS" ]; then
+  sed -i 's|saml: \[mail, email\]|saml: [email, mail]|g' "$INTERNAL_ATTRS"
+  sed -i 's|saml: \[mail\]|saml: [email, mail]|g' "$INTERNAL_ATTRS"
+fi
+
+# ── patch target_based_routing.yaml ──────────────────────────────────────────
+ROUTING="$SATOSA_PROXY/conf/microservices/target_based_routing.yaml"
+if [ -f "$ROUTING" ]; then
+  echo "[startup] Patch target_based_routing.yaml..."
+  if ! is_true "${ENABLE_CIE_OIDC:-}"; then
+    sed -i 's|^  default_backend: Saml2$|  default_backend: spidSaml2|' "$ROUTING"
+    is_true "${SATOSA_USE_DEMO_SPID_IDP:-}" || sed -i '/"https:\/\/demo\.spid\.gov\.it": "spidSaml2"/d' "$ROUTING"
+    is_true "${SATOSA_USE_SPID_VALIDATOR:-}" || sed -i '/"https:\/\/validator\.spid\.gov\.it": "spidSaml2"/d' "$ROUTING"
+  fi
+  if is_true "${ENABLE_CIE_OIDC:-}"; then
+    CIE_ISSUER="${CIE_OIDC_PROVIDER_URL:-}"
+    if [ -n "$CIE_ISSUER" ]; then
+      sed -i '/"CieOidcRp"/d' "$ROUTING"
+      sed -i "/\"wallet\": \"OpenID4VP\"/a\\    \"$CIE_ISSUER\": \"CieOidcRp\"" "$ROUTING"
+    fi
+  fi
+fi
+
+# ── copia static files nel volume condiviso con satosa-nginx ─────────────────
+echo "[startup] Copia static files in $SATOSA_STATIC..."
+mkdir -p "$SATOSA_STATIC"
+cp -r "$SATOSA_PROXY/static/." "$SATOSA_STATIC/"
+
+# ── frontoffice SP metadata ───────────────────────────────────────────────────
+sync_frontoffice_sp_metadata() {
+  local SRC="/frontoffice-sp/frontoffice_sp.xml"
+  local DST="$SATOSA_PROXY/metadata/sp/frontoffice_sp.xml"
+  if [ -f "$SRC" ]; then
+    cp "$SRC" "$DST" && echo "[startup] frontoffice_sp.xml sincronizzato in metadata/sp/"
+  else
+    echo "[startup] WARN: /frontoffice-sp/frontoffice_sp.xml non trovato"
+  fi
+}
+sync_frontoffice_sp_metadata
+
+# Watcher: ricopia frontoffice_sp.xml ogni 30s se mancante
+(while true; do
+  sleep 30
+  [ -f "$SATOSA_PROXY/metadata/sp/frontoffice_sp.xml" ] || sync_frontoffice_sp_metadata || true
+done) &
+
+# ── patch_saml2.py ────────────────────────────────────────────────────────────
+if [ -f "$SATOSA_PROXY/patch_saml2.py" ]; then
+  echo "[startup] Applicazione patch_saml2.py..."
+  python3 "$SATOSA_PROXY/patch_saml2.py"
+fi
+
+echo "[startup] Configurazione completata. Avvio SATOSA..."
+exec /bin/bash "$SATOSA_PROXY/entrypoint.sh"

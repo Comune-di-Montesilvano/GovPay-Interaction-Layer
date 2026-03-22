@@ -1,4 +1,46 @@
+# Build context: root della repository
+# Immagine wrapper: bake-in iam-proxy-italia-project + templates + file custom.
+# Al container startup, startup.sh applica envsubst, inietta JWK e avvia SATOSA.
+# Elimina la necessità di sync-iam-proxy (container one-shot) e del volume iam_proxy_project.
+
 FROM ghcr.io/italia/iam-proxy-italia:latest
-# NOTE: questo Dockerfile non è usato da docker-compose.yml che usa l'image direttamente.
-# Il fix pysaml2 (_filter_values NoneType bug) viene applicato tramite
-# iam-proxy-italia-project/patch_saml2.py eseguito all'avvio dal command in docker-compose.yml.
+
+USER root
+
+# Installa gettext (envsubst), curl, git (Alpine)
+RUN apk add --no-cache gettext curl git
+
+# Bake-in il progetto SATOSA dal repo upstream (versione fissa a build time → riproducibile)
+ARG IAM_PROXY_REF=master
+RUN git clone --depth 1 --branch "${IAM_PROXY_REF}" \
+      https://github.com/italia/iam-proxy-italia.git /tmp/upstream \
+    && cp -r /tmp/upstream/iam-proxy-italia-project/. /satosa_proxy/ \
+    && rm -rf /tmp/upstream
+
+# Templates (envsubst a startup, dipendono da variabili d'ambiente)
+COPY iam-proxy/disco.static.html.template               /builder/templates/disco.static.html.template
+COPY iam-proxy/wallets-it.json.template                 /builder/templates/wallets-it.json.template
+COPY iam-proxy/wallets-en.json.template                 /builder/templates/wallets-en.json.template
+COPY iam-proxy/wallets-config.json.template             /builder/templates/wallets-config.json.template
+COPY iam-proxy/wallets-spid-demo-override.json.template /builder/templates/wallets-spid-demo-override.json.template
+COPY iam-proxy/spid_base_override.html.template         /builder/templates/spid_base_override.html.template
+COPY iam-proxy/cieoidc_backend.override.yaml.template   /builder/templates/cieoidc_backend.override.yaml.template
+
+# File custom (non dipendono da env vars → installati a build time)
+COPY iam-proxy/cieoidc-endpoints/ /builder/cieoidc-endpoints/
+COPY iam-proxy/cieoidc-models/    /builder/cieoidc-models/
+COPY iam-proxy/static-overrides/  /builder/static-overrides/
+COPY iam-proxy/patch_saml2.py     /builder/patch_saml2.py
+COPY iam-proxy/startup.sh         /builder/startup.sh
+
+RUN chmod +x /builder/startup.sh \
+    # Installa file custom nel progetto (non dipendono da env vars)
+    && mkdir -p /satosa_proxy/backends/cieoidc/endpoints \
+                /satosa_proxy/backends/cieoidc/models \
+    && cp -r /builder/cieoidc-endpoints/. /satosa_proxy/backends/cieoidc/endpoints/ \
+    && cp -r /builder/cieoidc-models/.    /satosa_proxy/backends/cieoidc/models/ \
+    && cp -r /builder/static-overrides/.  /satosa_proxy/static/ \
+    && cp    /builder/patch_saml2.py      /satosa_proxy/patch_saml2.py \
+    # Directory necessarie a SATOSA (logs, metadata)
+    && mkdir -p /satosa_proxy/logs /satosa_proxy/metadata/idp /satosa_proxy/metadata/sp \
+    && chmod -R 777 /satosa_proxy/logs /satosa_proxy/metadata

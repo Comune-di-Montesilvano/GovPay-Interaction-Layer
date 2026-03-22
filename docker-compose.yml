@@ -139,29 +139,6 @@ services:
     networks:
       - govpay-network
 
-  sync-iam-proxy:
-    build:
-      context: .
-      dockerfile: iam-proxy/sync/Dockerfile
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-sync:${APP_VERSION:-latest}
-    container_name: sync-iam-proxy
-    environment:
-      - APP_ENTITY_NAME=${APP_ENTITY_NAME}
-      - APP_ENTITY_URL=${APP_ENTITY_URL}
-      - APP_LOGO_SRC=${APP_LOGO_SRC}
-      - APP_LOGO_TYPE=${APP_LOGO_TYPE}
-      - APP_VERSION=${APP_VERSION}
-      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
-    env_file:
-      - .iam-proxy.env
-    volumes:
-      # Chiavi federazione CIE OIDC (personalizzazione per-comune)
-      - ./metadata/cieoidc-keys:/metadata/cieoidc-keys:ro
-      # Progetto SATOSA generato dal sync (scritto qui, letto da iam-proxy-italia e satosa-nginx)
-      - iam_proxy_project:/iam-proxy/iam-proxy-italia-project
-    profiles:
-      - iam-proxy
-
   init-frontoffice-sp-metadata:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: init-frontoffice-sp-metadata
@@ -224,135 +201,40 @@ services:
       - iam-proxy
 
   iam-proxy-italia:
-    image: ghcr.io/italia/iam-proxy-italia:latest
+    build:
+      context: .
+      dockerfile: iam-proxy/Dockerfile
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
     container_name: iam-proxy-italia
-    command:
-      - /bin/bash
-      - -c
-      - |
-        # Watchdog sulla scadenza del metadata SP del Frontoffice caricato da SATOSA.
-        # Non riguarda i metadata pubblici di SATOSA (/Saml2IDP/metadata, /spidSaml2/metadata).
-        FRONTOFFICE_SP_METADATA_FILE="$${FRONTOFFICE_SP_METADATA_FILE:-/satosa_proxy/metadata/sp/frontoffice_sp.xml}"
-        FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS="$${FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS:-604800}"
-        FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS="$${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}"
-
-        metadata_expiry_watchdog() {
-          while true; do
-            python - "$$FRONTOFFICE_SP_METADATA_FILE" "$$FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS" <<'PY'
-        import datetime as dt
-        import os
-        import sys
-        import xml.etree.ElementTree as ET
-
-        metadata_file = sys.argv[1]
-        warn_window = int(sys.argv[2])
-
-        def log_error(msg: str):
-          print(f"[ERROR] [metadata-expiry-watchdog] {msg}", flush=True)
-
-        if not os.path.exists(metadata_file):
-          log_error(f"metadata file not found: {metadata_file}")
-          sys.exit(0)
-
-        try:
-          root = ET.parse(metadata_file).getroot()
-          valid_until_raw = root.attrib.get("validUntil", "").strip()
-          if not valid_until_raw:
-            log_error(f"validUntil missing in metadata: {metadata_file}")
-            sys.exit(0)
-
-          # Accept format like 2026-03-18T15:25:24Z
-          valid_until = dt.datetime.strptime(valid_until_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
-          now = dt.datetime.now(dt.timezone.utc)
-          remaining = int((valid_until - now).total_seconds())
-
-          if remaining <= warn_window:
-            days = remaining // 86400
-            hours = (remaining % 86400) // 3600
-            if remaining <= 0:
-              log_error(f"SP metadata EXPIRED at {valid_until_raw} (file={metadata_file})")
-            else:
-              log_error(
-                f"SP metadata expires soon at {valid_until_raw} (remaining={remaining}s ~ {days}d {hours}h, file={metadata_file})"
-              )
-        except Exception as ex:
-          log_error(f"cannot parse metadata expiry from {metadata_file}: {ex}")
-        PY
-            sleep "$$FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS"
-          done
-        }
-
-        if [ "$$FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS" -gt 0 ] 2>/dev/null; then
-          metadata_expiry_watchdog &
-        fi
-
-        # Copia frontoffice_sp.xml nel volume iam_proxy_project/metadata/sp/.
-        # Il mount annidato (frontoffice_sp_metadata:/satosa_proxy/metadata/sp) non funziona
-        # su Docker Desktop for Windows quando la dir esiste già nel volume genitore.
-        # Soluzione: il volume è montato su un path non annidato (/frontoffice-sp) e copiato qui.
-        sync_frontoffice_sp_metadata() {
-          local SRC="/frontoffice-sp/frontoffice_sp.xml"
-          local DST="/satosa_proxy/metadata/sp/frontoffice_sp.xml"
-          if [ -f "$$SRC" ]; then
-            cp "$$SRC" "$$DST" && echo "[INFO] frontoffice_sp.xml synced into SATOSA metadata/sp/"
-          else
-            echo "[WARN] /frontoffice-sp/frontoffice_sp.xml not found — SP metadata non disponibile"
-          fi
-        }
-        sync_frontoffice_sp_metadata
-
-        # Background loop: controlla ogni 30s che frontoffice_sp.xml sia presente in
-        # /satosa_proxy/metadata/sp/ e lo ricopia se mancante (es. dopo che sync-iam-proxy
-        # ha ripopolato il volume iam_proxy_project senza riavviare questo container).
-        frontoffice_sp_metadata_sync_loop() {
-          while true; do
-            sleep 30
-            [ -f "/satosa_proxy/metadata/sp/frontoffice_sp.xml" ] || sync_frontoffice_sp_metadata || true
-          done
-        }
-        frontoffice_sp_metadata_sync_loop &
-
-        if [ -f /satosa_proxy/patch_saml2.py ]; then
-          echo "[INFO] Applying SAML2 patch..."
-          python /satosa_proxy/patch_saml2.py
-        fi
-
-        if [ -f /satosa_proxy/entrypoint.sh ]; then
-          exec /bin/bash /satosa_proxy/entrypoint.sh
-        else
-          echo "[ERROR] /satosa_proxy/entrypoint.sh not found. Volume mount issue?"
-          exit 1
-        fi
+    command: ["/bin/bash", "/builder/startup.sh"]
     volumes:
-      # Progetto SATOSA generato da sync-iam-proxy (include patch_saml2.py copiato in fase di sync)
-      - iam_proxy_project:/satosa_proxy
-      # frontoffice_sp_metadata montato su path NON annidato: su Docker Desktop for Windows
-      # i mount annidati dentro un volume genitore non funzionano se la dir esiste già nel volume.
-      # Il comando di startup copia frontoffice_sp.xml in /satosa_proxy/metadata/sp/ all'avvio.
+      # Chiavi JWK CIE OIDC (per-deployment, generate da metadata-builder setup-cieoidc)
+      - ./metadata/cieoidc-keys:/cieoidc-keys:ro
+      # SP metadata del frontoffice (non annidato: nessun problema Docker Desktop Windows)
       - frontoffice_sp_metadata:/frontoffice-sp:ro
+      # Certificati SPID (per-deployment)
       - spid_certs:/satosa_proxy/pki
+      # File statici condivisi con satosa-nginx (popolati da startup.sh)
+      - iam_proxy_static:/satosa-static
     profiles:
       - iam-proxy
     depends_on:
-      sync-iam-proxy:
-        condition: service_completed_successfully
       init-frontoffice-sp-metadata:
         condition: service_completed_successfully
+    env_file:
+      - .iam-proxy.env
     environment:
-      # Config minima per esecuzione container (valori dettagliati/secret in .env)
       - SATOSA_BY_DOCKER=1
       - APP_ENTITY_NAME=${APP_ENTITY_NAME}
       - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
-    env_file:
-      # - .env.frontoffice (rimosso: usare .env e .iam-proxy.env)
-      - .iam-proxy.env
+      - APP_VERSION=${APP_VERSION:-}
     restart: on-failure:3
     healthcheck:
-      test: [ "CMD", "test", "-f", "/satosa_proxy/entrypoint.sh" ]
+      test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]
       interval: 5s
       timeout: 2s
       retries: 10
-      start_period: 10s
+      start_period: 30s
     networks:
       - govpay-network
 
@@ -378,8 +260,8 @@ services:
       # per configurare il redirect su errori 403 (es. annullamento login SPID/CIE)
       - .iam-proxy.env
     volumes:
-      # Progetto SATOSA generato da sync-iam-proxy (static servita via alias /satosa-project/static/)
-      - iam_proxy_project:/satosa-project:ro
+      # File statici SATOSA (disco.html, wallets, etc.) popolati da iam-proxy-italia/startup.sh
+      - iam_proxy_static:/satosa-project/static:ro
       # Cert TLS per-dominio (personalizzazione per-comune)
       - ./ssl:/etc/nginx/certs
     restart: unless-stopped
@@ -443,7 +325,7 @@ volumes:
   db_data:
   satosa_mongo_data:
   frontoffice_sp_metadata:
-  iam_proxy_project:
+  iam_proxy_static:
   spid_certs:
     external: true
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
