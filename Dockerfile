@@ -162,3 +162,8 @@ RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs
+
+# Script per generazione/rinnovo metadata SP SAML (usato da init/refresh-frontoffice-sp-metadata)
+RUN mkdir -p /scripts
+COPY metadata/ensure-sp-metadata.sh /scripts/ensure-sp-metadata.sh
+RUN chmod +x /scripts/ensure-sp-metadata.sh

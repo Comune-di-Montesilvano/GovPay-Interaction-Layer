@@ -8,12 +8,8 @@ services:
     ports:
       - "${BACKOFFICE_HTTP_PORT:-8443}:80"
     volumes:
-      # Monta solo la cartella debug per sviluppo live
-      - ./debug:/var/www/html/public/debug
-      - ./VERSION:/var/www/html/VERSION:ro
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
-      - ./scripts:/var/www/html/scripts
     environment:
       - SSL=${SSL}
       - APACHE_SERVER_NAME=${APACHE_SERVER_NAME}
@@ -82,9 +78,6 @@ services:
     ports:
       - "${FRONTOFFICE_HTTP_PORT:-8444}:80"
     volumes:
-      # Monta solo la cartella debug per sviluppo live
-      - ./debug:/var/www/html/public/debug
-      - ./VERSION:/var/www/html/VERSION:ro
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
       - spid_certs:/var/www/html/spid-certs:ro
@@ -145,7 +138,10 @@ services:
       - govpay-network
 
   sync-iam-proxy:
-    image: alpine:latest
+    build:
+      context: .
+      dockerfile: iam-proxy/sync/Dockerfile
+    image: govpay-iam-proxy-sync:${APP_VERSION:-latest}
     container_name: sync-iam-proxy
     environment:
       - APP_ENTITY_NAME=${APP_ENTITY_NAME}
@@ -157,17 +153,10 @@ services:
     env_file:
       - .iam-proxy.env
     volumes:
-      - ./VERSION:/VERSION:ro
-      - ./iam-proxy:/iam-proxy
-      - ./scripts:/scripts:ro
+      # Chiavi federazione CIE OIDC (personalizzazione per-comune)
       - ./metadata/cieoidc-keys:/metadata/cieoidc-keys:ro
-    working_dir: /scripts
-    command:
-      - /bin/sh
-      - -c
-      - |
-        apk add --no-cache bash git curl unzip openssl gettext python3
-        bash /scripts/sync-iam-proxy-italia.sh
+      # Progetto SATOSA generato dal sync (scritto qui, letto da iam-proxy-italia e satosa-nginx)
+      - iam_proxy_project:/iam-proxy/iam-proxy-italia-project
     profiles:
       - iam-proxy
 
@@ -179,7 +168,6 @@ services:
       - |
         sh /scripts/ensure-sp-metadata.sh
     volumes:
-      - ./metadata/ensure-sp-metadata.sh:/scripts/ensure-sp-metadata.sh:ro
       - frontoffice_sp_metadata:/metadata/sp
       - frontoffice_sp_metadata:/var/www/html/metadata-sp
       - spid_certs:/var/www/html/spid-certs:ro
@@ -210,7 +198,6 @@ services:
           sleep ${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}
         done
     volumes:
-      - ./metadata/ensure-sp-metadata.sh:/scripts/ensure-sp-metadata.sh:ro
       - frontoffice_sp_metadata:/metadata/sp
       - frontoffice_sp_metadata:/var/www/html/metadata-sp
       - spid_certs:/var/www/html/spid-certs:ro
@@ -309,8 +296,8 @@ services:
           exit 1
         fi
     volumes:
-      - ./iam-proxy/iam-proxy-italia-project:/satosa_proxy
-      - ./iam-proxy/patch_saml2.py:/satosa_proxy/patch_saml2.py:ro
+      # Progetto SATOSA generato da sync-iam-proxy (include patch_saml2.py copiato in fase di sync)
+      - iam_proxy_project:/satosa_proxy
       - frontoffice_sp_metadata:/satosa_proxy/metadata/sp:ro
       - spid_certs:/satosa_proxy/pki
     profiles:
@@ -339,7 +326,9 @@ services:
       - govpay-network
 
   satosa-nginx:
-    image: nginx:alpine
+    build:
+      context: ./iam-proxy/nginx
+    image: govpay-iam-proxy-nginx:${APP_VERSION:-latest}
     container_name: satosa-nginx
     profiles:
       - iam-proxy
@@ -352,25 +341,24 @@ services:
       - SSL=${SSL:-on}
       - NGINX_HOST=${IAM_PROXY_HOSTNAME:-satosa-nginx}
       - TZ=${TZ:-Europe/Rome}
+      - APP_VERSION=${APP_VERSION}
     env_file:
       # Permette a nginx di leggere SATOSA_UNKNOW_ERROR_REDIRECT_PAGE
       # per configurare il redirect su errori 403 (es. annullamento login SPID/CIE)
       - .iam-proxy.env
     volumes:
-      - ./iam-proxy/nginx/conf.d:/satosa_config_templates:ro
-      - ./iam-proxy/nginx/html:/usr/share/nginx/html:ro
-      - ./iam-proxy/nginx/entrypoint.d:/docker-entrypoint.d:ro
-      # Mount SATOSA static files for serving by nginx
-      - ./iam-proxy/iam-proxy-italia-project/static:/usr/share/nginx/html/static:ro
-      # Versione applicazione per footer pagine errore
-      - ./VERSION:/VERSION:ro
-      # Cert per TLS (riuso di ssl/ locale)
+      # Progetto SATOSA generato da sync-iam-proxy (static servita via alias /satosa-project/static/)
+      - iam_proxy_project:/satosa-project:ro
+      # Cert TLS per-dominio (personalizzazione per-comune)
       - ./ssl:/etc/nginx/certs
     restart: unless-stopped
     networks:
       - govpay-network
   db:
-    image: mariadb:11
+    build:
+      context: ./docker
+      dockerfile: db/Dockerfile
+    image: govpay-db:${APP_VERSION:-latest}
     container_name: mariadb
     restart: always
     environment:
@@ -382,7 +370,6 @@ services:
       - DB_PASSWORD_CITTADINI=${DB_PASSWORD_CITTADINI}
     volumes:
       - db_data:/var/lib/mysql
-      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     networks:
       - govpay-network
 
@@ -407,6 +394,7 @@ volumes:
   db_data:
   satosa_mongo_data:
   frontoffice_sp_metadata:
+  iam_proxy_project:
   spid_certs:
     external: true
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
