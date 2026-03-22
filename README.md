@@ -200,9 +200,7 @@ Il file `.iam-proxy.env.example` contiene tutte le variabili disponibili con com
 docker compose --profile iam-proxy up -d --build
 ```
 
-> `--build` rebuilda solo le immagini con `build:` locale (sync, nginx, db). Non ha effetto su `ghcr.io/italia/iam-proxy-italia` e `mongo:7` (immagini esterne). Per aggiornare quelle, usare `docker compose pull`.
-
-Al primo avvio il servizio `sync-iam-proxy` scarica SATOSA da GitHub e popola il volume Docker `iam_proxy_project` (non più una directory locale). Il servizio `iam-proxy-italia` e `satosa-nginx` leggono da questo volume.
+> `--build` rebuilda le immagini con `build:` locale (iam-proxy-italia, nginx, db). Per aggiornare le immagini GHCR, usare `docker compose pull`.
 
 Prima di avviare il profilo `iam-proxy`, genera cert e chiavi CIE OIDC:
 ```bash
@@ -494,9 +492,10 @@ GovPay-Interaction-Layer/
 ├── backoffice/               # applicazione backoffice (Slim 4 + Twig)
 ├── frontoffice/              # applicazione frontoffice
 ├── app/                      # codice PHP condiviso
-├── iam-proxy/                # proxy SPID/CIE (SATOSA) — vedi iam-proxy/PERSONALIZZAZIONE.md
-│   ├── nginx/Dockerfile      # immagine govpay-iam-proxy-nginx
-│   └── sync/Dockerfile       # immagine govpay-iam-proxy-sync
+├── iam-proxy/                # proxy SPID/CIE (SATOSA)
+│   ├── Dockerfile            # immagine iam-proxy-italia (wrapper con progetto SATOSA baked-in)
+│   ├── startup.sh            # inizializzazione container (envsubst, JWK, patch config)
+│   └── nginx/Dockerfile      # immagine iam-proxy-nginx
 ├── docker/
 │   └── db/Dockerfile         # immagine govpay-db
 ├── metadata/                 # setup metadata/cert SPID (setup-sp.ps1/setup-sp.sh)
