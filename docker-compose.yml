@@ -301,13 +301,13 @@ services:
         }
         sync_frontoffice_sp_metadata
 
-        # Background loop: risincronizza frontoffice_sp.xml quando refresh-frontoffice-sp-metadata
-        # aggiorna il volume (stesso intervallo: FRONTOFFICE_SP_METADATA_REFRESH_SECONDS).
+        # Background loop: controlla ogni 30s che frontoffice_sp.xml sia presente in
+        # /satosa_proxy/metadata/sp/ e lo ricopia se mancante (es. dopo che sync-iam-proxy
+        # ha ripopolato il volume iam_proxy_project senza riavviare questo container).
         frontoffice_sp_metadata_sync_loop() {
-          local INTERVAL="$${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}"
           while true; do
-            sleep "$$INTERVAL"
-            sync_frontoffice_sp_metadata || true
+            sleep 30
+            [ -f "/satosa_proxy/metadata/sp/frontoffice_sp.xml" ] || sync_frontoffice_sp_metadata || true
           done
         }
         frontoffice_sp_metadata_sync_loop &
