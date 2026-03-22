@@ -157,6 +157,7 @@ services:
     env_file:
       - .iam-proxy.env
     volumes:
+      - ./VERSION:/VERSION:ro
       - ./iam-proxy:/iam-proxy
       - ./scripts:/scripts:ro
       - ./metadata/cieoidc-keys:/metadata/cieoidc-keys:ro

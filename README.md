@@ -7,7 +7,7 @@ Include:
 - **Frontoffice** cittadini/sportello
 - (Opzionale) **proxy SPID/CIE** integrabile via profilo Docker Compose
 
-Repository: https://github.com/mirkochipdotcom/GovPay-Interaction-Layer.git  
+Repository: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer.git  
 License: European Union Public Licence v1.2 (EUPL-1.2)
 
 ---
@@ -38,7 +38,7 @@ License: European Union Public Licence v1.2 (EUPL-1.2)
 ### 1. Clona il repository
 
 ```bash
-git clone https://github.com/mirkochipdotcom/GovPay-Interaction-Layer.git
+git clone https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer.git
 cd GovPay-Interaction-Layer
 ```
 
@@ -434,5 +434,5 @@ GovPay-Interaction-Layer/
 
 ## Supporto
 
-- Issues: https://github.com/mirkochipdotcom/GovPay-Interaction-Layer/issues
+- Issues: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/issues
 

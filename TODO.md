@@ -7,7 +7,7 @@
         - [X] Inserimento dei dati notifica nei `datiAllegati` della pendenza
         - [X] Visualizzazione in dettaglio pendenza: sezione dedicata ai dati allegati della pendenza
     - [ ] Lato Frontoffice: Inserire tasto "Invia per email" post-creazione spontaneo (accanto a "Paga ora" e "Stampa").
-- [ ] **App IO**
+- [X] **App IO**
     - [X] Implementazione delle medesime notifiche (Backoffice/Frontoffice) tramite App IO.
     - [X] **Configurazione API**: Implementazione API App IO e gestione chiavi/servizi per ogni tipologia di pendenza.
 - [X] **Integrazione Dati e UI**
