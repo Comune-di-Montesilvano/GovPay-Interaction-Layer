@@ -3,7 +3,7 @@ services:
     build:
       context: .
       target: runtime-backoffice
-    image: govpay-interaction-backoffice:latest
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-backoffice
     ports:
       - "${BACKOFFICE_HTTP_PORT:-8443}:80"
@@ -73,7 +73,7 @@ services:
     build:
       context: .
       target: runtime-frontoffice
-    image: govpay-interaction-frontoffice:latest
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-frontoffice
     ports:
       - "${FRONTOFFICE_HTTP_PORT:-8444}:80"
@@ -141,7 +141,7 @@ services:
     build:
       context: .
       dockerfile: iam-proxy/sync/Dockerfile
-    image: govpay-iam-proxy-sync:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-sync:${APP_VERSION:-latest}
     container_name: sync-iam-proxy
     environment:
       - APP_ENTITY_NAME=${APP_ENTITY_NAME}
@@ -161,7 +161,7 @@ services:
       - iam-proxy
 
   init-frontoffice-sp-metadata:
-    image: govpay-interaction-frontoffice:latest
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: init-frontoffice-sp-metadata
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -188,7 +188,7 @@ services:
       - iam-proxy
 
   refresh-frontoffice-sp-metadata:
-    image: govpay-interaction-frontoffice:latest
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: refresh-frontoffice-sp-metadata
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -328,7 +328,7 @@ services:
   satosa-nginx:
     build:
       context: ./iam-proxy/nginx
-    image: govpay-iam-proxy-nginx:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx:${APP_VERSION:-latest}
     container_name: satosa-nginx
     profiles:
       - iam-proxy
@@ -358,7 +358,7 @@ services:
     build:
       context: ./docker
       dockerfile: db/Dockerfile
-    image: govpay-db:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: mariadb
     restart: always
     environment:
@@ -390,6 +390,7 @@ services:
     build:
       context: .
       dockerfile: metadata/builder/Dockerfile
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-metadata-builder:${APP_VERSION:-latest}
     volumes:
       - spid_certs:/certs
       - frontoffice_sp_metadata:/sp-metadata
