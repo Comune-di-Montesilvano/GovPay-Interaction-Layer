@@ -227,7 +227,11 @@ services:
       - SATOSA_BY_DOCKER=1
       - APP_ENTITY_NAME=${APP_ENTITY_NAME}
       - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
+      - APP_ENTITY_URL=${APP_ENTITY_URL}
+      - APP_LOGO_SRC=${APP_LOGO_SRC}
+      - APP_LOGO_TYPE=${APP_LOGO_TYPE}
       - APP_VERSION=${APP_VERSION:-}
+      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
     restart: on-failure:3
     healthcheck:
       test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]

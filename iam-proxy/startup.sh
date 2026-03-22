@@ -18,7 +18,11 @@ is_true() {
   esac
 }
 
-echo "[startup] iam-proxy-italia startup — applicazione configurazione..."
+# Fallback: leggi APP_VERSION dal file baked nell'immagine se la variabile env è vuota
+: "${APP_VERSION:=$(cat /builder/VERSION 2>/dev/null | tr -d '[:space:]')}"
+export APP_VERSION
+
+echo "[startup] iam-proxy-italia startup — applicazione configurazione... (v${APP_VERSION:-unknown})"
 
 # ── i18n wallets ─────────────────────────────────────────────────────────────
 echo "[startup] Generazione wallets i18n JSON..."

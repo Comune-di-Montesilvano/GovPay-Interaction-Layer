@@ -32,6 +32,7 @@ COPY iam-proxy/cieoidc-models/    /builder/cieoidc-models/
 COPY iam-proxy/static-overrides/  /builder/static-overrides/
 COPY iam-proxy/patch_saml2.py     /builder/patch_saml2.py
 COPY iam-proxy/startup.sh         /builder/startup.sh
+COPY VERSION                      /builder/VERSION
 
 RUN chmod +x /builder/startup.sh \
     # Installa file custom nel progetto (non dipendono da env vars)
