@@ -10,6 +10,7 @@ services:
     volumes:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
+      - ./certificate:/var/www/certificate:ro
     environment:
       - SSL=${SSL}
       - APACHE_SERVER_NAME=${APACHE_SERVER_NAME}
@@ -81,6 +82,7 @@ services:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
       - spid_certs:/var/www/html/spid-certs:ro
+      - ./certificate:/var/www/certificate:ro
     environment:
       - SSL=${SSL}
       - APACHE_SERVER_NAME=${APACHE_SERVER_NAME}
@@ -284,6 +286,32 @@ services:
           metadata_expiry_watchdog &
         fi
 
+        # Copia frontoffice_sp.xml nel volume iam_proxy_project/metadata/sp/.
+        # Il mount annidato (frontoffice_sp_metadata:/satosa_proxy/metadata/sp) non funziona
+        # su Docker Desktop for Windows quando la dir esiste già nel volume genitore.
+        # Soluzione: il volume è montato su un path non annidato (/frontoffice-sp) e copiato qui.
+        sync_frontoffice_sp_metadata() {
+          local SRC="/frontoffice-sp/frontoffice_sp.xml"
+          local DST="/satosa_proxy/metadata/sp/frontoffice_sp.xml"
+          if [ -f "$$SRC" ]; then
+            cp "$$SRC" "$$DST" && echo "[INFO] frontoffice_sp.xml synced into SATOSA metadata/sp/"
+          else
+            echo "[WARN] /frontoffice-sp/frontoffice_sp.xml not found — SP metadata non disponibile"
+          fi
+        }
+        sync_frontoffice_sp_metadata
+
+        # Background loop: risincronizza frontoffice_sp.xml quando refresh-frontoffice-sp-metadata
+        # aggiorna il volume (stesso intervallo: FRONTOFFICE_SP_METADATA_REFRESH_SECONDS).
+        frontoffice_sp_metadata_sync_loop() {
+          local INTERVAL="$${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}"
+          while true; do
+            sleep "$$INTERVAL"
+            sync_frontoffice_sp_metadata || true
+          done
+        }
+        frontoffice_sp_metadata_sync_loop &
+
         if [ -f /satosa_proxy/patch_saml2.py ]; then
           echo "[INFO] Applying SAML2 patch..."
           python /satosa_proxy/patch_saml2.py
@@ -298,7 +326,10 @@ services:
     volumes:
       # Progetto SATOSA generato da sync-iam-proxy (include patch_saml2.py copiato in fase di sync)
       - iam_proxy_project:/satosa_proxy
-      - frontoffice_sp_metadata:/satosa_proxy/metadata/sp:ro
+      # frontoffice_sp_metadata montato su path NON annidato: su Docker Desktop for Windows
+      # i mount annidati dentro un volume genitore non funzionano se la dir esiste già nel volume.
+      # Il comando di startup copia frontoffice_sp.xml in /satosa_proxy/metadata/sp/ all'avvio.
+      - frontoffice_sp_metadata:/frontoffice-sp:ro
       - spid_certs:/satosa_proxy/pki
     profiles:
       - iam-proxy
