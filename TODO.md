@@ -54,7 +54,7 @@
 - [ ] **Snellimento Build**
     - [X] Semplificazione degli script di build.
     - [ ] Rimozione dei container effimeri che terminano dopo la build (es. `sync-iam-proxy`).
-    - [ ] Valutazione sostituzione bind-mount con istruzioni `COPY` (o `docker cp`) per le cartelle statiche.
+    - [X] Valutazione sostituzione bind-mount con istruzioni `COPY` (o `docker cp`) per le cartelle statiche.
     - [X] Rimozione di `chown` e operazioni simili dagli script di entrypoint/build per velocizzare l'avvio.
 - [ ] **Pulizia Repository**
     - [ ] Rimozione degli script di migrazione orfani.
@@ -64,7 +64,7 @@
 ### Altro
 - [X] Pagina sul frontoffice pubblica per il download della ricevuta di pagamento
     - Meccanismo di autenticazione: IUV + ID notifica + IUR di pagamento
-- [ ] Automatismo CI/CD per creazione e pubblicazione immagini Docker su GHCR
+- [X] Automatismo CI/CD per creazione e pubblicazione immagini Docker su GHCR
     - Workflow GitHub Actions: build, tag automatico, push su `ghcr.io`
 - [ ] Integrazione eBollo 2.0 sul frontoffice
     - [API](https://developer.pagopa.it/it/pago-pa/api/e-bollo)
