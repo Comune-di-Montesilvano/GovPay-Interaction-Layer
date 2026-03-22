@@ -11,10 +11,7 @@ Questa cartella contiene gli script per:
 ```
 metadata/
   builder/              ← container Docker per tutti i comandi metadata
-  setup-sp.sh           ← genera certificati SPID + metadata AgID (bash alternativo)
-  setup-cie-oidc.sh     ← genera chiavi JWK CIE OIDC (bash alternativo)
-  export-cieoidc.sh     ← export artifact CIE OIDC (bash alternativo)
-  manage-metadata.sh    ← status, backup, restore, rinnovo (bash alternativo)
+  spid-gencert-public.sh ← generazione certificati SPID (usato internamente dal builder)
   agid/                 ← output metadata pubblico SATOSA per AgID (gitignored)
   cieoidc/              ← output CIE OIDC (entity config, jwks, riepilogo) (gitignored)
   cieoidc-keys/         ← chiavi JWK private CIE OIDC generate per deployment (gitignored)
@@ -60,19 +57,6 @@ docker compose run --rm metadata-builder export-cieoidc
 # 8. Dopo la federazione: esegui subito un backup
 docker compose run --rm metadata-builder backup
 ```
-
-<details>
-<summary>Alternativa: bash/WSL (Linux, macOS, WSL, Git Bash)</summary>
-
-```bash
-bash metadata/setup-cie-oidc.sh
-bash metadata/setup-sp.sh
-docker compose --profile iam-proxy up -d
-bash metadata/export-cieoidc.sh
-bash metadata/manage-metadata.sh backup
-```
-
-</details>
 
 ---
 
@@ -268,4 +252,4 @@ In `.env`:
 - **Chiave privata SPID**: resta nel volume Docker, non va inviata ad AgID né inclusa nel metadata.
 - **Chiavi JWK CIE OIDC**: in `metadata/cieoidc-keys/` (gitignored). Non condividere, non committare.
 - I file generati sono ignorati da git (`.gitignore`).
-- Gli script bash (`setup-sp.sh`, `setup-cie-oidc.sh`, `manage-metadata.sh`) rimangono disponibili come alternativa per utenti con bash/WSL.
+- `metadata/spid-gencert-public.sh` è usato internamente dal container `metadata-builder` — non eseguire direttamente.
