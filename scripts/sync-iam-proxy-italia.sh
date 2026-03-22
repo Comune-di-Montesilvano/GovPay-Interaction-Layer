@@ -67,9 +67,9 @@ if [ -f "$PROJECT_DST/.gitkeep" ]; then
   cp "$PROJECT_DST/.gitkeep" "$GITKEEP_TMP"
 fi
 
-# Remove destination and recreate (much faster than find -delete)
+# Clear destination contents (do not rm the dir itself: it may be a named volume mount point)
 echo "[sync-iam-proxy] Removing old destination and copying files from upstream..."
-rm -rf "$PROJECT_DST"
+find "$PROJECT_DST" -mindepth 1 -delete 2>/dev/null || true
 mkdir -p "$PROJECT_DST"
 cp -r "$PROJECT_SRC"/* "$PROJECT_SRC"/.??* "$PROJECT_DST/" 2>/dev/null || true
 
