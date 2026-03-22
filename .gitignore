@@ -22,24 +22,6 @@ debug/*
 # Ignore composer vendor directory
 vendor/
 
-# spid-cie-php in modalità proxy: working copy/runtime data (bind-mount)
-/spid-proxy/data/*
-/spid-proxy/data/.*
-!/spid-proxy/data/.gitkeep
-
-# spid-proxy metadata generator: working directory (non versionare)
-/spid-proxy/metadata-work/
-
-# Metadata SPID/CIE (file generati): mantieni solo la struttura (gitkeep), non versionare gli XML.
-/spid-proxy/metadata/*
-!/spid-proxy/metadata/.gitkeep
-
-/spid-proxy/metadata-current/*
-!/spid-proxy/metadata-current/.gitkeep
-
-/spid-proxy/metadata-archive/*
-!/spid-proxy/metadata-archive/.gitkeep
-
 # Logo ente personalizzato (non versionare)
 img/stemma_ente.png
 
@@ -55,11 +37,15 @@ metadata/agid/*
 metadata/cieoidc/*
 !metadata/cieoidc/.gitkeep
 !metadata/cieoidc/README.md
-metadata/oidc/*
-
 # CIE OIDC keys: generate once per deployment, never commit (contain private keys)
 metadata/cieoidc-keys/*
 !metadata/cieoidc-keys/.gitkeep
+
+# Backup metadata (generato da metadata-builder backup)
+backup/
+
+# Piani e note locali
+plans/
 
 # Local directory for runtime data (outside repository)
 .local/
