@@ -7,6 +7,7 @@ namespace App\Database;
 
 use App\Logger;
 use PDO;
+use App\Security\Crypto;
 
 class IoServiceRepository
 {
@@ -70,7 +71,14 @@ class IoServiceRepository
             ORDER BY nome ASC
         ');
         $stmt->execute();
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $row['api_key_primaria'] = Crypto::decrypt($row['api_key_primaria']);
+            if (!empty($row['api_key_secondaria'])) {
+                $row['api_key_secondaria'] = Crypto::decrypt($row['api_key_secondaria']);
+            }
+        }
+        return $rows;
     }
 
     /**
@@ -88,6 +96,12 @@ class IoServiceRepository
         ');
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
+        if ($row) {
+            $row['api_key_primaria'] = Crypto::decrypt($row['api_key_primaria']);
+            if (!empty($row['api_key_secondaria'])) {
+                $row['api_key_secondaria'] = Crypto::decrypt($row['api_key_secondaria']);
+            }
+        }
         return $row ?: null;
     }
 
@@ -106,6 +120,12 @@ class IoServiceRepository
         ');
         $stmt->execute();
         $row = $stmt->fetch();
+        if ($row) {
+            $row['api_key_primaria'] = Crypto::decrypt($row['api_key_primaria']);
+            if (!empty($row['api_key_secondaria'])) {
+                $row['api_key_secondaria'] = Crypto::decrypt($row['api_key_secondaria']);
+            }
+        }
         return $row ?: null;
     }
 
@@ -139,8 +159,8 @@ class IoServiceRepository
             ':nome' => $nome,
             ':descrizione' => $descrizione,
             ':id_service' => $id_service,
-            ':api_key_primaria' => $api_key_primaria,
-            ':api_key_secondaria' => $api_key_secondaria,
+            ':api_key_primaria' => Crypto::encrypt($api_key_primaria),
+            ':api_key_secondaria' => $api_key_secondaria ? Crypto::encrypt($api_key_secondaria) : null,
             ':codice_catalogo' => $codice_catalogo,
             ':is_default' => $is_default ? 1 : 0,
         ]);
@@ -181,8 +201,8 @@ class IoServiceRepository
             ':nome' => $nome,
             ':descrizione' => $descrizione,
             ':id_service' => $id_service,
-            ':api_key_primaria' => $api_key_primaria,
-            ':api_key_secondaria' => $api_key_secondaria,
+            ':api_key_primaria' => Crypto::encrypt($api_key_primaria),
+            ':api_key_secondaria' => $api_key_secondaria ? Crypto::encrypt($api_key_secondaria) : null,
             ':codice_catalogo' => $codice_catalogo,
             ':is_default' => $is_default ? 1 : 0,
         ]);
@@ -223,6 +243,12 @@ class IoServiceRepository
         ');
         $stmt->execute([':id_entrata' => $idEntrata]);
         $row = $stmt->fetch();
+        if ($row) {
+            $row['api_key_primaria'] = Crypto::decrypt($row['api_key_primaria']);
+            if (!empty($row['api_key_secondaria'])) {
+                $row['api_key_secondaria'] = Crypto::decrypt($row['api_key_secondaria']);
+            }
+        }
         return $row ?: null;
     }
 
@@ -266,6 +292,10 @@ class IoServiceRepository
         
         $map = [];
         while ($row = $stmt->fetch()) {
+            $row['api_key_primaria'] = Crypto::decrypt($row['api_key_primaria']);
+            if (!empty($row['api_key_secondaria'])) {
+                $row['api_key_secondaria'] = Crypto::decrypt($row['api_key_secondaria']);
+            }
             $idEntrata = $row['id_entrata'];
             $map[$idEntrata] = $row;
         }

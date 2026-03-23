@@ -28,10 +28,10 @@
 ### Gestione Profilo Utente
 - [X] **Interfaccia**: Miglioramento dell'interfaccia dell'area profilo.
 - [X] **Sicurezza**: Funzione di cambio password.
-- [ ] **Personalizzazione e Permessi**
+- [X] **Personalizzazione e Permessi**
     - [X] Possibilità di associare template all'utente.
-    - [ ] Associare agli utenti una tipologia di pendenza di default.
-    - [ ] Sistema per limitare la visibilità delle tipologie per utente (filtro tipologie abilitate).
+    - [X] Associare agli utenti una tipologia di pendenza di default.
+    - [X] Sistema per limitare la visibilità delle tipologie per utente (filtro tipologie abilitate).
 - [ ] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi.
 
 ### Autenticazione e Identity
@@ -42,13 +42,13 @@
 ### Manutenzione e Sistema
 - [ ] **Configurazione**: Funzionalità di backup e importazione della configurazione di sistema.
 - [ ] **Pannello di Configurazione (UI)**:
-    - [ ] Creazione di una procedura di inizializzazione guidata (setup wizard).
+    - [ ] Creazione di una procedura di inizializzazione guidata (setup wizard) per sostituzione file `.env`.
     - [ ] Possibilità di gestire i parametri (comprese variabili env, logo, certificati GovPay) direttamente dall'interfaccia.
-    - [ ] Snellimento e semplificazione della gestione manuale dei file `.env`.
+    - [ ] Gestione segreti (API Key, certificati, ecc.) cifrati con la chiave di cifratura dell'applicazione.
 - [x] **Documentazione**: Sistemazione documentazione relativa ai cron (attualmente massivo, in futuro rendicontazione).
 
 ### Integrazioni Esterne
-- [ ] **PagoPA Checkout**: Implementazione API PagoPA per avviare il checkout di pagamenti non generati da GovPay (simulazione portale checkout.pagopa.it).
+- [PAUSED] **PagoPA Checkout**: Implementazione API PagoPA per avviare il checkout di pagamenti non generati da GovPay (simulazione portale checkout.pagopa.it). PROBABILMENTE NON FATTIBILE
 
 ### Ottimizzazione Infrastruttura e Cleanup
 - [ ] **Snellimento Build**
@@ -60,11 +60,12 @@
     - [ ] Rimozione degli script di migrazione orfani.
     - [ ] Eliminazione definitiva della cartella `debug/`.
     - [ ] Cleanup finale e modernizzazione della struttura del repository.
+- [ ] **Ottimizzazione frontoffice**
+    - [ ] Stato pendenze non localizzato in lingue diverse dall'italiano
+    - [ ] Tabella le mie pendenze non ottimizzata per mobile
+    - [ ] Limite 5 pendenze non sempre rispettato
+    - [ ] Ottimizzazione navigazione, in particolare per mobile, ridondanza di informazioni
 
-### Altro
-- [X] Pagina sul frontoffice pubblica per il download della ricevuta di pagamento
-    - Meccanismo di autenticazione: IUV + ID notifica + IUR di pagamento
-- [X] Automatismo CI/CD per creazione e pubblicazione immagini Docker su GHCR
-    - Workflow GitHub Actions: build, tag automatico, push su `ghcr.io`
+### Sviluppi Futuri
 - [ ] Integrazione eBollo 2.0 sul frontoffice
     - [API](https://developer.pagopa.it/it/pago-pa/api/e-bollo)

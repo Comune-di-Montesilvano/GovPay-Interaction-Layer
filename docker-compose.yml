@@ -62,6 +62,7 @@ services:
       - TASSONOMIE_PAGOPA=${TASSONOMIE_PAGOPA}
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       # env_file_ rimosso per sicurezza (isolamento esplicito)
       # - .env.backoffice (rimosso: mantenere solo .env locale)
     depends_on:
@@ -129,6 +130,7 @@ services:
       - GOVPAY_TLS_KEY=${GOVPAY_TLS_KEY}
       - TASSONOMIE_PAGOPA=${TASSONOMIE_PAGOPA}
       - COMPOSE_PROFILES=${COMPOSE_PROFILES}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://satosa-nginx:80/Saml2IDP/metadata}
       - IAM_PROXY_PUBLIC_BASE_URL=${IAM_PROXY_PUBLIC_BASE_URL}
       - IAM_PROXY_DEBUG=${IAM_PROXY_DEBUG:-false}
