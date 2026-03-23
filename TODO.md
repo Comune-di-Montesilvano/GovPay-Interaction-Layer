@@ -40,7 +40,7 @@
 - [X] **Discovery Page**: Sistemazione grafica della pagina `disco.html`.
 
 ### Manutenzione e Sistema
-- [ ] **Configurazione**: Funzionalità di backup e importazione della configurazione di sistema.
+- [X] **Configurazione**: Funzionalità di backup e importazione della configurazione di sistema.
 - [ ] **Pannello di Configurazione (UI)**:
     - [ ] Creazione di una procedura di inizializzazione guidata (setup wizard) per sostituzione file `.env`.
     - [ ] Possibilità di gestire i parametri (comprese variabili env, logo, certificati GovPay) direttamente dall'interfaccia.

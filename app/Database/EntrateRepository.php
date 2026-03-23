@@ -268,6 +268,66 @@ class EntrateRepository
     }
 
     /**
+     * Restituisce solo le colonne di override locale per tutte le tipologie del dominio.
+     * Usato per il backup della configurazione.
+     * @return array<int, array{id_entrata:string,descrizione_locale:?string,descrizione_estesa:?string,override_locale:?int,external_url:?string,abilitato_backoffice:int}>
+     */
+    public function listLocalOverrides(string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id_entrata, descrizione_locale, descrizione_estesa, override_locale, external_url, abilitato_backoffice
+             FROM entrate_tipologie WHERE id_dominio = :dom ORDER BY id_entrata ASC'
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * REPLACE degli override locali: azzera tutti, poi applica le righe dal backup.
+     * Non tocca le colonne sincronizzate da GovPay (descrizione, iban, ecc.).
+     * @param array<int, array> $rows array di righe nel formato listLocalOverrides()
+     * @return int numero di righe aggiornate dal backup
+     */
+    public function replaceLocalOverrides(string $idDominio, array $rows): int
+    {
+        $now = date('Y-m-d H:i:s');
+        // Azzera tutti gli override del dominio
+        $this->pdo->prepare(
+            'UPDATE entrate_tipologie
+             SET descrizione_locale = NULL, descrizione_estesa = NULL,
+                 override_locale = NULL, external_url = NULL, updated_at = :now
+             WHERE id_dominio = :dom'
+        )->execute([':now' => $now, ':dom' => $idDominio]);
+
+        if (empty($rows)) {
+            return 0;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE entrate_tipologie
+             SET descrizione_locale = :dl, descrizione_estesa = :de,
+                 override_locale = :ol, external_url = :eu,
+                 abilitato_backoffice = :ab, updated_at = :now
+             WHERE id_dominio = :dom AND id_entrata = :ent'
+        );
+        $updated = 0;
+        foreach ($rows as $row) {
+            $stmt->execute([
+                ':dl'  => $row['descrizione_locale'] ?? null,
+                ':de'  => $row['descrizione_estesa'] ?? null,
+                ':ol'  => isset($row['override_locale']) ? (int)$row['override_locale'] : null,
+                ':eu'  => $row['external_url'] ?? null,
+                ':ab'  => isset($row['abilitato_backoffice']) ? (int)$row['abilitato_backoffice'] : 1,
+                ':now' => $now,
+                ':dom' => $idDominio,
+                ':ent' => $row['id_entrata'],
+            ]);
+            $updated += $stmt->rowCount();
+        }
+        return $updated;
+    }
+
+    /**
      * Popola descrizione_estesa solo dove è vuota (NULL o stringa vuota).
      * @param array<string,string> $descrizioniByIdEntrata mappa id_entrata => descrizione_estesa
      * @return int numero righe aggiornate

@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Auth\UserRepository;
+use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\ExternalPaymentTypeRepository;
 use App\Logger;
@@ -2026,6 +2027,259 @@ class ConfigurazioneController
         }
 
         return $this->redirectToTab($response, 'tipologie');
+    }
+
+    // -------------------------------------------------------------------------
+    // Backup / Import configurazione
+    // -------------------------------------------------------------------------
+
+    public function exportBackup(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $response->withStatus(403);
+        }
+
+        $data = (array)($request->getParsedBody() ?? []);
+        $sections = isset($data['sections']) && is_array($data['sections']) ? $data['sections'] : [];
+
+        $idDominio = (string)(getenv('ID_DOMINIO') ?: '');
+
+        $export = [
+            'version'     => '1.0',
+            'exported_at' => (new \DateTimeImmutable())->format('c'),
+            'exported_by' => $_SESSION['user']['email'] ?? 'unknown',
+            'id_dominio'  => $idDominio,
+            'sections'    => [],
+        ];
+
+        if (in_array('tipologie', $sections, true)) {
+            $repo = new EntrateRepository();
+            $export['sections']['tipologie'] = $repo->listLocalOverrides($idDominio);
+        }
+
+        if (in_array('tipologie_esterne', $sections, true)) {
+            $repo = new ExternalPaymentTypeRepository();
+            $export['sections']['tipologie_esterne'] = $repo->listAll();
+        }
+
+        if (in_array('templates', $sections, true)) {
+            $repo = new \App\Database\PendenzaTemplateRepository();
+            $export['sections']['templates'] = $repo->findAllByDominioWithUsers($idDominio);
+        }
+
+        if (in_array('io_services', $sections, true)) {
+            $ioRepo = new \App\Database\IoServiceRepository();
+            $services = $ioRepo->listAll();
+            // Build id->nome map to resolve tipologie links portably
+            $idToNome = [];
+            foreach ($services as $s) {
+                $idToNome[(int)$s['id']] = $s['nome'];
+            }
+            // Attach tipologie list to each service
+            $pdo = Connection::getPDO();
+            $stmt = $pdo->query('SELECT id_entrata, io_service_id FROM io_service_tipologie');
+            $links = $stmt->fetchAll();
+            $serviceLinks = [];
+            foreach ($links as $l) {
+                $serviceLinks[(int)$l['io_service_id']][] = $l['id_entrata'];
+            }
+            foreach ($services as &$s) {
+                $s['tipologie'] = $serviceLinks[(int)$s['id']] ?? [];
+                unset($s['id'], $s['created_at'], $s['updated_at']);
+            }
+            unset($s);
+            $export['sections']['io_services'] = $services;
+        }
+
+        if (in_array('utenti', $sections, true)) {
+            $pdo = Connection::getPDO();
+            $stmt = $pdo->query(
+                'SELECT email, role, first_name, last_name, is_disabled, password_hash
+                 FROM users ORDER BY email ASC'
+            );
+            $export['sections']['utenti'] = $stmt->fetchAll();
+        }
+
+        $json = json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $filename = 'govpay-config-backup-' . date('Ymd_His') . '.json';
+
+        $response->getBody()->write($json);
+        return $response
+            ->withHeader('Content-Type', 'application/json; charset=utf-8')
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->withHeader('Content-Length', (string)strlen($json));
+    }
+
+    public function importBackup(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $uploadedFiles = $request->getUploadedFiles();
+        $file = $uploadedFiles['backup_file'] ?? null;
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Nessun file caricato o errore nel file'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $json = (string)$file->getStream();
+        $backup = json_decode($json, true);
+
+        if (!is_array($backup) || !isset($backup['sections']) || !is_array($backup['sections'])) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'File non valido: struttura JSON non riconosciuta'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $postData = (array)($request->getParsedBody() ?? []);
+        $selectedSections = isset($postData['sections']) && is_array($postData['sections'])
+            ? $postData['sections']
+            : [];
+
+        if (empty($selectedSections)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Seleziona almeno una sezione da importare'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $idDominio = (string)(getenv('ID_DOMINIO') ?: '');
+        $results = [];
+        $pdo = Connection::getPDO();
+
+        try {
+            $pdo->beginTransaction();
+
+            // 1. Utenti — UPSERT by email
+            if (in_array('utenti', $selectedSections, true) && isset($backup['sections']['utenti'])) {
+                $count = 0;
+                $upsertStmt = $pdo->prepare(
+                    'INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, created_at, updated_at)
+                     VALUES (:email, :role, :fn, :ln, :disabled, :hash, NOW(), NOW())
+                     ON DUPLICATE KEY UPDATE role = VALUES(role), first_name = VALUES(first_name),
+                         last_name = VALUES(last_name), is_disabled = VALUES(is_disabled),
+                         password_hash = COALESCE(VALUES(password_hash), password_hash), updated_at = NOW()'
+                );
+                foreach ($backup['sections']['utenti'] as $u) {
+                    if (empty($u['email'])) {
+                        continue;
+                    }
+                    $upsertStmt->execute([
+                        ':email'   => $u['email'],
+                        ':role'    => $u['role'] ?? 'user',
+                        ':fn'      => $u['first_name'] ?? '',
+                        ':ln'      => $u['last_name'] ?? '',
+                        ':disabled' => empty($u['is_disabled']) ? 0 : 1,
+                        ':hash'    => $u['password_hash'] ?? null,
+                    ]);
+                    $count++;
+                }
+                $results[] = $count . ' utenti aggiornati/creati';
+            }
+
+            // 2. Servizi App IO — REPLACE
+            if (in_array('io_services', $selectedSections, true) && isset($backup['sections']['io_services'])) {
+                $pdo->exec('DELETE FROM io_service_tipologie');
+                $pdo->exec('DELETE FROM io_services');
+                $ioRepo = new \App\Database\IoServiceRepository();
+                $nomeToId = [];
+                foreach ($backup['sections']['io_services'] as $s) {
+                    if (empty($s['nome']) || empty($s['id_service']) || empty($s['api_key_primaria'])) {
+                        continue;
+                    }
+                    $newId = $ioRepo->create(
+                        $s['nome'],
+                        $s['descrizione'] ?? null,
+                        $s['id_service'],
+                        $s['api_key_primaria'],
+                        $s['api_key_secondaria'] ?? null,
+                        $s['codice_catalogo'] ?? null,
+                        !empty($s['is_default'])
+                    );
+                    $nomeToId[$s['nome']] = $newId;
+                    // Ripristina le associazioni tipologie
+                    foreach ($s['tipologie'] ?? [] as $idEntrata) {
+                        $ioRepo->setTipologiaService((string)$idEntrata, $newId);
+                    }
+                }
+                $results[] = count($nomeToId) . ' servizi IO importati';
+            }
+
+            // 3. Tipologie esterne — REPLACE
+            if (in_array('tipologie_esterne', $selectedSections, true) && isset($backup['sections']['tipologie_esterne'])) {
+                $pdo->exec('DELETE FROM tipologie_pagamento_esterne');
+                $extRepo = new ExternalPaymentTypeRepository();
+                $count = 0;
+                foreach ($backup['sections']['tipologie_esterne'] as $t) {
+                    if (empty($t['descrizione']) || empty($t['url'])) {
+                        continue;
+                    }
+                    $extRepo->create(
+                        $t['descrizione'],
+                        $t['descrizione_estesa'] ?? null,
+                        $t['url']
+                    );
+                    $count++;
+                }
+                $results[] = $count . ' tipologie esterne importate';
+            }
+
+            // 4. Override locali tipologie — REPLACE (solo colonne locali)
+            if (in_array('tipologie', $selectedSections, true) && isset($backup['sections']['tipologie'])) {
+                $entrateRepo = new EntrateRepository();
+                $updated = $entrateRepo->replaceLocalOverrides($idDominio, $backup['sections']['tipologie']);
+                $results[] = $updated . ' override tipologie applicati';
+            }
+
+            // 5. Template pendenze — REPLACE
+            if (in_array('templates', $selectedSections, true) && isset($backup['sections']['templates'])) {
+                $tplRepo = new \App\Database\PendenzaTemplateRepository();
+                $tplRepo->deleteAllByDominio($idDominio);
+                $count = 0;
+                // Pre-carica mappa email→id utenti per le assegnazioni
+                $emailToId = [];
+                $usersStmt = $pdo->query('SELECT id, email FROM users');
+                foreach ($usersStmt->fetchAll() as $u) {
+                    $emailToId[strtolower($u['email'])] = (int)$u['id'];
+                }
+                foreach ($backup['sections']['templates'] as $t) {
+                    if (empty($t['titolo']) || empty($t['id_tipo_pendenza'])) {
+                        continue;
+                    }
+                    $newId = $tplRepo->create([
+                        'id_dominio'       => $idDominio,
+                        'titolo'           => $t['titolo'],
+                        'id_tipo_pendenza' => $t['id_tipo_pendenza'],
+                        'causale'          => $t['causale'] ?? '',
+                        'importo'          => (float)($t['importo'] ?? 0),
+                    ]);
+                    $userIds = [];
+                    foreach ($t['assigned_users'] ?? [] as $email) {
+                        $uid = $emailToId[strtolower((string)$email)] ?? null;
+                        if ($uid !== null) {
+                            $userIds[] = $uid;
+                        }
+                    }
+                    if (!empty($userIds)) {
+                        $tplRepo->assignUsers($newId, $userIds);
+                    }
+                    $count++;
+                }
+                $results[] = $count . ' template importati';
+            }
+
+            $pdo->commit();
+            $summary = implode(', ', $results);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Backup importato con successo: ' . $summary];
+            Logger::getInstance()->info('Backup configurazione importato', ['sections' => $selectedSections, 'results' => $results]);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore durante l\'importazione: ' . $e->getMessage()];
+            Logger::getInstance()->error('Errore importazione backup', ['error' => $e->getMessage()]);
+        }
+
+        return $this->redirectToTab($response, 'backup');
     }
 
     private function redirectToTab(Response $response, string $tab): Response

@@ -85,6 +85,41 @@ class PendenzaTemplateRepository
         return $stmt->fetchAll();
     }
 
+    /**
+     * Elimina tutti i template del dominio.
+     * Le assegnazioni in pendenza_template_users vengono rimosse per CASCADE.
+     */
+    public function deleteAllByDominio(string $idDominio): void
+    {
+        $stmt = $this->pdo->prepare("DELETE FROM pendenza_template WHERE id_dominio = :id_dominio");
+        $stmt->execute([':id_dominio' => $idDominio]);
+    }
+
+    /**
+     * Restituisce tutti i template del dominio con le email degli utenti assegnati.
+     * Usato per il backup della configurazione.
+     * @return array<int, array<string, mixed>>
+     */
+    public function findAllByDominioWithUsers(string $idDominio): array
+    {
+        $templates = $this->findAllByDominio($idDominio);
+        if (empty($templates)) {
+            return [];
+        }
+
+        $emailStmt = $this->pdo->prepare(
+            "SELECT u.email FROM users u
+             INNER JOIN pendenza_template_users ptu ON u.id = ptu.user_id
+             WHERE ptu.template_id = :template_id"
+        );
+
+        foreach ($templates as &$t) {
+            $emailStmt->execute([':template_id' => $t['id']]);
+            $t['assigned_users'] = $emailStmt->fetchAll(\PDO::FETCH_COLUMN);
+        }
+        return $templates;
+    }
+
     // --- Users Association ---
 
     public function assignUsers(int $templateId, array $userIds): void
