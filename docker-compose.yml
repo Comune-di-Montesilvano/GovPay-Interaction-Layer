@@ -1,8 +1,5 @@
 services:
   govpay-interaction-backoffice:
-    build:
-      context: .
-      target: runtime-backoffice
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-backoffice
     ports:
@@ -73,9 +70,6 @@ services:
     networks:
       - govpay-network
   govpay-interaction-frontoffice:
-    build:
-      context: .
-      target: runtime-frontoffice
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-frontoffice
     ports:
@@ -205,9 +199,6 @@ services:
       - iam-proxy
 
   iam-proxy-italia:
-    build:
-      context: .
-      dockerfile: iam-proxy/Dockerfile
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
     container_name: iam-proxy-italia
     command: ["/bin/bash", "/builder/startup.sh"]
@@ -342,8 +333,6 @@ services:
       - govpay-network
 
   satosa-nginx:
-    build:
-      context: ./iam-proxy/nginx
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx:${APP_VERSION:-latest}
     container_name: satosa-nginx
     profiles:
@@ -369,9 +358,6 @@ services:
     networks:
       - govpay-network
   db:
-    build:
-      context: ./docker
-      dockerfile: db/Dockerfile
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: mariadb
     restart: always
@@ -405,9 +391,6 @@ services:
       - govpay-network
 
   metadata-builder:
-    build:
-      context: .
-      dockerfile: metadata/builder/Dockerfile
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-metadata-builder:${APP_VERSION:-latest}
     volumes:
       - spid_certs:/certs

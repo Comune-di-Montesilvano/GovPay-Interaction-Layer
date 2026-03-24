@@ -1,0 +1,32 @@
+# Override per build locale delle immagini.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.build.yml build
+# Oppure per avviare con build: docker compose -f docker-compose.yml -f docker-compose.build.yml up --build
+services:
+  govpay-interaction-backoffice:
+    build:
+      context: .
+      target: runtime-backoffice
+
+  govpay-interaction-frontoffice:
+    build:
+      context: .
+      target: runtime-frontoffice
+
+  iam-proxy-italia:
+    build:
+      context: .
+      dockerfile: iam-proxy/Dockerfile
+
+  satosa-nginx:
+    build:
+      context: ./iam-proxy/nginx
+
+  db:
+    build:
+      context: ./docker
+      dockerfile: db/Dockerfile
+
+  metadata-builder:
+    build:
+      context: .
+      dockerfile: metadata/builder/Dockerfile
