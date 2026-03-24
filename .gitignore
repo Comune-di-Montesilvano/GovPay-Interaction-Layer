@@ -6,6 +6,7 @@
 *.log
 *.pid
 .claude/
+docker-compose.override.yml
 
 # SSL directory - exclude all except README
 ssl/*
