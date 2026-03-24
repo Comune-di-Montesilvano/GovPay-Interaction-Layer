@@ -571,5 +571,4 @@ volumes:
   frontoffice_sp_metadata:
   iam_proxy_static:
   spid_certs:
-    external: true
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
