@@ -42,11 +42,18 @@ return (function (): array {
     $entityName = getenv('APP_ENTITY_NAME') ?: 'Comune di Esempio';
     $entitySuffix = getenv('APP_ENTITY_SUFFIX') ?: 'Servizi ai cittadini';
     $entityGovernment = getenv('APP_ENTITY_GOVERNMENT') ?: '';
-    $customLogoFs = '/var/www/html/public/img/stemma_ente.png';
-    $hasCustomLogo = file_exists($customLogoFs);
-    $appLogo = $hasCustomLogo
-        ? ['type' => 'img', 'src' => '/img/stemma_ente.png']
-        : ['type' => 'sprite', 'src' => '/assets/bootstrap-italia/svg/sprites.svg#it-pa'];
+    $logoSrc  = trim((string)(getenv('APP_LOGO_SRC')  ?: '/img/stemma_ente.png'));
+    $logoType = trim((string)(getenv('APP_LOGO_TYPE') ?: 'img'));
+    if ($logoType === 'img') {
+        // Percorso locale: verifica che il file esista nel container
+        $logoFs = '/var/www/html/public' . $logoSrc;
+        $appLogo = file_exists($logoFs)
+            ? ['type' => 'img', 'src' => $logoSrc]
+            : ['type' => 'sprite', 'src' => '/assets/bootstrap-italia/svg/sprites.svg#it-pa'];
+    } else {
+        // URL esterno (APP_LOGO_TYPE = MIME type, es. "image/png")
+        $appLogo = ['type' => 'img', 'src' => $logoSrc];
+    }
     $customFaviconIco = '/var/www/html/public/img/favicon.ico';
     $customFaviconPng = '/var/www/html/public/img/favicon.png';
     $appFavicon = file_exists($customFaviconIco)
