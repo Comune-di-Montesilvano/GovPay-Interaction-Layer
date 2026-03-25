@@ -36,7 +36,7 @@ def write_config(config: dict) -> None:
         tmp_path = CONFIG_PATH + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
-        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)  # 600
+        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 644
         os.replace(tmp_path, CONFIG_PATH)
 
 
