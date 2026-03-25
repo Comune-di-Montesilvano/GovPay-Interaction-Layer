@@ -178,7 +178,7 @@ return (function (): array {
         }
     });
 
-    $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password'];
+    $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health'];
     $app->add(new AuthMiddleware($publicPaths));
     // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack
     // (in Slim il middleware viene eseguito in ordine inverso all'aggiunta — l'ultimo aggiunto è il primo eseguito)
