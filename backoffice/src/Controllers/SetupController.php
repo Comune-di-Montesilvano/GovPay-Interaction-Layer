@@ -166,6 +166,8 @@ class SetupController
         $data = $_SESSION['wizard']['data'] ?? [];
 
         try {
+            set_time_limit(0); // waitForDb può impiegare fino a 90s
+
             // 1. Assembla config.json
             $config = $this->buildConfig($data);
 
@@ -752,6 +754,7 @@ class SetupController
 
     /**
      * Avvia il profilo "post-setup" (db + frontoffice) tramite il master container.
+     * @throws \RuntimeException se il master risponde con errore o è irraggiungibile
      */
     private function triggerPostSetupStart(string $token): void
     {
@@ -766,13 +769,20 @@ class SetupController
                 'method'        => 'POST',
                 'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
                 'content'       => $payload,
-                'timeout'       => 30,
+                'timeout'       => 60,
                 'ignore_errors' => true,
             ],
         ]);
 
-        @file_get_contents($url, false, $ctx);
-        // best-effort: il redirect a /setup/done avviene anche se il master non risponde
+        $result = @file_get_contents($url, false, $ctx);
+        if ($result === false) {
+            throw new \RuntimeException('Master container non raggiungibile (start-profile).');
+        }
+        $json = json_decode($result, true);
+        if (!($json['success'] ?? false)) {
+            $detail = $json['detail'] ?? 'errore sconosciuto';
+            throw new \RuntimeException("Avvio profilo post-setup fallito: {$detail}");
+        }
     }
 
     /**
