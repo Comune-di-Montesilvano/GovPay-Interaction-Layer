@@ -166,35 +166,17 @@ class SetupController
         $data = $_SESSION['wizard']['data'] ?? [];
 
         try {
-            set_time_limit(0); // waitForDb può impiegare fino a 90s
-
-            // 1. Assembla config.json
-            $config = $this->buildConfig($data);
-
-            // 2. Scrive config.json tramite il master container (ha accesso RW al volume gil_config)
-            $this->writeMasterInitialConfig($config);
-            ConfigLoader::reload(); // Aggiorna la cache in-memory (il backoffice ha il volume :ro)
-
-            // 3. Scrive ./runtime/.env.bootstrap tramite master (credenziali DB per MariaDB + app)
-            $this->writeEnvBootstrap($config);
-
-            // 4. Avvia il profilo post-setup (db + frontoffice) tramite master
-            $this->triggerPostSetupStart($config['master_token'] ?? '');
-
-            // 5. Attende che il DB sia pronto (MariaDB si inizializza con .env.bootstrap)
-            $this->waitForDb($config['db']);
-
-            // 6. Scrive i settings applicativi nel DB
+            // 1. Scrive i settings applicativi nel DB
             $this->writeSettings($data);
 
-            // 7. Crea il superadmin
+            // 2. Crea il superadmin
             $step2 = $data['step2'] ?? [];
             if (!empty($step2['admin_email']) && !empty($step2['admin_password'])) {
                 $this->createSuperadmin($step2['admin_email'], $step2['admin_password']);
             }
 
-            // 8. Restart solo backoffice (best-effort — frontoffice già avviato dal profilo)
-            $this->triggerBackofficeRestart($config['master_token'] ?? '');
+            // 3. Segna setup come completato nel DB
+            SettingsRepository::set('setup', 'complete', '1');
 
             // Pulisce sessione wizard
             unset($_SESSION['wizard']);
@@ -486,8 +468,8 @@ class SetupController
                 'apache_server_name' => 'APACHE_SERVER_NAME',
             ],
             3 => [
-                'db_password'           => 'DB_PASSWORD',
-                'db_password_cittadini' => 'DB_PASSWORD_CITTADINI',
+                'db_password'           => 'BACKOFFICE_DB_PASSWORD',
+                'db_password_cittadini' => 'FRONTOFFICE_DB_PASSWORD',
             ],
             4 => [
                 'encryption_key' => 'APP_ENCRYPTION_KEY',
@@ -520,62 +502,6 @@ class SetupController
             }
         }
         return $result;
-    }
-
-    /**
-     * Costruisce il config.json dai dati raccolti dal wizard.
-     */
-    private function buildConfig(array $data): array
-    {
-        $step3 = $data['step3'] ?? [];
-        $step4 = $data['step4'] ?? [];
-
-        // Auto-genera le password mancanti
-        $dbPassword         = $step3['db_password'] ?: $this->generateSecret(32);
-        $dbPasswordCittadini= $step3['db_password_cittadini'] ?: $this->generateSecret(32);
-        $dbRootPassword     = $step3['db_root_password'] ?: $this->generateSecret(32);
-        $encryptionKey      = $step4['encryption_key'] ?: $this->generateSecret(32);
-        $satosaSalt         = $step4['satosa_salt'] ?: $this->generateSecret(32);
-        $satosaStateKey     = $step4['satosa_state_key'] ?: $this->generateSecret(32);
-        $satosaEncKey       = $step4['satosa_encryption_key'] ?: $this->generateSecret(32);
-        $satosaHashSalt     = $step4['satosa_hash_salt'] ?: $this->generateSecret(32);
-        $mongoPassword      = $step4['mongodb_password'] ?: $this->generateSecret(24);
-        $masterToken        = $this->generateSecret(48);
-
-        return [
-            'schema_version' => 1,
-            'setup_complete' => true,
-            'setup_version'  => '1.0.0',
-            'created_at'     => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
-            'master_token'   => $masterToken,
-            'db' => [
-                'host'               => 'db',
-                'port'               => 3306,
-                'name'               => 'govpay',
-                'user'               => 'govpay',
-                'password'           => $dbPassword,
-                'root_password'      => $dbRootPassword,
-                'name_cittadini'     => 'govpay',
-                'user_cittadini'     => 'govpay_cittadini',
-                'password_cittadini' => $dbPasswordCittadini,
-            ],
-            'app' => [
-                'encryption_key' => $encryptionKey,
-            ],
-            'satosa' => [
-                'salt'                => $satosaSalt,
-                'state_encryption_key'=> $satosaStateKey,
-                'encryption_key'      => $satosaEncKey,
-                'user_id_hash_salt'   => $satosaHashSalt,
-            ],
-            'mongodb' => [
-                'username' => 'satosa_user',
-                'password' => $mongoPassword,
-                'host'     => 'satosa-mongo',
-                'port'     => 27017,
-                'db'       => 'satosa',
-            ],
-        ];
     }
 
     /**
@@ -669,172 +595,6 @@ class SetupController
     }
 
     /**
-     * Scrive ./runtime/.env.bootstrap tramite il master container (volume RW condiviso con l'host).
-     * Include le variabili MARIADB_* richieste da MariaDB 11, oltre alle variabili DB_* per l'app.
-     */
-    private function writeEnvBootstrap(array $config): void
-    {
-        $db    = $config['db'];
-        $mongo = $config['mongodb'];
-
-        $variables = [
-            // MariaDB 11 init vars (necessari per la prima inizializzazione del container)
-            'MARIADB_ROOT_PASSWORD'   => $db['root_password'],
-            'MYSQL_ROOT_PASSWORD'     => $db['root_password'],  // compat MariaDB < 11
-            'MARIADB_PASSWORD'        => $db['password'],
-            'MYSQL_PASSWORD'          => $db['password'],       // compat MariaDB < 11
-            // App DB vars
-            'DB_ROOT_PASSWORD'        => $db['root_password'],
-            'DB_NAME'                 => $db['name'],
-            'DB_USER'                 => $db['user'],
-            'DB_PASSWORD'             => $db['password'],
-            'DB_NAME_CITTADINI'       => $db['name_cittadini'],
-            'DB_USER_CITTADINI'       => $db['user_cittadini'],
-            'DB_PASSWORD_CITTADINI'   => $db['password_cittadini'],
-            // MongoDB
-            'MONGODB_USERNAME'        => $mongo['username'],
-            'MONGODB_PASSWORD'        => $mongo['password'],
-            'MONGODB_HOST'            => $mongo['host'],
-            'MONGODB_PORT'            => (string)$mongo['port'],
-            'MONGODB_DB'              => $mongo['db'],
-        ];
-
-        $url     = self::MASTER_URL . '/config/write-env-bootstrap';
-        $payload = json_encode(['variables' => $variables]);
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Content-Type: application/json\r\n",
-                'content'       => $payload,
-                'timeout'       => 15,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        if ($result === false) {
-            throw new \RuntimeException('Impossibile contattare il Master Container per la scrittura di .env.bootstrap.');
-        }
-        $json = json_decode($result, true);
-        if (!($json['success'] ?? false)) {
-            throw new \RuntimeException('.env.bootstrap non scritto: ' . ($json['detail'] ?? 'errore sconosciuto'));
-        }
-    }
-
-    /**
-     * Scrive config.json chiamando il master container (endpoint senza auth, solo se config.json non esiste).
-     * Necessario perché il backoffice monta gil_config come :ro.
-     */
-    private function writeMasterInitialConfig(array $config): void
-    {
-        $url = self::MASTER_URL . '/config/write-initial';
-        $payload = json_encode(['config' => $config]);
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method'  => 'POST',
-                'header'  => "Content-Type: application/json\r\n",
-                'content' => $payload,
-                'timeout' => 30,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        if ($result === false) {
-            throw new \RuntimeException('Impossibile contattare il Master Container per la scrittura di config.json.');
-        }
-
-        $json = json_decode($result, true);
-        if (!($json['success'] ?? false)) {
-            throw new \RuntimeException('Scrittura config.json fallita: ' . ($json['detail'] ?? 'errore sconosciuto'));
-        }
-    }
-
-    /**
-     * Avvia il profilo "post-setup" (db + frontoffice) tramite il master container.
-     * @throws \RuntimeException se il master risponde con errore o è irraggiungibile
-     */
-    private function triggerPostSetupStart(string $token): void
-    {
-        if (empty($token)) {
-            return;
-        }
-        $url     = self::MASTER_URL . '/containers/start-profile';
-        $payload = json_encode(['profile' => 'post-setup']);
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
-                'content'       => $payload,
-                'timeout'       => 60,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        if ($result === false) {
-            throw new \RuntimeException('Master container non raggiungibile (start-profile).');
-        }
-        $json = json_decode($result, true);
-        if (!($json['success'] ?? false)) {
-            $detail = $json['detail'] ?? 'errore sconosciuto';
-            throw new \RuntimeException("Avvio profilo post-setup fallito: {$detail}");
-        }
-    }
-
-    /**
-     * Attende che il database sia raggiungibile (polling PDO, max $maxSeconds secondi).
-     * @throws \RuntimeException se il DB non diventa disponibile entro il timeout
-     */
-    private function waitForDb(array $db, int $maxSeconds = 90): void
-    {
-        $dsn      = sprintf('mysql:host=%s;port=%d;', $db['host'], $db['port']);
-        $deadline = time() + $maxSeconds;
-
-        while (time() < $deadline) {
-            try {
-                new \PDO($dsn, $db['user'], $db['password'], [
-                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                    \PDO::ATTR_TIMEOUT => 2,
-                ]);
-                return; // connesso con successo
-            } catch (\Throwable $e) {
-                sleep(2);
-            }
-        }
-
-        throw new \RuntimeException("Database non raggiungibile dopo {$maxSeconds}s. Verificare che il container DB sia avviato.");
-    }
-
-    /**
-     * Riavvia solo il backoffice tramite il master container (best-effort).
-     * Il frontoffice è già stato avviato dal profilo post-setup.
-     */
-    private function triggerBackofficeRestart(string $token): void
-    {
-        if (empty($token)) {
-            return;
-        }
-        $url     = self::MASTER_URL . '/containers/restart';
-        $payload = json_encode(['services' => ['govpay-interaction-backoffice']]);
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
-                'content'       => $payload,
-                'timeout'       => 10,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        @file_get_contents($url, false, $ctx);
-    }
-
-    /**
      * Chiama il master container per riavviare backoffice e frontoffice.
      */
     private function triggerMasterRestart(string $token): void
@@ -912,11 +672,4 @@ class SetupController
         return $result;
     }
 
-    /**
-     * Genera una stringa casuale sicura (hex).
-     */
-    private function generateSecret(int $bytes): string
-    {
-        return bin2hex(random_bytes($bytes));
-    }
 }

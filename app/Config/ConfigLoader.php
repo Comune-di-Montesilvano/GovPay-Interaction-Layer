@@ -79,17 +79,36 @@ class ConfigLoader
     }
 
     /**
-     * Ritorna true se config.json esiste e setup_complete = true.
+     * Ritorna true se il setup è stato completato (controlla la tabella settings nel DB).
      */
     public static function isSetupComplete(): bool
     {
-        self::load();
-
-        if (empty(self::$config)) {
-            return false;
+        static $result = null;
+        if ($result !== null) {
+            return $result;
         }
-
-        return (bool)(self::$config['setup_complete'] ?? false);
+        try {
+            $host = getenv('DB_HOST') ?: 'db';
+            $port = getenv('DB_PORT') ?: '3306';
+            $name = getenv('DB_NAME') ?: 'govpay';
+            $user = getenv('DB_USER') ?: 'govpay';
+            $pass = getenv('DB_PASSWORD') ?: '';
+            $pdo  = new \PDO(
+                "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4",
+                $user,
+                $pass,
+                [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_TIMEOUT => 2]
+            );
+            $stmt = $pdo->prepare(
+                "SELECT value FROM settings WHERE section = 'setup' AND key_name = 'complete' LIMIT 1"
+            );
+            $stmt->execute();
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $result = ($row['value'] ?? '') === '1';
+        } catch (\Throwable $e) {
+            $result = false;
+        }
+        return $result;
     }
 
     /**

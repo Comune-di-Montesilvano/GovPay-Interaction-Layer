@@ -8,7 +8,6 @@ services:
     # Nessun ports: — accessibile SOLO dalla rete interna govpay-network
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - gil_config:/config
       - gil_backups:/backups
       - spid_certs:/spid-certs
       - frontoffice_sp_metadata:/sp-metadata
@@ -17,9 +16,9 @@ services:
       - .:/project:ro
       - ./runtime:/runtime   # RW: file generati a runtime (es. .iam-proxy.env)
     environment:
-      - CONFIG_PATH=/config/config.json
       - PROJECT_DIR=/project
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-govpay-interaction-layer}
+      - MASTER_TOKEN=${MASTER_TOKEN}
       - BACKUP_DIR=/backups
       - SPID_CERTS_PATH=/spid-certs
       - SP_METADATA_PATH=/sp-metadata
@@ -40,19 +39,17 @@ services:
       - frontoffice_sp_metadata:/metadata/sp:ro
       - gil_certs:/var/www/certificate
       - gil_images:/var/www/html/public/img
-      - gil_config:/config:ro
       - gil_backups:/backups
-    env_file:
-      - path: ./runtime/.env.bootstrap  # DB_PASSWORD iniettato nel container dopo setup
-        required: false
     environment:
-      - CONFIG_PATH=/config/config.json
       - APP_SUITE=backoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - DB_HOST=db
       - DB_PORT=3306
       - DB_NAME=${DB_NAME:-govpay}
-      - DB_USER=${DB_USER:-govpay}
+      - DB_USER=${BACKOFFICE_DB_USER:-govpay}
+      - DB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
+      - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
+      - MASTER_TOKEN=${MASTER_TOKEN}
     depends_on:
       - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
@@ -62,7 +59,6 @@ services:
   govpay-interaction-frontoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-frontoffice
-    profiles: [post-setup]
     ports:
       - "${FRONTOFFICE_HTTP_PORT:-8444}:80"
     volumes:
@@ -71,18 +67,16 @@ services:
       - spid_certs:/var/www/html/spid-certs:ro
       - gil_certs:/var/www/certificate:ro
       - gil_images:/var/www/html/public/img:ro
-      - gil_config:/config:ro
-    env_file:
-      - path: ./runtime/.env.bootstrap  # DB_PASSWORD iniettato nel container dopo setup
-        required: false
     environment:
-      - CONFIG_PATH=/config/config.json
       - APP_SUITE=frontoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - DB_HOST=db
       - DB_PORT=3306
       - DB_NAME=${DB_NAME:-govpay}
-      - DB_USER=${DB_USER:-govpay}
+      - DB_USER=${FRONTOFFICE_DB_USER:-govpay_cittadini}
+      - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
+      - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
+      - MASTER_TOKEN=${MASTER_TOKEN}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=http://satosa-nginx:80/Saml2IDP/metadata
     depends_on:
       - govpay-interaction-master
@@ -189,17 +183,14 @@ services:
   db:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: mariadb
-    profiles: [post-setup]
     restart: always
-    # Credenziali scritte dal wizard in ./runtime/.env.bootstrap (via master container).
-    # NOTA: environment: sovrascrive env_file, quindi password NON listate in environment:.
-    env_file:
-      - path: ./runtime/.env.bootstrap
-        required: false
     environment:
-      - MYSQL_DATABASE=${DB_NAME:-govpay}
-      - MYSQL_USER=${DB_USER:-govpay}
-      - DB_USER_CITTADINI=${DB_USER_CITTADINI:-govpay_cittadini}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MARIADB_USER=${BACKOFFICE_DB_USER:-govpay}
+      - MARIADB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
+      - MARIADB_DATABASE=${DB_NAME:-govpay}
+      - DB_USER_CITTADINI=${FRONTOFFICE_DB_USER:-govpay_cittadini}
+      - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
     networks:
@@ -245,8 +236,6 @@ volumes:
   iam_proxy_static:
   spid_certs:
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
-  # Configurazione bootstrap (config.json) — accessibile a master, backoffice, frontoffice
-  gil_config:
   # Archivi di backup — accessibili a master e backoffice
   gil_backups:
   # Certificati GovPay (mTLS client cert+key) — RW backoffice, RO frontoffice e master
