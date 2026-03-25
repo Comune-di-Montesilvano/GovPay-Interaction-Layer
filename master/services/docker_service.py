@@ -71,7 +71,7 @@ def recreate_services(service_names: list[str]) -> str:
 
 def start_profile(profile: str) -> str:
     """Avvia tutti i servizi del profilo compose specificato."""
-    return _compose_run(["up", "-d", "--profile", profile])
+    return _compose_run(["--profile", profile, "up", "-d", "--no-recreate"])
 
 
 def stop_profile(profile: str) -> str:
