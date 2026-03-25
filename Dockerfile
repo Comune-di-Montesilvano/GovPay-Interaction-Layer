@@ -158,6 +158,12 @@ RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && mkdir -p /var/www/html/backoffice/storage/logs
 COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
+# Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
+# Docker inizializza i named volumes copiando il contenuto del path dell'immagine,
+# incluse le permission → il volume nasce con www-data:www-data, non root:root.
+RUN mkdir -p /var/www/html/public/img /var/www/certificate \
+    && chown www-data:www-data /var/www/html/public/img /var/www/certificate \
+    && chmod 755 /var/www/html/public/img /var/www/certificate
 
 FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/

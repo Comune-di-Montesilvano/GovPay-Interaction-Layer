@@ -175,14 +175,14 @@ if [ "$APP_SUITE" = "frontoffice" ]; then
   fi
 fi
 
-# Fix ownership dei volumi di upload (possono essere root:root alla prima creazione del volume)
+# Fix ownership dei volumi di upload (best-effort: silenzioso se il FS è read-only)
 if [ "$APP_SUITE" != "frontoffice" ]; then
     mkdir -p /var/www/html/public/img
-    chown www-data:www-data /var/www/html/public/img || true
-    chmod 755 /var/www/html/public/img || true
+    chown www-data:www-data /var/www/html/public/img 2>/dev/null || true
+    chmod 755 /var/www/html/public/img 2>/dev/null || true
     mkdir -p /var/www/certificate
-    chown www-data:www-data /var/www/certificate || true
-    chmod 755 /var/www/certificate || true
+    chown www-data:www-data /var/www/certificate 2>/dev/null || true
+    chmod 755 /var/www/certificate 2>/dev/null || true
 fi
 
 echo "--- Setup completato. Eseguo controllo first-run DB ---"
@@ -283,6 +283,8 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
 fi
 
 echo "--- Avvio Apache. ---"
+# Garantisce che APACHE_SERVER_NAME abbia sempre un valore (evita "ServerName takes one argument")
+export APACHE_SERVER_NAME="${APACHE_SERVER_NAME:-localhost}"
 
 # Se nessun comando passato, avvia apache2-foreground di default
 # Se è stato passato un comando custom (debug), eseguilo direttamente
