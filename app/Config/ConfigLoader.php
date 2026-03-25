@@ -30,12 +30,12 @@ class ConfigLoader
 
         $path = self::getConfigPath();
 
-        if (!file_exists($path)) {
+        if (!file_exists($path) || !is_readable($path)) {
             self::$config = [];
             return;
         }
 
-        $raw = file_get_contents($path);
+        $raw = @file_get_contents($path);
         if ($raw === false) {
             self::$config = [];
             return;
