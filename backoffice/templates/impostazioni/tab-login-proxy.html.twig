@@ -1,0 +1,328 @@
+<div id="lp-wrap">
+  {# ─── Status bar ─────────────────────────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-3">
+      <div class="d-flex align-items-center gap-2">
+        <span id="lp-status-dot" class="master-status-dot bg-secondary"></span>
+        <strong>Login Proxy (IAM Proxy)</strong>
+        <span id="lp-status-text" class="text-muted small">Stato sconosciuto</span>
+      </div>
+      {% if is_superadmin %}
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-success" onclick="impAction('/impostazioni/login-proxy/avvia', this, 'Avvio…')">
+          <i class="fas fa-play me-1"></i>Avvia
+        </button>
+        <button class="btn btn-sm btn-danger" onclick="impAction('/impostazioni/login-proxy/arresta', this, 'Arresto…')">
+          <i class="fas fa-stop me-1"></i>Arresta
+        </button>
+        <button class="btn btn-sm btn-warning" onclick="impAction('/impostazioni/login-proxy/riavvia', this, 'Riavvio…')">
+          <i class="fas fa-sync-alt me-1"></i>Riavvia
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="impAction('/impostazioni/login-proxy/rigenera-sp-metadata', this, 'Rigenerazione…')">
+          <i class="fas fa-redo me-1"></i>Rigenera SP Metadata
+        </button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <form id="form-login-proxy" onsubmit="return false;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    {# ─── Generale ─────────────────────────────────────────────────────────── #}
+    <div class="accordion mb-3" id="acc-lp">
+
+      <div class="accordion-item border shadow-sm mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#lp-generale">
+            <i class="fas fa-globe me-2 text-primary"></i>Generale
+          </button>
+        </h2>
+        <div id="lp-generale" class="accordion-collapse collapse show" data-bs-parent="#acc-lp">
+          <div class="accordion-body">
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label">URL pubblico del proxy</label>
+                <input type="url" class="form-control" name="public_base_url"
+                  value="{{ iam_proxy.public_base_url|default('') }}" placeholder="https://login.comune.example.it"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Hostname interno</label>
+                <input type="text" class="form-control font-monospace" name="hostname"
+                  value="{{ iam_proxy.hostname|default('') }}" placeholder="login.comune.example.it"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Porta HTTP</label>
+                <input type="number" class="form-control" name="http_port"
+                  value="{{ iam_proxy.http_port|default('8080') }}" min="1" max="65535"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">SATOSA base path</label>
+                <input type="text" class="form-control font-monospace" name="satosa_base"
+                  value="{{ iam_proxy.satosa_base|default('/saml2/idp') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-12">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="debug" id="lp-debug" value="true"
+                    {{ iam_proxy.debug|default('false') == 'true' ? 'checked' : '' }}
+                    {{ not is_superadmin ? 'disabled' : '' }}>
+                  <label class="form-check-label" for="lp-debug">Modalità debug (verbose logging)</label>
+                </div>
+              </div>
+            </div>
+
+            <hr class="my-3">
+            <p class="text-muted small mb-2">Metodi di autenticazione abilitati:</p>
+            <div class="d-flex gap-4 flex-wrap">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enable_spid" id="en-spid" value="true"
+                  {{ iam_proxy.enable_spid|default('false') == 'true' ? 'checked' : '' }}
+                  {{ not is_superadmin ? 'disabled' : '' }}>
+                <label class="form-check-label" for="en-spid">SPID</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enable_cie_oidc" id="en-cie" value="true"
+                  {{ iam_proxy.enable_cie_oidc|default('false') == 'true' ? 'checked' : '' }}
+                  {{ not is_superadmin ? 'disabled' : '' }}>
+                <label class="form-check-label" for="en-cie">CIE OIDC</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enable_it_wallet" id="en-wallet" value="true"
+                  {{ iam_proxy.enable_it_wallet|default('false') == 'true' ? 'checked' : '' }}
+                  {{ not is_superadmin ? 'disabled' : '' }}>
+                <label class="form-check-label" for="en-wallet">IT Wallet</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enable_oidcop" id="en-oidcop" value="true"
+                  {{ iam_proxy.enable_oidcop|default('false') == 'true' ? 'checked' : '' }}
+                  {{ not is_superadmin ? 'disabled' : '' }}>
+                <label class="form-check-label" for="en-oidcop">OIDC OP</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ─── SPID / SAML2 ───────────────────────────────────────────────────── #}
+      <div class="accordion-item border shadow-sm mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lp-spid">
+            <i class="fas fa-id-card me-2 text-success"></i>SPID / SAML2
+          </button>
+        </h2>
+        <div id="lp-spid" class="accordion-collapse collapse" data-bs-parent="#acc-lp">
+          <div class="accordion-body">
+            <div class="row g-3 mb-3">
+              <div class="col-md-8">
+                <label class="form-label">URL metadata IdP SPID (pubblico)</label>
+                <input type="url" class="form-control" name="saml2_idp_metadata_url"
+                  value="{{ iam_proxy.saml2_idp_metadata_url|default('') }}"
+                  placeholder="https://registry.spid.gov.it/metadata/idp/spid-entities-idps.xml"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">URL metadata IdP (interno/cache)</label>
+                <input type="url" class="form-control" name="saml2_idp_metadata_url_internal"
+                  value="{{ iam_proxy.saml2_idp_metadata_url_internal|default('') }}"
+                  placeholder="http://spid-metadata-cache:8080/…"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+            </div>
+            <hr class="my-3">
+            <p class="small text-muted mb-2">Parametri certificato SP (generato automaticamente se assenti):</p>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Common Name (CN)</label>
+                <input type="text" class="form-control" name="spid_cert_common_name"
+                  value="{{ iam_proxy.spid_cert_common_name|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Organization Name</label>
+                <input type="text" class="form-control" name="spid_cert_org_name"
+                  value="{{ iam_proxy.spid_cert_org_name|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Organization ID</label>
+                <input type="text" class="form-control font-monospace" name="spid_cert_org_id"
+                  value="{{ iam_proxy.spid_cert_org_id|default('') }}" placeholder="PA:IT-c_…"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Entity ID</label>
+                <input type="text" class="form-control font-monospace" name="spid_cert_entity_id"
+                  value="{{ iam_proxy.spid_cert_entity_id|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Locality (città)</label>
+                <input type="text" class="form-control" name="spid_cert_locality_name"
+                  value="{{ iam_proxy.spid_cert_locality_name|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Key size (bit)</label>
+                <select class="form-select" name="spid_cert_key_size" {{ not is_superadmin ? 'disabled' : '' }}>
+                  <option value="2048" {{ iam_proxy.spid_cert_key_size|default('2048') == '2048' ? 'selected' : '' }}>2048</option>
+                  <option value="4096" {{ iam_proxy.spid_cert_key_size|default('') == '4096' ? 'selected' : '' }}>4096</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Validità (giorni)</label>
+                <input type="number" class="form-control" name="spid_cert_days"
+                  value="{{ iam_proxy.spid_cert_days|default('730') }}" min="30" max="3650"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ─── CIE OIDC ────────────────────────────────────────────────────────── #}
+      <div class="accordion-item border shadow-sm mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lp-cie">
+            <i class="fas fa-address-card me-2 text-info"></i>CIE OIDC
+          </button>
+        </h2>
+        <div id="lp-cie" class="accordion-collapse collapse" data-bs-parent="#acc-lp">
+          <div class="accordion-body">
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label">CIE OIDC Provider URL</label>
+                <input type="url" class="form-control" name="cie_oidc_provider_url"
+                  value="{{ iam_proxy.cie_oidc_provider_url|default('https://preproduzione.cie.interno.gov.it/idp/oidc/op') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Client ID</label>
+                <input type="text" class="form-control font-monospace" name="cie_oidc_client_id"
+                  value="{{ iam_proxy.cie_oidc_client_id|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Client Name</label>
+                <input type="text" class="form-control" name="cie_oidc_client_name"
+                  value="{{ iam_proxy.cie_oidc_client_name|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">JWKS URI</label>
+                <input type="url" class="form-control" name="cie_oidc_jwks_uri"
+                  value="{{ iam_proxy.cie_oidc_jwks_uri|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Redirect URI</label>
+                <input type="url" class="form-control" name="cie_oidc_redirect_uri"
+                  value="{{ iam_proxy.cie_oidc_redirect_uri|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ─── Organizzazione SATOSA ───────────────────────────────────────────── #}
+      <div class="accordion-item border shadow-sm mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lp-satosa">
+            <i class="fas fa-sitemap me-2 text-secondary"></i>Organizzazione SATOSA
+          </button>
+        </h2>
+        <div id="lp-satosa" class="accordion-collapse collapse" data-bs-parent="#acc-lp">
+          <div class="accordion-body">
+            <div class="alert alert-info py-2 small mb-3">
+              <i class="fas fa-info-circle me-1"></i>
+              Questi valori vengono usati per il metadata SP e per i campi di contatto SATOSA.
+              Se lasciati vuoti, vengono derivati automaticamente dai <strong>dati ente</strong>.
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Organization Display Name (IT)</label>
+                <input type="text" class="form-control" name="satosa_org_display_name_it"
+                  value="{{ iam_proxy.satosa_org_display_name_it|default('') }}"
+                  placeholder="{{ entity.name|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Organization Name (IT)</label>
+                <input type="text" class="form-control" name="satosa_org_name_it"
+                  value="{{ iam_proxy.satosa_org_name_it|default('') }}"
+                  placeholder="{{ entity.name|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Organization Identifier (URI)</label>
+                <input type="text" class="form-control font-monospace" name="satosa_org_identifier"
+                  value="{{ iam_proxy.satosa_org_identifier|default('') }}"
+                  placeholder="https://www.comune.example.it"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Codice IPA contatto</label>
+                <input type="text" class="form-control font-monospace" name="satosa_contact_ipa_code"
+                  value="{{ iam_proxy.satosa_contact_ipa_code|default('') }}"
+                  placeholder="{{ entity.ipa_code|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Codice fiscale ente</label>
+                <input type="text" class="form-control font-monospace" name="satosa_contact_fiscalcode"
+                  value="{{ iam_proxy.satosa_contact_fiscalcode|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">E-mail contatto tecnico</label>
+                <input type="email" class="form-control" name="satosa_contact_email"
+                  value="{{ iam_proxy.satosa_contact_email|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Telefono contatto</label>
+                <input type="text" class="form-control" name="satosa_contact_phone"
+                  value="{{ iam_proxy.satosa_contact_phone|default('') }}"
+                  {{ not is_superadmin ? 'readonly' : '' }}>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /accordion #}
+
+    {% if is_superadmin %}
+    <div class="d-flex justify-content-end">
+      <button type="button" class="btn btn-primary" onclick="impSaveForm('form-login-proxy', '/impostazioni/login-proxy/save', this)">
+        <i class="fas fa-save me-1"></i>Salva configurazione
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+// Load container status on page load
+(async function () {
+  try {
+    const res = await fetch('/impostazioni/containers/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    const services = data.services || {};
+    const iamRunning = Object.entries(services).some(([name, info]) =>
+      (name.includes('iam-proxy') || name.includes('satosa')) && info.running
+    );
+    const dot  = document.getElementById('lp-status-dot');
+    const text = document.getElementById('lp-status-text');
+    if (dot && text) {
+      dot.className = 'master-status-dot ' + (iamRunning ? 'bg-success' : 'bg-danger');
+      text.textContent = iamRunning ? 'In esecuzione' : 'Fermo';
+    }
+  } catch (_) { /* master non disponibile, silenzioso */ }
+})();
+</script>

@@ -6,20 +6,28 @@
 namespace App\Security;
 
 use App\Logger;
+use App\Config\ConfigLoader;
 
 class Crypto
 {
     private const CIPHER_ALGO = 'aes-256-cbc';
 
     /**
-     * Get the encryption key from environment variables.
+     * Get the encryption key.
+     * Priority: config.json (app.encryption_key) → env APP_ENCRYPTION_KEY → $_ENV
      * @return string
      * @throws \RuntimeException if the key is not set or invalid
      */
     private static function getKey(): string
     {
-        $key = $_ENV['APP_ENCRYPTION_KEY'] ?? getenv('APP_ENCRYPTION_KEY');
-        
+        // Prima priorità: config.json
+        $key = ConfigLoader::get('app.encryption_key');
+
+        // Fallback: variabile d'ambiente (compatibilità .env legacy)
+        if (empty($key)) {
+            $key = $_ENV['APP_ENCRYPTION_KEY'] ?? getenv('APP_ENCRYPTION_KEY');
+        }
+
         if (empty($key)) {
             throw new \RuntimeException('APP_ENCRYPTION_KEY is not configured in the environment.');
         }

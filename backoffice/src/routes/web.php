@@ -7,10 +7,13 @@
 declare(strict_types=1);
 
 use App\Auth\UserRepository;
+use App\Controllers\BackupController;
 use App\Controllers\ConfigurazioneController;
 use App\Controllers\HomeController;
 use App\Controllers\FlussiController;
+use App\Controllers\ImpostazioniController;
 use App\Controllers\PendenzeController;
+use App\Controllers\SetupController;
 use App\Controllers\StatisticheController;
 use App\Controllers\UsersController;
 use App\Database\PendenzaTemplateRepository;
@@ -22,6 +25,95 @@ use Slim\Exception\HttpNotFoundException;
 use Slim\Views\Twig;
 
 return function (App $app, Twig $twig): void {
+
+    // ── Setup Wizard (accessibile senza autenticazione, bypassato da SetupMiddleware) ──
+    $app->get('/setup', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->welcome($request, $response);
+    });
+    $app->get('/setup/step/{step:[1-7]}', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new SetupController($twig))->showStep($request, $response, $args);
+    });
+    $app->post('/setup/step/{step:[1-7]}', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new SetupController($twig))->saveStep($request, $response, $args);
+    });
+    $app->post('/setup/complete', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->complete($request, $response);
+    });
+    $app->get('/setup/done', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->done($request, $response);
+    });
+    $app->get('/setup/error', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->error($request, $response);
+    });
+    $app->get('/setup/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->restoreForm($request, $response);
+    });
+    $app->post('/setup/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->restoreUpload($request, $response);
+    });
+    $app->get('/setup/restore/review', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->restoreReview($request, $response);
+    });
+    $app->post('/setup/restore/confirm', function (Request $request, Response $response) use ($twig): Response {
+        return (new SetupController($twig))->restoreConfirm($request, $response);
+    });
+
+    // ── Impostazioni (nuovo config panel, richiede auth) ──────────────────────────
+    $app->get('/impostazioni', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->index($request, $response);
+    });
+    $app->post('/impostazioni/govpay/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveGovpay($request, $response);
+    });
+    $app->post('/impostazioni/api-esterne/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveApiEsterne($request, $response);
+    });
+    $app->post('/impostazioni/backoffice/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveBackoffice($request, $response);
+    });
+    $app->post('/impostazioni/frontoffice/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveFrontoffice($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
+    });
+    $app->post('/impostazioni/govpay/test-connection', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testGovpayConnection($request, $response);
+    });
+    $app->post('/impostazioni/backoffice/test-email', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testEmail($request, $response);
+    });
+    $app->post('/impostazioni/frontoffice/restart', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restartFrontoffice($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/avvia', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->avviaIamProxy($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/arresta', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->arrestaIamProxy($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/riavvia', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->riavviaIamProxy($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/rigenera-sp-metadata', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->rigeneraSpMetadata($request, $response);
+    });
+    $app->get('/impostazioni/containers/status', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getContainersStatus($request, $response);
+    });
+    $app->post('/impostazioni/logo/upload', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->uploadLogo($request, $response);
+    });
+    $app->post('/impostazioni/favicon/upload', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->uploadFavicon($request, $response);
+    });
+    $app->post('/impostazioni/govpay/upload-cert', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->uploadGovpayCert($request, $response);
+    });
+    $app->post('/impostazioni/govpay/upload-key', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->uploadGovpayKey($request, $response);
+    });
+
     // Basic route
     $app->get('/', function (Request $request, Response $response) use ($twig): Response {
         $controller = new HomeController($twig);
@@ -436,15 +528,26 @@ return function (App $app, Twig $twig): void {
         return $controller->bulkSetTipologieIoService($request, $response);
     });
 
-    // Backup / Import configurazione
-    $app->post('/configurazione/backup/export', function($request, $response) use ($twig) {
-        $controller = new ConfigurazioneController($twig);
-        return $controller->exportBackup($request, $response);
+    // Backup / Import configurazione dati GovPay
+    $app->post('/configurazione/backup/export', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->exportBackup($request, $response);
     });
 
-    $app->post('/configurazione/backup/import', function($request, $response) use ($twig) {
-        $controller = new ConfigurazioneController($twig);
-        return $controller->importBackup($request, $response);
+    $app->post('/configurazione/backup/import', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->importBackup($request, $response);
+    });
+
+    // Backup di sistema (via Master Container)
+    $app->post('/backup/sistema/crea', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupCreate($request, $response);
+    });
+
+    $app->get('/backup/sistema/lista', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupList($request, $response);
+    });
+
+    $app->get('/backup/sistema/download', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupDownload($request, $response);
     });
 
     $app->get('/users/new', function($request, $response) use ($twig) {

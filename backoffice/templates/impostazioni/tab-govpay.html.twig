@@ -1,0 +1,199 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex align-items-center justify-content-between py-3">
+    <h2 class="h5 mb-0"><i class="fas fa-plug me-2 text-primary"></i>GovPay</h2>
+    {% if is_superadmin %}
+    <button class="btn btn-sm btn-outline-primary" onclick="impTestGovpay(this)">
+      <i class="fas fa-wifi me-1"></i>Test connessione
+    </button>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <form id="form-govpay" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">URL API GovPay</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label">Pendenze URL <span class="text-danger">*</span></label>
+          <input type="url" class="form-control" name="pendenze_url"
+            value="{{ govpay.pendenze_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="form-text">Es.: <code>https://govpay.ente.it/backoffice/v1</code></div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Pagamenti URL</label>
+          <input type="url" class="form-control" name="pagamenti_url"
+            value="{{ govpay.pagamenti_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Ragioneria URL</label>
+          <input type="url" class="form-control" name="ragioneria_url"
+            value="{{ govpay.ragioneria_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Backoffice URL</label>
+          <input type="url" class="form-control" name="backoffice_url"
+            value="{{ govpay.backoffice_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Pendenze Patch URL</label>
+          <input type="url" class="form-control" name="pendenze_patch_url"
+            value="{{ govpay.pendenze_patch_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+      </div>
+
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">Identificativi ente</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label">ID Dominio</label>
+          <input type="text" class="form-control font-monospace" name="id_dominio"
+            value="{{ entity.id_dominio|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">ID A2A</label>
+          <input type="text" class="form-control font-monospace" name="id_a2a"
+            value="{{ entity.id_a2a|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+      </div>
+
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">Autenticazione</h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <label class="form-label">Metodo</label>
+          <select class="form-select" name="authentication_method" id="govpay-auth-method"
+            onchange="govpayAuthChange()" {{ not is_superadmin ? 'disabled' : '' }}>
+            <option value="basic" {{ govpay.authentication_method|default('basic') == 'basic' ? 'selected' : '' }}>HTTP Basic</option>
+            <option value="ssl" {{ govpay.authentication_method|default('') == 'ssl' ? 'selected' : '' }}>Certificato TLS/mTLS</option>
+            <option value="none" {{ govpay.authentication_method|default('') == 'none' ? 'selected' : '' }}>Nessuna</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="auth-basic" class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-control" name="user"
+            value="{{ govpay.user|default('') }}" autocomplete="off" {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Password</label>
+          <div class="input-group">
+            <input type="password" class="form-control" name="password" id="govpay-pwd"
+              value="{{ govpay.password|default('') }}" autocomplete="new-password" {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('govpay-pwd', this)"><i class="fas fa-eye"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <div id="auth-ssl" class="mb-4" style="display:none;">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-3">Certificato client mTLS</h6>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Certificato client <span class="text-muted small">(.pem / .cer)</span></label>
+            <div class="mb-2">
+              {% if govpay.tls_cert_path is defined and govpay.tls_cert_path != '' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle me-2">
+                  <i class="fas fa-check-circle me-1"></i>Certificato presente
+                </span>
+              {% else %}
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle me-2">
+                  <i class="fas fa-exclamation-circle me-1"></i>Nessun certificato caricato
+                </span>
+              {% endif %}
+            </div>
+            {% if is_superadmin %}
+            <div class="input-group">
+              <input type="file" class="form-control" id="govpay-cert-file" accept=".pem,.cer,.crt">
+              <button class="btn btn-outline-primary" type="button" onclick="uploadGovpayCert()">
+                <i class="fas fa-upload me-1"></i>Carica
+              </button>
+            </div>
+            <div class="form-text">PEM/CER del certificato client</div>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Chiave privata <span class="text-muted small">(.pem / .key)</span></label>
+            <div class="mb-2">
+              {% if govpay.tls_key_path is defined and govpay.tls_key_path != '' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle me-2">
+                  <i class="fas fa-check-circle me-1"></i>Chiave presente
+                </span>
+              {% else %}
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle me-2">
+                  <i class="fas fa-exclamation-circle me-1"></i>Nessuna chiave caricata
+                </span>
+              {% endif %}
+            </div>
+            {% if is_superadmin %}
+            <div class="input-group">
+              <input type="file" class="form-control" id="govpay-key-file" accept=".pem,.key">
+              <button class="btn btn-outline-primary" type="button" onclick="uploadGovpayKey()">
+                <i class="fas fa-upload me-1"></i>Carica
+              </button>
+            </div>
+            <div class="form-text">PEM/KEY della chiave privata</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3">
+        <button type="button" class="btn btn-primary" onclick="impSaveForm('form-govpay', '/impostazioni/govpay/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<script>
+function govpayAuthChange() {
+  const v = document.getElementById('govpay-auth-method').value;
+  document.getElementById('auth-basic').style.display = v === 'basic' ? '' : 'none';
+  document.getElementById('auth-ssl').style.display  = v === 'ssl'   ? '' : 'none';
+}
+function togglePwd(id, btn) {
+  const el = document.getElementById(id);
+  const show = el.type === 'password';
+  el.type = show ? 'text' : 'password';
+  btn.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+}
+async function uploadGovpayCert() {
+  const file = document.getElementById('govpay-cert-file').files[0];
+  if (!file) { impToast('Seleziona un file certificato.', false); return; }
+  const fd = new FormData();
+  fd.append('govpay_cert', file);
+  try {
+    const res = await fetch('/impostazioni/govpay/upload-cert', { method: 'POST', body: fd });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+    if (json.success) setTimeout(() => location.reload(), 1200);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+}
+async function uploadGovpayKey() {
+  const file = document.getElementById('govpay-key-file').files[0];
+  if (!file) { impToast('Seleziona un file chiave.', false); return; }
+  const fd = new FormData();
+  fd.append('govpay_key', file);
+  try {
+    const res = await fetch('/impostazioni/govpay/upload-key', { method: 'POST', body: fd });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+    if (json.success) setTimeout(() => location.reload(), 1200);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+}
+async function impTestGovpay(btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Test…';
+  try {
+    const res = await fetch('/impostazioni/govpay/test-connection');
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+// init
+govpayAuthChange();
+</script>

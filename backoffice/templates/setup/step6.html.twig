@@ -1,0 +1,71 @@
+{% extends 'setup/layout.html.twig' %}
+{% from 'setup/_step_header.html.twig' import step_header %}
+{% block title %}Step 6 — Parametri opzionali{% endblock %}
+
+{% block content %}
+{{ step_header(step, total_steps) }}
+
+<div class="card card-wizard p-4">
+  <h2 class="h4 mb-1"><i class="fa fa-sliders-h me-2 text-primary"></i>Parametri Opzionali</h2>
+  <p class="text-muted mb-4">
+    Questi parametri possono essere configurati anche in seguito dal pannello di amministrazione.
+    Puoi saltare questo step cliccando direttamente su "Avanti".
+  </p>
+
+  <form method="post" action="/setup/step/6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <h5 class="border-bottom pb-2 mb-3">Server Email (SMTP)</h5>
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">DSN Mailer</label>
+        <input type="text" class="form-control font-monospace" name="mailer_dsn"
+               value="{{ data.mailer_dsn|default('null://null') }}"
+               placeholder="smtp://user%40domain:pass@mailhost:25 oppure null://null per disabilitare">
+        <div class="field-help">Usa <code>null://null</code> per disabilitare l'invio email. I caratteri speciali vanno URL-encoded (@=%40, $=%24).</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Indirizzo mittente</label>
+        <input type="email" class="form-control" name="mailer_from_address"
+               value="{{ data.mailer_from_address|default('') }}" placeholder="noreply@comune.esempio.it">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Nome mittente</label>
+        <input type="text" class="form-control" name="mailer_from_name"
+               value="{{ data.mailer_from_name|default('') }}" placeholder="PagoPA Backoffice">
+      </div>
+    </div>
+
+    <h5 class="border-bottom pb-2 mb-3 mt-4">API pagoPA</h5>
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">URL pagoPA Checkout</label>
+        <input type="url" class="form-control" name="pagopa_checkout_url"
+               value="{{ data.pagopa_checkout_url|default('') }}"
+               placeholder="https://api.platform.pagopa.it/checkout/ec/v1">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Subscription Key Checkout</label>
+        <input type="text" class="form-control" name="pagopa_checkout_key"
+               value="{{ data.pagopa_checkout_key|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL Biz Events</label>
+        <input type="url" class="form-control" name="biz_events_host"
+               value="{{ data.biz_events_host|default('') }}"
+               placeholder="https://api.platform.pagopa.it/bizevents/service/v1">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Biz Events API Key</label>
+        <input type="text" class="form-control" name="biz_events_key"
+               value="{{ data.biz_events_key|default('') }}">
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between mt-4">
+      <a href="/setup/step/5" class="btn btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>Indietro</a>
+      <button type="submit" class="btn btn-primary">Avanti <i class="fa fa-arrow-right ms-1"></i></button>
+    </div>
+  </form>
+</div>
+{% endblock %}

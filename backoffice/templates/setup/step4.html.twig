@@ -1,0 +1,79 @@
+{% extends 'setup/layout.html.twig' %}
+{% from 'setup/_step_header.html.twig' import step_header %}
+{% block title %}Step 4 — Chiavi di sicurezza{% endblock %}
+
+{% block content %}
+{{ step_header(step, total_steps) }}
+
+<div class="card card-wizard p-4">
+  <h2 class="h4 mb-1"><i class="fa fa-key me-2 text-primary"></i>Chiavi di Sicurezza</h2>
+  <p class="text-muted mb-4">
+    Genera le chiavi crittografiche dell'applicazione. Sono <strong>auto-generate per default</strong> —
+    puoi lasciarle vuote e verranno generate automaticamente al momento del completamento.
+  </p>
+
+  <form method="post" action="/setup/step/4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Chiave di Cifratura App (APP_ENCRYPTION_KEY)</label>
+      <div class="input-group">
+        <input type="text" class="form-control font-monospace" id="encryption_key" name="encryption_key"
+               value="{{ data.encryption_key|default('') }}" placeholder="Lascia vuoto per auto-generare (consigliato)">
+        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('encryption_key', 32)">
+          <i class="fa fa-magic me-1"></i>Genera
+        </button>
+      </div>
+      <div class="field-help">32 byte esadecimali. Usata per cifrare le API key nel DB. <strong>Non modificarla mai dopo il setup.</strong></div>
+    </div>
+
+    <div class="accordion mb-3" id="satosaAccordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#satosaKeys">
+            <i class="fa fa-shield-alt me-2 text-muted"></i>Chiavi SATOSA (IAM Proxy SPID/CIE) — auto-generate
+          </button>
+        </h2>
+        <div id="satosaKeys" class="accordion-collapse collapse" data-bs-parent="#satosaAccordion">
+          <div class="accordion-body">
+            <p class="text-muted small">Queste chiavi vengono sempre auto-generate se lasciate vuote. Modificale solo se stai migrando da un'installazione esistente.</p>
+            {% for field, label in {
+              'satosa_salt': 'SATOSA_SALT',
+              'satosa_state_key': 'SATOSA_STATE_ENCRYPTION_KEY',
+              'satosa_encryption_key': 'SATOSA_ENCRYPTION_KEY',
+              'satosa_hash_salt': 'SATOSA_USER_ID_HASH_SALT',
+              'mongodb_password': 'MONGODB_PASSWORD'
+            } %}
+            <div class="mb-3">
+              <label class="form-label small">{{ label }}</label>
+              <div class="input-group input-group-sm">
+                <input type="text" class="form-control font-monospace" id="{{ field }}" name="{{ field }}"
+                       value="{{ attribute(data, field)|default('') }}" placeholder="auto-genera">
+                <button type="button" class="btn btn-outline-secondary" onclick="autoGen('{{ field }}', 32)">
+                  <i class="fa fa-magic"></i>
+                </button>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between mt-4">
+      <a href="/setup/step/3" class="btn btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>Indietro</a>
+      <button type="submit" class="btn btn-primary">Avanti <i class="fa fa-arrow-right ms-1"></i></button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function autoGen(fieldId, bytes) {
+  const arr = new Uint8Array(bytes || 32);
+  crypto.getRandomValues(arr);
+  document.getElementById(fieldId).value = Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
+}
+</script>
+{% endblock %}

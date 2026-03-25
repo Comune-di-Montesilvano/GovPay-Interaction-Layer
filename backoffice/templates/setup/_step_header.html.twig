@@ -1,0 +1,13 @@
+{# Macro: barra di avanzamento del wizard #}
+{% macro step_header(current, total) %}
+<div class="step-indicator mb-4">
+  {% for i in 1..total %}
+    <div class="step-dot {% if i < current %}done{% elseif i == current %}active{% endif %}">
+      {% if i < current %}<i class="fa fa-check" style="font-size:.7rem"></i>{% else %}{{ i }}{% endif %}
+    </div>
+    {% if i < total %}
+      <div class="step-line {% if i < current %}done{% endif %}"></div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}

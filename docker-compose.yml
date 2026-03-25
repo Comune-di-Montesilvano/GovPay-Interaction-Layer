@@ -1,4 +1,33 @@
 services:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Master Container: gestione configurazione e restart container (solo interno)
+  # ─────────────────────────────────────────────────────────────────────────────
+  govpay-interaction-master:
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-master:${APP_VERSION:-latest}
+    container_name: govpay-interaction-master
+    # Nessun ports: — accessibile SOLO dalla rete interna govpay-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gil_config:/config
+      - gil_backups:/backups
+      - spid_certs:/spid-certs
+      - frontoffice_sp_metadata:/sp-metadata
+      - gil_certs:/certs:ro
+      - gil_images:/images:ro
+      - .:/project:ro
+    environment:
+      - CONFIG_PATH=/config/config.json
+      - PROJECT_DIR=/project
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-govpay-interaction-layer}
+      - BACKUP_DIR=/backups
+      - SPID_CERTS_PATH=/spid-certs
+      - SP_METADATA_PATH=/sp-metadata
+      - GOVPAY_CERTS_PATH=/certs
+      - IMAGES_PATH=/images
+    restart: unless-stopped
+    networks:
+      - govpay-network
+
   govpay-interaction-backoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-backoffice
@@ -7,64 +36,38 @@ services:
     volumes:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
-      - ./certificate:/var/www/certificate:ro
-      - ./img:/var/www/html/public/img:ro
+      - gil_certs:/var/www/certificate
+      - gil_images:/var/www/html/public/img
+      - gil_config:/config:ro
+      - gil_backups:/backups
     environment:
-      - SSL=${SSL}
-      - APACHE_SERVER_NAME=${APACHE_SERVER_NAME}
+      # ── parametri infrastruttura (non in settings DB) ──────────────────────
+      - CONFIG_PATH=/config/config.json
+      - SSL=${SSL:-off}
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - APP_SUITE=backoffice
-      - APP_DEBUG=${APP_DEBUG}
-      - ENABLE_DEBUG_TOOL=${ENABLE_DEBUG_TOOL}
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - APP_ENTITY_NAME=${APP_ENTITY_NAME}
-      - APP_ENTITY_SUFFIX=${APP_ENTITY_SUFFIX}
-      - APP_ENTITY_GOVERNMENT=${APP_ENTITY_GOVERNMENT}
-      - APP_ENTITY_URL=${APP_ENTITY_URL}
-      - APP_SUPPORT_EMAIL=${APP_SUPPORT_EMAIL}
-      - APP_SUPPORT_PHONE=${APP_SUPPORT_PHONE}
-      - APP_SUPPORT_HOURS=${APP_SUPPORT_HOURS}
-      - APP_SUPPORT_LOCATION=${APP_SUPPORT_LOCATION}
-      - APP_LOGO_SRC=${APP_LOGO_SRC}
-      - APP_LOGO_TYPE=${APP_LOGO_TYPE}
-      - ID_DOMINIO=${ID_DOMINIO}
-      - ID_A2A=${ID_A2A}
-      - URL_ENTE=${URL_ENTE}
-      - PAGOPA_CHECKOUT_EC_BASE_URL=${PAGOPA_CHECKOUT_EC_BASE_URL}
-      - PAGOPA_CHECKOUT_SUBSCRIPTION_KEY=${PAGOPA_CHECKOUT_SUBSCRIPTION_KEY}
-      - PAGOPA_CHECKOUT_COMPANY_NAME=${PAGOPA_CHECKOUT_COMPANY_NAME}
-      - PAGOPA_CHECKOUT_RETURN_OK_URL=${PAGOPA_CHECKOUT_RETURN_OK_URL}
-      - PAGOPA_CHECKOUT_RETURN_CANCEL_URL=${PAGOPA_CHECKOUT_RETURN_CANCEL_URL}
-      - PAGOPA_CHECKOUT_RETURN_ERROR_URL=${PAGOPA_CHECKOUT_RETURN_ERROR_URL}
-      - PAGOPA_PAYMENT_OPTIONS_URL=${PAGOPA_PAYMENT_OPTIONS_URL}
-      - PAGOPA_PAYMENT_OPTIONS_KEY=${PAGOPA_PAYMENT_OPTIONS_KEY}
-      - GOVPAY_PENDENZE_URL=${GOVPAY_PENDENZE_URL}
-      - GOVPAY_PAGAMENTI_URL=${GOVPAY_PAGAMENTI_URL}
-      - GOVPAY_RAGIONERIA_URL=${GOVPAY_RAGIONERIA_URL}
-      - GOVPAY_BACKOFFICE_URL=${GOVPAY_BACKOFFICE_URL}
-      - GOVPAY_PENDENZE_PATCH_URL=${GOVPAY_PENDENZE_PATCH_URL}
-      - AUTHENTICATION_GOVPAY=${AUTHENTICATION_GOVPAY}
-      - BIZ_EVENTS_API_KEY=${BIZ_EVENTS_API_KEY}
-      - BIZ_EVENTS_HOST=${BIZ_EVENTS_HOST}
-      - BACKOFFICE_MAILER_DSN=${BACKOFFICE_MAILER_DSN}
-      - BACKOFFICE_MAILER_FROM_ADDRESS=${BACKOFFICE_MAILER_FROM_ADDRESS}
-      - BACKOFFICE_MAILER_FROM_NAME=${BACKOFFICE_MAILER_FROM_NAME}
-      - BACKOFFICE_PUBLIC_BASE_URL=${BACKOFFICE_PUBLIC_BASE_URL}
-      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
-      - GOVPAY_USER=${GOVPAY_USER}
-      - GOVPAY_PASSWORD=${GOVPAY_PASSWORD}
-      - GOVPAY_TLS_CERT=${GOVPAY_TLS_CERT}
-      - GOVPAY_TLS_KEY=${GOVPAY_TLS_KEY}
-      - TASSONOMIE_PAGOPA=${TASSONOMIE_PAGOPA}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      # env_file_ rimosso per sicurezza (isolamento esplicito)
-      # - .env.backoffice (rimosso: mantenere solo .env locale)
+      - APP_DEBUG=${APP_DEBUG:-0}
+      - ENABLE_DEBUG_TOOL=${ENABLE_DEBUG_TOOL:-0}
+      # ── connessione DB: lette da config.json via ConfigLoader (fallback env) ─
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-govpay}
+      - DB_USER=${DB_USER:-govpay}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      # ── parametri legacy (.env) — fallback per upgrade; rimovibili post-migrazione
+      - APACHE_SERVER_NAME=${APACHE_SERVER_NAME:-localhost}
+      - APP_ENTITY_NAME=${APP_ENTITY_NAME:-}
+      - APP_ENTITY_SUFFIX=${APP_ENTITY_SUFFIX:-}
+      - APP_ENTITY_GOVERNMENT=${APP_ENTITY_GOVERNMENT:-}
+      - APP_ENTITY_URL=${APP_ENTITY_URL:-}
+      - APP_LOGO_SRC=${APP_LOGO_SRC:-}
+      - APP_LOGO_TYPE=${APP_LOGO_TYPE:-}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     depends_on:
       - db
+      - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
     restart: unless-stopped
     networks:
@@ -78,60 +81,37 @@ services:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
       - spid_certs:/var/www/html/spid-certs:ro
-      - ./certificate:/var/www/certificate:ro
-      - ./img:/var/www/html/public/img:ro
+      - gil_certs:/var/www/certificate:ro
+      - gil_images:/var/www/html/public/img:ro
+      - gil_config:/config:ro
     environment:
-      - SSL=${SSL}
-      - APACHE_SERVER_NAME=${APACHE_SERVER_NAME}
+      # ── parametri infrastruttura ──────────────────────────────────────────
+      - CONFIG_PATH=/config/config.json
+      - SSL=${SSL:-off}
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
-      - APP_DEBUG=${APP_DEBUG}
-      - ENABLE_DEBUG_TOOL=${ENABLE_DEBUG_TOOL}
+      - APP_DEBUG=${APP_DEBUG:-0}
+      - ENABLE_DEBUG_TOOL=${ENABLE_DEBUG_TOOL:-0}
       - APP_SUITE=frontoffice
-      - DB_NAME=${DB_NAME_CITTADINI}
-      - DB_USER=${DB_USER_CITTADINI}
-      - DB_PASSWORD=${DB_PASSWORD_CITTADINI}
-      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}
-      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL}
-      - APP_ENTITY_IPA_CODE=${APP_ENTITY_IPA_CODE}
-      - APP_ENTITY_NAME=${APP_ENTITY_NAME}
-      - APP_ENTITY_SUFFIX=${APP_ENTITY_SUFFIX}
-      - APP_ENTITY_GOVERNMENT=${APP_ENTITY_GOVERNMENT}
-      - APP_ENTITY_URL=${APP_ENTITY_URL}
-      - APP_SUPPORT_EMAIL=${APP_SUPPORT_EMAIL}
-      - APP_SUPPORT_PHONE=${APP_SUPPORT_PHONE}
-      - APP_SUPPORT_HOURS=${APP_SUPPORT_HOURS}
-      - APP_SUPPORT_LOCATION=${APP_SUPPORT_LOCATION}
-      - APP_LOGO_SRC=${APP_LOGO_SRC}
-      - APP_LOGO_TYPE=${APP_LOGO_TYPE}
-      - ID_DOMINIO=${ID_DOMINIO}
-      - ID_A2A=${ID_A2A}
-      - URL_ENTE=${URL_ENTE}
-      - PAGOPA_CHECKOUT_EC_BASE_URL=${PAGOPA_CHECKOUT_EC_BASE_URL}
-      - PAGOPA_CHECKOUT_SUBSCRIPTION_KEY=${PAGOPA_CHECKOUT_SUBSCRIPTION_KEY}
-      - PAGOPA_CHECKOUT_COMPANY_NAME=${PAGOPA_CHECKOUT_COMPANY_NAME}
-      - PAGOPA_CHECKOUT_RETURN_OK_URL=${PAGOPA_CHECKOUT_RETURN_OK_URL}
-      - PAGOPA_CHECKOUT_RETURN_CANCEL_URL=${PAGOPA_CHECKOUT_RETURN_CANCEL_URL}
-      - PAGOPA_CHECKOUT_RETURN_ERROR_URL=${PAGOPA_CHECKOUT_RETURN_ERROR_URL}
-      - PAGOPA_PAYMENT_OPTIONS_URL=${PAGOPA_PAYMENT_OPTIONS_URL}
-      - PAGOPA_PAYMENT_OPTIONS_KEY=${PAGOPA_PAYMENT_OPTIONS_KEY}
-      - GOVPAY_PENDENZE_URL=${GOVPAY_PENDENZE_URL}
-      - GOVPAY_PAGAMENTI_URL=${GOVPAY_PAGAMENTI_URL}
-      - GOVPAY_RAGIONERIA_URL=${GOVPAY_RAGIONERIA_URL}
-      - GOVPAY_BACKOFFICE_URL=${GOVPAY_BACKOFFICE_URL}
-      - GOVPAY_PENDENZE_PATCH_URL=${GOVPAY_PENDENZE_PATCH_URL}
-      - AUTHENTICATION_GOVPAY=${AUTHENTICATION_GOVPAY}
-      - GOVPAY_USER=${GOVPAY_USER}
-      - GOVPAY_PASSWORD=${GOVPAY_PASSWORD}
-      - GOVPAY_TLS_CERT=${GOVPAY_TLS_CERT}
-      - GOVPAY_TLS_KEY=${GOVPAY_TLS_KEY}
-      - TASSONOMIE_PAGOPA=${TASSONOMIE_PAGOPA}
-      - COMPOSE_PROFILES=${COMPOSE_PROFILES}
-      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
+      # ── connessione DB (utente cittadini): lette da config.json via ConfigLoader
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME_CITTADINI:-govpay}
+      - DB_USER=${DB_USER_CITTADINI:-govpay_cittadini}
+      - DB_PASSWORD=${DB_PASSWORD_CITTADINI:-}
+      # ── parametri IAM proxy (letti dal frontoffice direttamente via Config facade)
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://satosa-nginx:80/Saml2IDP/metadata}
-      - IAM_PROXY_PUBLIC_BASE_URL=${IAM_PROXY_PUBLIC_BASE_URL}
-      - IAM_PROXY_DEBUG=${IAM_PROXY_DEBUG:-false}
+      # ── parametri legacy (.env) — fallback per upgrade; rimovibili post-migrazione
+      - APACHE_SERVER_NAME=${APACHE_SERVER_NAME:-localhost}
+      - APP_ENTITY_NAME=${APP_ENTITY_NAME:-}
+      - APP_ENTITY_SUFFIX=${APP_ENTITY_SUFFIX:-}
+      - APP_ENTITY_GOVERNMENT=${APP_ENTITY_GOVERNMENT:-}
+      - APP_ENTITY_URL=${APP_ENTITY_URL:-}
+      - APP_LOGO_SRC=${APP_LOGO_SRC:-}
+      - APP_LOGO_TYPE=${APP_LOGO_TYPE:-}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:-}
     depends_on:
       - db
+      - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     networks:
@@ -361,13 +341,18 @@ services:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: mariadb
     restart: always
+    # Le credenziali DB vengono da .env.bootstrap (generato dal wizard al primo avvio).
+    # Fallback a variabili dirette per compatibilità con deployments esistenti (.env legacy).
+    env_file:
+      - path: .env.bootstrap
+        required: false
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${DB_NAME}
-      - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASSWORD}
-      - DB_USER_CITTADINI=${DB_USER_CITTADINI}
-      - DB_PASSWORD_CITTADINI=${DB_PASSWORD_CITTADINI}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-}
+      - MYSQL_DATABASE=${DB_NAME:-govpay}
+      - MYSQL_USER=${DB_USER:-govpay}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-}
+      - DB_USER_CITTADINI=${DB_USER_CITTADINI:-govpay_cittadini}
+      - DB_PASSWORD_CITTADINI=${DB_PASSWORD_CITTADINI:-}
     volumes:
       - db_data:/var/lib/mysql
     networks:
@@ -572,3 +557,11 @@ volumes:
   iam_proxy_static:
   spid_certs:
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
+  # Configurazione bootstrap (config.json) — accessibile a master, backoffice, frontoffice
+  gil_config:
+  # Archivi di backup — accessibili a master e backoffice
+  gil_backups:
+  # Certificati GovPay (mTLS client cert+key) — RW backoffice, RO frontoffice e master
+  gil_certs:
+  # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice e master
+  gil_images:

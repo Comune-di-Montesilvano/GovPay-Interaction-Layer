@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Configurazione iniziale — GovPay Interaction Layer{% endblock %}</title>
+  <link rel="stylesheet" href="/assets/bootstrap-italia/css/bootstrap-italia.min.css">
+  <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .wizard-header { background: #06c; color: #fff; padding: 1.25rem 0; }
+    .wizard-header .brand { font-size: 1.1rem; font-weight: 600; }
+    .step-indicator { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem; }
+    .step-dot { width: 2rem; height: 2rem; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+                font-size: 0.8rem; font-weight: 700; border: 2px solid #06c; color: #06c; background: #fff; }
+    .step-dot.active  { background: #06c; color: #fff; }
+    .step-dot.done    { background: #28a745; border-color: #28a745; color: #fff; }
+    .step-line { flex: 1; height: 2px; background: #dee2e6; min-width: 1rem; }
+    .step-line.done { background: #28a745; }
+    .card-wizard { border: 0; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+    .field-help { font-size: 0.825rem; color: #6c757d; margin-top: 0.25rem; }
+    .auto-gen-toggle { cursor: pointer; font-size: 0.875rem; }
+  </style>
+</head>
+<body class="bg-light">
+
+<header class="wizard-header">
+  <div class="container">
+    <div class="brand">
+      <i class="fa fa-cog me-2"></i>GovPay Interaction Layer — Configurazione guidata
+    </div>
+  </div>
+</header>
+
+<main class="container py-4" style="max-width: 800px;">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="text-center text-muted py-3 small">
+  GovPay Interaction Layer
+</footer>
+
+<script src="/assets/bootstrap-italia/js/bootstrap-italia.bundle.min.js"></script>
+<script src="/assets/js/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,72 @@
+{% extends 'setup/layout.html.twig' %}
+{% from 'setup/_step_header.html.twig' import step_header %}
+{% block title %}Step 2 — Accesso e URL{% endblock %}
+
+{% block content %}
+{{ step_header(step, total_steps) }}
+
+<div class="card card-wizard p-4">
+  <h2 class="h4 mb-1"><i class="fa fa-user-shield me-2 text-primary"></i>Account Superadmin e URL Pubblici</h2>
+  <p class="text-muted mb-4">Definisci le credenziali dell'amministratore e gli indirizzi pubblici del sistema.</p>
+
+  {% if errors %}
+    <div class="alert alert-danger">
+      <ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/setup/step/2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <h5 class="mt-2 mb-3 border-bottom pb-2">Account Superadmin</h5>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Email <span class="text-danger">*</span></label>
+        <input type="email" class="form-control {% if errors.admin_email is defined %}is-invalid{% endif %}"
+               name="admin_email" value="{{ data.admin_email|default('') }}" required>
+        {% if errors.admin_email is defined %}<div class="invalid-feedback">{{ errors.admin_email }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Password <span class="text-danger">*</span></label>
+        <input type="password" class="form-control {% if errors.admin_password is defined %}is-invalid{% endif %}"
+               name="admin_password" required minlength="8" autocomplete="new-password">
+        <div class="field-help">Minimo 8 caratteri</div>
+        {% if errors.admin_password is defined %}<div class="invalid-feedback">{{ errors.admin_password }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Conferma Password <span class="text-danger">*</span></label>
+        <input type="password" class="form-control {% if errors.admin_password_confirm is defined %}is-invalid{% endif %}"
+               name="admin_password_confirm" required minlength="8" autocomplete="new-password">
+        {% if errors.admin_password_confirm is defined %}<div class="invalid-feedback">{{ errors.admin_password_confirm }}</div>{% endif %}
+      </div>
+    </div>
+
+    <h5 class="mt-4 mb-3 border-bottom pb-2">URL Pubblici</h5>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">URL Backoffice <span class="text-danger">*</span></label>
+        <input type="url" class="form-control {% if errors.backoffice_url is defined %}is-invalid{% endif %}"
+               name="backoffice_url" value="{{ data.backoffice_url|default('') }}"
+               placeholder="https://pagopa-be.comune.esempio.it" required>
+        {% if errors.backoffice_url is defined %}<div class="invalid-feedback">{{ errors.backoffice_url }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL Frontoffice</label>
+        <input type="url" class="form-control" name="frontoffice_url"
+               value="{{ data.frontoffice_url|default('') }}" placeholder="https://pagopa.comune.esempio.it">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Server Name Apache</label>
+        <input type="text" class="form-control" name="apache_server_name"
+               value="{{ data.apache_server_name|default('localhost') }}" placeholder="localhost">
+        <div class="field-help">Hostname usato da Apache (ServerName). Di solito il dominio del backoffice.</div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between mt-4">
+      <a href="/setup/step/1" class="btn btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>Indietro</a>
+      <button type="submit" class="btn btn-primary">Avanti <i class="fa fa-arrow-right ms-1"></i></button>
+    </div>
+  </form>
+</div>
+{% endblock %}

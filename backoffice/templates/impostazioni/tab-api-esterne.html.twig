@@ -1,0 +1,130 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3">
+    <h2 class="h5 mb-0"><i class="fas fa-cloud me-2 text-primary"></i>API Esterne</h2>
+  </div>
+  <div class="card-body">
+    <form id="form-api-esterne" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      {# ─── pagoPA Checkout ──────────────────────────────────────────────── #}
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+        <i class="fas fa-credit-card me-1"></i>pagoPA Checkout
+      </h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-8">
+          <label class="form-label">Checkout EC Base URL</label>
+          <input type="url" class="form-control" name="checkout_ec_base_url"
+            value="{{ pagopa.checkout_ec_base_url|default('') }}" placeholder="https://api.platform.pagopa.it/checkout/auth/payments/v1"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Subscription Key</label>
+          <div class="input-group">
+            <input type="password" class="form-control font-monospace" name="checkout_subscription_key" id="pagopa-key"
+              value="{{ pagopa.checkout_subscription_key|default('') }}" autocomplete="off"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePwdExt('pagopa-key', this)"><i class="fas fa-eye"></i></button>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Nome azienda (company name)</label>
+          <input type="text" class="form-control" name="checkout_company_name"
+            value="{{ pagopa.checkout_company_name|default('') }}"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Return URL — OK</label>
+          <input type="url" class="form-control" name="checkout_return_ok_url"
+            value="{{ pagopa.checkout_return_ok_url|default('') }}" placeholder="https://…/pagamento/ok"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Return URL — Annullato</label>
+          <input type="url" class="form-control" name="checkout_return_cancel_url"
+            value="{{ pagopa.checkout_return_cancel_url|default('') }}" placeholder="https://…/pagamento/annullato"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Return URL — Errore</label>
+          <input type="url" class="form-control" name="checkout_return_error_url"
+            value="{{ pagopa.checkout_return_error_url|default('') }}" placeholder="https://…/pagamento/errore"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+      </div>
+
+      {# ─── Payment Options ──────────────────────────────────────────────── #}
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+        <i class="fas fa-list-alt me-1"></i>Payment Options API
+      </h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-8">
+          <label class="form-label">URL</label>
+          <input type="url" class="form-control" name="payment_options_url"
+            value="{{ pagopa.payment_options_url|default('') }}" placeholder="https://…"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">API Key</label>
+          <div class="input-group">
+            <input type="password" class="form-control font-monospace" name="payment_options_key" id="po-key"
+              value="{{ pagopa.payment_options_key|default('') }}" autocomplete="off"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePwdExt('po-key', this)"><i class="fas fa-eye"></i></button>
+          </div>
+        </div>
+      </div>
+
+      {# ─── BizEvents ────────────────────────────────────────────────────── #}
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+        <i class="fas fa-receipt me-1"></i>BizEvents
+      </h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-8">
+          <label class="form-label">BizEvents Host</label>
+          <input type="url" class="form-control" name="biz_events_host"
+            value="{{ pagopa.biz_events_host|default('') }}" placeholder="https://api.platform.pagopa.it"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">API Key</label>
+          <div class="input-group">
+            <input type="password" class="form-control font-monospace" name="biz_events_api_key" id="biz-key"
+              value="{{ pagopa.biz_events_api_key|default('') }}" autocomplete="off"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePwdExt('biz-key', this)"><i class="fas fa-eye"></i></button>
+          </div>
+        </div>
+      </div>
+
+      {# ─── Tassonomie ───────────────────────────────────────────────────── #}
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+        <i class="fas fa-sitemap me-1"></i>Tassonomie
+      </h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-10">
+          <label class="form-label">URL endpoint tassonomie</label>
+          <input type="url" class="form-control" name="tassonomie_url"
+            value="{{ pagopa.tassonomie_url|default('') }}" placeholder="https://…/taxonomy"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3">
+        <button type="button" class="btn btn-primary" onclick="impSaveForm('form-api-esterne', '/impostazioni/api-esterne/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<script>
+function togglePwdExt(id, btn) {
+  const el = document.getElementById(id);
+  const show = el.type === 'password';
+  el.type = show ? 'text' : 'password';
+  btn.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+}
+</script>

@@ -1,0 +1,143 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Impostazioni - GovPay{% endblock %}
+
+{% block head %}
+<style>
+  .imp-nav .nav-link { border-radius: 0; border-left: 3px solid transparent; }
+  .imp-nav .nav-link.active { border-left-color: var(--bs-primary); background: rgba(var(--bs-primary-rgb), .06); }
+  .imp-nav .nav-link:hover:not(.active) { background: rgba(0,0,0,.04); }
+  .imp-section-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; font-weight: 600; padding: .5rem 1rem .25rem; }
+  .form-save-bar { display: none; position: sticky; bottom: 0; background: rgba(255,255,255,.95); backdrop-filter: blur(4px); border-top: 1px solid #dee2e6; padding: .75rem 1rem; z-index: 10; }
+  .form-save-bar.visible { display: flex; }
+  .master-status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h4 mb-0"><i class="fas fa-sliders-h me-2 text-primary"></i>Impostazioni di sistema</h1>
+  <a class="btn btn-sm btn-outline-secondary" href="/"><i class="fas fa-arrow-left me-1"></i>Home</a>
+</div>
+
+{% if not is_superadmin %}
+  <div class="alert alert-info py-2 mb-3" role="alert">
+    <i class="fas fa-info-circle me-2"></i>Sei autenticato come <strong>admin</strong>: le impostazioni sono in sola lettura. Per apportare modifiche è necessario un superadmin.
+  </div>
+{% endif %}
+
+<div id="imp-toast" class="toast align-items-center position-fixed bottom-0 end-0 m-3" role="alert" style="z-index:9999;min-width:280px;">
+  <div class="d-flex">
+    <div class="toast-body" id="imp-toast-body"></div>
+    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# ─── Left nav ─────────────────────────────────────────────────────────── #}
+  <div class="col-lg-3">
+    <nav class="nav imp-nav flex-column border rounded bg-white" aria-label="Sezioni impostazioni">
+      <span class="imp-section-title">Connessioni</span>
+      <a class="nav-link {{ active_tab == 'govpay' ? 'active' : '' }}" href="/impostazioni?tab=govpay">
+        <i class="fas fa-plug me-2"></i>GovPay
+      </a>
+      <a class="nav-link {{ active_tab == 'api-esterne' ? 'active' : '' }}" href="/impostazioni?tab=api-esterne">
+        <i class="fas fa-cloud me-2"></i>API Esterne
+      </a>
+
+      <span class="imp-section-title">Applicazione</span>
+      <a class="nav-link {{ active_tab == 'backoffice' ? 'active' : '' }}" href="/impostazioni?tab=backoffice">
+        <i class="fas fa-cogs me-2"></i>Backoffice
+      </a>
+      <a class="nav-link {{ active_tab == 'frontoffice' ? 'active' : '' }}" href="/impostazioni?tab=frontoffice">
+        <i class="fas fa-desktop me-2"></i>Frontoffice
+      </a>
+
+      <span class="imp-section-title">Autenticazione</span>
+      <a class="nav-link {{ active_tab == 'login-proxy' ? 'active' : '' }}" href="/impostazioni?tab=login-proxy">
+        <i class="fas fa-shield-alt me-2"></i>Login Proxy
+      </a>
+    </nav>
+  </div>
+
+  {# ─── Tab content ───────────────────────────────────────────────────────── #}
+  <div class="col-lg-9">
+    {% if active_tab == 'govpay' %}
+      {% include 'impostazioni/tab-govpay.html.twig' %}
+    {% elseif active_tab == 'api-esterne' %}
+      {% include 'impostazioni/tab-api-esterne.html.twig' %}
+    {% elseif active_tab == 'backoffice' %}
+      {% include 'impostazioni/tab-backoffice.html.twig' %}
+    {% elseif active_tab == 'frontoffice' %}
+      {% include 'impostazioni/tab-frontoffice.html.twig' %}
+    {% elseif active_tab == 'login-proxy' %}
+      {% include 'impostazioni/tab-login-proxy.html.twig' %}
+    {% else %}
+      {% include 'impostazioni/tab-govpay.html.twig' %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Toast helper ──────────────────────────────────────────────────────────
+  window.impToast = function (msg, ok) {
+    const el = document.getElementById('imp-toast');
+    const body = document.getElementById('imp-toast-body');
+    el.className = 'toast align-items-center position-fixed bottom-0 end-0 m-3 text-bg-' + (ok ? 'success' : 'danger');
+    body.textContent = msg;
+    bootstrap.Toast.getOrCreateInstance(el, { delay: 4000 }).show();
+  };
+
+  // ── Generic AJAX form submit ───────────────────────────────────────────────
+  window.impSaveForm = async function (formId, url, btn) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    const data = new FormData(form);
+    const body = new URLSearchParams(data).toString();
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Salvataggio…';
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      const json = await res.json();
+      impToast(json.message || (json.success ? 'Salvato.' : 'Errore.'), !!json.success);
+    } catch (e) {
+      impToast('Errore di rete: ' + e.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-save me-1"></i>Salva';
+    }
+  };
+
+  // ── Generic action button ─────────────────────────────────────────────────
+  window.impAction = async function (url, btn, label) {
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + (label || 'Attendere…');
+    try {
+      const csrf = document.querySelector('input[name="csrf_token"]')?.value || '';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csrf_token: csrf }),
+      });
+      const json = await res.json();
+      impToast(json.message || (json.success ? 'OK.' : 'Errore.'), !!json.success);
+    } catch (e) {
+      impToast('Errore di rete: ' + e.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  };
+})();
+</script>
+
+{% endblock %}

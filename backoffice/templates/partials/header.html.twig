@@ -196,6 +196,10 @@
                         <li class="nav-item">
                           <a class="nav-link {{ in_config ? 'active' : '' }}" href="/configurazione"><span>Configurazione</span></a>
                         </li>
+                        {% set in_impostazioni = current_path starts with '/impostazioni' %}
+                        <li class="nav-item">
+                          <a class="nav-link {{ in_impostazioni ? 'active' : '' }}" href="/impostazioni"><span>Impostazioni</span></a>
+                        </li>
                       {% endif %}
                     {% endif %}
                     {% if not current_user %}

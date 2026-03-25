@@ -91,6 +91,18 @@ $statements = [
         PRIMARY KEY (id_dominio, id_entrata, user_id),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+
+    // settings — parametri applicativi ex-.env (govpay, pagopa, mail, entity, iam_proxy, ui)
+    "CREATE TABLE IF NOT EXISTS settings (
+        id          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        section     VARCHAR(64)  NOT NULL,
+        key_name    VARCHAR(128) NOT NULL,
+        value       TEXT         NULL,
+        encrypted   TINYINT(1)   NOT NULL DEFAULT 0,
+        updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        updated_by  VARCHAR(255) NULL,
+        UNIQUE KEY uniq_section_key (section, key_name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 ];
 
 foreach ($statements as $sql) {

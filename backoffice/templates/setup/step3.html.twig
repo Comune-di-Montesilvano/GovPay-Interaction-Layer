@@ -1,0 +1,89 @@
+{% extends 'setup/layout.html.twig' %}
+{% from 'setup/_step_header.html.twig' import step_header %}
+{% block title %}Step 3 — Database{% endblock %}
+
+{% block content %}
+{{ step_header(step, total_steps) }}
+
+<div class="card card-wizard p-4">
+  <h2 class="h4 mb-1"><i class="fa fa-database me-2 text-primary"></i>Password Database</h2>
+  <p class="text-muted mb-4">
+    Imposta le password del database. Usa "Genera automaticamente" per creare password sicure —
+    <strong>annotale prima di procedere, non sarà più possibile recuperarle.</strong>
+  </p>
+
+  <div class="alert alert-warning">
+    <i class="fa fa-exclamation-triangle me-2"></i>
+    Queste password vengono salvate in <code>config.json</code> e usate per inizializzare il database.
+    <strong>Non potranno essere cambiate dopo il completamento del setup senza intervento tecnico.</strong>
+  </div>
+
+  <form method="post" action="/setup/step/3" id="step3-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Password DB Backoffice (DB_PASSWORD)</label>
+      <div class="input-group">
+        <input type="text" class="form-control font-monospace" id="db_password" name="db_password"
+               value="{{ data.db_password|default('') }}" placeholder="Lascia vuoto per auto-generare">
+        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('db_password')">
+          <i class="fa fa-magic me-1"></i>Genera
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="copyVal('db_password')">
+          <i class="fa fa-copy"></i>
+        </button>
+      </div>
+      <div class="field-help">Utente <code>govpay</code> — accesso completo backoffice</div>
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Password DB Frontoffice (DB_PASSWORD_CITTADINI)</label>
+      <div class="input-group">
+        <input type="text" class="form-control font-monospace" id="db_password_cittadini" name="db_password_cittadini"
+               value="{{ data.db_password_cittadini|default('') }}" placeholder="Lascia vuoto per auto-generare">
+        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('db_password_cittadini')">
+          <i class="fa fa-magic me-1"></i>Genera
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="copyVal('db_password_cittadini')">
+          <i class="fa fa-copy"></i>
+        </button>
+      </div>
+      <div class="field-help">Utente <code>govpay_cittadini</code> — accesso sola lettura frontoffice</div>
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Password Root DB (DB_ROOT_PASSWORD)</label>
+      <div class="input-group">
+        <input type="text" class="form-control font-monospace" id="db_root_password" name="db_root_password"
+               value="{{ data.db_root_password|default('') }}" placeholder="Lascia vuoto per auto-generare">
+        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('db_root_password')">
+          <i class="fa fa-magic me-1"></i>Genera
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="copyVal('db_root_password')">
+          <i class="fa fa-copy"></i>
+        </button>
+      </div>
+      <div class="field-help">Password root MariaDB — usata solo per la gestione del DB</div>
+    </div>
+
+    <div class="d-flex justify-content-between mt-4">
+      <a href="/setup/step/2" class="btn btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>Indietro</a>
+      <button type="submit" class="btn btn-primary">Avanti <i class="fa fa-arrow-right ms-1"></i></button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function autoGen(fieldId) {
+  const arr = new Uint8Array(24);
+  crypto.getRandomValues(arr);
+  document.getElementById(fieldId).value = Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
+}
+function copyVal(fieldId) {
+  const el = document.getElementById(fieldId);
+  if (el.value) navigator.clipboard.writeText(el.value).then(() => alert('Copiato negli appunti'));
+}
+</script>
+{% endblock %}

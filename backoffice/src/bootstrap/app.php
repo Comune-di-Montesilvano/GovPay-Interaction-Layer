@@ -11,6 +11,7 @@ use Slim\Views\Twig;
 use Slim\Views\TwigMiddleware;
 use App\Middleware\SessionMiddleware;
 use App\Middleware\AuthMiddleware;
+use App\Middleware\SetupMiddleware;
 use App\Middleware\FlashMiddleware;
 use App\Middleware\CurrentPathMiddleware;
 use App\Auth\UserRepository;
@@ -39,11 +40,13 @@ return (function (): array {
 
     $twig = Twig::create($templatePaths, ['cache' => false]);
 
-    $entityName = getenv('APP_ENTITY_NAME') ?: 'Comune di Esempio';
-    $entitySuffix = getenv('APP_ENTITY_SUFFIX') ?: 'Servizi ai cittadini';
-    $entityGovernment = getenv('APP_ENTITY_GOVERNMENT') ?: '';
-    $logoSrc  = trim((string)(getenv('APP_LOGO_SRC')  ?: '/img/stemma_ente.png'));
-    $logoType = trim((string)(getenv('APP_LOGO_TYPE') ?: 'img'));
+    // Legge i parametri di configurazione: prima dalla tabella settings (via Config facade),
+    // poi da getenv() come fallback per compatibilità legacy con .env
+    $entityName = \App\Config\Config::get('APP_ENTITY_NAME') ?: 'Comune di Esempio';
+    $entitySuffix = \App\Config\Config::get('APP_ENTITY_SUFFIX') ?: 'Servizi ai cittadini';
+    $entityGovernment = \App\Config\Config::get('APP_ENTITY_GOVERNMENT') ?: '';
+    $logoSrc  = trim((string)(\App\Config\Config::get('APP_LOGO_SRC')  ?: '/img/stemma_ente.png'));
+    $logoType = trim((string)(\App\Config\Config::get('APP_LOGO_TYPE') ?: 'img'));
     if ($logoType === 'img') {
         // Percorso locale: verifica che il file esista nel container
         $logoFs = '/var/www/html/public' . $logoSrc;
@@ -177,6 +180,9 @@ return (function (): array {
 
     $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password'];
     $app->add(new AuthMiddleware($publicPaths));
+    // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack
+    // (in Slim il middleware viene eseguito in ordine inverso all'aggiunta — l'ultimo aggiunto è il primo eseguito)
+    $app->add(new SetupMiddleware());
     $app->add(new FlashMiddleware($twig));
     $app->add(new SessionMiddleware());
     $app->add(new CurrentPathMiddleware($twig));

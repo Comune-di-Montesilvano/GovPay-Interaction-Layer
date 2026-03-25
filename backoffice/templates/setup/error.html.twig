@@ -1,0 +1,18 @@
+{% extends 'setup/layout.html.twig' %}
+{% block title %}Errore setup{% endblock %}
+
+{% block content %}
+<div class="card card-wizard p-5 text-center">
+  <i class="fa fa-exclamation-circle fa-4x text-danger mb-4"></i>
+  <h2 class="h3 mb-3">Errore durante il setup</h2>
+  {% if error %}
+    <div class="alert alert-danger text-start">
+      <strong>Dettaglio:</strong> {{ error }}
+    </div>
+  {% endif %}
+  <p class="text-muted">Controlla i log del container e riprova.</p>
+  <a href="/setup" class="btn btn-outline-primary mx-auto mt-3" style="max-width: 200px;">
+    <i class="fa fa-redo me-2"></i>Ricomincia
+  </a>
+</div>
+{% endblock %}

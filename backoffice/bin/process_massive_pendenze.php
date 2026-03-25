@@ -10,6 +10,7 @@
  */
 declare(strict_types=1);
 
+use App\Config\Config;
 use App\Database\MassivePendenzeRepository;
 use App\Logger;
 use GuzzleHttp\Client;
@@ -38,16 +39,16 @@ function sendOne(array $payload): array {
     if ($idA2A === '') { return ['success' => false, 'errors' => ['ID_A2A non impostata']]; }
 
     $guzzleOptions = [];
-    $authMethod = getenv('AUTHENTICATION_GOVPAY');
-    if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-        $cert = getenv('GOVPAY_TLS_CERT');
-        $key = getenv('GOVPAY_TLS_KEY');
-        $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+    $authMethod = Config::get('AUTHENTICATION_GOVPAY');
+    if (!empty($authMethod) && strtolower((string)$authMethod) === 'sslheader') {
+        $cert = Config::get('GOVPAY_TLS_CERT');
+        $key = Config::get('GOVPAY_TLS_KEY');
+        $keyPass = Config::get('GOVPAY_TLS_KEY_PASSWORD') ?: null;
         if (!empty($cert) && !empty($key)) {
             $guzzleOptions['cert'] = $cert;
             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
         } else {
-            return ['success' => false, 'errors' => ['mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati']];
+            return ['success' => false, 'errors' => ['mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non configurati']];
         }
     }
 

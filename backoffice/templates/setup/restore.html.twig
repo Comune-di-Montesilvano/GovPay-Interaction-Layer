@@ -1,0 +1,34 @@
+{% extends 'setup/layout.html.twig' %}
+{% block title %}Ripristina da backup{% endblock %}
+
+{% block content %}
+<div class="card card-wizard p-4">
+  <h2 class="h4 mb-1"><i class="fa fa-upload me-2 text-success"></i>Ripristina da backup</h2>
+  <p class="text-muted mb-4">Carica un archivio <code>.zip</code> generato dal sistema di backup GIL.</p>
+
+  {% if app.request.queryParams.error is defined %}
+    <div class="alert alert-danger">
+      {% if app.request.queryParams.error == 'upload' %}Errore durante il caricamento del file.
+      {% elseif app.request.queryParams.error == 'format' %}Il file deve essere in formato .zip.
+      {% elseif app.request.queryParams.error == 'missing' %}File di backup non trovato.
+      {% elseif app.request.queryParams.error == 'csrf' %}Token di sicurezza non valido.
+      {% else %}Errore: {{ app.request.queryParams.error }}{% endif %}
+    </div>
+  {% endif %}
+
+  <form method="post" action="/setup/restore" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="mb-4">
+      <label class="form-label fw-semibold">File di backup (.zip)</label>
+      <input type="file" class="form-control" name="backup_file" accept=".zip" required>
+      <div class="field-help">Il backup deve essere generato dalla stessa versione o compatibile di GIL.</div>
+    </div>
+    <div class="d-flex justify-content-between">
+      <a href="/setup" class="btn btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>Indietro</a>
+      <button type="submit" class="btn btn-success">
+        <i class="fa fa-upload me-2"></i>Carica e analizza
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

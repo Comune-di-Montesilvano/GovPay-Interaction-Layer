@@ -1,0 +1,124 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white d-flex align-items-center justify-content-between py-3">
+    <h2 class="h5 mb-0"><i class="fas fa-desktop me-2 text-primary"></i>Frontoffice</h2>
+    {% if is_superadmin %}
+    <button class="btn btn-sm btn-outline-warning" onclick="impAction('/impostazioni/frontoffice/restart', this, 'Riavvio…')">
+      <i class="fas fa-sync-alt me-1"></i>Riavvia Frontoffice
+    </button>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <form id="form-frontoffice" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      {# ─── URL ──────────────────────────────────────────────────────────── #}
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+        <i class="fas fa-link me-1"></i>URL pubblico
+      </h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-8">
+          <label class="form-label">URL pubblico frontoffice</label>
+          <input type="url" class="form-control" name="public_base_url"
+            value="{{ frontoffice.public_base_url|default('') }}" placeholder="https://pagamenti.comune.example.it"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+      </div>
+
+      {# ─── Auth proxy ───────────────────────────────────────────────────── #}
+      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+        <i class="fas fa-user-lock me-1"></i>Autenticazione utenti
+      </h6>
+      <div class="row g-3 mb-4">
+        <div class="col-md-5">
+          <label class="form-label">Tipo auth proxy</label>
+          <select class="form-select" name="auth_proxy_type" {{ not is_superadmin ? 'disabled' : '' }}>
+            <option value="none" {{ frontoffice.auth_proxy_type|default('none') == 'none' ? 'selected' : '' }}>Nessuno (accesso libero)</option>
+            <option value="spid" {{ frontoffice.auth_proxy_type|default('') == 'spid' ? 'selected' : '' }}>SPID</option>
+            <option value="cie" {{ frontoffice.auth_proxy_type|default('') == 'cie' ? 'selected' : '' }}>CIE</option>
+            <option value="spid_cie" {{ frontoffice.auth_proxy_type|default('') == 'spid_cie' ? 'selected' : '' }}>SPID + CIE</option>
+          </select>
+          <div class="form-text">Configurazione dettagliata nella sezione <a href="/impostazioni?tab=login-proxy">Login Proxy</a>.</div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3 mb-4">
+        <button type="button" class="btn btn-primary" onclick="impSaveForm('form-frontoffice', '/impostazioni/frontoffice/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+
+    {# ─── Immagini ─────────────────────────────────────────────────────────── #}
+    {% if is_superadmin %}
+    <hr>
+    <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+      <i class="fas fa-image me-1"></i>Logo e Favicon
+    </h6>
+    <div class="row g-4">
+      {# Logo / stemma #}
+      <div class="col-md-6">
+        <div class="card border">
+          <div class="card-body text-center">
+            <div class="mb-2">
+              <img src="/img/stemma_ente.png" alt="Logo ente" style="max-height:80px;max-width:180px;object-fit:contain;"
+                onerror="this.style.display='none'">
+            </div>
+            <p class="small text-muted mb-2">Logo / stemma ente (PNG, JPG, SVG)</p>
+            <form id="form-logo" enctype="multipart/form-data" onsubmit="return false;">
+              <div class="input-group">
+                <input type="file" class="form-control form-control-sm" name="logo_file" id="logo-file"
+                  accept=".png,.jpg,.jpeg,.svg">
+                <button type="button" class="btn btn-sm btn-primary" onclick="uploadImage('form-logo', '/impostazioni/logo/upload', this)">
+                  <i class="fas fa-upload me-1"></i>Carica
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {# Favicon #}
+      <div class="col-md-6">
+        <div class="card border">
+          <div class="card-body text-center">
+            <div class="mb-2">
+              <img src="/img/favicon.png" alt="Favicon" style="max-height:48px;max-width:48px;object-fit:contain;"
+                onerror="this.style.display='none'">
+            </div>
+            <p class="small text-muted mb-2">Favicon (PNG, ICO — 32×32 o 64×64)</p>
+            <form id="form-favicon" enctype="multipart/form-data" onsubmit="return false;">
+              <div class="input-group">
+                <input type="file" class="form-control form-control-sm" name="favicon_file" id="favicon-file"
+                  accept=".png,.ico">
+                <button type="button" class="btn btn-sm btn-primary" onclick="uploadImage('form-favicon', '/impostazioni/favicon/upload', this)">
+                  <i class="fas fa-upload me-1"></i>Carica
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+async function uploadImage(formId, url, btn) {
+  const form = document.getElementById(formId);
+  const input = form.querySelector('input[type="file"]');
+  if (!input.files.length) { impToast('Seleziona un file prima.', false); return; }
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+  try {
+    const fd = new FormData(form);
+    const res = await fetch(url, { method: 'POST', body: fd });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'Caricato.' : 'Errore.'), !!json.success);
+    if (json.success) setTimeout(() => location.reload(), 1500);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+</script>

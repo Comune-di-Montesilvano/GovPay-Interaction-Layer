@@ -7,6 +7,7 @@ namespace App\Database;
 
 use PDO;
 use PDOException;
+use App\Config\ConfigLoader;
 
 class Connection
 {
@@ -18,11 +19,11 @@ class Connection
             return self::$pdo;
         }
 
-        $host = getenv('DB_HOST') ?: 'db';
-        $port = getenv('DB_PORT') ?: '3306';
-        $dbname = getenv('DB_NAME') ?: 'govpay';
-        $user = getenv('DB_USER') ?: 'govpay';
-        $pass = getenv('DB_PASSWORD') ?: '';
+        $host   = getenv('DB_HOST') ?: ConfigLoader::get('db.host', 'db');
+        $port   = getenv('DB_PORT') ?: ConfigLoader::get('db.port', '3306');
+        $dbname = getenv('DB_NAME') ?: ConfigLoader::get('db.name', 'govpay');
+        $user   = getenv('DB_USER') ?: ConfigLoader::get('db.user', 'govpay');
+        $pass   = ConfigLoader::get('db.password') ?: getenv('DB_PASSWORD') ?: '';
 
         $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $dbname);
         $options = [
