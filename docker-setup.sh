@@ -262,7 +262,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
           }
         } catch (Throwable $e) {
           echo "⚠️ PHP migration fallback failed: ". $e->getMessage() ."\n";
-          echo "⚠️ Il DB potrebbe non essere ancora pronto. Continuo l\\'avvio (setup in corso?).\n";
+          echo "⚠️ Il DB potrebbe non essere ancora pronto. Continuo avvio (setup in corso?).\n";
           exit(0);
         }
       '
