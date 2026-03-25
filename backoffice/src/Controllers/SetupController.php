@@ -173,20 +173,26 @@ class SetupController
             $this->writeMasterInitialConfig($config);
             ConfigLoader::reload(); // Aggiorna la cache in-memory (il backoffice ha il volume :ro)
 
-            // 3. Scrive .env.bootstrap tramite master container (se disponibile)
+            // 3. Scrive ./runtime/.env.bootstrap tramite master (credenziali DB per MariaDB + app)
             $this->writeEnvBootstrap($config);
 
-            // 4. Scrive i settings applicativi nel DB
+            // 4. Avvia il profilo post-setup (db + frontoffice) tramite master
+            $this->triggerPostSetupStart($config['master_token'] ?? '');
+
+            // 5. Attende che il DB sia pronto (MariaDB si inizializza con .env.bootstrap)
+            $this->waitForDb($config['db']);
+
+            // 6. Scrive i settings applicativi nel DB
             $this->writeSettings($data);
 
-            // 5. Crea il superadmin
+            // 7. Crea il superadmin
             $step2 = $data['step2'] ?? [];
             if (!empty($step2['admin_email']) && !empty($step2['admin_password'])) {
                 $this->createSuperadmin($step2['admin_email'], $step2['admin_password']);
             }
 
-            // 6. Chiama il master per restart dei container (best-effort)
-            $this->triggerMasterRestart($config['master_token'] ?? '');
+            // 8. Restart solo backoffice (best-effort — frontoffice già avviato dal profilo)
+            $this->triggerBackofficeRestart($config['master_token'] ?? '');
 
             // Pulisce sessione wizard
             unset($_SESSION['wizard']);
@@ -661,37 +667,56 @@ class SetupController
     }
 
     /**
-     * Scrive .env.bootstrap chiamando il master container, oppure direttamente se montato.
+     * Scrive ./runtime/.env.bootstrap tramite il master container (volume RW condiviso con l'host).
+     * Include le variabili MARIADB_* richieste da MariaDB 11, oltre alle variabili DB_* per l'app.
      */
     private function writeEnvBootstrap(array $config): void
     {
-        $db = $config['db'];
+        $db    = $config['db'];
         $mongo = $config['mongodb'];
 
-        $content = "# Generato automaticamente dal wizard GIL — NON MODIFICARE MANUALMENTE\n"
-            . "DB_ROOT_PASSWORD={$db['root_password']}\n"
-            . "DB_NAME={$db['name']}\n"
-            . "DB_USER={$db['user']}\n"
-            . "DB_PASSWORD={$db['password']}\n"
-            . "DB_NAME_CITTADINI={$db['name_cittadini']}\n"
-            . "DB_USER_CITTADINI={$db['user_cittadini']}\n"
-            . "DB_PASSWORD_CITTADINI={$db['password_cittadini']}\n"
-            . "MONGODB_USERNAME={$mongo['username']}\n"
-            . "MONGODB_PASSWORD={$mongo['password']}\n"
-            . "MONGODB_HOST={$mongo['host']}\n"
-            . "MONGODB_PORT={$mongo['port']}\n"
-            . "MONGODB_DB={$mongo['db']}\n";
+        $variables = [
+            // MariaDB 11 init vars (necessari per la prima inizializzazione del container)
+            'MARIADB_ROOT_PASSWORD'   => $db['root_password'],
+            'MYSQL_ROOT_PASSWORD'     => $db['root_password'],  // compat MariaDB < 11
+            'MARIADB_PASSWORD'        => $db['password'],
+            'MYSQL_PASSWORD'          => $db['password'],       // compat MariaDB < 11
+            // App DB vars
+            'DB_ROOT_PASSWORD'        => $db['root_password'],
+            'DB_NAME'                 => $db['name'],
+            'DB_USER'                 => $db['user'],
+            'DB_PASSWORD'             => $db['password'],
+            'DB_NAME_CITTADINI'       => $db['name_cittadini'],
+            'DB_USER_CITTADINI'       => $db['user_cittadini'],
+            'DB_PASSWORD_CITTADINI'   => $db['password_cittadini'],
+            // MongoDB
+            'MONGODB_USERNAME'        => $mongo['username'],
+            'MONGODB_PASSWORD'        => $mongo['password'],
+            'MONGODB_HOST'            => $mongo['host'],
+            'MONGODB_PORT'            => (string)$mongo['port'],
+            'MONGODB_DB'              => $mongo['db'],
+        ];
 
-        // Prova a scrivere nella directory del progetto (via bind mount /project nel master)
-        // oppure nella directory corrente del container backoffice
-        $candidates = ['/var/www/html/.env.bootstrap', '/project/.env.bootstrap'];
-        foreach ($candidates as $path) {
-            $dir = dirname($path);
-            if (is_writable($dir)) {
-                file_put_contents($path, $content, LOCK_EX);
-                @chmod($path, 0600);
-                return;
-            }
+        $url     = self::MASTER_URL . '/config/write-env-bootstrap';
+        $payload = json_encode(['variables' => $variables]);
+
+        $ctx = stream_context_create([
+            'http' => [
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\n",
+                'content'       => $payload,
+                'timeout'       => 15,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        $result = @file_get_contents($url, false, $ctx);
+        if ($result === false) {
+            throw new \RuntimeException('Impossibile contattare il Master Container per la scrittura di .env.bootstrap.');
+        }
+        $json = json_decode($result, true);
+        if (!($json['success'] ?? false)) {
+            throw new \RuntimeException('.env.bootstrap non scritto: ' . ($json['detail'] ?? 'errore sconosciuto'));
         }
     }
 
@@ -723,6 +748,80 @@ class SetupController
         if (!($json['success'] ?? false)) {
             throw new \RuntimeException('Scrittura config.json fallita: ' . ($json['detail'] ?? 'errore sconosciuto'));
         }
+    }
+
+    /**
+     * Avvia il profilo "post-setup" (db + frontoffice) tramite il master container.
+     */
+    private function triggerPostSetupStart(string $token): void
+    {
+        if (empty($token)) {
+            return;
+        }
+        $url     = self::MASTER_URL . '/containers/start-profile';
+        $payload = json_encode(['profile' => 'post-setup']);
+
+        $ctx = stream_context_create([
+            'http' => [
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
+                'content'       => $payload,
+                'timeout'       => 30,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        @file_get_contents($url, false, $ctx);
+        // best-effort: il redirect a /setup/done avviene anche se il master non risponde
+    }
+
+    /**
+     * Attende che il database sia raggiungibile (polling PDO, max $maxSeconds secondi).
+     * @throws \RuntimeException se il DB non diventa disponibile entro il timeout
+     */
+    private function waitForDb(array $db, int $maxSeconds = 90): void
+    {
+        $dsn      = sprintf('mysql:host=%s;port=%d;', $db['host'], $db['port']);
+        $deadline = time() + $maxSeconds;
+
+        while (time() < $deadline) {
+            try {
+                new \PDO($dsn, $db['user'], $db['password'], [
+                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::ATTR_TIMEOUT => 2,
+                ]);
+                return; // connesso con successo
+            } catch (\Throwable $e) {
+                sleep(2);
+            }
+        }
+
+        throw new \RuntimeException("Database non raggiungibile dopo {$maxSeconds}s. Verificare che il container DB sia avviato.");
+    }
+
+    /**
+     * Riavvia solo il backoffice tramite il master container (best-effort).
+     * Il frontoffice è già stato avviato dal profilo post-setup.
+     */
+    private function triggerBackofficeRestart(string $token): void
+    {
+        if (empty($token)) {
+            return;
+        }
+        $url     = self::MASTER_URL . '/containers/restart';
+        $payload = json_encode(['services' => ['govpay-interaction-backoffice']]);
+
+        $ctx = stream_context_create([
+            'http' => [
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
+                'content'       => $payload,
+                'timeout'       => 10,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        @file_get_contents($url, false, $ctx);
     }
 
     /**

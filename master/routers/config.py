@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from auth import require_auth
-from schemas.requests import ConfigWriteRequest, IamProxyEnvRequest
+from schemas.requests import ConfigWriteRequest, IamProxyEnvRequest, EnvBootstrapRequest
 from schemas.responses import OperationResponse, SetupStatusResponse
 from services import config_service
 
@@ -43,6 +43,16 @@ def write_initial_config(body: ConfigWriteRequest):
     try:
         config_service.write_config(body.config)
         return OperationResponse(success=True, message="config.json scritto correttamente.")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/write-env-bootstrap", response_model=OperationResponse)
+def write_env_bootstrap_endpoint(body: EnvBootstrapRequest):
+    """Scrive ./runtime/.env.bootstrap con le credenziali DB generate dal wizard. Nessuna auth richiesta."""
+    try:
+        config_service.write_env_bootstrap(body.variables)
+        return OperationResponse(success=True, message=".env.bootstrap scritto.")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

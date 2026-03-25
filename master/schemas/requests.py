@@ -20,3 +20,7 @@ class ConfigWriteRequest(BaseModel):
 
 class IamProxyEnvRequest(BaseModel):
     settings: dict[str, str]
+
+
+class EnvBootstrapRequest(BaseModel):
+    variables: dict[str, str]

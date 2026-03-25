@@ -43,7 +43,7 @@ services:
       - gil_config:/config:ro
       - gil_backups:/backups
     env_file:
-      - path: ./runtime/.db-secrets.env  # DB_PASSWORD iniettato nel container (fallback pre-wizard)
+      - path: ./runtime/.env.bootstrap  # DB_PASSWORD iniettato nel container dopo setup
         required: false
     environment:
       - CONFIG_PATH=/config/config.json
@@ -54,7 +54,6 @@ services:
       - DB_NAME=${DB_NAME:-govpay}
       - DB_USER=${DB_USER:-govpay}
     depends_on:
-      - db
       - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
     restart: unless-stopped
@@ -63,6 +62,7 @@ services:
   govpay-interaction-frontoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-frontoffice
+    profiles: [post-setup]
     ports:
       - "${FRONTOFFICE_HTTP_PORT:-8444}:80"
     volumes:
@@ -73,7 +73,7 @@ services:
       - gil_images:/var/www/html/public/img:ro
       - gil_config:/config:ro
     env_file:
-      - path: ./runtime/.db-secrets.env  # DB_PASSWORD iniettato nel container (fallback pre-wizard)
+      - path: ./runtime/.env.bootstrap  # DB_PASSWORD iniettato nel container dopo setup
         required: false
     environment:
       - CONFIG_PATH=/config/config.json
@@ -85,7 +85,6 @@ services:
       - DB_USER=${DB_USER:-govpay}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=http://satosa-nginx:80/Saml2IDP/metadata
     depends_on:
-      - db
       - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
@@ -187,43 +186,15 @@ services:
     restart: unless-stopped
     networks:
       - govpay-network
-  db-secrets-init:
-    image: alpine:3
-    container_name: db-secrets-init
-    command:
-      - sh
-      - -c
-      - |
-        FILE=/runtime/.db-secrets.env
-        if [ -f "$FILE" ]; then
-          echo "Credenziali DB gia presenti, salto generazione."
-          exit 0
-        fi
-        ROOT=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 28)
-        PASS=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 28)
-        CITT=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 28)
-        printf 'MYSQL_ROOT_PASSWORD=%s\nMYSQL_PASSWORD=%s\nDB_ROOT_PASSWORD=%s\nDB_PASSWORD=%s\nDB_PASSWORD_CITTADINI=%s\n' \
-          "$ROOT" "$PASS" "$ROOT" "$PASS" "$CITT" > "$FILE"
-        echo "Credenziali DB generate in $FILE"
-    volumes:
-      - ./runtime:/runtime
-    restart: "no"
-    networks:
-      - govpay-network
-
   db:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: mariadb
+    profiles: [post-setup]
     restart: always
-    depends_on:
-      db-secrets-init:
-        condition: service_completed_successfully
-    # Precedenza env_file: .db-secrets.env (auto-generate al primo avvio) poi .env.bootstrap (scritto dal wizard).
+    # Credenziali scritte dal wizard in ./runtime/.env.bootstrap (via master container).
     # NOTA: environment: sovrascrive env_file, quindi password NON listate in environment:.
     env_file:
-      - path: ./runtime/.db-secrets.env
-        required: false
-      - path: .env.bootstrap
+      - path: ./runtime/.env.bootstrap
         required: false
     environment:
       - MYSQL_DATABASE=${DB_NAME:-govpay}

@@ -7,6 +7,7 @@ import stat
 import threading
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/config.json")
+RUNTIME_DIR = os.getenv("RUNTIME_DIR", "/runtime")
 
 _lock = threading.Lock()
 
@@ -38,6 +39,17 @@ def write_config(config: dict) -> None:
             json.dump(config, f, indent=2, ensure_ascii=False)
         os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 644
         os.replace(tmp_path, CONFIG_PATH)
+
+
+def write_env_bootstrap(variables: dict) -> None:
+    """Scrive ./runtime/.env.bootstrap con le credenziali generate dal wizard."""
+    path = os.path.join(RUNTIME_DIR, ".env.bootstrap")
+    lines = [f"{k}={v}" for k, v in variables.items() if v is not None]
+    with _lock:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("# Generato dal wizard GIL — NON MODIFICARE MANUALMENTE\n")
+            f.write("\n".join(lines) + "\n")
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 644
 
 
 def is_setup_complete() -> bool:
