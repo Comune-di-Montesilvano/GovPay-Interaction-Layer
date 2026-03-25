@@ -169,8 +169,9 @@ class SetupController
             // 1. Assembla config.json
             $config = $this->buildConfig($data);
 
-            // 2. Scrive config.json direttamente sul volume montato
-            ConfigLoader::write($config);
+            // 2. Scrive config.json tramite il master container (ha accesso RW al volume gil_config)
+            $this->writeMasterInitialConfig($config);
+            ConfigLoader::reload(); // Aggiorna la cache in-memory (il backoffice ha il volume :ro)
 
             // 3. Scrive .env.bootstrap tramite master container (se disponibile)
             $this->writeEnvBootstrap($config);
@@ -691,6 +692,36 @@ class SetupController
                 @chmod($path, 0600);
                 return;
             }
+        }
+    }
+
+    /**
+     * Scrive config.json chiamando il master container (endpoint senza auth, solo se config.json non esiste).
+     * Necessario perché il backoffice monta gil_config come :ro.
+     */
+    private function writeMasterInitialConfig(array $config): void
+    {
+        $url = self::MASTER_URL . '/config/write-initial';
+        $payload = json_encode(['config' => $config]);
+
+        $ctx = stream_context_create([
+            'http' => [
+                'method'  => 'POST',
+                'header'  => "Content-Type: application/json\r\n",
+                'content' => $payload,
+                'timeout' => 30,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        $result = @file_get_contents($url, false, $ctx);
+        if ($result === false) {
+            throw new \RuntimeException('Impossibile contattare il Master Container per la scrittura di config.json.');
+        }
+
+        $json = json_decode($result, true);
+        if (!($json['success'] ?? false)) {
+            throw new \RuntimeException('Scrittura config.json fallita: ' . ($json['detail'] ?? 'errore sconosciuto'));
         }
     }
 

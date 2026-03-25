@@ -6,6 +6,8 @@ from schemas.requests import ConfigWriteRequest, IamProxyEnvRequest
 from schemas.responses import OperationResponse, SetupStatusResponse
 from services import config_service
 
+CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/config.json")
+
 router = APIRouter(prefix="/config", tags=["config"])
 
 
@@ -26,6 +28,21 @@ def write_config(body: ConfigWriteRequest, _token: str = Depends(require_auth)):
     try:
         config_service.write_config(body.config)
         return OperationResponse(success=True, message="config.json aggiornato.")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/write-initial", response_model=OperationResponse)
+def write_initial_config(body: ConfigWriteRequest):
+    """Scrive config.json al primo setup. Nessuna auth: funziona solo se config.json non esiste ancora."""
+    if os.path.exists(CONFIG_PATH):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="config.json esiste già. Usare POST /config/json (richiede autenticazione).",
+        )
+    try:
+        config_service.write_config(body.config)
+        return OperationResponse(success=True, message="config.json scritto correttamente.")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

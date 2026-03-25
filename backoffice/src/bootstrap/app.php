@@ -186,6 +186,9 @@ return (function (): array {
     $app->add(new FlashMiddleware($twig));
     $app->add(new SessionMiddleware());
     $app->add(new CurrentPathMiddleware($twig));
+    // ErrorMiddleware deve essere aggiunta PER ULTIMA (LIFO: eseguita per prima) per catturare
+    // HttpMethodNotAllowedException e restituire 405 invece di far risalire a set_exception_handler (500).
+    $app->addErrorMiddleware(false, false, false);
 
     // current_user is populated per-request by CurrentPathMiddleware to ensure
     // session is started and DB enrichment (if needed) can run safely.

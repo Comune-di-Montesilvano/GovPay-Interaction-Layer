@@ -175,6 +175,16 @@ if [ "$APP_SUITE" = "frontoffice" ]; then
   fi
 fi
 
+# Fix ownership dei volumi di upload (possono essere root:root alla prima creazione del volume)
+if [ "$APP_SUITE" != "frontoffice" ]; then
+    mkdir -p /var/www/html/public/img
+    chown www-data:www-data /var/www/html/public/img || true
+    chmod 755 /var/www/html/public/img || true
+    mkdir -p /var/www/certificate
+    chown www-data:www-data /var/www/certificate || true
+    chmod 755 /var/www/certificate || true
+fi
+
 echo "--- Setup completato. Eseguo controllo first-run DB ---"
 
 if [ "$APP_SUITE" != "frontoffice" ]; then
