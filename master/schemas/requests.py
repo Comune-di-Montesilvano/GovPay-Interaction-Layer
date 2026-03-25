@@ -16,3 +16,7 @@ class RestoreRequest(BaseModel):
 
 class ConfigWriteRequest(BaseModel):
     config: dict
+
+
+class IamProxyEnvRequest(BaseModel):
+    settings: dict[str, str]

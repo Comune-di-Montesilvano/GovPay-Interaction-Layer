@@ -29,6 +29,16 @@ def restart_services(body: RestartRequest, _token: str = Depends(require_auth)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.post("/recreate", response_model=OperationResponse)
+def recreate_services(body: RestartRequest, _token: str = Depends(require_auth)):
+    """Ricrea i container con --force-recreate (rilegge env_file dal compose)."""
+    try:
+        out = docker_service.recreate_services(body.services)
+        return OperationResponse(success=True, message="Recreate eseguito.", details={"output": out[:500]})
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.post("/start-profile", response_model=OperationResponse)
 def start_profile(body: ProfileRequest, _token: str = Depends(require_auth)):
     """Avvia tutti i servizi di un profilo compose (es. iam-proxy)."""

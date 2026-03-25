@@ -61,6 +61,14 @@ def restart_services(service_names: list[str]) -> dict:
     return results
 
 
+def recreate_services(service_names: list[str]) -> str:
+    """
+    Riavvia i servizi con --force-recreate, ricaricando env_file dal compose.
+    Necessario quando si aggiornano file come ./runtime/.iam-proxy.env.
+    """
+    return _compose_run(["up", "-d", "--force-recreate"] + service_names)
+
+
 def start_profile(profile: str) -> str:
     """Avvia tutti i servizi del profilo compose specificato."""
     return _compose_run(["up", "-d", "--profile", profile])

@@ -216,6 +216,9 @@ class ImpostazioniController
 
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
 
+        // Rigenera ./runtime/.iam-proxy.env dal DB e ricrea i container SATOSA
+        $this->regenerateIamProxyEnv();
+
         return $this->jsonOk('Impostazioni Login Proxy salvate.');
     }
 
@@ -453,6 +456,20 @@ class ImpostazioniController
 
         $result = @file_get_contents($url, false, $ctx);
         return $result ? (json_decode($result, true) ?? []) : ['error' => 'Risposta non valida'];
+    }
+
+    /**
+     * Legge la sezione iam_proxy dal DB, invia al master per generare
+     * ./runtime/.iam-proxy.env, poi ricrea i container SATOSA per applicare le nuove env.
+     */
+    private function regenerateIamProxyEnv(): void
+    {
+        $settings = SettingsRepository::getSection('iam_proxy');
+        // Pulizia: rimuovi valori null/vuoti per non sporcare il file env
+        $clean = array_filter($settings, fn($v) => $v !== null && $v !== '');
+        $this->masterPost('/config/generate-iam-env', ['settings' => $clean]);
+        // --force-recreate per far rileggere env_file ai container SATOSA
+        $this->masterPost('/containers/recreate', ['services' => ['iam-proxy-italia', 'satosa-nginx', 'init-frontoffice-sp-metadata']]);
     }
 
     private function handleCertUpload(

@@ -5,6 +5,8 @@
 !.iam-proxy.env.example
 *.log
 *.pid
+# File generati a runtime dal master container (env iam-proxy, ecc.)
+runtime/
 .claude/
 docker-compose.override.yml
 

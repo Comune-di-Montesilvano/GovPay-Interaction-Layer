@@ -160,3 +160,24 @@ jobs:
           labels: ${{ steps.meta-mb.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ── master ──────────────────────────────────────────────────────────
+      - name: Meta · master
+        id: meta-master
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-master
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build & push · master
+        uses: docker/build-push-action@v6
+        with:
+          context: master
+          push: true
+          tags: ${{ steps.meta-master.outputs.tags }}
+          labels: ${{ steps.meta-master.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

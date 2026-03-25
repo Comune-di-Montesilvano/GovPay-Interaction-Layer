@@ -1,6 +1,8 @@
+import os
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from auth import require_auth
-from schemas.requests import ConfigWriteRequest
+from schemas.requests import ConfigWriteRequest, IamProxyEnvRequest
 from schemas.responses import OperationResponse, SetupStatusResponse
 from services import config_service
 
@@ -24,5 +26,23 @@ def write_config(body: ConfigWriteRequest, _token: str = Depends(require_auth)):
     try:
         config_service.write_config(body.config)
         return OperationResponse(success=True, message="config.json aggiornato.")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/generate-iam-env", response_model=OperationResponse)
+def generate_iam_env(body: IamProxyEnvRequest, _token: str = Depends(require_auth)):
+    """
+    Genera ./runtime/.iam-proxy.env dai settings iam_proxy forniti dal backoffice.
+    Il file viene letto dai servizi SATOSA (iam-proxy-italia, satosa-nginx, ecc.)
+    tramite env_file al prossimo recreate del container.
+    """
+    try:
+        runtime_dir = Path(os.getenv("RUNTIME_DIR", "/runtime"))
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        env_file = runtime_dir / ".iam-proxy.env"
+        lines = [f"{k}={v}" for k, v in body.settings.items() if v is not None]
+        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return OperationResponse(success=True, message=f"File .iam-proxy.env generato ({len(lines)} variabili).")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
