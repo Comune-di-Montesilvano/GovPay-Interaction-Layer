@@ -81,7 +81,13 @@ def stop_profile(profile: str) -> str:
 
 def _compose_run(args: list[str]) -> str:
     """Esegue docker compose dalla directory di progetto."""
-    cmd = ["docker", "compose"] + args
+    compose_file = os.path.join(PROJECT_DIR, "docker-compose.yml")
+    cmd = [
+        "docker", "compose",
+        "-f", compose_file,
+        "--project-name", COMPOSE_PROJECT_NAME,
+        "--project-directory", PROJECT_DIR,
+    ] + args
     try:
         result = subprocess.run(
             cmd,
