@@ -1,7 +1,7 @@
 FROM python:3.12-alpine
 
 # mariadb-client per mysqldump nei backup; docker-cli come fallback diagnostico
-RUN apk add --no-cache mariadb-client docker-cli
+RUN apk add --no-cache mariadb-client docker-cli docker-cli-compose
 
 WORKDIR /app
 
