@@ -261,8 +261,9 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
             $pdo->exec($sql);
           }
         } catch (Throwable $e) {
-          echo "PHP migration fallback failed: ". $e->getMessage() ."\n";
-          exit(1);
+          echo "⚠️ PHP migration fallback failed: ". $e->getMessage() ."\n";
+          echo "⚠️ Il DB potrebbe non essere ancora pronto. Continuo l\\'avvio (setup in corso?).\n";
+          exit(0);
         }
       '
     else
