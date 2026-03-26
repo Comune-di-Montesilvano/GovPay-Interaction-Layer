@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Config\SettingsRepository;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mime\Address;
@@ -44,9 +45,10 @@ class MailerService
     {
         $prefix = strtoupper($suite);
 
-        $dsn       = (string)(getenv("{$prefix}_MAILER_DSN")       ?: 'null://null');
-        $fromAddr  = (string)(getenv("{$prefix}_MAILER_FROM_ADDRESS") ?: 'noreply@example.com');
-        $fromName  = (string)(getenv("{$prefix}_MAILER_FROM_NAME") ?: (getenv('APP_ENTITY_NAME') ?: 'GIL'));
+        $dsn      = SettingsRepository::get($suite, 'mailer_dsn', 'null://null');
+        $fromAddr = SettingsRepository::get($suite, 'mailer_from_address', 'noreply@example.com');
+        $fromName = SettingsRepository::get($suite, 'mailer_from_name', '')
+                    ?: SettingsRepository::get('entity', 'name', 'GIL');
 
         $transport = Transport::fromDsn($dsn);
         $mailer    = new Mailer($transport);
@@ -77,7 +79,7 @@ class MailerService
         int    $expiresMinutes = 60
     ): void {
         if ($appName === '') {
-            $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
         }
 
         $htmlBody = $this->renderResetTemplate($toName, $resetUrl, $appName, $expiresMinutes);
@@ -115,14 +117,14 @@ class MailerService
         string $logoPath = ''
     ): array {
         if ($appName === '') {
-            $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
         }
 
         $timestamp = date('Y-m-d H:i:s');
-        
+
         try {
           $hasEmbeddedLogo = ($logoPath !== '' && file_exists($logoPath));
-          $logoSrc = (string)(getenv('APP_LOGO_SRC') ?: '');
+          $logoSrc = SettingsRepository::get('ui', 'logo_src', '');
           $htmlBody = $this->renderPendenzaCreatedTemplate($toName, $pendenzaData, $appName, $pdfUrl, $paymentUrl, $hasEmbeddedLogo, $logoSrc);
             $textBody = $this->renderPendenzaCreatedTemplatePlain($toName, $pendenzaData, $appName, $pdfUrl, $paymentUrl);
 
@@ -410,14 +412,14 @@ HTML;
         string $logoPath = ''
     ): array {
         if ($appName === '') {
-            $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
         }
 
         $timestamp = date('Y-m-d H:i:s');
 
         try {
             $hasEmbeddedLogo = ($logoPath !== '' && file_exists($logoPath));
-            $logoSrc = (string)(getenv('APP_LOGO_SRC') ?: '');
+            $logoSrc = SettingsRepository::get('ui', 'logo_src', '');
             $htmlBody = $this->renderRateizzazioneTemplate($toName, $data, $appName, $hasEmbeddedLogo, $logoSrc);
             $textBody = $this->renderRateizzazioneTemplatePlain($toName, $data, $appName);
 

@@ -297,7 +297,14 @@ class ImpostazioniController
 
         try {
             $mailerService = \App\Services\MailerService::forSuite('backoffice');
-            $mailerService->sendTestEmail($recipient);
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+            $email = (new \Symfony\Component\Mime\Email())
+                ->to(new \Symfony\Component\Mime\Address($recipient))
+                ->subject("[{$appName}] Email di test")
+                ->html("<p>Questo è un messaggio di test inviato dal backoffice di <strong>"
+                    . htmlspecialchars($appName, ENT_QUOTES) . "</strong>.</p>")
+                ->text("Questo è un messaggio di test inviato dal backoffice di {$appName}.");
+            $mailerService->send($email);
             return $this->jsonOk("Email di test inviata a {$recipient}.");
         } catch (\Throwable $e) {
             return $this->jsonError('Invio fallito: ' . $e->getMessage());
@@ -470,13 +477,29 @@ class ImpostazioniController
         if (empty($url)) {
             return $this->jsonError("URL {$label} non configurato.");
         }
-        try {
-            $ctx = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
-            $result = @file_get_contents($url, false, $ctx);
-            return $this->jsonOk($result !== false ? "Connessione {$label} riuscita." : "{$label}: server raggiungibile, risposta ricevuta.");
-        } catch (\Throwable $e) {
-            return $this->jsonError("Connessione {$label} fallita: " . $e->getMessage());
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_NOBODY         => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $result   = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        curl_close($ch);
+
+        if ($result === false || $curlErr) {
+            return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
         }
+        if ($httpCode === 0) {
+            return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
+        }
+        $ok  = $httpCode < 500;
+        $msg = "Connessione {$label}: HTTP {$httpCode}" . ($ok ? ' — server raggiungibile.' : ' — server in errore.');
+        return $ok ? $this->jsonOk($msg) : $this->jsonError($msg);
     }
 
     private function requireAdminOrAbove(): void

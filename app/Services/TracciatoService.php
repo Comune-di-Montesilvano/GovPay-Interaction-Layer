@@ -10,6 +10,7 @@ use GuzzleHttp\HandlerStack;
 use GovPay\Backoffice\Api\PendenzeApi as BackofficePendenzeApi;
 use GovPay\Backoffice\Configuration as BackofficeConfiguration;
 use GovPay\Backoffice\ObjectSerializer as BackofficeSerializer;
+use App\Config\SettingsRepository;
 use App\Database\EntrateRepository;
 
 /**
@@ -310,11 +311,11 @@ class TracciatoService
      */
     public function sendTracciato(array $merged, array $parts, bool $stampaAvvisi = true): array
     {
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idDominio = $merged['idDominio'] ?? (getenv('ID_DOMINIO') ?: '');
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idDominio = $merged['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '');
         $errors = [];
         if ($backofficeUrl === '') {
-            $errors[] = 'GOVPAY_BACKOFFICE_URL non impostata';
+            $errors[] = 'GOVPAY_BACKOFFICE_URL non impostata: configura il Backoffice URL nelle Impostazioni > GovPay';
             return ['success' => false, 'errors' => $errors, 'idTracciato' => null, 'response' => null];
         }
 
@@ -323,19 +324,19 @@ class TracciatoService
             if ($api === null) {
                 $config = new BackofficeConfiguration();
                 $config->setHost(rtrim($backofficeUrl, '/'));
-                $username = getenv('GOVPAY_USER');
-                $password = getenv('GOVPAY_PASSWORD');
-                if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                $username = SettingsRepository::get('govpay', 'user', '');
+                $password = SettingsRepository::get('govpay', 'password', '');
+                if ($username !== '' && $password !== '') {
                     $config->setUsername($username);
                     $config->setPassword($password);
                 }
 
                 $guzzleOptions = [];
-                $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                    $cert = getenv('GOVPAY_TLS_CERT');
-                    $key = getenv('GOVPAY_TLS_KEY');
-                    $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                if (strtolower($authMethod) === 'sslheader') {
+                    $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                    $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                     if (!empty($cert) && !empty($key)) {
                         $guzzleOptions['cert'] = $cert;
                         $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -430,9 +431,9 @@ class TracciatoService
             }
 
             // Verifica idA2A prima di costruire il tracciato
-            $idA2AEnv = getenv('ID_A2A') ?: '';
+            $idA2AEnv = SettingsRepository::get('entity', 'id_a2a', '');
             if ($idA2AEnv === '') {
-                $msg = 'Variabile ID_A2A non impostata: obbligatoria per invio tracciati';
+                $msg = "ID_A2A non impostata: configura l'ID A2A nelle Impostazioni > Generale";
                 Logger::getInstance()->error($msg);
                 return ['success' => false, 'errors' => [$msg], 'idTracciato' => null, 'response' => null];
             }

@@ -7,6 +7,7 @@
 declare(strict_types=1);
 
 use App\Auth\UserRepository;
+use App\Config\SettingsRepository;
 use App\Controllers\BackupController;
 use App\Controllers\ConfigurazioneController;
 use App\Controllers\HomeController;
@@ -630,7 +631,7 @@ return function (App $app, Twig $twig): void {
         }
         
         // Carica tipologie per il dominio
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $allTipologie = [];
         $userTipologie = [];
         if ($idDominio && $editUser) {
@@ -666,7 +667,7 @@ return function (App $app, Twig $twig): void {
             }
             
             // Ricaricare tipologie in caso di errore
-            $idDominio = getenv('ID_DOMINIO') ?: '';
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $allTipologie = [];
             $userTipologie = [];
             if ($idDominio && $editUser) {
@@ -691,7 +692,7 @@ return function (App $app, Twig $twig): void {
         
         // Successo: salvare la tipologia default e il filtro tipologie
         $userId = (int)($args['id'] ?? 0);
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $data = (array)($request->getParsedBody() ?? []);
         $defaultTipologia = $data['default_id_entrata'] ?? null;
         $tipologieIds = (array)($data['enabled_tipologie'] ?? []);
@@ -922,32 +923,32 @@ return function (App $app, Twig $twig): void {
                 return $response->withStatus(400);
             }
 
-            $pagamentiUrl = getenv('GOVPAY_PAGAMENTI_URL') ?: '';
+            $pagamentiUrl = SettingsRepository::get('govpay', 'pagamenti_url', '');
             if (empty($pagamentiUrl)) {
                 $response->getBody()->write('GOVPAY_PAGAMENTI_URL non impostata');
                 return $response->withStatus(500);
             }
 
             try {
-                $username = getenv('GOVPAY_USER');
-                $password = getenv('GOVPAY_PASSWORD');
+                $username = SettingsRepository::get('govpay', 'user', '');
+                $password = SettingsRepository::get('govpay', 'password', '');
                 $guzzleOptions = [
                     'headers' => ['Accept' => 'application/json']
                 ];
-                $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                if ($authMethod !== false && strtolower($authMethod) === 'sslheader') {
-                    $cert = getenv('GOVPAY_TLS_CERT');
-                    $key = getenv('GOVPAY_TLS_KEY');
-                    $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                if (strtolower($authMethod) === 'sslheader') {
+                    $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                    $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                     if (!empty($cert) && !empty($key)) {
                         $guzzleOptions['cert'] = $cert;
                         $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
                     } else {
-                        $response->getBody()->write('mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati');
+                        $response->getBody()->write('mTLS abilitato ma tls_cert_path/tls_key_path non impostati');
                         return $response->withStatus(500);
                     }
                 }
-                if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                if ($username !== '' && $password !== '') {
                     $guzzleOptions['auth'] = [$username, $password];
                 }
 

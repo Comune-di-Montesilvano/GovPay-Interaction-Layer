@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Config\SettingsRepository;
 use App\Logger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
@@ -64,7 +65,7 @@ class AppIoService
     ): array {
         try {
             // Default conservativo: STANDARD. Se necessario, puo essere forzato da env.
-            $featureLevelType = strtoupper((string)(getenv('APP_IO_FEATURE_LEVEL_TYPE') ?: 'STANDARD'));
+            $featureLevelType = strtoupper(SettingsRepository::get('pagopa', 'appio_feature_level', 'STANDARD') ?: 'STANDARD');
             if ($featureLevelType !== 'STANDARD' && $featureLevelType !== 'ADVANCED') {
                 $featureLevelType = 'STANDARD';
             }
@@ -97,7 +98,7 @@ class AppIoService
             if ($ctaLink !== null && $ctaLink !== '') {
                 $body['content']['third_party_data'] = [
                     'id' => hash('sha256', $ctaLink),
-                    'original_sender' => (string)(getenv('APP_ENTITY_NAME') ?: 'GIL'),
+                    'original_sender' => SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL',
                     'original_receipt_date' => date('Y-m-d\TH:i:s\Z'),
                     'has_attachments' => false,
                     'summary' => 'Avviso di pagamento',
