@@ -2,6 +2,7 @@ name: Docker Publish
 
 on:
   push:
+    branches: [ "dev" ]
     tags: ['v*.*.*']
   workflow_dispatch:
 
@@ -37,9 +38,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · backoffice
         uses: docker/build-push-action@v6
@@ -59,9 +61,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · frontoffice
         uses: docker/build-push-action@v6
@@ -81,9 +84,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-iam-proxy-italia
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · iam-proxy-italia
         uses: docker/build-push-action@v6
@@ -103,9 +107,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-iam-proxy-nginx
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · iam-proxy-nginx
         uses: docker/build-push-action@v6
@@ -124,9 +129,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-db
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · db
         uses: docker/build-push-action@v6
@@ -146,9 +152,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-metadata-builder
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · metadata-builder
         uses: docker/build-push-action@v6
@@ -168,9 +175,10 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-master
           tags: |
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · master
         uses: docker/build-push-action@v6
