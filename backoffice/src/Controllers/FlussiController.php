@@ -100,7 +100,7 @@ class FlussiController
                     }
 
                     $url = rtrim($backofficeUrl, '/') . '/flussiRendicontazione';
-                    if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || getenv('APP_DEBUG')) && $filters['q']) {
+                    if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' && $filters['q']) {
                         error_log('[FlussiController] GET ' . $url . '?' . http_build_query($query));
                     }
 
@@ -261,7 +261,7 @@ class FlussiController
                     }
 
                     $endpoint = sprintf('%s/flussiRendicontazione/%s', rtrim($backofficeUrl, '/'), rawurlencode($idFlusso));
-                    if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || getenv('APP_DEBUG')) {
+                    if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                         error_log('[FlussiController] GET ' . $endpoint);
                     }
 
@@ -470,15 +470,11 @@ class FlussiController
     private function makeHttpClient(): Client
     {
         $guzzleOptions = [];
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
-                      ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
         if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
-                       ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
-            $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
-                       ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
-                       ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;

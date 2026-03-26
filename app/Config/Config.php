@@ -11,8 +11,7 @@ namespace App\Config;
  * Priorità di lookup:
  *   1. SettingsRepository (tabella DB settings) — per variabili applicative
  *   2. ConfigLoader (config.json) — per variabili di bootstrap
- *   3. getenv() — fallback per upgrade/compatibilità con .env legacy
- *   4. $default
+ *   3. $default
  *
  * Mappa da ENV_KEY → (section, key_name) per la risoluzione via DB.
  */
@@ -114,7 +113,7 @@ class Config
     /**
      * Legge un parametro di configurazione per chiave ENV.
      *
-     * Priorità: SettingsRepository → ConfigLoader → getenv() → $default
+     * Priorità: SettingsRepository → ConfigLoader → $default
      */
     public static function get(string $envKey, mixed $default = null): mixed
     {
@@ -138,12 +137,6 @@ class Config
         $configVal = ConfigLoader::get($dotKey);
         if ($configVal !== null && $configVal !== '') {
             return $configVal;
-        }
-
-        // 3. Fallback getenv() — compatibilità con .env legacy
-        $envVal = getenv($envKey);
-        if ($envVal !== false && $envVal !== '') {
-            return $envVal;
         }
 
         return $default;

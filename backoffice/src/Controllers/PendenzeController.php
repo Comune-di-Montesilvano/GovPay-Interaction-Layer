@@ -74,20 +74,16 @@ class PendenzeController
                     }
 
                     $guzzleOptions = [];
-                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
-                                  ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
+                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
                     if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-                        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
-                                   ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
-                        $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
-                                   ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
-                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
-                                   ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+                        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                        $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
                         if (!empty($cert) && !empty($key)) {
                             $guzzleOptions['cert'] = $cert;
                             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
                         } else {
-                            $errors[] = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
+                            $errors[] = 'mTLS abilitato ma tls_cert_path/tls_key_path non configurati';
                         }
                     }
 
@@ -391,20 +387,16 @@ class PendenzeController
         }
 
         $guzzleOptions = [];
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
-                      ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
         if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
-                       ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
-            $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
-                       ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
-                       ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
             } else {
-                $errors[] = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
+                $errors[] = 'mTLS abilitato ma tls_cert_path/tls_key_path non configurati';
                 $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
                 $tipologie = [];
                 if ($idDominio) {
@@ -882,7 +874,7 @@ class PendenzeController
 
                         $query = array_filter($query, static fn($v) => $v !== null && $v !== '');
 
-                        if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || getenv('APP_DEBUG')) && $filters['q']) {
+                        if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' && $filters['q']) {
                             error_log('[PendenzeController] GET ' . $url . '?' . http_build_query($query));
                         }
 
@@ -1444,7 +1436,7 @@ class PendenzeController
                 // *** FINE MODIFICA RICHIESTA ***
             }
 
-            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+            if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                 Logger::getInstance()->debug('Allocated voce importi per rata', [
                     'idPendenza' => $idPForRate,
                     'rata_importo' => $rateTotal,
@@ -1840,7 +1832,7 @@ class PendenzeController
 
             // Ensure idPendenza is not sent in the request body: the API expects it in the URL
             if (array_key_exists('idPendenza', $payload)) {
-                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+                if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                     Logger::getInstance()->debug('Removed idPendenza from request body (sent in URL)', ['idPendenza' => $payload['idPendenza']]);
                 }
                 unset($payload['idPendenza']);
@@ -1855,14 +1847,14 @@ class PendenzeController
                 if (empty($payload['proprieta'])) {
                     unset($payload['proprieta']);
                 }
-                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+                if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                     Logger::getInstance()->debug('Sanitized proprieta before sending pendenza', ['proprieta' => $payload['proprieta'] ?? null]);
                 }
             }
             // Remove empty string-like fields that the Backoffice enforces as non-empty
             foreach (['cartellaPagamento', 'direzione', 'divisione'] as $sf) {
                 if (isset($payload[$sf]) && (!is_scalar($payload[$sf]) || trim((string)$payload[$sf]) === '')) {
-                    if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+                    if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                         Logger::getInstance()->debug('Removed empty string-like field before send', ['field' => $sf]);
                     }
                     unset($payload[$sf]);
@@ -1880,7 +1872,7 @@ class PendenzeController
                 $requestOptions['auth'] = [$username, $password];
             }
 
-            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+            if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                 Logger::getInstance()->debug('Pendenze PUT ' . $url, ['payload' => $payload]);
             }
 

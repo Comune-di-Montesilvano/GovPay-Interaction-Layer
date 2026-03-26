@@ -801,9 +801,7 @@ return function (App $app, Twig $twig): void {
         return $controller->doReset($request, $response);
     });
 
-    $appDebugRaw = getenv('APP_DEBUG');
-    $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true'
-        || ($appDebugRaw !== false && in_array(strtolower((string)$appDebugRaw), ['1','true','yes','on'], true));
+    $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true';
     // Espone un flag globale a Twig per consentire controlli condizionali lato template
     $twig->getEnvironment()->addGlobal('app_debug', $displayErrorDetails);
     if ($displayErrorDetails) {
@@ -937,15 +935,11 @@ return function (App $app, Twig $twig): void {
                 $guzzleOptions = [
                     'headers' => ['Accept' => 'application/json']
                 ];
-                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
-                              ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
+                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
                 if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-                    $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
-                               ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
-                    $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
-                               ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
-                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
-                               ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+                    $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                    $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
                     if (!empty($cert) && !empty($key)) {
                         $guzzleOptions['cert'] = $cert;
                         $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;

@@ -332,15 +332,11 @@ class TracciatoService
                 }
 
                 $guzzleOptions = [];
-                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
-                              ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
+                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
                 if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-                    $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
-                               ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
-                    $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
-                               ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
-                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
-                               ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+                    $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                    $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
                     if (!empty($cert) && !empty($key)) {
                         $guzzleOptions['cert'] = $cert;
                         $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -349,7 +345,7 @@ class TracciatoService
 
                 // Setup handler stack to add logging middleware when APP_DEBUG
                 $handlerStack = HandlerStack::create();
-                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+                if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                     $log = \App\Logger::getInstance();
                     $handlerStack->push(function (callable $handler) use ($log) {
                         return function ($request, array $options) use ($handler, $log) {
@@ -610,7 +606,7 @@ class TracciatoService
             }
 
             // Log payload definitivo (come sarà serializzato) prima dell'invio
-            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+            if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                 $bodyForLog = is_object($requestBody) ? BackofficeSerializer::sanitizeForSerialization($requestBody) : $requestBody;
                 Logger::getInstance()->debug('Tracciato payload (to-send)', ['tracciato' => $bodyForLog]);
             }
@@ -618,7 +614,7 @@ class TracciatoService
             try {
                 // Passiamo il model (se presente) o l'array camelCase; il client si occuperà
                 // della serializzazione corretta.
-                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+                if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                     // Log grezzo della request come verrà serializzata
                     $raw = is_object($requestBody) ? BackofficeSerializer::sanitizeForSerialization($requestBody) : $requestBody;
                     Logger::getInstance()->debug('Tracciato request raw (pre-send)', ['raw' => $raw]);
@@ -666,7 +662,7 @@ class TracciatoService
             }
             $data = $res ? (is_array($res) ? $res : BackofficeSerializer::sanitizeForSerialization($res)) : null;
 
-            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
+            if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                 Logger::getInstance()->debug('Tracciato inviato', ['idTracciato' => $idTracciato, 'response' => $data]);
             }
 

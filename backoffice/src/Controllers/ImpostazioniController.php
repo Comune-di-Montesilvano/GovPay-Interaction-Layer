@@ -484,14 +484,10 @@ class ImpostazioniController
             return $this->jsonError("URL {$label} non valido.");
         }
 
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
-                      ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
-        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
-                   ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
-        $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
-                   ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
-        $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
-                   ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
+        $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
+        $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
         $username = SettingsRepository::get('govpay', 'user', '');
         $password = SettingsRepository::get('govpay', 'password', '');
 
