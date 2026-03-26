@@ -110,7 +110,7 @@ if (!function_exists('frontoffice_load_service_options')) {
         $options = [];
         $internalOptions = [];
         $externalOptions = [];
-        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio !== '') {
             try {
                 $repo = new EntrateRepository();
@@ -218,10 +218,10 @@ if (!function_exists('frontoffice_find_service_option')) {
 if (!function_exists('frontoffice_basic_auth')) {
     function frontoffice_basic_auth(): ?array
     {
-        $username = getenv('GOVPAY_USER');
-        $password = getenv('GOVPAY_PASSWORD');
-        if ($username !== false && $password !== false && $username !== '' && $password !== '') {
-            return [(string)$username, (string)$password];
+        $username = \App\Config\SettingsRepository::get('govpay', 'user', '') ?: frontoffice_env_value('GOVPAY_USER', '');
+        $password = \App\Config\SettingsRepository::get('govpay', 'password', '') ?: frontoffice_env_value('GOVPAY_PASSWORD', '');
+        if ($username !== '' && $password !== '') {
+            return [$username, $password];
         }
         return null;
     }
@@ -231,17 +231,17 @@ if (!function_exists('frontoffice_govpay_client_options')) {
     function frontoffice_govpay_client_options(): array
     {
         $options = [];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = frontoffice_env_value('GOVPAY_TLS_CERT', '');
-            $key = frontoffice_env_value('GOVPAY_TLS_KEY', '');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD');
+        $authMethod = \App\Config\SettingsRepository::get('govpay', 'authentication_method', '') ?: frontoffice_env_value('AUTHENTICATION_GOVPAY', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = \App\Config\SettingsRepository::get('govpay', 'tls_cert_path', '') ?: frontoffice_env_value('GOVPAY_TLS_CERT', '');
+            $key = \App\Config\SettingsRepository::get('govpay', 'tls_key_path', '') ?: frontoffice_env_value('GOVPAY_TLS_KEY', '');
+            $keyPass = \App\Config\SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if ($cert === '' || $key === '') {
                 throw new \RuntimeException('mTLS abilitato ma certificati GovPay non configurati');
             }
             $options['cert'] = $cert;
-            $options['ssl_key'] = ($keyPass !== false && $keyPass !== null && $keyPass !== '')
-                ? [$key, (string)$keyPass]
+            $options['ssl_key'] = ($keyPass !== null && $keyPass !== '')
+                ? [$key, $keyPass]
                 : $key;
         }
         return $options;
@@ -1939,7 +1939,7 @@ if (!function_exists('frontoffice_pagopa_checkout_api_client')) {
 if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
     function frontoffice_lookup_pagopa_avviso(string $numeroAvviso, string $codiceFiscale): array
     {
-        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             return [
                 'success' => false,
@@ -2218,7 +2218,7 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             $errors[] = 'Inserisci un indirizzo email valido.';
         }
 
-        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             $errors[] = 'Configurazione mancante: ID_DOMINIO non impostato.';
         }
@@ -3570,7 +3570,7 @@ $routes = [
             $perPage = 100;
         }
 
-        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
         $idA2A = frontoffice_env_value('ID_A2A', '');
         $statoRaw = strtoupper(trim((string)($_GET['stato'] ?? '')));
         $allowedStates = [
@@ -3728,7 +3728,7 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -3803,7 +3803,7 @@ if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -3834,7 +3834,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -3887,7 +3887,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
 }
 
 if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4069,7 +4069,7 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
 }
 
 if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4263,7 +4263,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         exit;
     }
 
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4430,7 +4430,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
 // Disponibile anche per utenti non loggati (guest); l'autorizzazione si basa
 // sulla whitelist di sessione. Se l'utente è loggato si verifica anche il CF.
 if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4619,7 +4619,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/ricevuta$#', $normalize
         exit;
     }
 
-    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4765,7 +4765,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)$#', $normalizedPath, $m
                     ],
                 ];
             } else {
-                $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+                $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
                 $routeDefinition = [
                     'template' => 'pendenze/detail.html.twig',
                     'context' => [

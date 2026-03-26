@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Config\SettingsRepository;
 use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\MassivePendenzeRepository;
@@ -39,7 +40,7 @@ class MassivePendenzeController
         }
         // Tipologie per select (se presenti nel DB)
         $tipologie = [];
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idDominio) {
             try { $repo = new EntrateRepository(); $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user')); } catch (\Throwable $e) {}
         }
@@ -127,7 +128,7 @@ class MassivePendenzeController
         $_SESSION['massive_valid_rows'][$batchId] = $valid;
         // Tipologie
         $tipologie = [];
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idDominio) { try { $tipologie = (new EntrateRepository())->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user')); } catch (\Throwable $e) {} }
         return $this->twig->render($response, 'pendenze/inserimento_massivo.html.twig', [
             'preview' => [
@@ -274,7 +275,7 @@ class MassivePendenzeController
                         try {
                             $respJson = json_decode((string)$r['response_json'], true);
                             if ($respJson && isset($respJson['id_avviso'])) {
-                                $idA2A = $respJson['id_a2a'] ?? getenv('ID_A2A');
+                                $idA2A = $respJson['id_a2a'] ?? SettingsRepository::get('entity', 'id_a2a', '');
                                 $pendenzeCtrl->annullaPendenzaById($idA2A, $respJson['id_avviso']);
                                 $repo->updateBatchStatus($batchId, 'PROCESSING', 'CANCELLED');
                                 $successi++;
@@ -437,7 +438,7 @@ class MassivePendenzeController
     {
         $payload = [
             'idTipoPendenza' => $idTipoPendenza,
-            'idDominio' => getenv('ID_DOMINIO') ?: '',
+            'idDominio' => SettingsRepository::get('entity', 'id_dominio', ''),
             'causale' => $norm['causale'],
             'importo' => (float)$norm['importo'],
             'annoRiferimento' => (int)$norm['annoRiferimento'],

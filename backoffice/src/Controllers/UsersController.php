@@ -6,6 +6,7 @@
 namespace App\Controllers;
 
 use App\Auth\UserRepository;
+use App\Config\SettingsRepository;
 use App\Logger;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -249,7 +250,7 @@ class UsersController
             
             // Per generare l'URL corretto, riusiamo la logica del PasswordResetController o la iniettiamo?
             // Qui costruiamo l'URL basandoci sulla logica già definita
-            $baseUrl = (string)(getenv('BACKOFFICE_PUBLIC_BASE_URL') ?: '');
+            $baseUrl = SettingsRepository::get('backoffice', 'public_base_url', '');
             if ($baseUrl !== '') {
                 $baseUrl = rtrim($baseUrl, '/');
             } else {
@@ -263,7 +264,7 @@ class UsersController
                 }
             }
             $resetUrl = $baseUrl . '/reset-password?token=' . urlencode($token);
-            $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL Backoffice');
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL Backoffice';
 
             $mailer = \App\Services\MailerService::forSuite('backoffice');
             $mailer->sendResetPassword($email, $toName, $resetUrl, $appName, 60);

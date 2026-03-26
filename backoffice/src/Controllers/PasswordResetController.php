@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Auth\UserRepository;
+use App\Config\SettingsRepository;
 use App\Services\MailerService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -71,7 +72,7 @@ class PasswordResetController
             $resetUrl = $this->buildResetUrl($request, $token);
 
             $toName   = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
-            $appName  = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL Backoffice');
+            $appName  = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL Backoffice';
 
             $mailer = MailerService::forSuite('backoffice');
             $mailer->sendResetPassword($email, $toName, $resetUrl, $appName, 60);
@@ -181,7 +182,7 @@ class PasswordResetController
     private function buildResetUrl(Request $request, string $token): string
     {
         // 1. Controlla se è configurato un URL base pubblico nell'ambiente (consigliato dietro proxy)
-        $baseUrl = (string)(getenv('BACKOFFICE_PUBLIC_BASE_URL') ?: '');
+        $baseUrl = SettingsRepository::get('backoffice', 'public_base_url', '');
 
         if ($baseUrl !== '') {
             $baseUrl = rtrim($baseUrl, '/');
