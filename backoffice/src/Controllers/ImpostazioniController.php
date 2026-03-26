@@ -478,6 +478,9 @@ class ImpostazioniController
             return $this->jsonError("URL {$label} non configurato.");
         }
         $ch = curl_init($url);
+        if ($ch === false) {
+            return $this->jsonError("URL {$label} non valido.");
+        }
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 5,

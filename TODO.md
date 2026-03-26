@@ -42,10 +42,12 @@
 ### Manutenzione e Sistema
 - [X] **Configurazione**: Funzionalità di backup e importazione della configurazione di sistema.
 - [ ] **Pannello di Configurazione (UI)**:
-    - [ ] Creazione di una procedura di inizializzazione guidata (setup wizard) per sostituzione file `.env`.
-    - [ ] Possibilità di gestire i parametri (comprese variabili env, logo, certificati GovPay) direttamente dall'interfaccia.
-    - [ ] Gestione segreti (API Key, certificati, ecc.) cifrati con la chiave di cifratura dell'applicazione.
+    - [X] Creazione di una procedura di inizializzazione guidata (setup wizard) per sostituzione file `.env`.
+    - [X] Possibilità di gestire i parametri (comprese variabili env, logo, certificati GovPay) direttamente dall'interfaccia.
+    - [X] Gestione segreti (API Key, certificati, ecc.) cifrati con la chiave di cifratura dell'applicazione.
 - [x] **Documentazione**: Sistemazione documentazione relativa ai cron (attualmente massivo, in futuro rendicontazione).
+- [ ] **dev**: creazione branch, dev. Con ci/cd automatica ad ogni commit e visualizzazione del commit specifico nel footer, tipo vDEV-commit-hash.
+
 
 ### Integrazioni Esterne
 - [PAUSED] **PagoPA Checkout**: Implementazione API PagoPA per avviare il checkout di pagamenti non generati da GovPay (simulazione portale checkout.pagopa.it). PROBABILMENTE NON FATTIBILE
@@ -53,7 +55,7 @@
 ### Ottimizzazione Infrastruttura e Cleanup
 - [ ] **Snellimento Build**
     - [X] Semplificazione degli script di build.
-    - [ ] Rimozione dei container effimeri che terminano dopo la build (es. `sync-iam-proxy`).
+    - [X] Rimozione dei container effimeri che terminano dopo la build (es. `sync-iam-proxy`).
     - [X] Valutazione sostituzione bind-mount con istruzioni `COPY` (o `docker cp`) per le cartelle statiche.
     - [X] Rimozione di `chown` e operazioni simili dagli script di entrypoint/build per velocizzare l'avvio.
 - [ ] **Pulizia Repository**

@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Config\SettingsRepository;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -33,8 +34,8 @@ class FlussiController
             'pagina' => max(1, (int)($params['pagina'] ?? 1)),
             'risultatiPerPagina' => min(200, max(1, (int)($params['risultatiPerPagina'] ?? 25))),
             'ordinamento' => (string)($params['ordinamento'] ?? '-data'),
-            'idDominio' => (string)($params['idDominio'] ?? (getenv('ID_DOMINIO') ?: '')),
-            'idA2A' => (string)($params['idA2A'] ?? (getenv('ID_A2A') ?: '')),
+            'idDominio' => (string)($params['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''))),
+            'idA2A' => (string)($params['idA2A'] ?? (SettingsRepository::get('entity', 'id_a2a', ''))),
             'idFlusso' => (string)($params['idFlusso'] ?? ''),
             'statoFlusso' => (string)($params['statoFlusso'] ?? ''),
             'dataDa' => (string)($params['dataDa'] ?? ''),
@@ -60,7 +61,7 @@ class FlussiController
 
         if (($filters['q'] ?? null) !== null) {
             $queryMade = true;
-            $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
             if ($backofficeUrl === '') {
                 $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
             } else {
@@ -87,8 +88,8 @@ class FlussiController
                     ];
                     $query = array_filter($query, static fn($v) => $v !== null && $v !== '');
 
-                    $username = getenv('GOVPAY_USER');
-                    $password = getenv('GOVPAY_PASSWORD');
+                    $username = SettingsRepository::get('govpay', 'user', '');
+                    $password = SettingsRepository::get('govpay', 'password', '');
 
                     $options = [
                         'headers' => ['Accept' => 'application/json'],
@@ -243,14 +244,14 @@ class FlussiController
 
         $flow = null;
         if (!$errors) {
-            $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
             if ($backofficeUrl === '') {
                 $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
             } else {
                 try {
                     $http = $this->makeHttpClient();
-                    $username = getenv('GOVPAY_USER');
-                    $password = getenv('GOVPAY_PASSWORD');
+                    $username = SettingsRepository::get('govpay', 'user', '');
+                    $password = SettingsRepository::get('govpay', 'password', '');
 
                     $options = [
                         'headers' => ['Accept' => 'application/json'],
@@ -360,8 +361,8 @@ class FlussiController
             return $this->jsonResponse($response, ['error' => 'Parametri mancanti (fc, iur, iuv)'], 400);
         }
 
-        $bizHost = rtrim(getenv('BIZ_EVENTS_HOST') ?: '', '/');
-        $bizApiKey = getenv('BIZ_EVENTS_API_KEY') ?: '';
+        $bizHost = rtrim(SettingsRepository::get('pagopa', 'biz_events_host', ''), '/');
+        $bizApiKey = SettingsRepository::get('pagopa', 'biz_events_api_key', '');
 
         if (!$bizHost || !$bizApiKey) {
             return $this->jsonResponse($response, ['error' => 'BIZ_EVENTS_HOST o BIZ_EVENTS_API_KEY non configurati'], 500);
@@ -469,11 +470,11 @@ class FlussiController
     private function makeHttpClient(): Client
     {
         $guzzleOptions = [];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;

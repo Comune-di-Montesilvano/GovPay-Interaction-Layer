@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Config\SettingsRepository;
 use App\Database\EntrateRepository;
 use App\Logger;
 use GuzzleHttp\Client;
@@ -58,26 +59,26 @@ class PendenzeController
     $errors = [];
     $warnings = [];
         $statsJson = null;
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (class_exists(BackofficePendenzeApi::class)) {
             if (!empty($backofficeUrl)) {
                 try {
                     $config = new BackofficeConfiguration();
                     $config->setHost(rtrim($backofficeUrl, '/'));
 
-                    $username = getenv('GOVPAY_USER');
-                    $password = getenv('GOVPAY_PASSWORD');
-                    if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                    $username = SettingsRepository::get('govpay', 'user', '');
+                    $password = SettingsRepository::get('govpay', 'password', '');
+                    if ($username !== '' && $password !== '') {
                         $config->setUsername($username);
                         $config->setPassword($password);
                     }
 
                     $guzzleOptions = [];
-                    $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                    if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                        $cert = getenv('GOVPAY_TLS_CERT');
-                        $key = getenv('GOVPAY_TLS_KEY');
-                        $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                    if (strtolower($authMethod) === 'sslheader') {
+                        $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                        $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                         if (!empty($cert) && !empty($key)) {
                             $guzzleOptions['cert'] = $cert;
                             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -90,8 +91,8 @@ class PendenzeController
                     $api = new BackofficePendenzeApi($httpClient, $config);
 
                     $gruppi = [RaggruppamentoStatistica::DOMINIO];
-                    $idDominioEnv = getenv('ID_DOMINIO');
-                    if ($idDominioEnv !== false && $idDominioEnv !== '') {
+                    $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
+                    if ($idDominioEnv !== '') {
                         $stats = $api->findQuadratureRiscossioni($gruppi, 1, 10, null, null, trim((string)$idDominioEnv));
                     } else {
                         $stats = $api->findQuadratureRiscossioni($gruppi, 1, 10);
@@ -130,7 +131,7 @@ class PendenzeController
     $warnings = [];
 
         // idA2A: deve essere preso esclusivamente dalla variabile d'ambiente
-        $idA2A = getenv('ID_A2A') ?: '';
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         if ($idA2A === '') {
             $errors[] = 'Variabile di ambiente ID_A2A non impostata';
         }
@@ -233,7 +234,7 @@ class PendenzeController
 
         // Se abbiamo errori: ricarichiamo il form con i valori precedenti
         if ($errors) {
-            $idDominio = getenv('ID_DOMINIO') ?: '';
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $tipologie = [];
             if ($idDominio) {
                 try {
@@ -265,7 +266,7 @@ class PendenzeController
         // Costruzione payload
         $payload = [
             'idTipoPendenza' => $idTipo,
-            'idDominio' => $params['idDominio'] ?? (getenv('ID_DOMINIO') ?: ''),
+            'idDominio' => $params['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')),
             'causale' => $causale,
             'importo' => $importo,
             'annoRiferimento' => $anno,
@@ -318,7 +319,7 @@ class PendenzeController
         // Costruisce le voci applicando la stessa logica usata anche in fase di modifica
         $accountingParams = $params;
         if (!isset($accountingParams['idDominio'])) {
-            $accountingParams['idDominio'] = $payload['idDominio'] ?? ($params['idDominio'] ?? (getenv('ID_DOMINIO') ?: ''));
+            $accountingParams['idDominio'] = $payload['idDominio'] ?? ($params['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')));
         }
         if (!isset($accountingParams['idTipoPendenza'])) {
             $accountingParams['idTipoPendenza'] = $payload['idTipoPendenza'] ?? $idTipo;
@@ -326,7 +327,7 @@ class PendenzeController
         $payload['voci'] = $this->buildVociWithAccounting($voci, $accountingParams, null, $errors, $warnings);
 
         if ($errors) {
-            $idDominio = getenv('ID_DOMINIO') ?: '';
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $tipologie = [];
             if ($idDominio) {
                 try {
@@ -356,10 +357,10 @@ class PendenzeController
         // (La costruzione delle voci è stata gestita dall'helper buildVociWithAccounting)
 
         // Invio al Backoffice
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (empty($backofficeUrl)) {
             $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
-            $idDominio = getenv('ID_DOMINIO') ?: '';
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $tipologie = [];
             if ($idDominio) {
                 try {
@@ -386,17 +387,17 @@ class PendenzeController
         }
 
         $guzzleOptions = [];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
             } else {
                 $errors[] = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
-                $idDominio = getenv('ID_DOMINIO') ?: '';
+                $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
                 $tipologie = [];
                 if ($idDominio) {
                     try {
@@ -474,7 +475,7 @@ class PendenzeController
                         ?? ($responsePayload['pendenza']['idDominio'] ?? null)
                         ?? (is_array($fetchedPendenza) ? ($fetchedPendenza['idDominio'] ?? null) : null)
                         ?? ($payload['idDominio'] ?? null)
-                        ?? (getenv('ID_DOMINIO') ?: '')
+                        ?? (SettingsRepository::get('entity', 'id_dominio', ''))
                     );
                     $pdfUrl = '';
                     $paymentUrl = '';
@@ -498,7 +499,7 @@ class PendenzeController
                         );
                     }
                     
-                    $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+                    $appName = (string)(SettingsRepository::get('entity', 'name', 'GIL'));
                     $notificationResult = $mailer->sendPendenzaCreatedNotification(
                         $email,
                         $anagrafica,
@@ -549,7 +550,7 @@ class PendenzeController
                             ?? ($responsePayload['pendenza']['idDominio'] ?? null)
                             ?? (is_array($fetchedPendenza) ? ($fetchedPendenza['idDominio'] ?? null) : null)
                             ?? ($payload['idDominio'] ?? null)
-                            ?? (getenv('ID_DOMINIO') ?: '')
+                            ?? (SettingsRepository::get('entity', 'id_dominio', ''))
                         );
                         $frontofficeUrl = $this->resolveFrontofficePublicBaseUrl($request);
                         $numeroAvvisoPendenza = $numeroAvvisoFromResponse;
@@ -653,7 +654,7 @@ class PendenzeController
         }
 
         // In caso di errore durante l'invio, ricarichiamo il form con gli errori
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $tipologie = [];
         if ($idDominio) {
             try {
@@ -725,8 +726,8 @@ class PendenzeController
         $prevUrl = null;
         $nextUrl = null;
 
-        $envIdDominio = (string)(getenv('ID_DOMINIO') ?: '');
-        $envIdA2A = (string)(getenv('ID_A2A') ?: '');
+        $envIdDominio = (string)(SettingsRepository::get('entity', 'id_dominio', ''));
+        $envIdA2A = (string)(SettingsRepository::get('entity', 'id_a2a', ''));
         $ordinamentoParam = isset($params['ordinamento']) ? (string)$params['ordinamento'] : '-dataCaricamento';
 
         $filters = [
@@ -794,7 +795,7 @@ class PendenzeController
 
         if ($filters['q'] !== null) {
             $queryMade = true;
-            $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
             if (!class_exists(BackofficePendenzeApi::class)) {
                 $errors[] = 'Client Backoffice non disponibile (namespace GovPay\\Backoffice)';
             } elseif ($backofficeUrl === '') {
@@ -804,19 +805,19 @@ class PendenzeController
                     $config = new BackofficeConfiguration();
                     $config->setHost(rtrim($backofficeUrl, '/'));
 
-                    $username = getenv('GOVPAY_USER');
-                    $password = getenv('GOVPAY_PASSWORD');
-                    if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                    $username = SettingsRepository::get('govpay', 'user', '');
+                    $password = SettingsRepository::get('govpay', 'password', '');
+                    if ($username !== '' && $password !== '') {
                         $config->setUsername($username);
                         $config->setPassword($password);
                     }
 
                     $guzzleOptions = [];
-                    $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                    if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                        $cert = getenv('GOVPAY_TLS_CERT');
-                        $key = getenv('GOVPAY_TLS_KEY');
-                        $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                    if (strtolower($authMethod) === 'sslheader') {
+                        $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                        $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                         if (!empty($cert) && !empty($key)) {
                             $guzzleOptions['cert'] = $cert;
                             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -1060,7 +1061,7 @@ class PendenzeController
         $posted = (array)($request->getParsedBody() ?? []);
 
         // Recupera tipologie abilitata per il dominio (se configurato)
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $tipologie = [];
         if ($idDominio) {
             try {
@@ -1086,7 +1087,7 @@ class PendenzeController
             'tipologie_pendenze' => $tipologie,
             'pendenza_templates' => $templates,
             'id_dominio' => $idDominio,
-            'id_a2a' => getenv('ID_A2A') ?: '',
+            'id_a2a' => SettingsRepository::get('entity', 'id_a2a', ''),
             'default_anno' => (int)date('Y'),
             'old' => $posted,
         ]);
@@ -1118,7 +1119,7 @@ class PendenzeController
         $importoFloat = is_numeric(str_replace(',', '.', (string)$importo)) ? (float)str_replace(',', '.', (string)$importo) : 0.0;
 
         // Recupera tipologia per mostrare descrizione
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $tipologia = null;
         if ($idDominio && $idTipo) {
             try {
@@ -1365,7 +1366,7 @@ class PendenzeController
 
         // DB-first: normalize voci (try to enrich from DB and validate required accounting fields)
         $localVociErrors = [];
-        $idDominioUsed = $single['idDominio'] ?? (getenv('ID_DOMINIO') ?: '');
+        $idDominioUsed = $single['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''));
         // Preserve the original voci as basis for proportional allocation
         $originalVociBasis = is_array($single['voci'] ?? null) ? $single['voci'] : [];
         $single['voci'] = $this->buildVociForInsertionFromMerged($single, $single['voci'] ?? [], $idDominioUsed, $localVociErrors);
@@ -1546,7 +1547,7 @@ class PendenzeController
             'proprieta' => $merged['proprieta'] ?? null,
             'soggettoPagatore' => $merged['soggettoPagatore'] ?? null,
             'voci' => $merged['voci'] ?? null,
-            'idDominio' => $merged['idDominio'] ?? (getenv('ID_DOMINIO') ?: ''),
+            'idDominio' => $merged['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')),
             'rates' => [],
             'responses' => $responses,
         ];
@@ -1591,9 +1592,9 @@ class PendenzeController
         $payerTipo            = strtoupper((string)($payerForNotify['tipo'] ?? 'F'));
         $originalCausaleForNotify = trim((string)($orig['causale'] ?? 'Pagamento rateizzato'));
         $idTipoPendenzaNotify = (string)($orig['idTipoPendenza'] ?? '');
-        $notifyAppName        = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+        $notifyAppName        = (string)(SettingsRepository::get('entity', 'name', 'GIL'));
         $frontofficeUrl       = $this->resolveFrontofficePublicBaseUrl($request);
-        $idDominioNotify      = $merged['idDominio'] ?? (getenv('ID_DOMINIO') ?: '');
+        $idDominioNotify      = $merged['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''));
         $numeroDocumento      = (string)($multi['documento']['identificativo'] ?? '');
         $multiratePdfUrl      = ($frontofficeUrl !== '' && $numeroDocumento !== '')
             ? $this->buildMultiratePdfUrl($frontofficeUrl, $numeroDocumento)
@@ -1787,8 +1788,8 @@ class PendenzeController
      */
     public function sendPendenzaToBackoffice(array $payload, ?string $idPendenza = null): array
     {
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         $errors = [];
         $warnings = [];
         if (empty($backofficeUrl)) {
@@ -1801,11 +1802,11 @@ class PendenzeController
         }
 
         $guzzleOptions = [];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -1861,13 +1862,13 @@ class PendenzeController
             }
 
             $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idP);
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
             $requestOptions = [
                 'headers' => ['Accept' => 'application/json'],
                 'json' => $payload,
             ];
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            if ($username !== '' && $password !== '') {
                 $requestOptions['auth'] = [$username, $password];
             }
 
@@ -1927,7 +1928,7 @@ class PendenzeController
             $idDominioUsed = (string)$currentPendenza['idDominio'];
         }
         if ($idDominioUsed === '') {
-            $idDominioUsed = (string)(getenv('ID_DOMINIO') ?: '');
+            $idDominioUsed = (string)(SettingsRepository::get('entity', 'id_dominio', ''));
         }
 
         $idTipo = trim((string)($params['idTipoPendenza'] ?? ''));
@@ -2322,11 +2323,11 @@ class PendenzeController
      */
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -2405,20 +2406,20 @@ class PendenzeController
      */
     private function callBackofficeFindPendenze(array $query): array
     {
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (empty($backofficeUrl)) {
             throw new \RuntimeException('Variabile GOVPAY_BACKOFFICE_URL non impostata');
         }
 
-        $username = getenv('GOVPAY_USER');
-        $password = getenv('GOVPAY_PASSWORD');
+        $username = SettingsRepository::get('govpay', 'user', '');
+        $password = SettingsRepository::get('govpay', 'password', '');
 
         $http = $this->makeHttpClient();
         $requestOptions = [
             'headers' => ['Accept' => 'application/json'],
             'query' => $query,
         ];
-        if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+        if ($username !== '' && $password !== '') {
             $requestOptions['auth'] = [$username, $password];
         }
 
@@ -2508,8 +2509,8 @@ class PendenzeController
         $error = null;
         $pendenza = null;
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         if ($idPendenza === '') {
             $error = 'ID pendenza non specificato';
         } elseif (empty($backofficeUrl)) {
@@ -2518,16 +2519,16 @@ class PendenzeController
             $error = 'Variabile ID_A2A non impostata nel file .env';
         } else {
             try {
-                $username = getenv('GOVPAY_USER');
-                $password = getenv('GOVPAY_PASSWORD');
+                $username = SettingsRepository::get('govpay', 'user', '');
+                $password = SettingsRepository::get('govpay', 'password', '');
                 $guzzleOptions = [
                     'headers' => ['Accept' => 'application/json'],
                 ];
-                $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                    $cert = getenv('GOVPAY_TLS_CERT');
-                    $key = getenv('GOVPAY_TLS_KEY');
-                    $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                if (strtolower($authMethod) === 'sslheader') {
+                    $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                    $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                     if (!empty($cert) && !empty($key)) {
                         $guzzleOptions['cert'] = $cert;
                         $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -2535,7 +2536,7 @@ class PendenzeController
                         $error = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
                     }
                 }
-                if (!$error && $username !== false && $password !== false && $username !== '' && $password !== '') {
+                if (!$error && $username !== '' && $password !== '') {
                     $guzzleOptions['auth'] = [$username, $password];
                 }
 
@@ -2568,24 +2569,24 @@ class PendenzeController
                 // Deriva idDebitore dal soggettoPagatore.identificativo o da idDebitore diretto
                 $idDebitore = $pendenza['soggettoPagatore']['identificativo'] ?? $pendenza['idDebitore'] ?? null;
                 $dataCar = $pendenza['dataCaricamento'] ?? $pendenza['data_caricamento'] ?? null;
-                $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-                $idA2A = getenv('ID_A2A') ?: '';
+                $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+                $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
                 if ($documentId && $idDebitore && $dataCar && $backofficeUrl && $idA2A) {
                     // build HTTP client options (reuse existing approach)
-                    $username = getenv('GOVPAY_USER');
-                    $password = getenv('GOVPAY_PASSWORD');
+                    $username = SettingsRepository::get('govpay', 'user', '');
+                    $password = SettingsRepository::get('govpay', 'password', '');
                     $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
-                    $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                    if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                        $cert = getenv('GOVPAY_TLS_CERT');
-                        $key = getenv('GOVPAY_TLS_KEY');
-                        $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                    if (strtolower($authMethod) === 'sslheader') {
+                        $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                        $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                         if (!empty($cert) && !empty($key)) {
                             $guzzleOptions['cert'] = $cert;
                             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
                         }
                     }
-                    if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                    if ($username !== '' && $password !== '') {
                         $guzzleOptions['auth'] = [$username, $password];
                     }
                     $http = $this->makeHttpClient($guzzleOptions);
@@ -2606,7 +2607,7 @@ class PendenzeController
                         $maxPages = 50; // safety cap to avoid infinite loops
                         while ($page > 0 && $page <= $maxPages) {
                             $query = [
-                                'idDominio' => $pendenza['idDominio'] ?? (getenv('ID_DOMINIO') ?: ''),
+                                'idDominio' => $pendenza['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')),
                                 'idA2A' => $idA2A,
                                 'idDebitore' => $idDebitore,
                                 'dataDa' => $start,
@@ -2699,7 +2700,7 @@ class PendenzeController
         }
 
         // Fetch tipologie for the template
-        $idDominio = $pendenza['idDominio'] ?? (getenv('ID_DOMINIO') ?: '');
+        $idDominio = $pendenza['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''));
         $tipologie = [];
         if ($idDominio) {
             try {
@@ -2735,23 +2736,23 @@ class PendenzeController
             return $response->withStatus(400);
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (empty($backofficeUrl)) {
             $response->getBody()->write('GOVPAY_BACKOFFICE_URL non impostata');
             return $response->withStatus(500);
         }
 
         try {
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
             $guzzleOptions = [
                 'headers' => ['Accept' => 'application/pdf'],
             ];
-            $authMethod = getenv('AUTHENTICATION_GOVPAY');
-            if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                $cert = getenv('GOVPAY_TLS_CERT');
-                $key = getenv('GOVPAY_TLS_KEY');
-                $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+            $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+            if (strtolower($authMethod) === 'sslheader') {
+                $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                 if (!empty($cert) && !empty($key)) {
                     $guzzleOptions['cert'] = $cert;
                     $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -2760,7 +2761,7 @@ class PendenzeController
                     return $response->withStatus(500);
                 }
             }
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            if ($username !== '' && $password !== '') {
                 $guzzleOptions['auth'] = [$username, $password];
             }
 
@@ -2794,7 +2795,7 @@ class PendenzeController
      */
     public function downloadAvvisiDocumento(Request $request, Response $response, array $args): Response
     {
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $numeroDocumento = $args['numeroDocumento'] ?? '';
         if ($idDominio === '' || $numeroDocumento === '') {
             $response->getBody()->write('Parametri mancanti');
@@ -2835,7 +2836,7 @@ class PendenzeController
         }
 
         // Use Pendenze v2 client for avvisi/documento (no ID_A2A required)
-        $pendenzeHost = getenv('GOVPAY_PENDENZE_URL') ?: '';
+        $pendenzeHost = SettingsRepository::get('govpay', 'pendenze_url', '');
         if (empty($pendenzeHost) || !class_exists('\GovPay\Pendenze\Api\PendenzeApi')) {
             $response->getBody()->write('Client Pendenze v2 non disponibile o GOVPAY_PENDENZE_URL non impostata');
             return $response->withStatus(500);
@@ -2844,19 +2845,19 @@ class PendenzeController
         try {
             $config = new \GovPay\Pendenze\Configuration();
             $config->setHost(rtrim($pendenzeHost, '/'));
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
+            if ($username !== '' && $password !== '') {
                 // Some generated clients accept basic auth via Configuration setters
                 if (method_exists($config, 'setUsername')) $config->setUsername($username);
                 if (method_exists($config, 'setPassword')) $config->setPassword($password);
             }
             $guzzleOptions = [];
-            $authMethod = getenv('AUTHENTICATION_GOVPAY');
-            if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                $cert = getenv('GOVPAY_TLS_CERT');
-                $key = getenv('GOVPAY_TLS_KEY');
-                $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+            $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+            if (strtolower($authMethod) === 'sslheader') {
+                $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                 if (!empty($cert) && !empty($key)) {
                     $guzzleOptions['cert'] = $cert;
                     $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -2918,23 +2919,23 @@ class PendenzeController
             return $response->withStatus(400);
         }
 
-        $pendenzeUrl = getenv('GOVPAY_PENDENZE_URL') ?: '';
+        $pendenzeUrl = SettingsRepository::get('govpay', 'pendenze_url', '');
         if (empty($pendenzeUrl)) {
             $response->getBody()->write('GOVPAY_PENDENZE_URL non impostata');
             return $response->withStatus(500);
         }
 
         try {
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
             $guzzleOptions = [
                 'headers' => ['Accept' => 'application/pdf'],
             ];
-            $authMethod = getenv('AUTHENTICATION_GOVPAY');
-            if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                $cert = getenv('GOVPAY_TLS_CERT');
-                $key = getenv('GOVPAY_TLS_KEY');
-                $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+            $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+            if (strtolower($authMethod) === 'sslheader') {
+                $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                 if (!empty($cert) && !empty($key)) {
                     $guzzleOptions['cert'] = $cert;
                     $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -2943,7 +2944,7 @@ class PendenzeController
                     return $response->withStatus(500);
                 }
             }
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            if ($username !== '' && $password !== '') {
                 $guzzleOptions['auth'] = [$username, $password];
             }
 
@@ -2980,22 +2981,22 @@ class PendenzeController
             return $response->withStatus(400);
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (empty($backofficeUrl)) {
             $response->getBody()->write('GOVPAY_BACKOFFICE_URL non impostata');
             return $response->withStatus(500);
         }
 
-        $username = getenv('GOVPAY_USER');
-        $password = getenv('GOVPAY_PASSWORD');
+        $username = SettingsRepository::get('govpay', 'user', '');
+        $password = SettingsRepository::get('govpay', 'password', '');
         $guzzleOptions = [
             'headers' => ['Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8,*/*;q=0.5'],
         ];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -3004,7 +3005,7 @@ class PendenzeController
                 return $response->withStatus(500);
             }
         }
-        if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+        if ($username !== '' && $password !== '') {
             $guzzleOptions['auth'] = [$username, $password];
         }
 
@@ -3036,7 +3037,7 @@ class PendenzeController
 
             $config = new BackofficeConfiguration();
             $config->setHost(rtrim($backofficeUrl, '/'));
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            if ($username !== '' && $password !== '') {
                 $config->setUsername($username);
                 $config->setPassword($password);
             }
@@ -3157,8 +3158,8 @@ class PendenzeController
         $pendenza = null;
 
         // Recupera i dati della pendenza esistente
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         if ($idPendenza === '') {
             $error = 'ID pendenza non specificato';
         } elseif (empty($backofficeUrl)) {
@@ -3167,16 +3168,16 @@ class PendenzeController
             $error = 'Variabile ID_A2A non impostata nel file .env';
         } else {
             try {
-                $username = getenv('GOVPAY_USER');
-                $password = getenv('GOVPAY_PASSWORD');
+                $username = SettingsRepository::get('govpay', 'user', '');
+                $password = SettingsRepository::get('govpay', 'password', '');
                 $guzzleOptions = [
                     'headers' => ['Accept' => 'application/json'],
                 ];
-                $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                    $cert = getenv('GOVPAY_TLS_CERT');
-                    $key = getenv('GOVPAY_TLS_KEY');
-                    $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                if (strtolower($authMethod) === 'sslheader') {
+                    $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                    $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                    $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                     if (!empty($cert) && !empty($key)) {
                         $guzzleOptions['cert'] = $cert;
                         $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -3184,7 +3185,7 @@ class PendenzeController
                         $error = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
                     }
                 }
-                if (!$error && $username !== false && $password !== false && $username !== '' && $password !== '') {
+                if (!$error && $username !== '' && $password !== '') {
                     $guzzleOptions['auth'] = [$username, $password];
                 }
 
@@ -3213,7 +3214,7 @@ class PendenzeController
         }
 
         // Recupera tipologie abilitate per il dominio
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $tipologie = [];
         if ($idDominio) {
             try {
@@ -3343,8 +3344,8 @@ class PendenzeController
             return $response->withHeader('Location', $redirect)->withStatus(302);
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         if ($backofficeUrl === '' || $idA2A === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Configurazione GovPay incompleta'];
             return $response->withHeader('Location', $redirect)->withStatus(302);
@@ -3362,7 +3363,7 @@ class PendenzeController
             }
 
             [$iuvFromResponse, $numeroAvvisoFromResponse] = $this->extractIuvAndNumeroAvviso($pendenza);
-            $idDominio = (string)($pendenza['idDominio'] ?? (getenv('ID_DOMINIO') ?: ''));
+            $idDominio = (string)($pendenza['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')));
             $causale = trim((string)($pendenza['causale'] ?? 'Pendenza PagoPA'));
             $importo = (float)($pendenza['importo'] ?? 0.0);
             $frontofficeUrl = $this->resolveFrontofficePublicBaseUrl($request);
@@ -3400,7 +3401,7 @@ class PendenzeController
                 ];
 
                 $mailer = \App\Services\MailerService::forSuite('backoffice');
-                $appName = (string)(getenv('APP_ENTITY_NAME') ?: 'GIL');
+                $appName = (string)(SettingsRepository::get('entity', 'name', 'GIL'));
                 $notificationResult = $mailer->sendPendenzaCreatedNotification(
                     $email,
                     $anagrafica,
@@ -3592,7 +3593,7 @@ class PendenzeController
 
         // Se ci sono errori, ricarica il form
         if ($errors) {
-            $idDominio = getenv('ID_DOMINIO') ?: '';
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $tipologie = [];
             if ($idDominio) {
                 try {
@@ -3610,7 +3611,7 @@ class PendenzeController
                 'old' => $params,
                 'tipologie_pendenze' => $tipologie,
                 'id_dominio' => $idDominio,
-                'id_a2a' => getenv('ID_A2A') ?: '',
+                'id_a2a' => SettingsRepository::get('entity', 'id_a2a', ''),
                 'idPendenza' => $idPendenza,
                 'return_url' => $params['return_url'] ?? '/pendenze/ricerca',
                 'default_anno' => $defaultAnno,
@@ -3635,7 +3636,7 @@ class PendenzeController
         }
 
         // In caso di errore, ricarica il form
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $tipologie = [];
         if ($idDominio) {
             try {
@@ -3653,7 +3654,7 @@ class PendenzeController
             'old' => $params,
             'tipologie_pendenze' => $tipologie,
             'id_dominio' => $idDominio,
-            'id_a2a' => getenv('ID_A2A') ?: '',
+            'id_a2a' => SettingsRepository::get('entity', 'id_a2a', ''),
             'idPendenza' => $idPendenza,
             'return_url' => $params['return_url'] ?? '/pendenze/ricerca',
             'default_anno' => $defaultAnno,
@@ -3665,8 +3666,8 @@ class PendenzeController
      */
     private function fallbackFullPutUpdate(string $idPendenza, array $params, string $operationName = 'Modifica'): array
     {
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         $errors = [];
         if ($backofficeUrl === '' || $idA2A === '') {
             return ['success' => false, 'errors' => ['Configurazione GovPay incompleta']];
@@ -3789,7 +3790,7 @@ class PendenzeController
 
                 $accountingParams = $params;
                 if (!isset($accountingParams['idDominio'])) {
-                    $accountingParams['idDominio'] = $put['idDominio'] ?? ($cur['idDominio'] ?? (getenv('ID_DOMINIO') ?: ''));
+                    $accountingParams['idDominio'] = $put['idDominio'] ?? ($cur['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')));
                 }
                 if (!isset($accountingParams['idTipoPendenza']) && $idTipoEffective !== '') {
                     $accountingParams['idTipoPendenza'] = $idTipoEffective;
@@ -3818,7 +3819,7 @@ class PendenzeController
             unset($put['idPendenza'], $put['idA2A']);
             // Assicura idDominio popolato: obbligatorio per PendenzaPut
             if (empty($put['idDominio'])) {
-                $envDom = getenv('ID_DOMINIO') ?: '';
+                $envDom = SettingsRepository::get('entity', 'id_dominio', '');
                 if ($envDom !== '') {
                     $put['idDominio'] = $envDom;
                 }
@@ -3838,8 +3839,8 @@ class PendenzeController
 
     private function updatePendenzaStatus(string $idPendenza, string $newStatus): array
     {
-        $patchUrl = getenv('GOVPAY_PENDENZE_PATCH_URL') ?: getenv('GOVPAY_BACKOFFICE_URL');
-        $idA2A = getenv('ID_A2A') ?: '';
+        $patchUrl = SettingsRepository::get('govpay', 'pendenze_patch_url', '') ?: SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
 
         if (empty($patchUrl) || $idA2A === '') {
             return ['success' => false, 'error' => 'Configurazione GovPay incompleta (URL PATCH o ID_A2A mancanti)'];
@@ -4131,12 +4132,12 @@ class PendenzeController
 
     private function resolveFrontofficePublicBaseUrl(?Request $request = null): string
     {
-        $fromEnv = trim((string)(getenv('FRONTOFFICE_PUBLIC_BASE_URL') ?: ''));
+        $fromEnv = trim((string)(SettingsRepository::get('frontoffice', 'public_base_url', '')));
         if ($fromEnv !== '') {
             return rtrim($fromEnv, '/');
         }
 
-        $fromBackoffice = trim((string)(getenv('BACKOFFICE_PUBLIC_BASE_URL') ?: ''));
+        $fromBackoffice = trim((string)(SettingsRepository::get('backoffice', 'public_base_url', '')));
         if ($fromBackoffice !== '') {
             $normalized = rtrim($fromBackoffice, '/');
             if (str_ends_with(strtolower($normalized), '/backoffice')) {
@@ -4256,19 +4257,19 @@ class PendenzeController
 
     private function fetchPendenzaById(string $idPendenza): ?array
     {
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         if ($backofficeUrl === '' || $idA2A === '' || $idPendenza === '') {
             return null;
         }
 
         try {
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
             $guzzleOptions = [
                 'headers' => ['Accept' => 'application/json'],
             ];
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            if ($username !== '' && $password !== '') {
                 $guzzleOptions['auth'] = [$username, $password];
             }
 
@@ -4288,7 +4289,7 @@ class PendenzeController
 
     private function resolveEmbeddedLogoPath(): string
     {
-        $logoSrc = trim((string)(getenv('APP_LOGO_SRC') ?: ''));
+        $logoSrc = trim((string)(SettingsRepository::get('ui', 'logo_src', '')));
         if ($logoSrc === '') {
             return '';
         }
@@ -4331,7 +4332,7 @@ class PendenzeController
             // Fallback: secret derivato da variabili già presenti
             $signingKey = hash('sha256',
                 (string)(getenv('APP_SECRET') ?: '')
-                . (string)(getenv('ID_DOMINIO') ?: '')
+                . (string)(SettingsRepository::get('entity', 'id_dominio', ''))
                 . 'gil-link-signing-fallback'
             );
         }
@@ -4345,8 +4346,8 @@ class PendenzeController
 
     private function addNotificationToPendenza(string $idPendenza, array $notificationData, ?string $storicoOperazione = null): bool
     {
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idA2A = getenv('ID_A2A') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
         
         if ($backofficeUrl === '' || $idA2A === '') {
             return false;
@@ -4404,7 +4405,7 @@ class PendenzeController
             
             // 5) Assicura che idDominio sia presente (obbligatorio)
             if (empty($put['idDominio'])) {
-                $put['idDominio'] = getenv('ID_DOMINIO') ?: '';
+                $put['idDominio'] = SettingsRepository::get('entity', 'id_dominio', '');
             }
             
             // 6) Invia il PUT

@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Config\SettingsRepository;
 use GovPay\Backoffice\Model\RaggruppamentoStatistica;
 use GuzzleHttp\Client;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -30,7 +31,7 @@ class StatisticheController
             'dataDa' => (string)($params['dataDa'] ?? $defaultStart->format('Y-m-d')),
             'dataA' => (string)($params['dataA'] ?? $today->format('Y-m-d')),
             'raggruppamento' => strtoupper((string)($params['raggruppamento'] ?? RaggruppamentoStatistica::TIPO_PENDENZA)),
-            'idDominio' => (string)($params['idDominio'] ?? (getenv('ID_DOMINIO') ?: '')),
+            'idDominio' => (string)($params['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''))),
         ];
         $groupOptions = $this->getGroupOptions();
         if (!array_key_exists($filters['raggruppamento'], $groupOptions)) {
@@ -48,7 +49,7 @@ class StatisticheController
         $chartPayloadJson = null;
         $totals = ['amount' => 0.0, 'count' => 0];
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if ($backofficeUrl === '') {
             $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
         }
@@ -113,19 +114,19 @@ class StatisticheController
     {
         $config = new \GovPay\Backoffice\Configuration();
         $config->setHost(rtrim($baseUrl, '/'));
-        $username = getenv('GOVPAY_USER');
-        $password = getenv('GOVPAY_PASSWORD');
-        if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+        $username = SettingsRepository::get('govpay', 'user', '');
+        $password = SettingsRepository::get('govpay', 'password', '');
+        if ($username !== '' && $password !== '') {
             $config->setUsername($username);
             $config->setPassword($password);
         }
 
         $guzzleOptions = [];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower($authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
