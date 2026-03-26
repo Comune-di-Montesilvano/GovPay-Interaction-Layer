@@ -99,6 +99,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-iam.outputs.tags }}
           labels: ${{ steps.meta-iam.outputs.labels }}
+          build-args: |
+            GIL_IMAGE_TAG=${{ steps.meta-iam.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

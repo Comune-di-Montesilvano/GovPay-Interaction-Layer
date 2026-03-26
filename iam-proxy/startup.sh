@@ -18,8 +18,8 @@ is_true() {
   esac
 }
 
-# Fallback: leggi APP_VERSION dal file baked nell'immagine se la variabile env è vuota
-: "${APP_VERSION:=$(cat /builder/VERSION 2>/dev/null | tr -d '[:space:]')}"
+# Versione dell'immagine (se non passata, usa unknown)
+: "${APP_VERSION:=unknown}"
 export APP_VERSION
 
 echo "[startup] iam-proxy-italia startup — applicazione configurazione... (v${APP_VERSION:-unknown})"

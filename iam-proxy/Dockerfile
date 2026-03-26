@@ -12,6 +12,9 @@ RUN apk add --no-cache gettext curl git
 
 # Bake-in il progetto SATOSA dal repo upstream (versione fissa a build time → riproducibile)
 ARG IAM_PROXY_REF=master
+ARG GIL_IMAGE_TAG=dev
+ENV APP_VERSION=$GIL_IMAGE_TAG
+
 RUN git clone --depth 1 --branch "${IAM_PROXY_REF}" \
       https://github.com/italia/iam-proxy-italia.git /tmp/upstream \
     && cp -r /tmp/upstream/iam-proxy-italia-project/. /satosa_proxy/ \
@@ -32,7 +35,6 @@ COPY iam-proxy/cieoidc-models/    /builder/cieoidc-models/
 COPY iam-proxy/static-overrides/  /builder/static-overrides/
 COPY iam-proxy/patch_saml2.py     /builder/patch_saml2.py
 COPY iam-proxy/startup.sh         /builder/startup.sh
-COPY VERSION                      /builder/VERSION
 
 RUN chmod +x /builder/startup.sh \
     # Installa file custom nel progetto (non dipendono da env vars)

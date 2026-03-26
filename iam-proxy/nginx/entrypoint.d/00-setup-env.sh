@@ -32,7 +32,7 @@ fi
 # Genera le pagine di errore a partire dai template, sostituendo le variabili dell'organizzazione
 # Le pagine vengono scritte in /tmp/errors/ (percorso scrivibile) e servite da nginx
 mkdir -p /tmp/errors
-APP_VERSION="${APP_VERSION:-$(cat /VERSION 2>/dev/null | tr -d '[:space:]')}"
+APP_VERSION="${APP_VERSION:-unknown}"
 ORG_NAME="${SATOSA_ORGANIZATION_NAME_IT:-Servizio di Autenticazione}"
 ORG_DISPLAY_NAME="${SATOSA_ORGANIZATION_DISPLAY_NAME_IT:-${SATOSA_ORGANIZATION_NAME_IT:-Servizio di Autenticazione}}"
 ORG_LOGO="${SATOSA_UI_LOGO_URL:-}"
