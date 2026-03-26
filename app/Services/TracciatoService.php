@@ -349,7 +349,7 @@ class TracciatoService
 
                 // Setup handler stack to add logging middleware when APP_DEBUG
                 $handlerStack = HandlerStack::create();
-                if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                     $log = \App\Logger::getInstance();
                     $handlerStack->push(function (callable $handler) use ($log) {
                         return function ($request, array $options) use ($handler, $log) {
@@ -610,7 +610,7 @@ class TracciatoService
             }
 
             // Log payload definitivo (come sarà serializzato) prima dell'invio
-            if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                 $bodyForLog = is_object($requestBody) ? BackofficeSerializer::sanitizeForSerialization($requestBody) : $requestBody;
                 Logger::getInstance()->debug('Tracciato payload (to-send)', ['tracciato' => $bodyForLog]);
             }
@@ -618,7 +618,7 @@ class TracciatoService
             try {
                 // Passiamo il model (se presente) o l'array camelCase; il client si occuperà
                 // della serializzazione corretta.
-                if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                     // Log grezzo della request come verrà serializzata
                     $raw = is_object($requestBody) ? BackofficeSerializer::sanitizeForSerialization($requestBody) : $requestBody;
                     Logger::getInstance()->debug('Tracciato request raw (pre-send)', ['raw' => $raw]);
@@ -666,7 +666,7 @@ class TracciatoService
             }
             $data = $res ? (is_array($res) ? $res : BackofficeSerializer::sanitizeForSerialization($res)) : null;
 
-            if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                 Logger::getInstance()->debug('Tracciato inviato', ['idTracciato' => $idTracciato, 'response' => $data]);
             }
 

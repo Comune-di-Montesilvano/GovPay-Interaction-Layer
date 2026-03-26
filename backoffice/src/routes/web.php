@@ -802,7 +802,8 @@ return function (App $app, Twig $twig): void {
     });
 
     $appDebugRaw = getenv('APP_DEBUG');
-    $displayErrorDetails = $appDebugRaw !== false && in_array(strtolower($appDebugRaw), ['1','true','yes','on'], true);
+    $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true'
+        || ($appDebugRaw !== false && in_array(strtolower((string)$appDebugRaw), ['1','true','yes','on'], true));
     // Espone un flag globale a Twig per consentire controlli condizionali lato template
     $twig->getEnvironment()->addGlobal('app_debug', $displayErrorDetails);
     if ($displayErrorDetails) {
@@ -812,7 +813,8 @@ return function (App $app, Twig $twig): void {
     }
 
     // Error handling personalizzato per 404
-    $displayErrorDetails = $appDebugRaw !== false && in_array(strtolower($appDebugRaw), ['1','true','yes','on'], true);
+    $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true'
+        || ($appDebugRaw !== false && in_array(strtolower((string)$appDebugRaw), ['1','true','yes','on'], true));
     $errorMiddleware = $app->addErrorMiddleware($displayErrorDetails, true, true);
     $errorMiddleware->setErrorHandler(HttpNotFoundException::class, function (
         Request $request,

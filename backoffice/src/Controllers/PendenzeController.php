@@ -882,7 +882,7 @@ class PendenzeController
 
                         $query = array_filter($query, static fn($v) => $v !== null && $v !== '');
 
-                        if (getenv('APP_DEBUG') && $filters['q']) {
+                        if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || getenv('APP_DEBUG')) && $filters['q']) {
                             error_log('[PendenzeController] GET ' . $url . '?' . http_build_query($query));
                         }
 
@@ -1444,7 +1444,7 @@ class PendenzeController
                 // *** FINE MODIFICA RICHIESTA ***
             }
 
-            if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                 Logger::getInstance()->debug('Allocated voce importi per rata', [
                     'idPendenza' => $idPForRate,
                     'rata_importo' => $rateTotal,
@@ -1840,7 +1840,7 @@ class PendenzeController
 
             // Ensure idPendenza is not sent in the request body: the API expects it in the URL
             if (array_key_exists('idPendenza', $payload)) {
-                if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                     Logger::getInstance()->debug('Removed idPendenza from request body (sent in URL)', ['idPendenza' => $payload['idPendenza']]);
                 }
                 unset($payload['idPendenza']);
@@ -1855,14 +1855,14 @@ class PendenzeController
                 if (empty($payload['proprieta'])) {
                     unset($payload['proprieta']);
                 }
-                if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+                if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                     Logger::getInstance()->debug('Sanitized proprieta before sending pendenza', ['proprieta' => $payload['proprieta'] ?? null]);
                 }
             }
             // Remove empty string-like fields that the Backoffice enforces as non-empty
             foreach (['cartellaPagamento', 'direzione', 'divisione'] as $sf) {
                 if (isset($payload[$sf]) && (!is_scalar($payload[$sf]) || trim((string)$payload[$sf]) === '')) {
-                    if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+                    if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                         Logger::getInstance()->debug('Removed empty string-like field before send', ['field' => $sf]);
                     }
                     unset($payload[$sf]);
@@ -1880,7 +1880,7 @@ class PendenzeController
                 $requestOptions['auth'] = [$username, $password];
             }
 
-            if ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')) {
+            if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || ((getenv('APP_DEBUG') !== false) && getenv('APP_DEBUG')))) {
                 Logger::getInstance()->debug('Pendenze PUT ' . $url, ['payload' => $payload]);
             }
 

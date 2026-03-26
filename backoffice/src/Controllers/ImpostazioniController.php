@@ -54,6 +54,7 @@ class ImpostazioniController
             'entity'      => SettingsRepository::getSection('entity'),
             'iam_proxy'   => SettingsRepository::getSection('iam_proxy'),
             'ui'          => SettingsRepository::getSection('ui'),
+            'app'         => SettingsRepository::getSection('app'),
             'csrf_token'  => $this->generateCsrf(),
         ];
 
@@ -155,6 +156,7 @@ class ImpostazioniController
             'mailer_from_address'  => $body['mailer_from_address'] ?? '',
             'mailer_from_name'     => $body['mailer_from_name'] ?? '',
         ], $by);
+        SettingsRepository::set('app', 'debug', $body['app_debug'] === 'true' ? 'true' : 'false', false, $by);
 
         return $this->jsonOk('Impostazioni Backoffice salvate.');
     }

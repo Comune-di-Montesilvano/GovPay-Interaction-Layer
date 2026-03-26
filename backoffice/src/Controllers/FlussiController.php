@@ -100,7 +100,7 @@ class FlussiController
                     }
 
                     $url = rtrim($backofficeUrl, '/') . '/flussiRendicontazione';
-                    if (getenv('APP_DEBUG') && $filters['q']) {
+                    if ((\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || getenv('APP_DEBUG')) && $filters['q']) {
                         error_log('[FlussiController] GET ' . $url . '?' . http_build_query($query));
                     }
 
@@ -261,7 +261,7 @@ class FlussiController
                     }
 
                     $endpoint = sprintf('%s/flussiRendicontazione/%s', rtrim($backofficeUrl, '/'), rawurlencode($idFlusso));
-                    if (getenv('APP_DEBUG')) {
+                    if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' || getenv('APP_DEBUG')) {
                         error_log('[FlussiController] GET ' . $endpoint);
                     }
 

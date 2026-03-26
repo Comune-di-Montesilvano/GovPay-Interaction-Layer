@@ -164,19 +164,26 @@ class ConfigurazioneController
                     $config = new \GovPay\Backoffice\Configuration();
                     $config->setHost(rtrim($backofficeUrl, '/'));
 
-                    $username = SettingsRepository::get('govpay', 'user', '');
-                    $password = SettingsRepository::get('govpay', 'password', '');
+                    $username = SettingsRepository::get('govpay', 'user', '')
+                                ?: (string)(getenv('GOVPAY_USER') ?: '');
+                    $password = SettingsRepository::get('govpay', 'password', '')
+                                ?: (string)(getenv('GOVPAY_PASSWORD') ?: '');
                     if ($username !== '' && $password !== '') {
                         $config->setUsername($username);
                         $config->setPassword($password);
                     }
 
                     $guzzleOptions = [];
-                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
+                                  ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
                     if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
-                        $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-                        $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
+                        $cert = SettingsRepository::get('govpay', 'tls_cert_path', '')
+                                ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
+                        $key = SettingsRepository::get('govpay', 'tls_key_path', '')
+                                ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
+                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
+                                   ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+                        
                         if (!empty($cert) && !empty($key)) {
                             $guzzleOptions['cert'] = $cert;
                             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
