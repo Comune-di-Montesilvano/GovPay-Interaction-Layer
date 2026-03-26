@@ -51,6 +51,7 @@ jobs:
           push: true
           tags: ${{ steps.meta-bo.outputs.tags }}
           labels: ${{ steps.meta-bo.outputs.labels }}
+          build-args: GIL_IMAGE_TAG=${{ steps.meta-bo.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -74,6 +75,7 @@ jobs:
           push: true
           tags: ${{ steps.meta-fo.outputs.tags }}
           labels: ${{ steps.meta-fo.outputs.labels }}
+          build-args: GIL_IMAGE_TAG=${{ steps.meta-fo.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

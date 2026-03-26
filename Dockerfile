@@ -70,6 +70,10 @@ RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interacti
 ######################################################################
 FROM php:8.5-apache-trixie AS runtime-base
 
+# Versione immagine iniettata a build-time dalla CI (es. "dev", "1.2.3")
+ARG GIL_IMAGE_TAG=dev
+ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
+
 # Installazione delle dipendenze di sistema e PHP (inclusi unzip e wget)
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
