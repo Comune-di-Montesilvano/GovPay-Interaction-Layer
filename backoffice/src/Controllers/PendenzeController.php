@@ -76,7 +76,7 @@ class PendenzeController
                     $guzzleOptions = [];
                     $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
                                   ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
-                    if (strtolower($authMethod) === 'sslheader') {
+                    if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                         $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
                                    ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
                         $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
@@ -393,7 +393,7 @@ class PendenzeController
         $guzzleOptions = [];
         $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
                       ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
-        if (strtolower($authMethod) === 'sslheader') {
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
             $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
                        ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
             $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
@@ -822,7 +822,7 @@ class PendenzeController
 
                     $guzzleOptions = [];
                     $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-                    if (strtolower($authMethod) === 'sslheader') {
+                    if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                         $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                         $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                         $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -1811,7 +1811,7 @@ class PendenzeController
 
         $guzzleOptions = [];
         $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (strtolower($authMethod) === 'sslheader') {
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
             $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
             $key = SettingsRepository::get('govpay', 'tls_key_path', '');
             $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -2332,7 +2332,7 @@ class PendenzeController
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
         $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (strtolower($authMethod) === 'sslheader') {
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
             $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
             $key = SettingsRepository::get('govpay', 'tls_key_path', '');
             $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -2533,7 +2533,7 @@ class PendenzeController
                     'headers' => ['Accept' => 'application/json'],
                 ];
                 $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-                if (strtolower($authMethod) === 'sslheader') {
+                if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                     $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                     $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                     $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -2585,7 +2585,7 @@ class PendenzeController
                     $password = SettingsRepository::get('govpay', 'password', '');
                     $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
                     $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-                    if (strtolower($authMethod) === 'sslheader') {
+                    if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                         $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                         $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                         $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -2757,7 +2757,7 @@ class PendenzeController
                 'headers' => ['Accept' => 'application/pdf'],
             ];
             $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-            if (strtolower($authMethod) === 'sslheader') {
+            if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                 $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                 $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                 $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -2862,7 +2862,7 @@ class PendenzeController
             }
             $guzzleOptions = [];
             $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-            if (strtolower($authMethod) === 'sslheader') {
+            if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                 $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                 $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                 $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -2940,7 +2940,7 @@ class PendenzeController
                 'headers' => ['Accept' => 'application/pdf'],
             ];
             $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-            if (strtolower($authMethod) === 'sslheader') {
+            if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                 $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                 $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                 $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -3001,7 +3001,7 @@ class PendenzeController
             'headers' => ['Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8,*/*;q=0.5'],
         ];
         $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (strtolower($authMethod) === 'sslheader') {
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
             $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
             $key = SettingsRepository::get('govpay', 'tls_key_path', '');
             $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -3182,7 +3182,7 @@ class PendenzeController
                     'headers' => ['Accept' => 'application/json'],
                 ];
                 $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-                if (strtolower($authMethod) === 'sslheader') {
+                if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                     $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                     $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                     $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;

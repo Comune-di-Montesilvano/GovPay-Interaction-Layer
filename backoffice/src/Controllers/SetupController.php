@@ -542,7 +542,7 @@ class SetupController
             'password'              => ['value' => $step3['govpay_password'] ?? '', 'encrypted' => true],
         ];
         // Per mTLS: registra i percorsi fissi del volume git_certs
-        if ($authMethod === 'sslheader') {
+        if (in_array($authMethod, ['ssl', 'sslheader'], true)) {
             $govpaySection['tls_cert_path'] = '/var/www/certificate/govpay-cert.pem';
             $govpaySection['tls_key_path']  = '/var/www/certificate/govpay-key.pem';
             $govpaySection['tls_key_password'] = ['value' => $step3['govpay_key_password'] ?? '', 'encrypted' => true];

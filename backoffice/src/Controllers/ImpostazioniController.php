@@ -500,7 +500,7 @@ class ImpostazioniController
             CURLOPT_SSL_VERIFYPEER => false,
         ]);
 
-        if (strtolower($authMethod) === 'sslheader' && $cert !== '' && $key !== '') {
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true) && $cert !== '' && $key !== '') {
             curl_setopt($ch, CURLOPT_SSLCERT, $cert);
             curl_setopt($ch, CURLOPT_SSLKEY, $key);
             if ($keyPass !== null && $keyPass !== '') {
@@ -526,7 +526,7 @@ class ImpostazioniController
             return $this->jsonOk("Connessione {$label}: HTTP 200 — OK.");
         }
         if ($httpCode === 401 || $httpCode === 403) {
-            $authInfo = strtolower($authMethod) === 'sslheader'
+            $authInfo = in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)
                 ? ($cert !== '' ? 'cert trovato' : 'cert NON configurato')
                 : 'basic auth';
             return $this->jsonError("Connessione {$label}: HTTP {$httpCode} — autenticazione fallita ({$authInfo}).");

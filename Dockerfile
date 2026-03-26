@@ -107,7 +107,7 @@ COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/webfont
 RUN chmod -R 755 public/assets
 
 # (Documentativo) composer gestito nello stage vendor_builder
-COPY --chown=www-app:www-data composer.json composer.lock* VERSION /var/www/html/
+COPY --chown=www-app:www-data composer.json composer.lock* /var/www/html/
 
 # ----------------------------------------------------------------------
 # Configurazione Finale

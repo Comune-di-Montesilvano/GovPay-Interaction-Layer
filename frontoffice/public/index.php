@@ -232,7 +232,7 @@ if (!function_exists('frontoffice_govpay_client_options')) {
     {
         $options = [];
         $authMethod = \App\Config\SettingsRepository::get('govpay', 'authentication_method', '') ?: frontoffice_env_value('AUTHENTICATION_GOVPAY', '');
-        if (strtolower($authMethod) === 'sslheader') {
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
             $cert = \App\Config\SettingsRepository::get('govpay', 'tls_cert_path', '') ?: frontoffice_env_value('GOVPAY_TLS_CERT', '');
             $key = \App\Config\SettingsRepository::get('govpay', 'tls_key_path', '') ?: frontoffice_env_value('GOVPAY_TLS_KEY', '');
             $keyPass = \App\Config\SettingsRepository::get('govpay', 'tls_key_password') ?: null;

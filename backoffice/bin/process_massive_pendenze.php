@@ -41,7 +41,7 @@ function sendOne(array $payload): array {
 
     $guzzleOptions = [];
     $authMethod = Config::get('AUTHENTICATION_GOVPAY');
-    if (!empty($authMethod) && strtolower((string)$authMethod) === 'sslheader') {
+    if (!empty($authMethod) && in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
         $cert = Config::get('GOVPAY_TLS_CERT');
         $key = Config::get('GOVPAY_TLS_KEY');
         $keyPass = Config::get('GOVPAY_TLS_KEY_PASSWORD') ?: null;

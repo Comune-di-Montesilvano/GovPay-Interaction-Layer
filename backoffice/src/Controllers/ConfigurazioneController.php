@@ -173,7 +173,7 @@ class ConfigurazioneController
 
                     $guzzleOptions = [];
                     $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-                    if (strtolower((string)$authMethod) === 'sslheader') {
+                    if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
                         $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                         $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                         $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -972,7 +972,7 @@ class ConfigurazioneController
         $password = SettingsRepository::get('govpay', 'password', '');
         $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
         $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (strtolower((string)$authMethod) === 'sslheader') {
+        if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
             $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
             $key = SettingsRepository::get('govpay', 'tls_key_path', '');
             $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
@@ -1198,7 +1198,7 @@ class ConfigurazioneController
             $password = SettingsRepository::get('govpay', 'password', '');
             $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
             $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-            if (strtolower((string)$authMethod) === 'sslheader') {
+            if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
                 $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
                 $key = SettingsRepository::get('govpay', 'tls_key_path', '');
                 $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;

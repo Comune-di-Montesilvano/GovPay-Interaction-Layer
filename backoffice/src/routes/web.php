@@ -937,7 +937,7 @@ return function (App $app, Twig $twig): void {
                 ];
                 $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
                               ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
-                if (strtolower($authMethod) === 'sslheader') {
+                if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
                     $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
                                ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
                     $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
