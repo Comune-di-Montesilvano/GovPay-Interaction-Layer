@@ -235,31 +235,31 @@ class ImpostazioniController
     public function testGovpayConnection(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('govpay', 'backoffice_url', ''), 'GovPay Backoffice');
+        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'backoffice_url', ''), 'GovPay Backoffice');
     }
 
     public function testGovpayPendenze(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('govpay', 'pendenze_url', ''), 'GovPay Pendenze');
+        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'pendenze_url', ''), 'GovPay Pendenze');
     }
 
     public function testGovpayPagamenti(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('govpay', 'pagamenti_url', ''), 'GovPay Pagamenti');
+        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'pagamenti_url', ''), 'GovPay Pagamenti');
     }
 
     public function testGovpayRagioneria(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('govpay', 'ragioneria_url', ''), 'GovPay Ragioneria');
+        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'ragioneria_url', ''), 'GovPay Ragioneria');
     }
 
     public function testGovpayPendenzePatch(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('govpay', 'pendenze_patch_url', ''), 'GovPay Pendenze PATCH');
+        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'pendenze_patch_url', ''), 'GovPay Pendenze PATCH');
     }
 
     public function testCheckout(Request $request, Response $response): Response
@@ -472,6 +472,68 @@ class ImpostazioniController
     // PRIVATE HELPERS
     // ──────────────────────────────────────────────────────────────────────
 
+    private function pingGovpayUrl(string $url, string $label): Response
+    {
+        if (empty($url)) {
+            return $this->jsonError("URL {$label} non configurato.");
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return $this->jsonError("URL {$label} non valido.");
+        }
+
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
+                      ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
+        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
+                   ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
+        $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
+                   ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
+        $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
+                   ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
+        $username = SettingsRepository::get('govpay', 'user', '');
+        $password = SettingsRepository::get('govpay', 'password', '');
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+
+        if (strtolower($authMethod) === 'sslheader' && $cert !== '' && $key !== '') {
+            curl_setopt($ch, CURLOPT_SSLCERT, $cert);
+            curl_setopt($ch, CURLOPT_SSLKEY, $key);
+            if ($keyPass !== null && $keyPass !== '') {
+                curl_setopt($ch, CURLOPT_SSLKEYPASSWD, (string)$keyPass);
+            }
+        }
+        if ($username !== '' && $password !== '') {
+            curl_setopt($ch, CURLOPT_USERPWD, $username . ':' . $password);
+        }
+
+        $result   = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        curl_close($ch);
+
+        if ($result === false || $curlErr) {
+            return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
+        }
+        if ($httpCode === 0) {
+            return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
+        }
+        if ($httpCode === 200) {
+            return $this->jsonOk("Connessione {$label}: HTTP 200 — OK.");
+        }
+        if ($httpCode === 401 || $httpCode === 403) {
+            $authInfo = strtolower($authMethod) === 'sslheader'
+                ? ($cert !== '' ? 'cert trovato' : 'cert NON configurato')
+                : 'basic auth';
+            return $this->jsonError("Connessione {$label}: HTTP {$httpCode} — autenticazione fallita ({$authInfo}).");
+        }
+        return $this->jsonError("Connessione {$label}: HTTP {$httpCode}.");
+    }
+
     private function pingUrl(string $url, string $label): Response
     {
         if (empty($url)) {
@@ -500,9 +562,10 @@ class ImpostazioniController
         if ($httpCode === 0) {
             return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
         }
-        $ok  = $httpCode < 500;
-        $msg = "Connessione {$label}: HTTP {$httpCode}" . ($ok ? ' — server raggiungibile.' : ' — server in errore.');
-        return $ok ? $this->jsonOk($msg) : $this->jsonError($msg);
+        if ($httpCode === 200) {
+            return $this->jsonOk("Connessione {$label}: HTTP 200 — OK.");
+        }
+        return $this->jsonError("Connessione {$label}: HTTP {$httpCode}.");
     }
 
     private function requireAdminOrAbove(): void
