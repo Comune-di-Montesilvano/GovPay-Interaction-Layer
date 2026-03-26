@@ -184,7 +184,7 @@ services:
       - govpay-network
   db:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
-    container_name: mariadb
+    container_name: govpay-interaction-mariadb
     restart: always
     environment:
       - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
