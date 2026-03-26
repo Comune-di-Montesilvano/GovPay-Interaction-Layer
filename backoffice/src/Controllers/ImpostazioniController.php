@@ -237,31 +237,101 @@ class ImpostazioniController
     public function testGovpayConnection(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'backoffice_url', ''), 'GovPay Backoffice');
+        $url = SettingsRepository::get('govpay', 'backoffice_url', '');
+        if (empty($url)) {
+            return $this->jsonError('GovPay Backoffice URL non configurato.');
+        }
+        try {
+            $cfg = new \GovPay\Backoffice\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            (new \GovPay\Backoffice\Api\InfoApi($this->buildGovpayHttpClient(), $cfg))->getInfo();
+            return $this->jsonOk('GovPay Backoffice: connessione OK.');
+        } catch (\GovPay\Backoffice\ApiException $e) {
+            return $this->jsonError('GovPay Backoffice: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()));
+        } catch (\Throwable $e) {
+            return $this->jsonError('GovPay Backoffice: ' . $e->getMessage());
+        }
     }
 
     public function testGovpayPendenze(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'pendenze_url', ''), 'GovPay Pendenze');
+        $url = SettingsRepository::get('govpay', 'pendenze_url', '');
+        if (empty($url)) {
+            return $this->jsonError('GovPay Pendenze URL non configurato.');
+        }
+        try {
+            $cfg = new \GovPay\Pendenze\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            (new \GovPay\Pendenze\Api\ProfiloApi($this->buildGovpayHttpClient(), $cfg))->getProfilo();
+            return $this->jsonOk('GovPay Pendenze: connessione OK.');
+        } catch (\GovPay\Pendenze\ApiException $e) {
+            return $this->jsonError('GovPay Pendenze: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()));
+        } catch (\Throwable $e) {
+            return $this->jsonError('GovPay Pendenze: ' . $e->getMessage());
+        }
     }
 
     public function testGovpayPagamenti(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'pagamenti_url', ''), 'GovPay Pagamenti');
+        $url = SettingsRepository::get('govpay', 'pagamenti_url', '');
+        if (empty($url)) {
+            return $this->jsonError('GovPay Pagamenti URL non configurato.');
+        }
+        try {
+            $cfg = new \GovPay\Pagamenti\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            (new \GovPay\Pagamenti\Api\UtentiApi($this->buildGovpayHttpClient(), $cfg))->getProfilo();
+            return $this->jsonOk('GovPay Pagamenti: connessione OK.');
+        } catch (\GovPay\Pagamenti\ApiException $e) {
+            return $this->jsonError('GovPay Pagamenti: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()));
+        } catch (\Throwable $e) {
+            return $this->jsonError('GovPay Pagamenti: ' . $e->getMessage());
+        }
     }
 
     public function testGovpayRagioneria(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'ragioneria_url', ''), 'GovPay Ragioneria');
+        $url = SettingsRepository::get('govpay', 'ragioneria_url', '');
+        if (empty($url)) {
+            return $this->jsonError('GovPay Ragioneria URL non configurato.');
+        }
+        try {
+            $cfg = new \GovPay\Ragioneria\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            (new \GovPay\Ragioneria\Api\UtentiApi($this->buildGovpayHttpClient(), $cfg))->getProfilo();
+            return $this->jsonOk('GovPay Ragioneria: connessione OK.');
+        } catch (\GovPay\Ragioneria\ApiException $e) {
+            return $this->jsonError('GovPay Ragioneria: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()));
+        } catch (\Throwable $e) {
+            return $this->jsonError('GovPay Ragioneria: ' . $e->getMessage());
+        }
     }
 
     public function testGovpayPendenzePatch(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingGovpayUrl(SettingsRepository::get('govpay', 'pendenze_patch_url', ''), 'GovPay Pendenze PATCH');
+        $url = SettingsRepository::get('govpay', 'pendenze_patch_url', '');
+        if (empty($url)) {
+            return $this->jsonError('GovPay Pendenze Patch URL non configurato.');
+        }
+        try {
+            $cfg = new \GovPay\Pendenze\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            (new \GovPay\Pendenze\Api\ProfiloApi($this->buildGovpayHttpClient(), $cfg))->getProfilo();
+            return $this->jsonOk('GovPay Pendenze Patch: connessione OK.');
+        } catch (\GovPay\Pendenze\ApiException $e) {
+            return $this->jsonError('GovPay Pendenze Patch: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()));
+        } catch (\Throwable $e) {
+            return $this->jsonError('GovPay Pendenze Patch: ' . $e->getMessage());
+        }
     }
 
     public function testCheckout(Request $request, Response $response): Response
@@ -474,62 +544,39 @@ class ImpostazioniController
     // PRIVATE HELPERS
     // ──────────────────────────────────────────────────────────────────────
 
-    private function pingGovpayUrl(string $url, string $label): Response
+    private function buildGovpayHttpClient(): \GuzzleHttp\Client
     {
-        if (empty($url)) {
-            return $this->jsonError("URL {$label} non configurato.");
-        }
-        $ch = curl_init($url);
-        if ($ch === false) {
-            return $this->jsonError("URL {$label} non valido.");
-        }
-
         $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
-        $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
-        $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
-        $username = SettingsRepository::get('govpay', 'user', '');
-        $password = SettingsRepository::get('govpay', 'password', '');
-
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 8,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_SSL_VERIFYPEER => false,
-        ]);
-
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true) && $cert !== '' && $key !== '') {
-            curl_setopt($ch, CURLOPT_SSLCERT, $cert);
-            curl_setopt($ch, CURLOPT_SSLKEY, $key);
-            if ($keyPass !== null && $keyPass !== '') {
-                curl_setopt($ch, CURLOPT_SSLKEYPASSWD, (string)$keyPass);
+        $options = [];
+        if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key  = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $pass = SettingsRepository::get('govpay', 'tls_key_password');
+            if (!empty($cert) && !empty($key)) {
+                $options['cert']    = $cert;
+                $options['ssl_key'] = ($pass !== null && $pass !== '') ? [$key, $pass] : $key;
             }
         }
-        if ($username !== '' && $password !== '') {
-            curl_setopt($ch, CURLOPT_USERPWD, $username . ':' . $password);
-        }
+        return new \GuzzleHttp\Client($options);
+    }
 
-        $result   = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-        curl_close($ch);
+    private function applyGovpayCredentials(object $config): void
+    {
+        $user = SettingsRepository::get('govpay', 'user', '');
+        $pass = SettingsRepository::get('govpay', 'password', '');
+        if ($user !== '' && $pass !== '') {
+            $config->setUsername($user);
+            $config->setPassword($pass);
+        }
+    }
 
-        if ($result === false || $curlErr) {
-            return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
+    private function govpayErrorDetail(mixed $body): string
+    {
+        if (empty($body)) {
+            return 'errore sconosciuto';
         }
-        if ($httpCode === 0) {
-            return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
-        }
-        if ($httpCode === 200) {
-            return $this->jsonOk("Connessione {$label}: HTTP 200 — OK.");
-        }
-        if ($httpCode === 401 || $httpCode === 403) {
-            $authInfo = in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)
-                ? ($cert !== '' ? 'cert trovato' : 'cert NON configurato')
-                : 'basic auth';
-            return $this->jsonError("Connessione {$label}: HTTP {$httpCode} — autenticazione fallita ({$authInfo}).");
-        }
-        return $this->jsonError("Connessione {$label}: HTTP {$httpCode}.");
+        $decoded = json_decode((string)$body, true);
+        return $decoded['descrizione'] ?? $decoded['detail'] ?? $decoded['message'] ?? substr((string)$body, 0, 120);
     }
 
     private function pingUrl(string $url, string $label): Response
