@@ -255,7 +255,7 @@ class ImpostazioniController
         }
 
         try {
-            $mailerService = new \App\Services\MailerService();
+            $mailerService = \App\Services\MailerService::forSuite('backoffice');
             $mailerService->sendTestEmail($recipient);
             return $this->jsonOk("Email di test inviata a {$recipient}.");
         } catch (\Throwable $e) {
