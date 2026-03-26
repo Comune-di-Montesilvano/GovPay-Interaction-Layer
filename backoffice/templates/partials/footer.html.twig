@@ -6,11 +6,18 @@
           {{ app_entity.full }}
         </div>
         <div class="py-2 col-12 col-md-4 text-center d-none d-md-block">
-          <a href="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/{{ app_version }}"
+          {% if app_version starts with 'v' %}
+            {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/' ~ app_version %}
+            {% set gh_label = app_version %}
+          {% else %}
+            {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/commit/' ~ app_commit %}
+            {% set gh_label = app_version ~ '@' ~ app_commit|slice(0, 7) %}
+          {% endif %}
+          <a href="{{ gh_url }}"
              target="_blank" rel="noopener noreferrer"
              class="text-white text-decoration-none small opacity-75"
              title="Vai al repository GitHub">
-            <i class="fab fa-github me-1"></i>Backoffice@GovPayInteractionLayer {{ app_version }}
+            <i class="fab fa-github me-1"></i>GovPayInteractionLayer {{ gh_label }}
           </a>
         </div>
         <div class="py-2 col-12 col-md-4 text-end d-none d-md-block">

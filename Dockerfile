@@ -74,6 +74,10 @@ FROM php:8.5-apache-trixie AS runtime-base
 ARG GIL_IMAGE_TAG=dev
 ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
 
+# Commit SHA iniettato a build-time dalla CI
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+
 # Installazione delle dipendenze di sistema e PHP (inclusi unzip e wget)
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -78,6 +78,7 @@ return (function (): array {
     $twig->getEnvironment()->addGlobal('app_favicon', $appFavicon);
 
     $twig->getEnvironment()->addGlobal('app_version', (string)(getenv('GIL_IMAGE_TAG') ?: 'dev'));
+    $twig->getEnvironment()->addGlobal('app_commit', (string)(getenv('GIT_COMMIT_SHA') ?: 'unknown'));
 
 
     $pendenzaStates = [
