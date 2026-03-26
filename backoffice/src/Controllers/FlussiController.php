@@ -470,11 +470,15 @@ class FlussiController
     private function makeHttpClient(): Client
     {
         $guzzleOptions = [];
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '')
+                      ?: (string)(getenv('AUTHENTICATION_GOVPAY') ?: '');
         if (strtolower($authMethod) === 'sslheader') {
-            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
+            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '')
+                       ?: (string)(getenv('GOVPAY_TLS_CERT') ?: '');
+            $key     = SettingsRepository::get('govpay', 'tls_key_path', '')
+                       ?: (string)(getenv('GOVPAY_TLS_KEY') ?: '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password')
+                       ?: (getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null);
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;

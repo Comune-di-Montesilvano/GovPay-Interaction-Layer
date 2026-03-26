@@ -6,6 +6,9 @@
 
 declare(strict_types=1);
 
+// Never output raw PHP errors/warnings to HTTP responses (prevents HTML leaking into JSON)
+ini_set('display_errors', '0');
+
 use Slim\Factory\AppFactory;
 use Slim\Views\Twig;
 use Slim\Views\TwigMiddleware;
@@ -134,8 +137,8 @@ return (function (): array {
         } catch (\Throwable $_) {
             // swallow
         }
-        // Let PHP internal handler run as well
-        return false;
+        // Suppress PHP internal handler (prevents HTML error output in JSON responses)
+        return true;
     });
 
     set_exception_handler(function (\Throwable $e) {
