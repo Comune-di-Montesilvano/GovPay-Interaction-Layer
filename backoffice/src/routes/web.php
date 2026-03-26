@@ -62,6 +62,9 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->index($request, $response);
     });
+    $app->post('/impostazioni/generale/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveGenerale($request, $response);
+    });
     $app->post('/impostazioni/govpay/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveGovpay($request, $response);
     });
@@ -77,8 +80,32 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
     });
-    $app->post('/impostazioni/govpay/test-connection', function (Request $request, Response $response) use ($twig): Response {
+    $app->get('/impostazioni/govpay/test-connection', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testGovpayConnection($request, $response);
+    });
+    $app->get('/impostazioni/govpay/test-pendenze', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testGovpayPendenze($request, $response);
+    });
+    $app->get('/impostazioni/govpay/test-pagamenti', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testGovpayPagamenti($request, $response);
+    });
+    $app->get('/impostazioni/govpay/test-ragioneria', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testGovpayRagioneria($request, $response);
+    });
+    $app->get('/impostazioni/govpay/test-pendenze-patch', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testGovpayPendenzePatch($request, $response);
+    });
+    $app->get('/impostazioni/api-esterne/test-checkout', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testCheckout($request, $response);
+    });
+    $app->get('/impostazioni/api-esterne/test-payment-options', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testPaymentOptions($request, $response);
+    });
+    $app->get('/impostazioni/api-esterne/test-biz-events', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testBizEvents($request, $response);
+    });
+    $app->get('/impostazioni/api-esterne/test-tassonomie', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testTassonomie($request, $response);
     });
     $app->post('/impostazioni/backoffice/test-email', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testEmail($request, $response);
@@ -100,6 +127,26 @@ return function (App $app, Twig $twig): void {
     });
     $app->get('/impostazioni/containers/status', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getContainersStatus($request, $response);
+    });
+    // SPID metadata
+    $app->get('/impostazioni/login-proxy/spid-metadata/info', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getSpidMetadataInfo($request, $response);
+    });
+    $app->get('/impostazioni/login-proxy/spid-metadata/download', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->downloadSpidMetadata($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/spid-metadata/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreSpidMetadata($request, $response);
+    });
+    // CIE metadata
+    $app->get('/impostazioni/login-proxy/cie-metadata/info', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getCieMetadataInfo($request, $response);
+    });
+    $app->get('/impostazioni/login-proxy/cie-metadata/download', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->downloadCieMetadata($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/cie-metadata/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreCieMetadata($request, $response);
     });
     $app->post('/impostazioni/logo/upload', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->uploadLogo($request, $response);

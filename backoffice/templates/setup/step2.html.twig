@@ -44,10 +44,10 @@
     <h5 class="mt-4 mb-3 border-bottom pb-2">URL Pubblici</h5>
     <div class="row g-3">
       <div class="col-md-6">
-        <label class="form-label">URL Backoffice <span class="text-danger">*</span></label>
+        <label class="form-label">URL Backoffice</label>
         <input type="url" class="form-control {% if errors.backoffice_url is defined %}is-invalid{% endif %}"
                name="backoffice_url" value="{{ data.backoffice_url|default('') }}"
-               placeholder="https://pagopa-be.comune.esempio.it" required>
+               placeholder="https://pagopa-be.comune.esempio.it">
         {% if errors.backoffice_url is defined %}<div class="invalid-feedback">{{ errors.backoffice_url }}</div>{% endif %}
       </div>
       <div class="col-md-6">

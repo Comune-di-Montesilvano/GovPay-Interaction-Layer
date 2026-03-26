@@ -6,42 +6,6 @@
     <form id="form-backoffice" onsubmit="return false;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-      {# ─── Dati ente ────────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-building me-1"></i>Dati ente
-      </h6>
-      <div class="row g-3 mb-4">
-        <div class="col-md-4">
-          <label class="form-label">Codice IPA</label>
-          <input type="text" class="form-control font-monospace" name="entity_ipa_code"
-            value="{{ entity.ipa_code|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-8">
-          <label class="form-label">Nome ente <span class="text-danger">*</span></label>
-          <input type="text" class="form-control" name="entity_name"
-            value="{{ entity.name|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-          <div class="form-text">Appare nell'intestazione del backoffice e del frontoffice.</div>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Dicitura sotto il nome</label>
-          <input type="text" class="form-control" name="entity_suffix"
-            value="{{ entity.suffix|default('') }}" placeholder="Servizi ai cittadini"
-            {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Forma istituzionale</label>
-          <input type="text" class="form-control" name="entity_government"
-            value="{{ entity.government|default('') }}" placeholder="Es.: Città Metropolitana"
-            {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-8">
-          <label class="form-label">Sito web ente</label>
-          <input type="url" class="form-control" name="entity_url"
-            value="{{ entity.url|default('') }}" placeholder="https://www.comune.example.it"
-            {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-      </div>
-
       {# ─── URL e server ─────────────────────────────────────────────────── #}
       <h6 class="text-muted text-uppercase small fw-semibold mb-3">
         <i class="fas fa-link me-1"></i>URL pubblici
@@ -140,34 +104,6 @@
           </button>
         </div>
         {% endif %}
-      </div>
-
-      {# ─── Supporto ─────────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-headset me-1"></i>Info supporto
-      </h6>
-      <div class="row g-3 mb-4">
-        <div class="col-md-5">
-          <label class="form-label">E-mail supporto</label>
-          <input type="email" class="form-control" name="support_email"
-            value="{{ entity.support_email|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Telefono</label>
-          <input type="text" class="form-control" name="support_phone"
-            value="{{ entity.support_phone|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Orari</label>
-          <input type="text" class="form-control" name="support_hours"
-            value="{{ entity.support_hours|default('') }}" placeholder="Lun-Ven 9:00-17:00"
-            {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-8">
-          <label class="form-label">Indirizzo</label>
-          <input type="text" class="form-control" name="support_location"
-            value="{{ entity.support_location|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
       </div>
 
       {% if is_superadmin %}

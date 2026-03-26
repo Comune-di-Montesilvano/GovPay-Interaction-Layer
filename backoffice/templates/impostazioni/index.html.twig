@@ -37,6 +37,10 @@
   {# ─── Left nav ─────────────────────────────────────────────────────────── #}
   <div class="col-lg-3">
     <nav class="nav imp-nav flex-column border rounded bg-white" aria-label="Sezioni impostazioni">
+      <span class="imp-section-title">Generale</span>
+      <a class="nav-link {{ active_tab == 'generale' ? 'active' : '' }}" href="/impostazioni?tab=generale">
+        <i class="fas fa-building me-2"></i>Generale
+      </a>
       <span class="imp-section-title">Connessioni</span>
       <a class="nav-link {{ active_tab == 'govpay' ? 'active' : '' }}" href="/impostazioni?tab=govpay">
         <i class="fas fa-plug me-2"></i>GovPay
@@ -62,7 +66,9 @@
 
   {# ─── Tab content ───────────────────────────────────────────────────────── #}
   <div class="col-lg-9">
-    {% if active_tab == 'govpay' %}
+    {% if active_tab == 'generale' %}
+      {% include 'impostazioni/tab-generale.html.twig' %}
+    {% elseif active_tab == 'govpay' %}
       {% include 'impostazioni/tab-govpay.html.twig' %}
     {% elseif active_tab == 'api-esterne' %}
       {% include 'impostazioni/tab-api-esterne.html.twig' %}

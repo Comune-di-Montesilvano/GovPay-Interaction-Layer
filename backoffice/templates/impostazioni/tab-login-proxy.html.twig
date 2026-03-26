@@ -306,6 +306,83 @@
   </form>
 </div>
 
+{# ─── Metadata SPID / CIE ────────────────────────────────────────────────────── #}
+<div class="row g-3 mt-2">
+  {# SPID #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+        <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata SP SPID</h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+      </div>
+      <div class="card-body" id="spid-metadata-body">
+        <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+      </div>
+      <div class="card-footer bg-white d-flex gap-2 flex-wrap">
+        <a href="/impostazioni/login-proxy/spid-metadata/download" class="btn btn-sm btn-outline-primary">
+          <i class="fas fa-download me-1"></i>Scarica backup
+        </a>
+        {% if is_superadmin %}
+        <button class="btn btn-sm btn-outline-warning" type="button" onclick="toggleRestoreForm('spid-restore-form')">
+          <i class="fas fa-upload me-1"></i>Ripristina
+        </button>
+        {% endif %}
+      </div>
+      {% if is_superadmin %}
+      <div id="spid-restore-form" class="card-body border-top pt-3" style="display:none;">
+        <label class="form-label small fw-semibold">Carica file XML metadata SP</label>
+        <div class="input-group">
+          <input type="file" class="form-control form-control-sm" id="spid-restore-file" accept=".xml">
+          <button class="btn btn-sm btn-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
+            <i class="fas fa-upload me-1"></i>Ripristina
+          </button>
+        </div>
+        <div class="form-text">File XML SAML2 del Service Provider SPID.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# CIE #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+        <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Metadata SP CIE OIDC</h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+      </div>
+      <div class="card-body" id="cie-metadata-body">
+        <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+      </div>
+      <div class="card-footer bg-white d-flex gap-2 flex-wrap">
+        <a href="/impostazioni/login-proxy/cie-metadata/download" class="btn btn-sm btn-outline-primary">
+          <i class="fas fa-download me-1"></i>Scarica backup
+        </a>
+        {% if is_superadmin %}
+        <button class="btn btn-sm btn-outline-warning" type="button" onclick="toggleRestoreForm('cie-restore-form')">
+          <i class="fas fa-upload me-1"></i>Ripristina
+        </button>
+        {% endif %}
+      </div>
+      {% if is_superadmin %}
+      <div id="cie-restore-form" class="card-body border-top pt-3" style="display:none;">
+        <label class="form-label small fw-semibold">Carica file JSON entity configuration CIE</label>
+        <div class="input-group">
+          <input type="file" class="form-control form-control-sm" id="cie-restore-file" accept=".json">
+          <button class="btn btn-sm btn-warning" type="button" onclick="restoreMetadata('cie', 'cie-restore-file', this)">
+            <i class="fas fa-upload me-1"></i>Ripristina
+          </button>
+        </div>
+        <div class="form-text">File JSON dell'entity configuration CIE OIDC.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 <script>
 // Load container status on page load
 (async function () {
@@ -325,4 +402,86 @@
     }
   } catch (_) { /* master non disponibile, silenzioso */ }
 })();
+
+function toggleRestoreForm(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function loadMetadataInfo(type, btn) {
+  const bodyEl = document.getElementById(type + '-metadata-body');
+  if (!bodyEl) return;
+  const origIcon = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+  try {
+    const res = await fetch('/impostazioni/login-proxy/' + type + '-metadata/info');
+    const json = await res.json();
+    const d = json.data || json;
+    if (!d.exists) {
+      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>File non trovato</span>';
+      return;
+    }
+    if (d.parse_error) {
+      bodyEl.innerHTML = '<div class="text-danger small"><i class="fas fa-times-circle me-1"></i>Errore parsing: ' + escHtml(d.parse_error) + '</div>';
+      return;
+    }
+    let html = '<dl class="row small mb-0">';
+    if (type === 'spid') {
+      html += metaRow('Entity ID', escHtml(d.entity_id || '—'));
+      if (d.acs_urls && d.acs_urls.length) {
+        html += metaRow('ACS URL', d.acs_urls.map(u => '<code class="small">' + escHtml(u) + '</code>').join('<br>'));
+      }
+      html += metaRow('Scadenza metadata', expiryBadge(d.valid_until, d.valid_until_expired));
+      html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
+    } else {
+      html += metaRow('Issuer', escHtml(d.iss || '—'));
+      html += metaRow('Subject', escHtml(d.sub || '—'));
+      html += metaRow('Scadenza (exp)', expiryBadge(d.exp, d.exp_expired));
+      html += metaRow('Emesso (iat)', '<span class="text-muted">' + escHtml(d.iat || '—') + '</span>');
+      html += metaRow('Chiavi JWK', '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">' + (d.jwk_count || 0) + ' chiavi</span>');
+    }
+    html += metaRow('Aggiornato', '<span class="text-muted">' + escHtml(d.file_mtime || '—') + '</span>');
+    html += '</dl>';
+    bodyEl.innerHTML = html;
+  } catch (e) {
+    bodyEl.innerHTML = '<div class="text-danger small">Errore: ' + escHtml(e.message) + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origIcon; }
+  }
+}
+
+function metaRow(label, value) {
+  return '<dt class="col-5 text-muted fw-normal">' + label + '</dt><dd class="col-7 mb-1">' + value + '</dd>';
+}
+
+function expiryBadge(date, expired) {
+  if (!date) return '<span class="text-muted">—</span>';
+  const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle' : 'bg-success-subtle text-success border-success-subtle';
+  const icon = expired ? 'fa-times-circle' : 'fa-check-circle';
+  return '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(date) + '</span>';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function restoreMetadata(type, fileInputId, btn) {
+  const fileEl = document.getElementById(fileInputId);
+  if (!fileEl || !fileEl.files[0]) { impToast('Seleziona un file.', false); return; }
+  const fd = new FormData();
+  fd.append('metadata_file', fileEl.files[0]);
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/' + type + '-metadata/restore', { method: 'POST', body: fd });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'Ripristinato.' : 'Fallito.'), !!json.success);
+    if (json.success) {
+      toggleRestoreForm(type + '-restore-form');
+      loadMetadataInfo(type, null);
+    }
+  } catch (e) { impToast('Errore: ' + e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
+}
 </script>

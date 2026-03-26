@@ -14,44 +14,45 @@
       <h6 class="text-muted text-uppercase small fw-semibold mb-3">URL API GovPay</h6>
       <div class="row g-3 mb-4">
         <div class="col-md-6">
-          <label class="form-label">Pendenze URL <span class="text-danger">*</span></label>
-          <input type="url" class="form-control" name="pendenze_url"
-            value="{{ govpay.pendenze_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+          <label class="form-label">Pendenze URL</label>
+          <div class="input-group">
+            <input type="url" class="form-control" name="pendenze_url"
+              value="{{ govpay.pendenze_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="impTestGovpayEndpoint('pendenze', this)" title="Test connessione"><i class="fas fa-wifi"></i></button>
+          </div>
           <div class="form-text">Es.: <code>https://govpay.ente.it/backoffice/v1</code></div>
         </div>
         <div class="col-md-6">
           <label class="form-label">Pagamenti URL</label>
-          <input type="url" class="form-control" name="pagamenti_url"
-            value="{{ govpay.pagamenti_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="input-group">
+            <input type="url" class="form-control" name="pagamenti_url"
+              value="{{ govpay.pagamenti_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="impTestGovpayEndpoint('pagamenti', this)" title="Test connessione"><i class="fas fa-wifi"></i></button>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label">Ragioneria URL</label>
-          <input type="url" class="form-control" name="ragioneria_url"
-            value="{{ govpay.ragioneria_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="input-group">
+            <input type="url" class="form-control" name="ragioneria_url"
+              value="{{ govpay.ragioneria_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="impTestGovpayEndpoint('ragioneria', this)" title="Test connessione"><i class="fas fa-wifi"></i></button>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label">Backoffice URL</label>
-          <input type="url" class="form-control" name="backoffice_url"
-            value="{{ govpay.backoffice_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="input-group">
+            <input type="url" class="form-control" name="backoffice_url"
+              value="{{ govpay.backoffice_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="impTestGovpay(this)" title="Test connessione"><i class="fas fa-wifi"></i></button>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label">Pendenze Patch URL</label>
-          <input type="url" class="form-control" name="pendenze_patch_url"
-            value="{{ govpay.pendenze_patch_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-      </div>
-
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">Identificativi ente</h6>
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <label class="form-label">ID Dominio</label>
-          <input type="text" class="form-control font-monospace" name="id_dominio"
-            value="{{ entity.id_dominio|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">ID A2A</label>
-          <input type="text" class="form-control font-monospace" name="id_a2a"
-            value="{{ entity.id_a2a|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="input-group">
+            <input type="url" class="form-control" name="pendenze_patch_url"
+              value="{{ govpay.pendenze_patch_url|default('') }}" placeholder="https://…" {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="impTestGovpayEndpoint('pendenze-patch', this)" title="Test connessione"><i class="fas fa-wifi"></i></button>
+          </div>
         </div>
       </div>
 
@@ -186,9 +187,20 @@ async function uploadGovpayKey() {
 async function impTestGovpay(btn) {
   btn.disabled = true;
   const orig = btn.innerHTML;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Test…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
   try {
     const res = await fetch('/impostazioni/govpay/test-connection');
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+async function impTestGovpayEndpoint(endpoint, btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  try {
+    const res = await fetch('/impostazioni/govpay/test-' + endpoint);
     const json = await res.json();
     impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
   } catch(e) { impToast('Errore: ' + e.message, false); }

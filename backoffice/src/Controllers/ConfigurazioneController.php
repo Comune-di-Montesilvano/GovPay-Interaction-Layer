@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Auth\UserRepository;
+use App\Config\SettingsRepository;
 use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\ExternalPaymentTypeRepository;
@@ -73,7 +74,7 @@ class ConfigurazioneController
         $tassonomieError = null;
         $tassonomieRaw = null;
         $tassonomieFilteredStats = null;
-        $tassonomieUrl = getenv('TASSONOMIE_PAGOPA') ?: null;
+        $tassonomieUrl = SettingsRepository::get('pagopa', 'tassonomie_url') ?: null;
         $tassonomieSearch = trim((string)($params['tq'] ?? ''));
 
         $normalizeTipologiaCode = static function (?string $code): ?string {
@@ -155,7 +156,7 @@ class ConfigurazioneController
             'prevUrl' => null,
             'nextUrl' => null,
         ];
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
 
         if (class_exists('\\GovPay\\Backoffice\\Api\\ConfigurazioniApi')) {
             if (!empty($backofficeUrl)) {
@@ -163,19 +164,19 @@ class ConfigurazioneController
                     $config = new \GovPay\Backoffice\Configuration();
                     $config->setHost(rtrim($backofficeUrl, '/'));
 
-                    $username = getenv('GOVPAY_USER');
-                    $password = getenv('GOVPAY_PASSWORD');
-                    if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                    $username = SettingsRepository::get('govpay', 'user', '');
+                    $password = SettingsRepository::get('govpay', 'password', '');
+                    if ($username !== '' && $password !== '') {
                         $config->setUsername($username);
                         $config->setPassword($password);
                     }
 
                     $guzzleOptions = [];
-                    $authMethod = getenv('AUTHENTICATION_GOVPAY');
-                    if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                        $cert = getenv('GOVPAY_TLS_CERT');
-                        $key = getenv('GOVPAY_TLS_KEY');
-                        $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                    if (strtolower((string)$authMethod) === 'sslheader') {
+                        $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                        $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                         if (!empty($cert) && !empty($key)) {
                             $guzzleOptions['cert'] = $cert;
                             $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -200,7 +201,7 @@ class ConfigurazioneController
                             ? $appsData
                             : (json_decode(json_encode($appsData, JSON_UNESCAPED_SLASHES), true) ?: []);
 
-                        $idA2A = getenv('ID_A2A') ?: '';
+                        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
 
                         $appsJson = json_encode($appsArr, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
@@ -341,9 +342,9 @@ class ConfigurazioneController
                     try {
                         if (class_exists('GovPay\\Backoffice\\Api\\EntiCreditoriApi')) {
                             $entrApi = new \GovPay\Backoffice\Api\EntiCreditoriApi($httpClient, $config);
-                            $idDominioEnv = getenv('ID_DOMINIO');
+                            $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
                             $entrateSource = '/entrate';
-                            if ($idDominioEnv !== false && $idDominioEnv !== '') {
+                            if ($idDominioEnv !== '') {
                                 $idDominio = trim((string)$idDominioEnv);
                                 $entrRes = $entrApi->findEntrateDominio($idDominio, 1, 200, '+idEntrata', null, null, null, true, true);
                                 $entrateSource = '/domini/' . $idDominio . '/entrate';
@@ -428,11 +429,11 @@ class ConfigurazioneController
 
                     try {
                         if (class_exists('GovPay\\Pendenze\\Api\\ProfiloApi')) {
-                            $pendHost = getenv('GOVPAY_PENDENZE_URL') ?: '';
+                            $pendHost = SettingsRepository::get('govpay', 'pendenze_url', '');
                             if (!empty($pendHost)) {
                                 $pendCfg = new \GovPay\Pendenze\Configuration();
                                 $pendCfg->setHost(rtrim($pendHost, '/'));
-                                if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                                if ($username !== '' && $password !== '') {
                                     $pendCfg->setUsername($username);
                                     $pendCfg->setPassword($password);
                                 }
@@ -452,10 +453,10 @@ class ConfigurazioneController
                     }
 
                     try {
-                        $pagHost = getenv('GOVPAY_PAGAMENTI_URL') ?: '';
+                        $pagHost = SettingsRepository::get('govpay', 'pagamenti_url', '');
                         if (!empty($pagHost)) {
                             $headers = ['Accept' => 'application/json'];
-                            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+                            if ($username !== '' && $password !== '') {
                                 $headers['Authorization'] = 'Basic ' . base64_encode($username . ':' . $password);
                             }
                             $http = new \GuzzleHttp\Client($guzzleOptions);
@@ -482,7 +483,7 @@ class ConfigurazioneController
 
                     try {
                         if (class_exists('GovPay\\Backoffice\\Api\\EntiCreditoriApi')) {
-                            $idDom = getenv('ID_DOMINIO') ?: '';
+                            $idDom = SettingsRepository::get('entity', 'id_dominio', '');
                             if ($idDom !== '') {
                                 $entiApi = new \GovPay\Backoffice\Api\EntiCreditoriApi($httpClient, $config);
                                 $domRes = $entiApi->getDominio($idDom);
@@ -786,7 +787,7 @@ class ConfigurazioneController
         $tipologiePendenze = [];
         if ($tab === 'templates' && $canManageUsers) {
             try {
-                $idDominioEnv = getenv('ID_DOMINIO') ?: '';
+                $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
                 if ($idDominioEnv !== '') {
                     $templateRepo = new \App\Database\PendenzaTemplateRepository();
                     $pendenzaTemplates = $templateRepo->findAllByDominio($idDominioEnv);
@@ -821,7 +822,7 @@ class ConfigurazioneController
             'ruoli_api_status' => $ruoliApiStatus,
             'ruoli_api_error' => $ruoliApiError,
             'ruoli_api_count' => $ruoliApiCount,
-            'idA2A' => getenv('ID_A2A') ?: null,
+            'idA2A' => SettingsRepository::get('entity', 'id_a2a') ?: null,
             'profilo_json' => $profiloJson,
             'entrate_json' => $entrateJson,
             'entrate' => $entrateArr,
@@ -959,22 +960,22 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'dominio');
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-        $idDom = getenv('ID_DOMINIO') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idDom = SettingsRepository::get('entity', 'id_dominio', '');
         if ($backofficeUrl === '' || $idDom === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Variabili GOVPAY_BACKOFFICE_URL o ID_DOMINIO non impostate'];
             return $this->redirectToTab($response, 'dominio');
         }
 
         // Setup HTTP client (basic or mTLS) like other Backoffice calls
-        $username = getenv('GOVPAY_USER');
-        $password = getenv('GOVPAY_PASSWORD');
+        $username = SettingsRepository::get('govpay', 'user', '');
+        $password = SettingsRepository::get('govpay', 'password', '');
         $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
-        $authMethod = getenv('AUTHENTICATION_GOVPAY');
-        if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-            $cert = getenv('GOVPAY_TLS_CERT');
-            $key = getenv('GOVPAY_TLS_KEY');
-            $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (strtolower((string)$authMethod) === 'sslheader') {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if (!empty($cert) && !empty($key)) {
                 $guzzleOptions['cert'] = $cert;
                 $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -991,7 +992,7 @@ class ConfigurazioneController
 
         $config = new \GovPay\Backoffice\Configuration();
         $config->setHost(rtrim($backofficeUrl, '/'));
-        if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+        if ($username !== '' && $password !== '') {
             $config->setUsername($username);
             $config->setPassword($password);
         }
@@ -1105,7 +1106,7 @@ class ConfigurazioneController
         }
 
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1140,7 +1141,7 @@ class ConfigurazioneController
         }
 
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1173,7 +1174,7 @@ class ConfigurazioneController
         }
 
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1186,21 +1187,21 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'tipologie');
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (empty($backofficeUrl)) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'GOVPAY_BACKOFFICE_URL non impostata'];
             return $this->redirectToTab($response, 'tipologie');
         }
 
         try {
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
             $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
-            $authMethod = getenv('AUTHENTICATION_GOVPAY');
-            if ($authMethod !== false && strtolower((string)$authMethod) === 'sslheader') {
-                $cert = getenv('GOVPAY_TLS_CERT');
-                $key = getenv('GOVPAY_TLS_KEY');
-                $keyPass = getenv('GOVPAY_TLS_KEY_PASSWORD') ?: null;
+            $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+            if (strtolower((string)$authMethod) === 'sslheader') {
+                $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
                 if (!empty($cert) && !empty($key)) {
                     $guzzleOptions['cert'] = $cert;
                     $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
@@ -1217,7 +1218,7 @@ class ConfigurazioneController
 
             $config = new \GovPay\Backoffice\Configuration();
             $config->setHost(rtrim($backofficeUrl, '/'));
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            if ($username !== '' && $password !== '') {
                 $config->setUsername($username);
                 $config->setPassword($password);
             }
@@ -1292,7 +1293,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'operatori');
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if ($backofficeUrl === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'GOVPAY_BACKOFFICE_URL non impostata'];
             return $this->redirectToTab($response, 'operatori');
@@ -1311,9 +1312,9 @@ class ConfigurazioneController
         try {
             $config = new \GovPay\Backoffice\Configuration();
             $config->setHost(rtrim($backofficeUrl, '/'));
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
+            if ($username !== '' && $password !== '') {
                 $config->setUsername($username);
                 $config->setPassword($password);
             }
@@ -1352,7 +1353,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'operatori');
         }
 
-        $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if ($backofficeUrl === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'GOVPAY_BACKOFFICE_URL non impostata'];
             return $this->redirectToTab($response, 'operatori');
@@ -1361,9 +1362,9 @@ class ConfigurazioneController
         try {
             $config = new \GovPay\Backoffice\Configuration();
             $config->setHost(rtrim($backofficeUrl, '/'));
-            $username = getenv('GOVPAY_USER');
-            $password = getenv('GOVPAY_PASSWORD');
-            if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
+            if ($username !== '' && $password !== '') {
                 $config->setUsername($username);
                 $config->setPassword($password);
             }
@@ -1390,7 +1391,7 @@ class ConfigurazioneController
         }
 
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1420,7 +1421,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'tipologie');
         }
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1453,7 +1454,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'tipologie');
         }
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1482,7 +1483,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'tipologie');
         }
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1515,7 +1516,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'tipologie');
         }
         $idEntrata = $args['idEntrata'] ?? '';
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1546,8 +1547,8 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'tipologie');
         }
 
-        $idDominio = getenv('ID_DOMINIO') ?: '';
-        $tassonomieUrl = getenv('TASSONOMIE_PAGOPA') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $tassonomieUrl = SettingsRepository::get('pagopa', 'tassonomie_url', '');
         if ($idDominio === '' || $tassonomieUrl === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID_DOMINIO o TASSONOMIE_PAGOPA non impostati'];
             return $this->redirectToTab($response, 'tipologie');
@@ -1975,7 +1976,7 @@ class ConfigurazioneController
         }
 
         $idEntrata = (string)($args['idEntrata'] ?? '');
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idEntrata === '' || $idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Parametri mancanti'];
             return $this->redirectToTab($response, 'tipologie');
@@ -2047,7 +2048,7 @@ class ConfigurazioneController
             return $this->redirectToTab($response, 'templates');
         }
 
-        $idDominio = getenv('ID_DOMINIO') ?: '';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         if ($idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID_DOMINIO non impostato'];
             return $this->redirectToTab($response, 'templates');

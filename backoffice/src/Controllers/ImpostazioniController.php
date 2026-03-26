@@ -64,6 +64,32 @@ class ImpostazioniController
     // SAVE ACTIONS
     // ──────────────────────────────────────────────────────────────────────
 
+    public function saveGenerale(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        $by = $this->currentUser();
+        SettingsRepository::setSection('entity', [
+            'ipa_code'         => $body['entity_ipa_code'] ?? '',
+            'name'             => $body['entity_name'] ?? '',
+            'suffix'           => $body['entity_suffix'] ?? '',
+            'government'       => $body['entity_government'] ?? '',
+            'url'              => $body['entity_url'] ?? '',
+            'id_dominio'       => $body['id_dominio'] ?? '',
+            'id_a2a'           => $body['id_a2a'] ?? '',
+            'support_email'    => $body['support_email'] ?? '',
+            'support_phone'    => $body['support_phone'] ?? '',
+            'support_hours'    => $body['support_hours'] ?? '',
+            'support_location' => $body['support_location'] ?? '',
+        ], $by);
+
+        return $this->jsonOk('Dati ente salvati.');
+    }
+
     public function saveGovpay(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
@@ -83,14 +109,6 @@ class ImpostazioniController
             'user'                  => ['value' => $body['user'] ?? '', 'encrypted' => true],
             'password'              => ['value' => $body['password'] ?? '', 'encrypted' => true],
         ], $by);
-
-        // Aggiorna anche entity (ID_DOMINIO, ID_A2A esposti in questa sezione)
-        if (!empty($body['id_dominio'])) {
-            SettingsRepository::set('entity', 'id_dominio', $body['id_dominio'], false, $by);
-        }
-        if (!empty($body['id_a2a'])) {
-            SettingsRepository::set('entity', 'id_a2a', $body['id_a2a'], false, $by);
-        }
 
         return $this->jsonOk('Impostazioni GovPay salvate.');
     }
@@ -136,18 +154,6 @@ class ImpostazioniController
             'mailer_dsn'           => ['value' => $body['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
             'mailer_from_address'  => $body['mailer_from_address'] ?? '',
             'mailer_from_name'     => $body['mailer_from_name'] ?? '',
-        ], $by);
-
-        SettingsRepository::setSection('entity', [
-            'ipa_code'         => $body['entity_ipa_code'] ?? '',
-            'name'             => $body['entity_name'] ?? '',
-            'suffix'           => $body['entity_suffix'] ?? '',
-            'government'       => $body['entity_government'] ?? '',
-            'url'              => $body['entity_url'] ?? '',
-            'support_email'    => $body['support_email'] ?? '',
-            'support_phone'    => $body['support_phone'] ?? '',
-            'support_hours'    => $body['support_hours'] ?? '',
-            'support_location' => $body['support_location'] ?? '',
         ], $by);
 
         return $this->jsonOk('Impostazioni Backoffice salvate.');
@@ -229,20 +235,55 @@ class ImpostazioniController
     public function testGovpayConnection(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('govpay', 'backoffice_url', ''), 'GovPay Backoffice');
+    }
 
-        $url = SettingsRepository::get('govpay', 'backoffice_url');
-        if (empty($url)) {
-            return $this->jsonError('URL GovPay Backoffice non configurato.');
-        }
+    public function testGovpayPendenze(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('govpay', 'pendenze_url', ''), 'GovPay Pendenze');
+    }
 
-        try {
-            $ctx = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
-            $result = @file_get_contents(rtrim($url, '/') . '/info', false, $ctx);
-            $ok = $result !== false;
-            return $this->jsonOk($ok ? 'Connessione riuscita.' : 'Server raggiungibile ma risposta inattesa.');
-        } catch (\Throwable $e) {
-            return $this->jsonError('Connessione fallita: ' . $e->getMessage());
-        }
+    public function testGovpayPagamenti(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('govpay', 'pagamenti_url', ''), 'GovPay Pagamenti');
+    }
+
+    public function testGovpayRagioneria(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('govpay', 'ragioneria_url', ''), 'GovPay Ragioneria');
+    }
+
+    public function testGovpayPendenzePatch(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('govpay', 'pendenze_patch_url', ''), 'GovPay Pendenze PATCH');
+    }
+
+    public function testCheckout(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('pagopa', 'checkout_ec_base_url', ''), 'pagoPA Checkout');
+    }
+
+    public function testPaymentOptions(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('pagopa', 'payment_options_url', ''), 'Payment Options API');
+    }
+
+    public function testBizEvents(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('pagopa', 'biz_events_host', ''), 'BizEvents');
+    }
+
+    public function testTassonomie(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        return $this->pingUrl(SettingsRepository::get('pagopa', 'tassonomie_url', ''), 'Tassonomie');
     }
 
     public function testEmail(Request $request, Response $response): Response
@@ -297,6 +338,90 @@ class ImpostazioniController
         return $this->masterPost('/iam-proxy/regenerate-sp-metadata', []);
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // METADATA SPID / CIE
+    // ──────────────────────────────────────────────────────────────────────
+
+    public function getSpidMetadataInfo(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $result = $this->masterGet('/iam-proxy/spid-metadata/info');
+        return $this->jsonResponse($result);
+    }
+
+    public function downloadSpidMetadata(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $token = \App\Config\ConfigLoader::get('master_token');
+        if (empty($token)) {
+            return $this->jsonError('Master Container non configurato (token mancante).');
+        }
+        $url = self::MASTER_URL . '/iam-proxy/spid-metadata/download';
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => "Authorization: Bearer {$token}\r\n",
+                'timeout' => 15,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $data = @file_get_contents($url, false, $ctx);
+        if ($data === false || empty($data)) {
+            return $this->jsonError('Impossibile recuperare il metadata SPID dal Master Container.');
+        }
+        $resp = new \Slim\Psr7\Response(200);
+        $resp->getBody()->write($data);
+        return $resp
+            ->withHeader('Content-Type', 'application/xml')
+            ->withHeader('Content-Disposition', 'attachment; filename="frontoffice_sp.xml"');
+    }
+
+    public function restoreSpidMetadata(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        return $this->forwardFileToMaster($request, 'metadata_file', '/iam-proxy/spid-metadata/restore');
+    }
+
+    public function getCieMetadataInfo(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $result = $this->masterGet('/iam-proxy/cie-metadata/info');
+        return $this->jsonResponse($result);
+    }
+
+    public function downloadCieMetadata(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $token = \App\Config\ConfigLoader::get('master_token');
+        if (empty($token)) {
+            return $this->jsonError('Master Container non configurato (token mancante).');
+        }
+        $url = self::MASTER_URL . '/iam-proxy/cie-metadata/download';
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => "Authorization: Bearer {$token}\r\n",
+                'timeout' => 15,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $data = @file_get_contents($url, false, $ctx);
+        if ($data === false || empty($data)) {
+            return $this->jsonError('Impossibile recuperare il metadata CIE dal Master Container.');
+        }
+        $resp = new \Slim\Psr7\Response(200);
+        $resp->getBody()->write($data);
+        return $resp
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Content-Disposition', 'attachment; filename="cie-entity-configuration.json"');
+    }
+
+    public function restoreCieMetadata(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        return $this->forwardFileToMaster($request, 'metadata_file', '/iam-proxy/cie-metadata/restore');
+    }
+
     public function getContainersStatus(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
@@ -339,6 +464,20 @@ class ImpostazioniController
     // ──────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ──────────────────────────────────────────────────────────────────────
+
+    private function pingUrl(string $url, string $label): Response
+    {
+        if (empty($url)) {
+            return $this->jsonError("URL {$label} non configurato.");
+        }
+        try {
+            $ctx = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+            $result = @file_get_contents($url, false, $ctx);
+            return $this->jsonOk($result !== false ? "Connessione {$label} riuscita." : "{$label}: server raggiungibile, risposta ricevuta.");
+        } catch (\Throwable $e) {
+            return $this->jsonError("Connessione {$label} fallita: " . $e->getMessage());
+        }
+    }
 
     private function requireAdminOrAbove(): void
     {
@@ -456,6 +595,52 @@ class ImpostazioniController
 
         $result = @file_get_contents($url, false, $ctx);
         return $result ? (json_decode($result, true) ?? []) : ['error' => 'Risposta non valida'];
+    }
+
+    /**
+     * Inoltra un file caricato al Master Container come multipart/form-data via cURL.
+     */
+    private function forwardFileToMaster(Request $request, string $fieldName, string $masterPath): Response
+    {
+        $token = \App\Config\ConfigLoader::get('master_token');
+        if (empty($token)) {
+            return $this->jsonError('Master Container non configurato (token mancante).');
+        }
+
+        $files = $request->getUploadedFiles();
+        $file = $files[$fieldName] ?? null;
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('Nessun file ricevuto o errore upload.');
+        }
+
+        // Scrivi il file in una posizione temporanea
+        $tmpPath = sys_get_temp_dir() . '/' . uniqid('meta_', true) . '_' . $file->getClientFilename();
+        try {
+            $file->moveTo($tmpPath);
+        } catch (\Throwable $e) {
+            return $this->jsonError('Errore salvataggio temporaneo: ' . $e->getMessage());
+        }
+
+        $ch = curl_init(self::MASTER_URL . $masterPath);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => ['file' => new \CURLFile($tmpPath, $file->getClientMediaType() ?: 'application/octet-stream', $file->getClientFilename())],
+            CURLOPT_HTTPHEADER     => ["Authorization: Bearer {$token}"],
+            CURLOPT_TIMEOUT        => 20,
+        ]);
+        $result   = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        curl_close($ch);
+        @unlink($tmpPath);
+
+        if ($result === false || $curlErr) {
+            return $this->jsonError('Errore cURL: ' . $curlErr);
+        }
+
+        $json = json_decode($result, true) ?? ['success' => false, 'message' => $result];
+        return $this->jsonResponse($json, ($json['success'] ?? false) ? 200 : 500);
     }
 
     /**

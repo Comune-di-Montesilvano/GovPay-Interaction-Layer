@@ -11,6 +11,7 @@
 declare(strict_types=1);
 
 use App\Config\Config;
+use App\Config\SettingsRepository;
 use App\Database\MassivePendenzeRepository;
 use App\Logger;
 use GuzzleHttp\Client;
@@ -32,11 +33,11 @@ $processedTotal = 0;
  * Minimal standalone sender (derived from PendenzeController::sendPendenzaToBackoffice)
  */
 function sendOne(array $payload): array {
-    $backofficeUrl = getenv('GOVPAY_BACKOFFICE_URL') ?: '';
-    $idA2A = getenv('ID_A2A') ?: '';
+    $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+    $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
     $errors = [];
-    if (empty($backofficeUrl)) { return ['success' => false, 'errors' => ['GOVPAY_BACKOFFICE_URL non impostata']]; }
-    if ($idA2A === '') { return ['success' => false, 'errors' => ['ID_A2A non impostata']]; }
+    if (empty($backofficeUrl)) { return ['success' => false, 'errors' => ['URL GovPay Backoffice non configurato']]; }
+    if ($idA2A === '') { return ['success' => false, 'errors' => ['ID A2A non configurato']]; }
 
     $guzzleOptions = [];
     $authMethod = Config::get('AUTHENTICATION_GOVPAY');
@@ -72,10 +73,10 @@ function sendOne(array $payload): array {
         }
 
         $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idP);
-        $username = getenv('GOVPAY_USER');
-        $password = getenv('GOVPAY_PASSWORD');
+        $username = SettingsRepository::get('govpay', 'user', '');
+        $password = SettingsRepository::get('govpay', 'password', '');
         $requestOptions = [ 'headers' => ['Accept' => 'application/json'], 'json' => $payload ];
-        if ($username !== false && $password !== false && $username !== '' && $password !== '') {
+        if ($username !== '' && $password !== '') {
             $requestOptions['auth'] = [$username, $password];
         }
 

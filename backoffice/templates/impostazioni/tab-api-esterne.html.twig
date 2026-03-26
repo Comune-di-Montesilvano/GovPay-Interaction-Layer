@@ -7,9 +7,14 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
       {# ─── pagoPA Checkout ──────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-credit-card me-1"></i>pagoPA Checkout
-      </h6>
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-0">
+          <i class="fas fa-credit-card me-1"></i>pagoPA Checkout
+        </h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="impTestApiEsterne('checkout', this)">
+          <i class="fas fa-wifi me-1"></i>Test
+        </button>
+      </div>
       <div class="row g-3 mb-4">
         <div class="col-md-8">
           <label class="form-label">Checkout EC Base URL</label>
@@ -53,9 +58,14 @@
       </div>
 
       {# ─── Payment Options ──────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-list-alt me-1"></i>Payment Options API
-      </h6>
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-0">
+          <i class="fas fa-list-alt me-1"></i>Payment Options API
+        </h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="impTestApiEsterne('payment-options', this)">
+          <i class="fas fa-wifi me-1"></i>Test
+        </button>
+      </div>
       <div class="row g-3 mb-4">
         <div class="col-md-8">
           <label class="form-label">URL</label>
@@ -75,9 +85,14 @@
       </div>
 
       {# ─── BizEvents ────────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-receipt me-1"></i>BizEvents
-      </h6>
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-0">
+          <i class="fas fa-receipt me-1"></i>BizEvents
+        </h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="impTestApiEsterne('biz-events', this)">
+          <i class="fas fa-wifi me-1"></i>Test
+        </button>
+      </div>
       <div class="row g-3 mb-4">
         <div class="col-md-8">
           <label class="form-label">BizEvents Host</label>
@@ -97,9 +112,14 @@
       </div>
 
       {# ─── Tassonomie ───────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-sitemap me-1"></i>Tassonomie
-      </h6>
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-0">
+          <i class="fas fa-sitemap me-1"></i>Tassonomie
+        </h6>
+        <button class="btn btn-sm btn-outline-secondary" onclick="impTestApiEsterne('tassonomie', this)">
+          <i class="fas fa-wifi me-1"></i>Test
+        </button>
+      </div>
       <div class="row g-3 mb-4">
         <div class="col-md-10">
           <label class="form-label">URL endpoint tassonomie</label>
@@ -126,5 +146,16 @@ function togglePwdExt(id, btn) {
   const show = el.type === 'password';
   el.type = show ? 'text' : 'password';
   btn.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+}
+async function impTestApiEsterne(api, btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Test…';
+  try {
+    const res = await fetch('/impostazioni/api-esterne/test-' + api);
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
 }
 </script>
