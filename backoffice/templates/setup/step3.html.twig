@@ -1,69 +1,102 @@
 {% extends 'setup/layout.html.twig' %}
 {% from 'setup/_step_header.html.twig' import step_header %}
-{% block title %}Step 3 — Database{% endblock %}
+{% block title %}Step 3 — GovPay API{% endblock %}
 
 {% block content %}
 {{ step_header(step, total_steps) }}
 
 <div class="card card-wizard p-4">
-  <h2 class="h4 mb-1"><i class="fa fa-database me-2 text-primary"></i>Password Database</h2>
-  <p class="text-muted mb-4">
-    Imposta le password del database. Usa "Genera automaticamente" per creare password sicure —
-    <strong>annotale prima di procedere, non sarà più possibile recuperarle.</strong>
-  </p>
+  <h2 class="h4 mb-1"><i class="fa fa-plug me-2 text-primary"></i>Connessione GovPay</h2>
+  <p class="text-muted mb-4">Configura gli endpoint e le credenziali per l'integrazione con GovPay.</p>
 
-  <div class="alert alert-warning">
-    <i class="fa fa-exclamation-triangle me-2"></i>
-    Queste password vengono salvate in <code>config.json</code> e usate per inizializzare il database.
-    <strong>Non potranno essere cambiate dopo il completamento del setup senza intervento tecnico.</strong>
-  </div>
+  {% if errors %}
+    <div class="alert alert-danger">
+      <ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
 
-  <form method="post" action="/setup/step/3" id="step3-form">
+  <form method="post" action="/setup/step/3" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-    <div class="mb-4">
-      <label class="form-label fw-semibold">Password DB Backoffice (DB_PASSWORD)</label>
-      <div class="input-group">
-        <input type="text" class="form-control font-monospace" id="db_password" name="db_password"
-               value="{{ data.db_password|default('') }}" placeholder="Lascia vuoto per auto-generare">
-        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('db_password')">
-          <i class="fa fa-magic me-1"></i>Genera
-        </button>
-        <button type="button" class="btn btn-outline-secondary" onclick="copyVal('db_password')">
-          <i class="fa fa-copy"></i>
-        </button>
+    <h5 class="border-bottom pb-2 mb-3">URL API GovPay</h5>
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">URL GovPay Backoffice <span class="text-danger">*</span></label>
+        <input type="url" class="form-control {% if errors.govpay_backoffice_url is defined %}is-invalid{% endif %}"
+               name="govpay_backoffice_url" value="{{ data.govpay_backoffice_url|default('') }}"
+               placeholder="https://govpay.esempio.it/GovPay-Backoffice/v1" required>
+        {% if errors.govpay_backoffice_url is defined %}<div class="invalid-feedback">{{ errors.govpay_backoffice_url }}</div>{% endif %}
       </div>
-      <div class="field-help">Utente <code>govpay</code> — accesso completo backoffice</div>
+      <div class="col-md-6">
+        <label class="form-label">URL GovPay Pendenze</label>
+        <input type="url" class="form-control" name="govpay_pendenze_url"
+               value="{{ data.govpay_pendenze_url|default('') }}" placeholder="https://govpay.esempio.it/GovPay-Pendenze/v2">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL GovPay Pendenze (PATCH)</label>
+        <input type="url" class="form-control" name="govpay_patch_url"
+               value="{{ data.govpay_patch_url|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL GovPay Pagamenti</label>
+        <input type="url" class="form-control" name="govpay_pagamenti_url"
+               value="{{ data.govpay_pagamenti_url|default('') }}" placeholder="https://govpay.esempio.it/GovPay-Pagamenti/v2">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL GovPay Ragioneria</label>
+        <input type="url" class="form-control" name="govpay_ragioneria_url"
+               value="{{ data.govpay_ragioneria_url|default('') }}" placeholder="https://govpay.esempio.it/GovPay-Ragioneria/v2">
+      </div>
     </div>
 
-    <div class="mb-4">
-      <label class="form-label fw-semibold">Password DB Frontoffice (DB_PASSWORD_CITTADINI)</label>
-      <div class="input-group">
-        <input type="text" class="form-control font-monospace" id="db_password_cittadini" name="db_password_cittadini"
-               value="{{ data.db_password_cittadini|default('') }}" placeholder="Lascia vuoto per auto-generare">
-        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('db_password_cittadini')">
-          <i class="fa fa-magic me-1"></i>Genera
-        </button>
-        <button type="button" class="btn btn-outline-secondary" onclick="copyVal('db_password_cittadini')">
-          <i class="fa fa-copy"></i>
-        </button>
+    <h5 class="border-bottom pb-2 mb-3 mt-4">Autenticazione GovPay</h5>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Metodo di autenticazione</label>
+        <select class="form-select" name="authentication_govpay" id="authMethod" onchange="updateAuthFields()">
+          <option value="basic"     {% if data.authentication_govpay|default('basic') == 'basic' %}selected{% endif %}>Basic (user/password)</option>
+          <option value="sslheader" {% if data.authentication_govpay|default('') == 'sslheader' %}selected{% endif %}>SSL Header (certificato)</option>
+          <option value="form"      {% if data.authentication_govpay|default('') == 'form' %}selected{% endif %}>Form</option>
+        </select>
       </div>
-      <div class="field-help">Utente <code>govpay_cittadini</code> — accesso sola lettura frontoffice</div>
+      <div class="col-md-4" id="govpay-user-field">
+        <label class="form-label">Username GovPay</label>
+        <input type="text" class="form-control" name="govpay_user" value="{{ data.govpay_user|default('') }}">
+      </div>
+      <div class="col-md-4" id="govpay-pass-field">
+        <label class="form-label">Password GovPay</label>
+        <input type="password" class="form-control" name="govpay_password" value="{{ data.govpay_password|default('') }}"
+               autocomplete="new-password">
+      </div>
     </div>
 
-    <div class="mb-4">
-      <label class="form-label fw-semibold">Password Root DB (DB_ROOT_PASSWORD)</label>
-      <div class="input-group">
-        <input type="text" class="form-control font-monospace" id="db_root_password" name="db_root_password"
-               value="{{ data.db_root_password|default('') }}" placeholder="Lascia vuoto per auto-generare">
-        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('db_root_password')">
-          <i class="fa fa-magic me-1"></i>Genera
-        </button>
-        <button type="button" class="btn btn-outline-secondary" onclick="copyVal('db_root_password')">
-          <i class="fa fa-copy"></i>
-        </button>
+    <div id="govpay-cert-section" style="display:none;">
+      <hr class="my-3">
+      <h6 class="fw-semibold mb-3"><i class="fa fa-certificate me-2 text-secondary"></i>Certificato client mTLS</h6>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Certificato client <span class="text-muted small">(.pem / .cer)</span></label>
+          {% if errors.govpay_cert is defined %}
+            <div class="alert alert-danger py-2 mb-2 small">{{ errors.govpay_cert }}</div>
+          {% endif %}
+          <input type="file" class="form-control" name="govpay_cert" accept=".pem,.cer,.crt">
+          <div class="form-text">File PEM del certificato client GovPay</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Chiave privata <span class="text-muted small">(.pem / .key)</span></label>
+          {% if errors.govpay_key is defined %}
+            <div class="alert alert-danger py-2 mb-2 small">{{ errors.govpay_key }}</div>
+          {% endif %}
+          <input type="file" class="form-control" name="govpay_key" accept=".pem,.key">
+          <div class="form-text">File PEM della chiave privata</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Password chiave <span class="text-muted small">(se cifrata)</span></label>
+          <input type="password" class="form-control" name="govpay_key_password"
+                 value="{{ data.govpay_key_password|default('') }}" autocomplete="new-password"
+                 placeholder="Lascia vuoto se la chiave non è protetta">
+        </div>
       </div>
-      <div class="field-help">Password root MariaDB — usata solo per la gestione del DB</div>
     </div>
 
     <div class="d-flex justify-content-between mt-4">
@@ -76,14 +109,14 @@
 
 {% block scripts %}
 <script>
-function autoGen(fieldId) {
-  const arr = new Uint8Array(24);
-  crypto.getRandomValues(arr);
-  document.getElementById(fieldId).value = Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
+function updateAuthFields() {
+  const m = document.getElementById('authMethod').value;
+  const showCreds = m === 'basic' || m === 'form';
+  const showCert  = m === 'sslheader';
+  document.getElementById('govpay-user-field').style.display = showCreds ? '' : 'none';
+  document.getElementById('govpay-pass-field').style.display = showCreds ? '' : 'none';
+  document.getElementById('govpay-cert-section').style.display = showCert ? '' : 'none';
 }
-function copyVal(fieldId) {
-  const el = document.getElementById(fieldId);
-  if (el.value) navigator.clipboard.writeText(el.value).then(() => alert('Copiato negli appunti'));
-}
+updateAuthFields();
 </script>
 {% endblock %}

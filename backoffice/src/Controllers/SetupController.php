@@ -34,7 +34,7 @@ use App\Auth\UserRepository;
 class SetupController
 {
     private const MASTER_URL = 'http://govpay-interaction-master:8099';
-    private const TOTAL_STEPS = 7;
+    private const TOTAL_STEPS = 5;
     private const UPLOAD_TMP_DIR = '/tmp/gil-restore';
 
     public function __construct(private readonly Twig $twig)
@@ -370,7 +370,7 @@ class SetupController
                 }
                 break;
 
-            case 5:
+            case 3:
                 if (empty(trim($body['govpay_backoffice_url'] ?? ''))) {
                     $errors['govpay_backoffice_url'] = 'L\'URL GovPay Backoffice è obbligatorio.';
                 }
@@ -468,13 +468,6 @@ class SetupController
                 'apache_server_name' => 'APACHE_SERVER_NAME',
             ],
             3 => [
-                'db_password'           => 'BACKOFFICE_DB_PASSWORD',
-                'db_password_cittadini' => 'FRONTOFFICE_DB_PASSWORD',
-            ],
-            4 => [
-                'encryption_key' => 'APP_ENCRYPTION_KEY',
-            ],
-            5 => [
                 'govpay_pendenze_url'     => 'GOVPAY_PENDENZE_URL',
                 'govpay_pagamenti_url'    => 'GOVPAY_PAGAMENTI_URL',
                 'govpay_ragioneria_url'   => 'GOVPAY_RAGIONERIA_URL',
@@ -483,7 +476,7 @@ class SetupController
                 'authentication_govpay'   => 'AUTHENTICATION_GOVPAY',
                 'govpay_user'             => 'GOVPAY_USER',
             ],
-            6 => [
+            4 => [
                 'mailer_dsn'             => 'BACKOFFICE_MAILER_DSN',
                 'mailer_from_address'    => 'BACKOFFICE_MAILER_FROM_ADDRESS',
                 'mailer_from_name'       => 'BACKOFFICE_MAILER_FROM_NAME',
@@ -511,8 +504,8 @@ class SetupController
     {
         $step1 = $data['step1'] ?? [];
         $step2 = $data['step2'] ?? [];
-        $step5 = $data['step5'] ?? [];
-        $step6 = $data['step6'] ?? [];
+        $step3 = $data['step3'] ?? [];
+        $step4 = $data['step4'] ?? [];
 
         SettingsRepository::setSection('entity', [
             'ipa_code'         => $step1['entity_ipa_code'] ?? '',
@@ -527,9 +520,9 @@ class SetupController
         SettingsRepository::setSection('backoffice', [
             'public_base_url'      => $step2['backoffice_url'] ?? '',
             'apache_server_name'   => $step2['apache_server_name'] ?? 'localhost',
-            'mailer_dsn'           => ['value' => $step6['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
-            'mailer_from_address'  => $step6['mailer_from_address'] ?? '',
-            'mailer_from_name'     => $step6['mailer_from_name'] ?? '',
+            'mailer_dsn'           => ['value' => $step4['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
+            'mailer_from_address'  => $step4['mailer_from_address'] ?? '',
+            'mailer_from_name'     => $step4['mailer_from_name'] ?? '',
         ], 'wizard');
 
         SettingsRepository::setSection('frontoffice', [
@@ -537,30 +530,30 @@ class SetupController
             'auth_proxy_type'   => 'none',
         ], 'wizard');
 
-        $authMethod = $step5['authentication_govpay'] ?? 'basic';
+        $authMethod = $step3['authentication_govpay'] ?? 'basic';
         $govpaySection = [
-            'pendenze_url'          => $step5['govpay_pendenze_url'] ?? '',
-            'pagamenti_url'         => $step5['govpay_pagamenti_url'] ?? '',
-            'ragioneria_url'        => $step5['govpay_ragioneria_url'] ?? '',
-            'backoffice_url'        => $step5['govpay_backoffice_url'] ?? '',
-            'pendenze_patch_url'    => $step5['govpay_patch_url'] ?? '',
+            'pendenze_url'          => $step3['govpay_pendenze_url'] ?? '',
+            'pagamenti_url'         => $step3['govpay_pagamenti_url'] ?? '',
+            'ragioneria_url'        => $step3['govpay_ragioneria_url'] ?? '',
+            'backoffice_url'        => $step3['govpay_backoffice_url'] ?? '',
+            'pendenze_patch_url'    => $step3['govpay_patch_url'] ?? '',
             'authentication_method' => $authMethod,
-            'user'                  => ['value' => $step5['govpay_user'] ?? '', 'encrypted' => true],
-            'password'              => ['value' => $step5['govpay_password'] ?? '', 'encrypted' => true],
+            'user'                  => ['value' => $step3['govpay_user'] ?? '', 'encrypted' => true],
+            'password'              => ['value' => $step3['govpay_password'] ?? '', 'encrypted' => true],
         ];
         // Per mTLS: registra i percorsi fissi del volume git_certs
         if ($authMethod === 'sslheader') {
             $govpaySection['tls_cert_path'] = '/var/www/certificate/govpay-cert.pem';
             $govpaySection['tls_key_path']  = '/var/www/certificate/govpay-key.pem';
-            $govpaySection['tls_key_password'] = ['value' => $step5['govpay_key_password'] ?? '', 'encrypted' => true];
+            $govpaySection['tls_key_password'] = ['value' => $step3['govpay_key_password'] ?? '', 'encrypted' => true];
         }
         SettingsRepository::setSection('govpay', $govpaySection, 'wizard');
 
         SettingsRepository::setSection('pagopa', [
-            'checkout_ec_base_url'      => $step6['pagopa_checkout_url'] ?? '',
-            'checkout_subscription_key' => ['value' => $step6['pagopa_checkout_key'] ?? '', 'encrypted' => true],
-            'biz_events_host'           => $step6['biz_events_host'] ?? '',
-            'biz_events_api_key'        => ['value' => $step6['biz_events_key'] ?? '', 'encrypted' => true],
+            'checkout_ec_base_url'      => $step4['pagopa_checkout_url'] ?? '',
+            'checkout_subscription_key' => ['value' => $step4['pagopa_checkout_key'] ?? '', 'encrypted' => true],
+            'biz_events_host'           => $step4['biz_events_host'] ?? '',
+            'biz_events_api_key'        => ['value' => $step4['biz_events_key'] ?? '', 'encrypted' => true],
         ], 'wizard');
     }
 

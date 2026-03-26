@@ -50,6 +50,7 @@ services:
       - DB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
       - MASTER_TOKEN=${MASTER_TOKEN}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
     depends_on:
       - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
@@ -77,6 +78,7 @@ services:
       - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
       - MASTER_TOKEN=${MASTER_TOKEN}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=http://satosa-nginx:80/Saml2IDP/metadata
     depends_on:
       - govpay-interaction-master

@@ -1,62 +1,64 @@
 {% extends 'setup/layout.html.twig' %}
 {% from 'setup/_step_header.html.twig' import step_header %}
-{% block title %}Step 4 — Chiavi di sicurezza{% endblock %}
+{% block title %}Step 4 — Parametri opzionali{% endblock %}
 
 {% block content %}
 {{ step_header(step, total_steps) }}
 
 <div class="card card-wizard p-4">
-  <h2 class="h4 mb-1"><i class="fa fa-key me-2 text-primary"></i>Chiavi di Sicurezza</h2>
+  <h2 class="h4 mb-1"><i class="fa fa-sliders-h me-2 text-primary"></i>Parametri Opzionali</h2>
   <p class="text-muted mb-4">
-    Genera le chiavi crittografiche dell'applicazione. Sono <strong>auto-generate per default</strong> —
-    puoi lasciarle vuote e verranno generate automaticamente al momento del completamento.
+    Questi parametri possono essere configurati anche in seguito dal pannello di amministrazione.
+    Puoi saltare questo step cliccando direttamente su "Avanti".
   </p>
 
   <form method="post" action="/setup/step/4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-    <div class="mb-4">
-      <label class="form-label fw-semibold">Chiave di Cifratura App (APP_ENCRYPTION_KEY)</label>
-      <div class="input-group">
-        <input type="text" class="form-control font-monospace" id="encryption_key" name="encryption_key"
-               value="{{ data.encryption_key|default('') }}" placeholder="Lascia vuoto per auto-generare (consigliato)">
-        <button type="button" class="btn btn-outline-secondary" onclick="autoGen('encryption_key', 32)">
-          <i class="fa fa-magic me-1"></i>Genera
-        </button>
+    <h5 class="border-bottom pb-2 mb-3">Server Email (SMTP)</h5>
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">DSN Mailer</label>
+        <input type="text" class="form-control font-monospace" name="mailer_dsn"
+               value="{{ data.mailer_dsn|default('null://null') }}"
+               placeholder="smtp://user%40domain:pass@mailhost:25 oppure null://null per disabilitare">
+        <div class="field-help">Usa <code>null://null</code> per disabilitare l'invio email. I caratteri speciali vanno URL-encoded (@=%40, $=%24).</div>
       </div>
-      <div class="field-help">32 byte esadecimali. Usata per cifrare le API key nel DB. <strong>Non modificarla mai dopo il setup.</strong></div>
+      <div class="col-md-6">
+        <label class="form-label">Indirizzo mittente</label>
+        <input type="email" class="form-control" name="mailer_from_address"
+               value="{{ data.mailer_from_address|default('') }}" placeholder="noreply@comune.esempio.it">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Nome mittente</label>
+        <input type="text" class="form-control" name="mailer_from_name"
+               value="{{ data.mailer_from_name|default('') }}" placeholder="PagoPA Backoffice">
+      </div>
     </div>
 
-    <div class="accordion mb-3" id="satosaAccordion">
-      <div class="accordion-item">
-        <h2 class="accordion-header">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#satosaKeys">
-            <i class="fa fa-shield-alt me-2 text-muted"></i>Chiavi SATOSA (IAM Proxy SPID/CIE) — auto-generate
-          </button>
-        </h2>
-        <div id="satosaKeys" class="accordion-collapse collapse" data-bs-parent="#satosaAccordion">
-          <div class="accordion-body">
-            <p class="text-muted small">Queste chiavi vengono sempre auto-generate se lasciate vuote. Modificale solo se stai migrando da un'installazione esistente.</p>
-            {% for field, label in {
-              'satosa_salt': 'SATOSA_SALT',
-              'satosa_state_key': 'SATOSA_STATE_ENCRYPTION_KEY',
-              'satosa_encryption_key': 'SATOSA_ENCRYPTION_KEY',
-              'satosa_hash_salt': 'SATOSA_USER_ID_HASH_SALT',
-              'mongodb_password': 'MONGODB_PASSWORD'
-            } %}
-            <div class="mb-3">
-              <label class="form-label small">{{ label }}</label>
-              <div class="input-group input-group-sm">
-                <input type="text" class="form-control font-monospace" id="{{ field }}" name="{{ field }}"
-                       value="{{ attribute(data, field)|default('') }}" placeholder="auto-genera">
-                <button type="button" class="btn btn-outline-secondary" onclick="autoGen('{{ field }}', 32)">
-                  <i class="fa fa-magic"></i>
-                </button>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
+    <h5 class="border-bottom pb-2 mb-3 mt-4">API pagoPA</h5>
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">URL pagoPA Checkout</label>
+        <input type="url" class="form-control" name="pagopa_checkout_url"
+               value="{{ data.pagopa_checkout_url|default('') }}"
+               placeholder="https://api.platform.pagopa.it/checkout/ec/v1">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Subscription Key Checkout</label>
+        <input type="text" class="form-control" name="pagopa_checkout_key"
+               value="{{ data.pagopa_checkout_key|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL Biz Events</label>
+        <input type="url" class="form-control" name="biz_events_host"
+               value="{{ data.biz_events_host|default('') }}"
+               placeholder="https://api.platform.pagopa.it/bizevents/service/v1">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Biz Events API Key</label>
+        <input type="text" class="form-control" name="biz_events_key"
+               value="{{ data.biz_events_key|default('') }}">
       </div>
     </div>
 
@@ -66,14 +68,4 @@
     </div>
   </form>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function autoGen(fieldId, bytes) {
-  const arr = new Uint8Array(bytes || 32);
-  crypto.getRandomValues(arr);
-  document.getElementById(fieldId).value = Array.from(arr, b => b.toString(16).padStart(2,'0')).join('');
-}
-</script>
 {% endblock %}
