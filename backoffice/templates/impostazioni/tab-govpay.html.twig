@@ -63,7 +63,7 @@
           <select class="form-select" name="authentication_method" id="govpay-auth-method"
             onchange="govpayAuthChange()" {{ not is_superadmin ? 'disabled' : '' }}>
             <option value="basic" {{ govpay.authentication_method|default('basic') == 'basic' ? 'selected' : '' }}>HTTP Basic</option>
-            <option value="ssl" {{ govpay.authentication_method|default('') == 'ssl' ? 'selected' : '' }}>Certificato TLS/mTLS</option>
+            <option value="ssl" {{ govpay.authentication_method|default('') in ['ssl', 'sslheader'] ? 'selected' : '' }}>Certificato TLS/mTLS</option>
             <option value="none" {{ govpay.authentication_method|default('') == 'none' ? 'selected' : '' }}>Nessuna</option>
           </select>
         </div>
