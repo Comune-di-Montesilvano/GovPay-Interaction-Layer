@@ -27,9 +27,8 @@ docker-compose*.yml
 .DS_Store
 Thumbs.db
 
-# Directory con build context separato in CI
+# Directory con build context separato in CI (non usate da Dockerfile root)
 master/
-iam-proxy/
 docker/
 
 # Non usate nel build principale
@@ -42,6 +41,3 @@ plans/
 *.md
 LICENSE
 
-# Metadata: solo lo script di setup è necessario
-metadata/
-!metadata/ensure-sp-metadata.sh
