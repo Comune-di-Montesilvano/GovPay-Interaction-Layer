@@ -8,10 +8,10 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Config\SettingsRepository;
 use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\ExternalPaymentTypeRepository;
-use App\Config\ConfigLoader;
 use App\Logger;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -21,18 +21,26 @@ use Slim\Views\Twig;
 /**
  * Gestisce backup e restore in due scenari:
  *
- * 1. Backup dati GovPay (legacy, dal tab /configurazione):
+ * 1. Backup dati GovPay (dal tab /configurazione):
  *    - exportBackup() — scarica un JSON con tipologie/templates/io_services/utenti
  *    - importBackup() — carica e applica un JSON di backup dati
  *
- * 2. Backup di sistema (via Master Container):
- *    - systemBackupCreate()   — avvia il backup completo (settings DB + mysqldump + certs SPID)
- *    - systemBackupList()     — lista i backup disponibili
+ * 2. Backup di sistema (lettura/scrittura diretta sul volume gil_backups):
+ *    - systemBackupCreate()   — crea un ZIP con settings DB + dati GovPay + volumi certificati
+ *    - systemBackupList()     — lista i .zip in /backups
  *    - systemBackupDownload() — scarica un archivio .zip
  */
 class BackupController
 {
-    private const MASTER_URL = 'http://govpay-interaction-master:8099';
+    private const BACKUP_DIR = '/backups';
+
+    /** Volumi montati sul container backoffice da includere nel backup. */
+    private const BACKUP_VOLUMES = [
+        'gil_certs'                => '/var/www/certificate',
+        'spid_certs'               => '/var/www/html/spid-certs',
+        'frontoffice_sp_metadata'  => '/var/www/html/metadata-sp',
+        'gil_metadata_cieoidc'     => '/var/www/html/metadata-cieoidc',
+    ];
 
     public function __construct(private readonly Twig $twig)
     {
@@ -279,11 +287,14 @@ class BackupController
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // BACKUP DI SISTEMA (via Master Container)
+    // BACKUP DI SISTEMA (logica PHP diretta su volume gil_backups)
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * POST /backup/sistema/crea — chiede al master di creare un nuovo backup completo.
+     * POST /backup/sistema/crea — crea un archivio ZIP in /backups con:
+     *   - settings.json  (tutte le sezioni DB)
+     *   - govpay-config.json  (dati applicativi: tipologie, templates, utenti, IO)
+     *   - volumes/<nome>/<file>  (contenuto dei volumi certificati/metadata montati)
      */
     public function systemBackupCreate(Request $request, Response $response): Response
     {
@@ -291,11 +302,49 @@ class BackupController
             return $this->jsonError('Accesso riservato al superadmin.', 403);
         }
 
-        return $this->masterPost('/backup/run', []);
+        $timestamp = date('Ymd_His');
+        $zipPath   = self::BACKUP_DIR . "/backup-{$timestamp}.zip";
+
+        try {
+            $zip = new \ZipArchive();
+            if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+                return $this->jsonError('Impossibile creare il file di backup in ' . self::BACKUP_DIR);
+            }
+
+            // 1. Export impostazioni DB
+            $sections = ['govpay', 'pagopa', 'backoffice', 'frontoffice', 'entity', 'iam_proxy', 'ui', 'app'];
+            $settings = [];
+            foreach ($sections as $s) {
+                $settings[$s] = SettingsRepository::getSection($s);
+            }
+            $zip->addFromString('settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+            // 2. Export dati GovPay (stesso formato di exportBackup)
+            $govpayConfig = $this->buildFullGovpayExport();
+            $zip->addFromString('govpay-config.json', json_encode($govpayConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+            // 3. Volumi montati
+            foreach (self::BACKUP_VOLUMES as $name => $mountPath) {
+                if (is_dir($mountPath)) {
+                    $this->addDirToZip($zip, $mountPath, "volumes/{$name}");
+                }
+            }
+
+            $zip->close();
+            Logger::getInstance()->info('Backup di sistema creato', ['file' => "backup-{$timestamp}.zip"]);
+            return $this->jsonOk("Backup creato: backup-{$timestamp}.zip");
+        } catch (\Throwable $e) {
+            if (isset($zip) && $zip instanceof \ZipArchive) {
+                @$zip->close();
+            }
+            @unlink($zipPath);
+            Logger::getInstance()->error('Errore creazione backup sistema', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore creazione backup: ' . $e->getMessage());
+        }
     }
 
     /**
-     * GET /backup/sistema/lista — lista i backup disponibili dal master.
+     * GET /backup/sistema/lista — lista i .zip disponibili nel volume gil_backups.
      */
     public function systemBackupList(Request $request, Response $response): Response
     {
@@ -303,13 +352,22 @@ class BackupController
             return $this->jsonError('Accesso riservato al superadmin.', 403);
         }
 
-        $data = $this->masterGet('/backup/list');
-        return $this->jsonResponse($data);
+        $files = [];
+        foreach (glob(self::BACKUP_DIR . '/*.zip') ?: [] as $path) {
+            $name    = basename($path);
+            $files[] = [
+                'name'     => $name,
+                'size'     => filesize($path),
+                'created'  => date('c', filemtime($path)),
+            ];
+        }
+        usort($files, fn($a, $b) => strcmp($b['created'], $a['created']));
+
+        return $this->jsonResponse(['success' => true, 'files' => $files]);
     }
 
     /**
-     * GET /backup/sistema/download?file=nome_file.zip
-     * Proxy il download del file zip attraverso il master.
+     * GET /backup/sistema/download?file=nome_file.zip — scarica direttamente dal volume.
      */
     public function systemBackupDownload(Request $request, Response $response): Response
     {
@@ -318,34 +376,21 @@ class BackupController
         }
 
         $filename = $request->getQueryParams()['file'] ?? '';
-        if (empty($filename) || str_contains($filename, '/') || str_contains($filename, '..')) {
+        if ($filename === '' || str_contains($filename, '/') || str_contains($filename, '..') || !str_ends_with($filename, '.zip')) {
             return $response->withStatus(400);
         }
 
-        $token = ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return $response->withStatus(503);
+        $path = self::BACKUP_DIR . '/' . $filename;
+        if (!is_file($path)) {
+            return $response->withStatus(404);
         }
 
-        $url = self::MASTER_URL . '/backup/download/' . rawurlencode($filename);
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'GET',
-                'header'        => "Authorization: Bearer {$token}\r\n",
-                'timeout'       => 60,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $body = @file_get_contents($url, false, $ctx);
-        if ($body === false) {
-            return $response->withStatus(502);
-        }
-
+        $body = file_get_contents($path);
         $response->getBody()->write($body);
         return $response
             ->withHeader('Content-Type', 'application/zip')
-            ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"');
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->withHeader('Content-Length', (string) filesize($path));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -362,52 +407,72 @@ class BackupController
         return $response->withHeader('Location', '/configurazione?tab=' . $tab)->withStatus(302);
     }
 
-    private function masterPost(string $path, array $payload): Response
+    /**
+     * Esporta tutti i dati applicativi GovPay nello stesso formato di exportBackup().
+     */
+    private function buildFullGovpayExport(): array
     {
-        $token = ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return $this->jsonError('Master Container non configurato (token mancante).');
-        }
+        $idDominio = (string) (\App\Config\Config::get('ID_DOMINIO') ?: '');
+        $pdo       = Connection::getPDO();
 
-        $url = self::MASTER_URL . $path;
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
-                'content'       => json_encode($payload),
-                'timeout'       => 60,
-                'ignore_errors' => true,
+        $entrateRepo = new EntrateRepository();
+        $tipologie   = $entrateRepo->listLocalOverrides($idDominio);
+
+        $extRepo   = new ExternalPaymentTypeRepository();
+        $tipEsterne = $extRepo->listAll();
+
+        $tplRepo   = new \App\Database\PendenzaTemplateRepository();
+        $templates = $tplRepo->findAllByDominioWithUsers($idDominio);
+
+        $ioRepo    = new \App\Database\IoServiceRepository();
+        $services  = $ioRepo->listAll();
+        $stmt      = $pdo->query('SELECT id_entrata, io_service_id FROM io_service_tipologie');
+        $links     = $stmt->fetchAll();
+        $svcLinks  = [];
+        foreach ($links as $l) {
+            $svcLinks[(int) $l['io_service_id']][] = $l['id_entrata'];
+        }
+        foreach ($services as &$s) {
+            $s['tipologie'] = $svcLinks[(int) $s['id']] ?? [];
+            unset($s['id'], $s['created_at'], $s['updated_at']);
+        }
+        unset($s);
+
+        $utenti = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash FROM users ORDER BY email ASC')->fetchAll();
+
+        return [
+            'version'     => '1.0',
+            'exported_at' => (new \DateTimeImmutable())->format('c'),
+            'exported_by' => $_SESSION['user']['email'] ?? 'system',
+            'id_dominio'  => $idDominio,
+            'sections'    => [
+                'tipologie'         => $tipologie,
+                'tipologie_esterne' => $tipEsterne,
+                'templates'         => $templates,
+                'io_services'       => $services,
+                'utenti'            => $utenti,
             ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        if ($result === false) {
-            return $this->jsonError('Impossibile contattare il Master Container.');
-        }
-
-        $json = json_decode($result, true) ?? ['success' => false, 'message' => $result];
-        return $this->jsonResponse($json, ($json['success'] ?? false) ? 200 : 500);
+        ];
     }
 
-    private function masterGet(string $path): array
+    /**
+     * Aggiunge ricorsivamente il contenuto di una directory a un archivio ZIP.
+     */
+    private function addDirToZip(\ZipArchive $zip, string $dir, string $zipPrefix): void
     {
-        $token = ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return ['error' => 'Master Container non configurato.'];
+        $dir = rtrim($dir, '/\\');
+        $it  = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($it as $file) {
+            $localPath = $zipPrefix . '/' . ltrim(substr((string) $file, strlen($dir)), '/\\');
+            if ($file->isDir()) {
+                $zip->addEmptyDir($localPath);
+            } else {
+                $zip->addFile((string) $file, $localPath);
+            }
         }
-
-        $url = self::MASTER_URL . $path;
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'GET',
-                'header'        => "Authorization: Bearer {$token}\r\n",
-                'timeout'       => 15,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        return $result ? (json_decode($result, true) ?? []) : ['error' => 'Risposta non valida'];
     }
 
     private function jsonOk(string $message): Response

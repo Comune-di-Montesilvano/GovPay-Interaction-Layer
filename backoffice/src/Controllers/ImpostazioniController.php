@@ -13,8 +13,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\Response as SlimResponse;
 use Slim\Views\Twig;
 use App\Config\SettingsRepository;
-use App\Config\ConfigLoader;
 use App\Logger;
+use App\Services\PortainerClient;
 
 /**
  * Gestisce il pannello Impostazioni (/impostazioni) con 5 sezioni:
@@ -28,7 +28,9 @@ use App\Logger;
  */
 class ImpostazioniController
 {
-    private const MASTER_URL = 'http://govpay-interaction-master:8099';
+    // Path dei volumi montati sul container backoffice
+    private const SPID_METADATA_PATH   = '/var/www/html/metadata-sp/frontoffice_sp.xml';
+    private const CIE_METADATA_PATH    = '/var/www/html/metadata-cieoidc/entity-configuration.json';
 
     public function __construct(private readonly Twig $twig)
     {
@@ -224,10 +226,10 @@ class ImpostazioniController
 
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
 
-        // Rigenera ./runtime/.iam-proxy.env dal DB e ricrea i container SATOSA
-        $this->regenerateIamProxyEnv();
-
-        return $this->jsonOk('Impostazioni Login Proxy salvate.');
+        // Le variabili IAM proxy sono ora configurate direttamente nello stack Portainer.
+        // Per applicare le modifiche riavviare manualmente i container IAM proxy da Portainer
+        // oppure usare i pulsanti "Riavvia IAM Proxy" presenti in questa pagina.
+        return $this->jsonOk('Impostazioni Login Proxy salvate. Riavvia i container IAM proxy per applicarle.');
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -384,70 +386,105 @@ class ImpostazioniController
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // CONTAINER ACTIONS (via Master Container)
+    // CONTAINER ACTIONS (via Portainer API)
     // ──────────────────────────────────────────────────────────────────────
 
     public function restartFrontoffice(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->masterPost('/containers/restart', ['services' => ['govpay-interaction-frontoffice']]);
+        $result = (new PortainerClient())->restartContainers(['govpay-interaction-frontoffice']);
+        return $this->portainerResponse($result);
     }
 
     public function avviaIamProxy(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->masterPost('/containers/start-profile', ['profile' => 'iam-proxy']);
+        $result = (new PortainerClient())->startContainers([
+            'init-frontoffice-sp-metadata',
+            'iam-proxy-italia',
+            'satosa-nginx',
+            'satosa-mongo',
+            'refresh-frontoffice-sp-metadata',
+        ]);
+        return $this->portainerResponse($result);
     }
 
     public function arrestaIamProxy(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->masterPost('/containers/stop-profile', ['profile' => 'iam-proxy']);
+        $result = (new PortainerClient())->stopContainers([
+            'refresh-frontoffice-sp-metadata',
+            'iam-proxy-italia',
+            'satosa-nginx',
+            'satosa-mongo',
+        ]);
+        return $this->portainerResponse($result);
     }
 
     public function riavviaIamProxy(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->masterPost('/containers/restart', ['services' => ['iam-proxy-italia', 'satosa-nginx']]);
+        $result = (new PortainerClient())->restartContainers(['iam-proxy-italia', 'satosa-nginx']);
+        return $this->portainerResponse($result);
     }
 
     public function rigeneraSpMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->masterPost('/iam-proxy/regenerate-sp-metadata', []);
+        $result = (new PortainerClient())->restartContainers([
+            'init-frontoffice-sp-metadata',
+            'refresh-frontoffice-sp-metadata',
+        ]);
+        return $this->portainerResponse($result);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // METADATA SPID / CIE
+    // METADATA SPID / CIE (lettura diretta dai volumi montati)
     // ──────────────────────────────────────────────────────────────────────
 
     public function getSpidMetadataInfo(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $result = $this->masterGet('/iam-proxy/spid-metadata/info');
-        return $this->jsonResponse($result);
+        $path = self::SPID_METADATA_PATH;
+        if (!is_file($path)) {
+            return $this->jsonResponse(['exists' => false, 'message' => 'Metadata SP non ancora generato.']);
+        }
+        $info = ['exists' => true, 'size' => filesize($path), 'modified' => date('c', filemtime($path))];
+        try {
+            $xml = simplexml_load_file($path);
+            if ($xml !== false) {
+                $info['entity_id'] = (string) ($xml['entityID'] ?? '');
+                $ns = $xml->getDocNamespaces(true);
+                $md = array_search('urn:oasis:names:tc:SAML:2.0:metadata', $ns, true) ?: '';
+                $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
+                if ($spSso) {
+                    $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
+                    if ($keyCert) {
+                        $der  = base64_decode((string) $keyCert);
+                        $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
+                        if ($cert) {
+                            $parsed = openssl_x509_parse($cert);
+                            $info['cert_subject']     = $parsed['subject']['CN'] ?? '';
+                            $info['cert_valid_to']    = date('c', $parsed['validTo_time_t']);
+                            $info['cert_valid_from']  = date('c', $parsed['validFrom_time_t']);
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // info di base già presenti
+        }
+        return $this->jsonResponse($info);
     }
 
     public function downloadSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $token = \App\Config\ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return $this->jsonError('Master Container non configurato (token mancante).');
+        $path = self::SPID_METADATA_PATH;
+        if (!is_file($path)) {
+            return $this->jsonError('Metadata SP non trovato nel volume.');
         }
-        $url = self::MASTER_URL . '/iam-proxy/spid-metadata/download';
-        $ctx = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => "Authorization: Bearer {$token}\r\n",
-                'timeout' => 15,
-                'ignore_errors' => true,
-            ],
-        ]);
-        $data = @file_get_contents($url, false, $ctx);
-        if ($data === false || empty($data)) {
-            return $this->jsonError('Impossibile recuperare il metadata SPID dal Master Container.');
-        }
+        $data = file_get_contents($path);
         $resp = new \Slim\Psr7\Response(200);
         $resp->getBody()->write($data);
         return $resp
@@ -458,36 +495,34 @@ class ImpostazioniController
     public function restoreSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->forwardFileToMaster($request, 'metadata_file', '/iam-proxy/spid-metadata/restore');
+        return $this->saveUploadedFile($request, 'metadata_file', self::SPID_METADATA_PATH, ['application/xml', 'text/xml']);
     }
 
     public function getCieMetadataInfo(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $result = $this->masterGet('/iam-proxy/cie-metadata/info');
-        return $this->jsonResponse($result);
+        $path = self::CIE_METADATA_PATH;
+        if (!is_file($path)) {
+            return $this->jsonResponse(['exists' => false, 'message' => 'Entity configuration CIE non ancora generata.']);
+        }
+        $info = ['exists' => true, 'size' => filesize($path), 'modified' => date('c', filemtime($path))];
+        $json = json_decode(file_get_contents($path), true);
+        if (is_array($json)) {
+            $info['sub']       = $json['sub'] ?? '';
+            $info['iat']       = isset($json['iat']) ? date('c', $json['iat']) : '';
+            $info['exp']       = isset($json['exp']) ? date('c', $json['exp']) : '';
+        }
+        return $this->jsonResponse($info);
     }
 
     public function downloadCieMetadata(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $token = \App\Config\ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return $this->jsonError('Master Container non configurato (token mancante).');
+        $path = self::CIE_METADATA_PATH;
+        if (!is_file($path)) {
+            return $this->jsonError('Entity configuration CIE non trovata nel volume.');
         }
-        $url = self::MASTER_URL . '/iam-proxy/cie-metadata/download';
-        $ctx = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => "Authorization: Bearer {$token}\r\n",
-                'timeout' => 15,
-                'ignore_errors' => true,
-            ],
-        ]);
-        $data = @file_get_contents($url, false, $ctx);
-        if ($data === false || empty($data)) {
-            return $this->jsonError('Impossibile recuperare il metadata CIE dal Master Container.');
-        }
+        $data = file_get_contents($path);
         $resp = new \Slim\Psr7\Response(200);
         $resp->getBody()->write($data);
         return $resp
@@ -498,14 +533,14 @@ class ImpostazioniController
     public function restoreCieMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->forwardFileToMaster($request, 'metadata_file', '/iam-proxy/cie-metadata/restore');
+        return $this->saveUploadedFile($request, 'metadata_file', self::CIE_METADATA_PATH, ['application/json', 'text/plain']);
     }
 
     public function getContainersStatus(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $result = $this->masterGet('/containers/status');
-        return $this->jsonResponse($result);
+        $result = (new PortainerClient())->getContainersStatus();
+        return $this->portainerResponse($result);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -678,117 +713,39 @@ class ImpostazioniController
     }
 
     /**
-     * Chiama un endpoint POST del Master Container.
+     * Converte il risultato di PortainerClient in una Response HTTP.
+     * Gestisce anche il caso portainer_not_configured con un messaggio chiaro.
      */
-    private function masterPost(string $path, array $payload): Response
+    private function portainerResponse(array $result): Response
     {
-        $token = ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return $this->jsonError('Master Container non configurato (token mancante).');
+        if (($result['reason'] ?? '') === 'portainer_not_configured') {
+            return $this->jsonResponse($result, 503);
         }
-
-        $url = self::MASTER_URL . $path;
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
-                'content'       => json_encode($payload),
-                'timeout'       => 30,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        if ($result === false) {
-            return $this->jsonError('Impossibile contattare il Master Container.');
-        }
-
-        $json = json_decode($result, true) ?? ['success' => false, 'message' => $result];
-        return $this->jsonResponse($json, ($json['success'] ?? false) ? 200 : 500);
+        return $this->jsonResponse($result, ($result['success'] ?? false) ? 200 : 500);
     }
 
     /**
-     * Chiama un endpoint GET del Master Container.
+     * Salva un file caricato via upload in un path del filesystem del container.
+     *
+     * @param string[] $allowedMimes MIME type accettati (lax: se vuoto accetta tutto)
      */
-    private function masterGet(string $path): array
+    private function saveUploadedFile(Request $request, string $fieldName, string $destPath, array $allowedMimes = []): Response
     {
-        $token = ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return ['error' => 'Master Container non configurato.'];
-        }
-
-        $url = self::MASTER_URL . $path;
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'GET',
-                'header'        => "Authorization: Bearer {$token}\r\n",
-                'timeout'       => 10,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        return $result ? (json_decode($result, true) ?? []) : ['error' => 'Risposta non valida'];
-    }
-
-    /**
-     * Inoltra un file caricato al Master Container come multipart/form-data via cURL.
-     */
-    private function forwardFileToMaster(Request $request, string $fieldName, string $masterPath): Response
-    {
-        $token = \App\Config\ConfigLoader::get('master_token');
-        if (empty($token)) {
-            return $this->jsonError('Master Container non configurato (token mancante).');
-        }
-
         $files = $request->getUploadedFiles();
-        $file = $files[$fieldName] ?? null;
+        $file  = $files[$fieldName] ?? null;
         if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
             return $this->jsonError('Nessun file ricevuto o errore upload.');
         }
-
-        // Scrivi il file in una posizione temporanea
-        $tmpPath = sys_get_temp_dir() . '/' . uniqid('meta_', true) . '_' . $file->getClientFilename();
+        if ($allowedMimes && !in_array($file->getClientMediaType(), $allowedMimes, true)) {
+            return $this->jsonError('Tipo file non supportato.');
+        }
         try {
-            $file->moveTo($tmpPath);
+            @mkdir(dirname($destPath), 0755, true);
+            $file->moveTo($destPath);
+            return $this->jsonOk('File caricato correttamente.');
         } catch (\Throwable $e) {
-            return $this->jsonError('Errore salvataggio temporaneo: ' . $e->getMessage());
+            return $this->jsonError('Salvataggio fallito: ' . $e->getMessage());
         }
-
-        $ch = curl_init(self::MASTER_URL . $masterPath);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => ['file' => new \CURLFile($tmpPath, $file->getClientMediaType() ?: 'application/octet-stream', $file->getClientFilename())],
-            CURLOPT_HTTPHEADER     => ["Authorization: Bearer {$token}"],
-            CURLOPT_TIMEOUT        => 20,
-        ]);
-        $result   = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-        curl_close($ch);
-        @unlink($tmpPath);
-
-        if ($result === false || $curlErr) {
-            return $this->jsonError('Errore cURL: ' . $curlErr);
-        }
-
-        $json = json_decode($result, true) ?? ['success' => false, 'message' => $result];
-        return $this->jsonResponse($json, ($json['success'] ?? false) ? 200 : 500);
-    }
-
-    /**
-     * Legge la sezione iam_proxy dal DB, invia al master per generare
-     * ./runtime/.iam-proxy.env, poi ricrea i container SATOSA per applicare le nuove env.
-     */
-    private function regenerateIamProxyEnv(): void
-    {
-        $settings = SettingsRepository::getSection('iam_proxy');
-        // Pulizia: rimuovi valori null/vuoti per non sporcare il file env
-        $clean = array_filter($settings, fn($v) => $v !== null && $v !== '');
-        $this->masterPost('/config/generate-iam-env', ['settings' => $clean]);
-        // --force-recreate per far rileggere env_file ai container SATOSA
-        $this->masterPost('/containers/recreate', ['services' => ['iam-proxy-italia', 'satosa-nginx', 'init-frontoffice-sp-metadata']]);
     }
 
     private function handleCertUpload(

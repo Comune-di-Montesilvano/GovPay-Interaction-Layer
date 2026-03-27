@@ -33,7 +33,6 @@ use App\Auth\UserRepository;
  */
 class SetupController
 {
-    private const MASTER_URL = 'http://govpay-interaction-master:8099';
     private const TOTAL_STEPS = 5;
     private const UPLOAD_TMP_DIR = '/tmp/gil-restore';
 
@@ -281,11 +280,8 @@ class SetupController
             $destPath = $backupsDir . '/' . $filename;
             copy($tmpPath, $destPath);
 
-            // Chiama il master per eseguire il restore
-            // Nota: il master_token non è ancora noto qui (primo avvio)
-            // Il restore viene eseguito direttamente dal master senza auth
-            // (il token viene impostato solo dopo il setup — questa è l'unica eccezione)
-            $this->callMasterRestore($filename);
+            // Esegue il restore direttamente dal ZIP senza dipendere da un container esterno
+            $this->restoreFromBackup($destPath);
 
             unset($_SESSION['restore_file'], $_SESSION['restore_filename']);
 
@@ -588,58 +584,55 @@ class SetupController
     }
 
     /**
-     * Chiama il master container per riavviare backoffice e frontoffice.
+     * Ripristina un backup ZIP direttamente senza dipendere da container esterni.
+     * Applica: settings DB, dati GovPay, file dei volumi montati.
      */
-    private function triggerMasterRestart(string $token): void
+    private function restoreFromBackup(string $zipPath): void
     {
-        if (empty($token)) {
-            return;
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            throw new \RuntimeException('Impossibile aprire il backup: ' . basename($zipPath));
         }
 
-        $url = self::MASTER_URL . '/containers/restart';
-        $payload = json_encode(['services' => ['govpay-interaction-backoffice', 'govpay-interaction-frontoffice']]);
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method'  => 'POST',
-                'header'  => "Content-Type: application/json\r\nAuthorization: Bearer {$token}\r\n",
-                'content' => $payload,
-                'timeout' => 10,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        @file_get_contents($url, false, $ctx);
-        // Non lanciare eccezioni se il master non risponde — il restart è best-effort
-    }
-
-    /**
-     * Chiama il master per eseguire il restore di un backup.
-     */
-    private function callMasterRestore(string $filename): void
-    {
-        $url = self::MASTER_URL . '/backup/restore';
-        $payload = json_encode(['filename' => $filename]);
-
-        $ctx = stream_context_create([
-            'http' => [
-                'method'  => 'POST',
-                'header'  => "Content-Type: application/json\r\n",
-                'content' => $payload,
-                'timeout' => 300,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $result = @file_get_contents($url, false, $ctx);
-        if ($result === false) {
-            throw new \RuntimeException('Impossibile contattare il Master Container per il restore.');
+        // 1. Ripristina impostazioni DB
+        $settingsJson = $zip->getFromName('settings.json');
+        if ($settingsJson) {
+            $settings = json_decode($settingsJson, true) ?? [];
+            foreach ($settings as $section => $values) {
+                if (is_array($values)) {
+                    SettingsRepository::setSection($section, $values, 'restore');
+                }
+            }
         }
 
-        $json = json_decode($result, true);
-        if (!($json['success'] ?? false)) {
-            throw new \RuntimeException('Restore fallito: ' . ($json['detail'] ?? 'errore sconosciuto'));
+        // 2. Ripristina file dei volumi (struttura: volumes/<nome_volume>/<percorso_relativo>)
+        $volumeMap = [
+            'volumes/gil_certs'               => '/var/www/certificate',
+            'volumes/spid_certs'              => '/var/www/html/spid-certs',
+            'volumes/frontoffice_sp_metadata' => '/var/www/html/metadata-sp',
+            'volumes/gil_metadata_cieoidc'    => '/var/www/html/metadata-cieoidc',
+        ];
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false || str_ends_with($name, '/')) {
+                continue; // directory entry
+            }
+            foreach ($volumeMap as $prefix => $destBase) {
+                if (str_starts_with($name, $prefix . '/')) {
+                    $relPath  = substr($name, strlen($prefix) + 1);
+                    $destPath = $destBase . '/' . $relPath;
+                    @mkdir(dirname($destPath), 0755, true);
+                    $content = $zip->getFromIndex($i);
+                    if ($content !== false) {
+                        file_put_contents($destPath, $content);
+                    }
+                    break;
+                }
+            }
         }
+
+        $zip->close();
     }
 
     /**

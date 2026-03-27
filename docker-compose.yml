@@ -1,34 +1,4 @@
 services:
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Master Container: gestione configurazione e restart container (solo interno)
-  # ─────────────────────────────────────────────────────────────────────────────
-  govpay-interaction-master:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-master:${APP_VERSION:-latest}
-    container_name: govpay-interaction-master
-    # Nessun ports: — accessibile SOLO dalla rete interna govpay-network
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - gil_backups:/backups
-      - spid_certs:/spid-certs
-      - frontoffice_sp_metadata:/sp-metadata
-      - gil_certs:/certs:ro
-      - gil_images:/images:ro
-      - .:/project:ro
-      - ./runtime:/runtime   # RW: file generati a runtime (es. .iam-proxy.env)
-    environment:
-      - PROJECT_DIR=/project
-      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-govpay-interaction-layer}
-      - MASTER_TOKEN=${MASTER_TOKEN}
-      - BACKUP_DIR=/backups
-      - SPID_CERTS_PATH=/spid-certs
-      - SP_METADATA_PATH=/sp-metadata
-      - GOVPAY_CERTS_PATH=/certs
-      - IMAGES_PATH=/images
-      - RUNTIME_DIR=/runtime
-    restart: unless-stopped
-    networks:
-      - govpay-network
-
   govpay-interaction-backoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-backoffice
@@ -40,6 +10,11 @@ services:
       - gil_certs:/var/www/certificate
       - gil_images:/var/www/html/public/img
       - gil_backups:/backups
+      # Volumi per operazioni senza master container
+      - gil_ssl_certs:/var/www/html/ssl-certs
+      - spid_certs:/var/www/html/spid-certs:ro
+      - gil_metadata_cieoidc:/var/www/html/metadata-cieoidc
+      - gil_metadata_agid:/var/www/html/metadata-agid:ro
     environment:
       - APP_SUITE=backoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
@@ -49,14 +24,17 @@ services:
       - DB_USER=${BACKOFFICE_DB_USER:-govpay}
       - DB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
-      - MASTER_TOKEN=${MASTER_TOKEN}
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-    depends_on:
-      - govpay-interaction-master
+      # Portainer API — opzionale; se non configurato le funzioni di container management
+      # mostrano un banner informativo anziché restituire errori.
+      - PORTAINER_URL=${PORTAINER_URL:-}
+      - PORTAINER_API_TOKEN=${PORTAINER_API_TOKEN:-}
+      - PORTAINER_ENDPOINT_ID=${PORTAINER_ENDPOINT_ID:-1}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
     restart: unless-stopped
     networks:
       - govpay-network
+
   govpay-interaction-frontoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: govpay-interaction-frontoffice
@@ -77,11 +55,8 @@ services:
       - DB_USER=${FRONTOFFICE_DB_USER:-govpay_cittadini}
       - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
-      - MASTER_TOKEN=${MASTER_TOKEN}
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=http://satosa-nginx:80/Saml2IDP/metadata
-    depends_on:
-      - govpay-interaction-master
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     networks:
@@ -98,9 +73,12 @@ services:
       - frontoffice_sp_metadata:/metadata/sp
       - frontoffice_sp_metadata:/var/www/html/metadata-sp
       - spid_certs:/var/www/html/spid-certs:ro
-    env_file:
-      - path: ./runtime/.iam-proxy.env
-        required: false
+    environment:
+      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
+      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}
+      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
+      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
+      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-}
     profiles:
       - iam-proxy
 
@@ -118,9 +96,13 @@ services:
       - frontoffice_sp_metadata:/metadata/sp
       - frontoffice_sp_metadata:/var/www/html/metadata-sp
       - spid_certs:/var/www/html/spid-certs:ro
-    env_file:
-      - path: ./runtime/.iam-proxy.env
-        required: false
+    environment:
+      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
+      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}
+      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
+      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
+      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-}
+      - FRONTOFFICE_SP_METADATA_REFRESH_SECONDS=${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}
     depends_on:
       init-frontoffice-sp-metadata:
         condition: service_completed_successfully
@@ -134,8 +116,8 @@ services:
     command: ["/bin/bash", "/builder/startup.sh"]
     volumes:
       # Chiavi JWK CIE OIDC (per-deployment, generate da metadata-builder setup-cieoidc)
-      - ./metadata/cieoidc-keys:/cieoidc-keys:ro
-      # SP metadata del frontoffice (non annidato: nessun problema Docker Desktop Windows)
+      - gil_cieoidc_keys:/cieoidc-keys:ro
+      # SP metadata del frontoffice
       - frontoffice_sp_metadata:/frontoffice-sp:ro
       # Certificati SPID (per-deployment)
       - spid_certs:/satosa_proxy/pki
@@ -146,11 +128,96 @@ services:
     depends_on:
       init-frontoffice-sp-metadata:
         condition: service_completed_successfully
-    env_file:
-      - path: ./runtime/.iam-proxy.env
-        required: false
     environment:
       - SATOSA_BY_DOCKER=1
+      - IAM_PROXY_DEBUG=${IAM_PROXY_DEBUG:-false}
+      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}
+      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
+      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
+      - IAM_PROXY_SAML2_IDP_METADATA_URL=${IAM_PROXY_SAML2_IDP_METADATA_URL:-}
+      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-}
+      - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-satosa-nginx}
+      - IAM_PROXY_HTTP_PORT=${IAM_PROXY_HTTP_PORT:-9445}
+      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-satosa-nginx}
+      - SATOSA_BASE=${SATOSA_BASE:-}
+      - SATOSA_BASE_STATIC=${SATOSA_BASE_STATIC:-}
+      - SATOSA_DISCO_SRV=${SATOSA_DISCO_SRV:-}
+      - SATOSA_SALT=${SATOSA_SALT:-}
+      - SATOSA_STATE_ENCRYPTION_KEY=${SATOSA_STATE_ENCRYPTION_KEY:-}
+      - SATOSA_ENCRYPTION_KEY=${SATOSA_ENCRYPTION_KEY:-}
+      - SATOSA_USER_ID_HASH_SALT=${SATOSA_USER_ID_HASH_SALT:-}
+      - SATOSA_UNKNOW_ERROR_REDIRECT_PAGE=${SATOSA_UNKNOW_ERROR_REDIRECT_PAGE:-}
+      - SATOSA_CANCEL_REDIRECT_URL=${SATOSA_CANCEL_REDIRECT_URL:-}
+      - SATOSA_PRIVATE_KEY=${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}
+      - SATOSA_PUBLIC_KEY=${SATOSA_PUBLIC_KEY:-./pki/cert.pem}
+      - SATOSA_ORGANIZATION_DISPLAY_NAME_IT=${SATOSA_ORGANIZATION_DISPLAY_NAME_IT:-}
+      - SATOSA_ORGANIZATION_DISPLAY_NAME_EN=${SATOSA_ORGANIZATION_DISPLAY_NAME_EN:-}
+      - SATOSA_ORGANIZATION_NAME_IT=${SATOSA_ORGANIZATION_NAME_IT:-}
+      - SATOSA_ORGANIZATION_NAME_EN=${SATOSA_ORGANIZATION_NAME_EN:-}
+      - SATOSA_ORGANIZATION_URL_IT=${SATOSA_ORGANIZATION_URL_IT:-}
+      - SATOSA_ORGANIZATION_URL_EN=${SATOSA_ORGANIZATION_URL_EN:-}
+      - SATOSA_CONTACT_PERSON_GIVEN_NAME=${SATOSA_CONTACT_PERSON_GIVEN_NAME:-}
+      - SATOSA_CONTACT_PERSON_EMAIL_ADDRESS=${SATOSA_CONTACT_PERSON_EMAIL_ADDRESS:-}
+      - SATOSA_CONTACT_PERSON_TELEPHONE_NUMBER=${SATOSA_CONTACT_PERSON_TELEPHONE_NUMBER:-}
+      - SATOSA_CONTACT_PERSON_FISCALCODE=${SATOSA_CONTACT_PERSON_FISCALCODE:-}
+      - SATOSA_CONTACT_PERSON_IPA_CODE=${SATOSA_CONTACT_PERSON_IPA_CODE:-}
+      - SATOSA_ORGANIZATION_IDENTIFIER=${SATOSA_ORGANIZATION_IDENTIFIER:-}
+      - SATOSA_CONTACT_PERSON_MUNICIPALITY=${SATOSA_CONTACT_PERSON_MUNICIPALITY:-}
+      - SATOSA_UI_DISPLAY_NAME_IT=${SATOSA_UI_DISPLAY_NAME_IT:-}
+      - SATOSA_UI_DISPLAY_NAME_EN=${SATOSA_UI_DISPLAY_NAME_EN:-}
+      - SATOSA_UI_DESCRIPTION_IT=${SATOSA_UI_DESCRIPTION_IT:-}
+      - SATOSA_UI_DESCRIPTION_EN=${SATOSA_UI_DESCRIPTION_EN:-}
+      - SATOSA_UI_INFORMATION_URL_IT=${SATOSA_UI_INFORMATION_URL_IT:-}
+      - SATOSA_UI_INFORMATION_URL_EN=${SATOSA_UI_INFORMATION_URL_EN:-}
+      - SATOSA_UI_PRIVACY_URL_IT=${SATOSA_UI_PRIVACY_URL_IT:-}
+      - SATOSA_UI_PRIVACY_URL_EN=${SATOSA_UI_PRIVACY_URL_EN:-}
+      - SATOSA_UI_LEGAL_URL_IT=${SATOSA_UI_LEGAL_URL_IT:-}
+      - SATOSA_UI_LEGAL_URL_EN=${SATOSA_UI_LEGAL_URL_EN:-}
+      - SATOSA_UI_ACCESSIBILITY_URL_IT=${SATOSA_UI_ACCESSIBILITY_URL_IT:-}
+      - SATOSA_UI_ACCESSIBILITY_URL_EN=${SATOSA_UI_ACCESSIBILITY_URL_EN:-}
+      - SATOSA_UI_LOGO_URL=${SATOSA_UI_LOGO_URL:-}
+      - SATOSA_UI_LOGO_WIDTH=${SATOSA_UI_LOGO_WIDTH:-200}
+      - SATOSA_UI_LOGO_HEIGHT=${SATOSA_UI_LOGO_HEIGHT:-60}
+      - SATOSA_GET_SPID_IDP_METADATA=${SATOSA_GET_SPID_IDP_METADATA:-true}
+      - SATOSA_GET_CIE_IDP_METADATA=${SATOSA_GET_CIE_IDP_METADATA:-true}
+      - SATOSA_GET_FICEP_IDP_METADATA=${SATOSA_GET_FICEP_IDP_METADATA:-false}
+      - SATOSA_GET_IDEM_MDQ_KEY=${SATOSA_GET_IDEM_MDQ_KEY:-true}
+      - SATOSA_USE_DEMO_SPID_IDP=${SATOSA_USE_DEMO_SPID_IDP:-false}
+      - SATOSA_USE_SPID_VALIDATOR=${SATOSA_USE_SPID_VALIDATOR:-false}
+      - SATOSA_SPID_VALIDATOR_METADATA_URL=${SATOSA_SPID_VALIDATOR_METADATA_URL:-https://validator.spid.gov.it/metadata.xml}
+      - SATOSA_DISABLE_CIEOIDC_BACKEND=${SATOSA_DISABLE_CIEOIDC_BACKEND:-false}
+      - SATOSA_DISABLE_PYEUDIW_BACKEND=${SATOSA_DISABLE_PYEUDIW_BACKEND:-true}
+      - CIE_OIDC_PROVIDER_URL=${CIE_OIDC_PROVIDER_URL:-https://oidc.idserver.servizicie.interno.gov.it}
+      - CIE_OIDC_TRUST_ANCHOR_URL=${CIE_OIDC_TRUST_ANCHOR_URL:-https://oidc.registry.servizicie.interno.gov.it}
+      - CIE_OIDC_AUTHORITY_HINT_URL=${CIE_OIDC_AUTHORITY_HINT_URL:-https://oidc.registry.servizicie.interno.gov.it}
+      - CIE_OIDC_CLIENT_ID=${CIE_OIDC_CLIENT_ID:-}
+      - CIE_OIDC_CLIENT_NAME=${CIE_OIDC_CLIENT_NAME:-}
+      - CIE_OIDC_ORGANIZATION_NAME=${CIE_OIDC_ORGANIZATION_NAME:-}
+      - CIE_OIDC_JWKS_URI=${CIE_OIDC_JWKS_URI:-}
+      - CIE_OIDC_SIGNED_JWKS_URI=${CIE_OIDC_SIGNED_JWKS_URI:-}
+      - CIE_OIDC_REDIRECT_URI=${CIE_OIDC_REDIRECT_URI:-}
+      - CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT=${CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT:-}
+      - CIE_OIDC_FEDERATION_FETCH_ENDPOINT=${CIE_OIDC_FEDERATION_FETCH_ENDPOINT:-}
+      - CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT=${CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT:-}
+      - CIE_OIDC_FEDERATION_LIST_ENDPOINT=${CIE_OIDC_FEDERATION_LIST_ENDPOINT:-}
+      - CIE_OIDC_HOMEPAGE_URI=${CIE_OIDC_HOMEPAGE_URI:-}
+      - CIE_OIDC_POLICY_URI=${CIE_OIDC_POLICY_URI:-}
+      - CIE_OIDC_LOGO_URI=${CIE_OIDC_LOGO_URI:-}
+      - CIE_OIDC_CONTACT_EMAIL=${CIE_OIDC_CONTACT_EMAIL:-}
+      - ENABLE_SPID=${ENABLE_SPID:-true}
+      - ENABLE_CIE_OIDC=${ENABLE_CIE_OIDC:-true}
+      - ENABLE_IT_WALLET=${ENABLE_IT_WALLET:-false}
+      - ENABLE_OIDCOP=${ENABLE_OIDCOP:-false}
+      - ENABLE_IDEM=${ENABLE_IDEM:-false}
+      - ENABLE_EIDAS=${ENABLE_EIDAS:-false}
+      - MONGODB_USERNAME=${MONGODB_USERNAME:-satosa_user}
+      - MONGODB_PASSWORD=${MONGODB_PASSWORD:-satosa_password}
+      - MONGODB_HOST=${MONGODB_HOST:-satosa-mongo}
+      - MONGODB_PORT=${MONGODB_PORT:-27017}
+      - MONGODB_DB=${MONGODB_DB:-satosa}
+      - FRONTOFFICE_SP_METADATA_FILE=${FRONTOFFICE_SP_METADATA_FILE:-/satosa_proxy/metadata/sp/frontoffice_sp.xml}
+      - FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS=${FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS:-604800}
+      - FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS=${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}
     restart: on-failure:3
     healthcheck:
       test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]
@@ -171,17 +238,25 @@ services:
         condition: service_started
     ports:
       - "${IAM_PROXY_HTTP_PORT:-9445}:80"
-    env_file:
-      - path: ./runtime/.iam-proxy.env
-        required: false
+    environment:
+      - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-satosa-nginx}
+      - IAM_PROXY_HTTP_PORT=${IAM_PROXY_HTTP_PORT:-9445}
+      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-satosa-nginx}
+      - ENABLE_SPID=${ENABLE_SPID:-true}
+      - ENABLE_CIE_OIDC=${ENABLE_CIE_OIDC:-true}
+      - ENABLE_IT_WALLET=${ENABLE_IT_WALLET:-false}
+      - ENABLE_OIDCOP=${ENABLE_OIDCOP:-false}
+      - ENABLE_IDEM=${ENABLE_IDEM:-false}
+      - ENABLE_EIDAS=${ENABLE_EIDAS:-false}
     volumes:
       # File statici SATOSA (disco.html, wallets, etc.) popolati da iam-proxy-italia/startup.sh
       - iam_proxy_static:/satosa-project/static:ro
-      # Cert TLS per-dominio (personalizzazione per-comune)
-      - ./ssl:/etc/nginx/certs
+      # Certificati TLS server per-dominio
+      - gil_ssl_certs:/etc/nginx/certs:ro
     restart: unless-stopped
     networks:
       - govpay-network
+
   db:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: govpay-interaction-mariadb
@@ -203,9 +278,6 @@ services:
     container_name: satosa-mongo
     profiles:
       - iam-proxy
-    env_file:
-      - path: ./runtime/.iam-proxy.env
-        required: false
     volumes:
       - satosa_mongo_data:/data/db
     restart: unless-stopped
@@ -217,13 +289,37 @@ services:
     volumes:
       - spid_certs:/certs
       - frontoffice_sp_metadata:/sp-metadata
-      - ./metadata/cieoidc-keys:/output/cieoidc-keys
-      - ./metadata/agid:/output/agid
-      - ./metadata/cieoidc:/output/cieoidc
-      - ./backup:/backup
-    env_file:
-      - path: ./runtime/.iam-proxy.env
-        required: false
+      - gil_cieoidc_keys:/output/cieoidc-keys
+      - gil_metadata_agid:/output/agid
+      - gil_metadata_cieoidc:/output/cieoidc
+      - gil_backups:/backup
+    environment:
+      - SPID_CERT_KEY_SIZE=${SPID_CERT_KEY_SIZE:-3072}
+      - SPID_CERT_COMMON_NAME=${SPID_CERT_COMMON_NAME:-}
+      - SPID_CERT_DAYS=${SPID_CERT_DAYS:-730}
+      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
+      - SPID_CERT_LOCALITY_NAME=${SPID_CERT_LOCALITY_NAME:-}
+      - SPID_CERT_ORG_ID=${SPID_CERT_ORG_ID:-}
+      - SPID_CERT_ORG_NAME=${SPID_CERT_ORG_NAME:-}
+      - SPID_CERT_SECTOR=${SPID_CERT_SECTOR:-public}
+      - SPID_CERTS_DOCKER_VOLUME=${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
+      - CIE_OIDC_CLIENT_ID=${CIE_OIDC_CLIENT_ID:-}
+      - CIE_OIDC_CLIENT_NAME=${CIE_OIDC_CLIENT_NAME:-}
+      - CIE_OIDC_ORGANIZATION_NAME=${CIE_OIDC_ORGANIZATION_NAME:-}
+      - CIE_OIDC_JWKS_URI=${CIE_OIDC_JWKS_URI:-}
+      - CIE_OIDC_SIGNED_JWKS_URI=${CIE_OIDC_SIGNED_JWKS_URI:-}
+      - CIE_OIDC_REDIRECT_URI=${CIE_OIDC_REDIRECT_URI:-}
+      - CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT=${CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT:-}
+      - CIE_OIDC_FEDERATION_FETCH_ENDPOINT=${CIE_OIDC_FEDERATION_FETCH_ENDPOINT:-}
+      - CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT=${CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT:-}
+      - CIE_OIDC_FEDERATION_LIST_ENDPOINT=${CIE_OIDC_FEDERATION_LIST_ENDPOINT:-}
+      - CIE_OIDC_HOMEPAGE_URI=${CIE_OIDC_HOMEPAGE_URI:-}
+      - CIE_OIDC_POLICY_URI=${CIE_OIDC_POLICY_URI:-}
+      - CIE_OIDC_LOGO_URI=${CIE_OIDC_LOGO_URI:-}
+      - CIE_OIDC_CONTACT_EMAIL=${CIE_OIDC_CONTACT_EMAIL:-}
+      - CIE_OIDC_PROVIDER_URL=${CIE_OIDC_PROVIDER_URL:-https://oidc.idserver.servizicie.interno.gov.it}
+      - CIE_OIDC_TRUST_ANCHOR_URL=${CIE_OIDC_TRUST_ANCHOR_URL:-https://oidc.registry.servizicie.interno.gov.it}
+      - CIE_OIDC_AUTHORITY_HINT_URL=${CIE_OIDC_AUTHORITY_HINT_URL:-https://oidc.registry.servizicie.interno.gov.it}
     networks:
       - govpay-network
 
@@ -238,9 +334,17 @@ volumes:
   iam_proxy_static:
   spid_certs:
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
-  # Archivi di backup — accessibili a master e backoffice
+  # Archivi di backup — accessibili a backoffice e metadata-builder
   gil_backups:
-  # Certificati GovPay (mTLS client cert+key) — RW backoffice, RO frontoffice e master
+  # Certificati GovPay (mTLS client cert+key) — RW backoffice, RO frontoffice
   gil_certs:
-  # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice e master
+  # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:
+  # Certificati TLS server per satosa-nginx (RW backoffice per upload, RO satosa-nginx)
+  gil_ssl_certs:
+  # Chiavi JWK CIE OIDC per-deployment (generate da metadata-builder setup-cieoidc)
+  gil_cieoidc_keys:
+  # Artefatti export AgID (metadata SPID pubblico)
+  gil_metadata_agid:
+  # Artefatti export CIE OIDC (entity configuration, JWKS)
+  gil_metadata_cieoidc:
