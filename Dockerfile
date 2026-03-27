@@ -26,7 +26,8 @@ ENV FA_DIR="fontawesome-free-${FA_VERSION}-web"
 ARG CHARTJS_VERSION="4.5.1"
 
 # 1. Clona il repository, checkout, installa e compila Bootstrap Italia
-RUN git clone https://github.com/italia/bootstrap-italia.git . && \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    git clone https://github.com/italia/bootstrap-italia.git . && \
     git checkout ${BOOTSTRAP_TAG} && \
     echo "Scarico e compilo Bootstap-italia versione ${BOOTSTRAP_TAG}..." && \
     npm install && \
@@ -42,7 +43,8 @@ RUN mkdir -p /tmp/fa_download && \
     rm -rf /tmp/fa_download
 
 # 3. Scarica Chart.js (bundle UMD) per distribuirlo localmente tramite npm
-RUN mkdir -p /app/chartjs-dist && \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    mkdir -p /app/chartjs-dist && \
     echo "Scarico Chart.js ${CHARTJS_VERSION} via npm..." && \
     npm install chart.js@${CHARTJS_VERSION} --prefix /tmp/chartjs-download && \
     cp /tmp/chartjs-download/node_modules/chart.js/dist/chart.umd.js /app/chartjs-dist/chart.umd.js && \
@@ -62,8 +64,8 @@ WORKDIR /app
 COPY composer.json composer.lock* ./
 COPY govpay-clients/ ./govpay-clients/
 COPY pagopa-clients/ ./pagopa-clients/
-RUN composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction || \
-    composer update --no-dev --prefer-dist --optimize-autoloader --no-interaction
+RUN --mount=type=cache,target=/root/.composer,sharing=locked \
+    composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
 ######################################################################
 # STAGE 3: Runtime (Apache + PHP) harden
@@ -80,13 +82,14 @@ ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 
 # Installazione delle dipendenze di sistema e PHP (inclusi unzip e wget)
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libicu-dev libzip-dev libonig-dev \
     ca-certificates curl unzip openssl \
     && docker-php-ext-install intl mbstring pdo_mysql zip \
     && a2enmod ssl rewrite headers \
-    && echo "ServerName localhost" >> /etc/apache2/apache2.conf \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
 # Copia vendor dal builder
 COPY --from=vendor_builder /app/vendor /var/www/html/vendor

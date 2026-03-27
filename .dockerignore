@@ -26,3 +26,22 @@ docker-compose*.yml
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Directory con build context separato in CI
+master/
+iam-proxy/
+docker/
+
+# Non usate nel build principale
+debug/
+scripts/
+backup/
+plans/
+
+# Documentazione
+*.md
+LICENSE
+
+# Metadata: solo lo script di setup è necessario
+metadata/
+!metadata/ensure-sp-metadata.sh

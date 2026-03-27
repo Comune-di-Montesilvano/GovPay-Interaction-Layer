@@ -54,8 +54,8 @@ jobs:
           build-args: |
             GIL_IMAGE_TAG=${{ steps.meta-bo.outputs.version }}
             GIT_COMMIT_SHA=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backoffice
+          cache-to: type=gha,mode=max,scope=backoffice
 
       # ── frontoffice ─────────────────────────────────────────────────────
       - name: Meta · frontoffice
@@ -78,8 +78,8 @@ jobs:
           tags: ${{ steps.meta-fo.outputs.tags }}
           labels: ${{ steps.meta-fo.outputs.labels }}
           build-args: GIL_IMAGE_TAG=${{ steps.meta-fo.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontoffice
+          cache-to: type=gha,mode=max,scope=frontoffice
 
       # ── iam-proxy-italia ─────────────────────────────────────────────────
       - name: Meta · iam-proxy-italia
@@ -103,8 +103,8 @@ jobs:
           labels: ${{ steps.meta-iam.outputs.labels }}
           build-args: |
             GIL_IMAGE_TAG=${{ steps.meta-iam.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=iam-proxy-italia
+          cache-to: type=gha,mode=max,scope=iam-proxy-italia
 
       # ── iam-proxy-nginx ─────────────────────────────────────────────────
       - name: Meta · iam-proxy-nginx
@@ -125,8 +125,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-nginx.outputs.tags }}
           labels: ${{ steps.meta-nginx.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=iam-proxy-nginx
+          cache-to: type=gha,mode=max,scope=iam-proxy-nginx
 
       # ── db ──────────────────────────────────────────────────────────────
       - name: Meta · db
@@ -148,8 +148,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-db.outputs.tags }}
           labels: ${{ steps.meta-db.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=db
+          cache-to: type=gha,mode=max,scope=db
 
       # ── metadata-builder ────────────────────────────────────────────────
       - name: Meta · metadata-builder
@@ -171,8 +171,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-mb.outputs.tags }}
           labels: ${{ steps.meta-mb.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=metadata-builder
+          cache-to: type=gha,mode=max,scope=metadata-builder
 
       # ── master ──────────────────────────────────────────────────────────
       - name: Meta · master
@@ -193,5 +193,5 @@ jobs:
           push: true
           tags: ${{ steps.meta-master.outputs.tags }}
           labels: ${{ steps.meta-master.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=master
+          cache-to: type=gha,mode=max,scope=master
