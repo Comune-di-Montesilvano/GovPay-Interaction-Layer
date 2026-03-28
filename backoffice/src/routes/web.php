@@ -427,10 +427,10 @@ return function (App $app, Twig $twig): void {
         return $response->withHeader('Location', '/profile?tab=password')->withStatus(302);
     });
 
-    // Configurazione (solo superadmin): mostra il risultato di Backoffice /configurazioni
-    $app->get('/configurazione', function($request, $response) use ($twig) {
-        $controller = new ConfigurazioneController($twig);
-        return $controller->index($request, $response);
+    // /configurazione reindirizza alla vista unificata in /impostazioni
+    $app->get('/configurazione', function($request, $response) {
+        $tab = $request->getQueryParams()['tab'] ?? 'dominio';
+        return $response->withHeader('Location', '/impostazioni?tab=' . urlencode($tab))->withStatus(302);
     });
 
     // Aggiungi/aggiorna operatore - solo superadmin

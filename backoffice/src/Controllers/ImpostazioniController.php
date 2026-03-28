@@ -15,6 +15,7 @@ use Slim\Views\Twig;
 use App\Config\SettingsRepository;
 use App\Logger;
 use App\Services\PortainerClient;
+use App\Controllers\ConfigurazioneController;
 
 /**
  * Gestisce il pannello Impostazioni (/impostazioni) con 5 sezioni:
@@ -47,18 +48,26 @@ class ImpostazioniController
         $tab = $request->getQueryParams()['tab'] ?? 'govpay';
 
         $data = [
-            'active_tab'  => $tab,
+            'active_tab'   => $tab,
             'is_superadmin' => $this->isSuperadmin(),
-            'govpay'      => SettingsRepository::getSection('govpay'),
-            'pagopa'      => SettingsRepository::getSection('pagopa'),
-            'backoffice'  => SettingsRepository::getSection('backoffice'),
-            'frontoffice' => SettingsRepository::getSection('frontoffice'),
-            'entity'      => SettingsRepository::getSection('entity'),
-            'iam_proxy'   => SettingsRepository::getSection('iam_proxy'),
-            'ui'          => SettingsRepository::getSection('ui'),
-            'app'         => SettingsRepository::getSection('app'),
-            'csrf_token'  => $this->generateCsrf(),
+            'govpay'       => SettingsRepository::getSection('govpay'),
+            'pagopa'       => SettingsRepository::getSection('pagopa'),
+            'backoffice'   => SettingsRepository::getSection('backoffice'),
+            'frontoffice'  => SettingsRepository::getSection('frontoffice'),
+            'entity'       => SettingsRepository::getSection('entity'),
+            'iam_proxy'    => SettingsRepository::getSection('iam_proxy'),
+            'ui'           => SettingsRepository::getSection('ui'),
+            'app'          => SettingsRepository::getSection('app'),
+            'csrf_token'   => $this->generateCsrf(),
         ];
+
+        // Tab che appartengono a /configurazione: carica i dati necessari
+        $confTabs = ['dominio','tassonomie','tipologie','tipologie_esterne','gestionali',
+                     'templates','servizi_io','utenti','operatori','applicazioni','confapi','info','logs'];
+        if (in_array($tab, $confTabs, true)) {
+            $confCtrl = new ConfigurazioneController($this->twig);
+            $data = array_merge($data, $confCtrl->getTabData($tab, $request));
+        }
 
         return $this->twig->render($response, 'impostazioni/index.html.twig', $data);
     }

@@ -66,6 +66,55 @@
       <a class="nav-link {{ active_tab == 'backup' ? 'active' : '' }}" href="/impostazioni?tab=backup">
         <i class="fas fa-database me-2"></i>Backup
       </a>
+
+      <span class="imp-section-title">Dominio</span>
+      <a class="nav-link {{ active_tab == 'dominio' ? 'active' : '' }}" href="/impostazioni?tab=dominio">
+        <i class="fas fa-building me-2"></i>Dominio GovPay
+      </a>
+      <a class="nav-link {{ active_tab == 'tassonomie' ? 'active' : '' }}" href="/impostazioni?tab=tassonomie">
+        <i class="fas fa-sitemap me-2"></i>Tassonomie
+      </a>
+
+      <span class="imp-section-title">Pagamenti</span>
+      <a class="nav-link {{ active_tab == 'tipologie' ? 'active' : '' }}" href="/impostazioni?tab=tipologie">
+        <i class="fas fa-list me-2"></i>Tipologie pagamento
+      </a>
+      <a class="nav-link {{ active_tab == 'tipologie_esterne' ? 'active' : '' }}" href="/impostazioni?tab=tipologie_esterne">
+        <i class="fas fa-external-link-alt me-2"></i>Tipologie esterne
+      </a>
+      <a class="nav-link {{ active_tab == 'gestionali' ? 'active' : '' }}" href="/impostazioni?tab=gestionali">
+        <i class="fas fa-cog me-2"></i>Gestionali
+      </a>
+
+      <span class="imp-section-title">Comunicazione</span>
+      <a class="nav-link {{ active_tab == 'templates' ? 'active' : '' }}" href="/impostazioni?tab=templates">
+        <i class="fas fa-file-invoice me-2"></i>Template Pendenze
+      </a>
+      <a class="nav-link {{ active_tab == 'servizi_io' ? 'active' : '' }}" href="/impostazioni?tab=servizi_io">
+        <i class="fas fa-mobile-alt me-2"></i>Servizi App IO
+      </a>
+
+      <span class="imp-section-title">Utenti</span>
+      <a class="nav-link {{ active_tab == 'utenti' ? 'active' : '' }}" href="/impostazioni?tab=utenti">
+        <i class="fas fa-users me-2"></i>Utenti
+      </a>
+      <a class="nav-link {{ active_tab == 'operatori' ? 'active' : '' }}" href="/impostazioni?tab=operatori">
+        <i class="fas fa-user-cog me-2"></i>Operatori
+      </a>
+
+      <span class="imp-section-title">Sistema</span>
+      <a class="nav-link {{ active_tab == 'applicazioni' ? 'active' : '' }}" href="/impostazioni?tab=applicazioni">
+        <i class="fas fa-puzzle-piece me-2"></i>Applicazioni
+      </a>
+      <a class="nav-link {{ active_tab == 'confapi' ? 'active' : '' }}" href="/impostazioni?tab=confapi">
+        <i class="fas fa-code me-2"></i>Config API
+      </a>
+      <a class="nav-link {{ active_tab == 'info' ? 'active' : '' }}" href="/impostazioni?tab=info">
+        <i class="fas fa-info-circle me-2"></i>Info
+      </a>
+      <a class="nav-link {{ active_tab == 'logs' ? 'active' : '' }}" href="/impostazioni?tab=logs">
+        <i class="fas fa-file-alt me-2"></i>Logs
+      </a>
     </nav>
   </div>
 
@@ -85,6 +134,8 @@
       {% include 'impostazioni/tab-login-proxy.html.twig' %}
     {% elseif active_tab == 'backup' %}
       {% include 'impostazioni/tab-backup.html.twig' %}
+    {% elseif active_tab in ['dominio','tassonomie','tipologie','tipologie_esterne','gestionali','templates','servizi_io','utenti','operatori','applicazioni','confapi','info','logs'] %}
+      {% include 'impostazioni/tab-conf-all.html.twig' %}
     {% else %}
       {% include 'impostazioni/tab-govpay.html.twig' %}
     {% endif %}
