@@ -57,6 +57,33 @@ else
 fi
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Standby guard — se IAM Proxy non è abilitato nel backoffice, il container
+# non avvia SATOSA e rimane in Exited(0). Il healthcheck non passerà mai
+# (entrypoint.sh non viene creato), così satosa-nginx non partirà.
+_enable_spid=$(echo "$_CONF" | python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    v = str(d.get('ENABLE_SPID', 'false')).lower()
+    print('true' if v in ('1','true','yes','on') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+_enable_cie=$(echo "$_CONF" | python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    v = str(d.get('ENABLE_CIE_OIDC', 'false')).lower()
+    print('true' if v in ('1','true','yes','on') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+
+if [ "$_enable_spid" != "true" ] && [ "$_enable_cie" != "true" ]; then
+  echo "[startup] IAM Proxy non abilitato (ENABLE_SPID=false, ENABLE_CIE_OIDC=false). Container in standby."
+  exit 0
+fi
+
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
 export APP_VERSION

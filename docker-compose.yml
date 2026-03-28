@@ -123,8 +123,6 @@ services:
       - spid_certs:/satosa_proxy/pki
       # File statici condivisi con satosa-nginx (popolati da startup.sh)
       - iam_proxy_static:/satosa-static
-    profiles:
-      - iam-proxy
     depends_on:
       init-frontoffice-sp-metadata:
         condition: service_completed_successfully
@@ -151,7 +149,7 @@ services:
       # tramite GET http://govpay-interaction-backoffice/api/iam-proxy/env all'avvio.
       - BACKOFFICE_INTERNAL_URL=http://govpay-interaction-backoffice
       - MASTER_TOKEN=${MASTER_TOKEN}
-    restart: on-failure:3
+    restart: 'no'
     healthcheck:
       test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]
       interval: 5s
@@ -164,11 +162,9 @@ services:
   satosa-nginx:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx:${APP_VERSION:-latest}
     container_name: satosa-nginx
-    profiles:
-      - iam-proxy
     depends_on:
       iam-proxy-italia:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "${IAM_PROXY_HTTP_PORT:-9445}:80"
     environment:
@@ -183,7 +179,7 @@ services:
       - iam_proxy_static:/satosa-project/static:ro
       # Certificati TLS server per-dominio
       - gil_ssl_certs:/etc/nginx/certs:ro
-    restart: unless-stopped
+    restart: 'no'
     networks:
       - govpay-network
 
@@ -206,11 +202,9 @@ services:
   satosa-mongo:
     image: mongo:7
     container_name: satosa-mongo
-    profiles:
-      - iam-proxy
     volumes:
       - satosa_mongo_data:/data/db
-    restart: unless-stopped
+    restart: 'no'
     networks:
       - govpay-network
 
