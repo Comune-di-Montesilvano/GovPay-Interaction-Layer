@@ -24,11 +24,11 @@ is_true() {
 _BO_URL="${BACKOFFICE_INTERNAL_URL:-http://govpay-interaction-backoffice}"
 _MASTER_TOKEN="${MASTER_TOKEN:-}"
 
+_CONF="{}"
 if [ -n "$_MASTER_TOKEN" ]; then
   echo "[startup] Fetch configurazione da ${_BO_URL}/api/iam-proxy/env ..."
   _MAX_ATTEMPTS=10
   _ATTEMPT=0
-  _CONF="{}"
   while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
     _CONF=$(curl -sf --max-time 10 \
       -H "Authorization: Bearer ${_MASTER_TOKEN}" \
