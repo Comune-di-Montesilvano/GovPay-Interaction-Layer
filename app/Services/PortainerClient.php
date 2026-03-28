@@ -154,6 +154,13 @@ class PortainerClient
             $opts['http']['content'] = json_encode($body);
         }
 
+        // SSL: disabilita verifica certificato per installazioni con cert self-signed
+        // (equivalente a curl -k — necessario per indirizzi interni come 10.x.x.x:9443)
+        $opts['ssl'] = [
+            'verify_peer'      => false,
+            'verify_peer_name' => false,
+        ];
+
         $ctx    = stream_context_create($opts);
         $raw    = @file_get_contents($url, false, $ctx);
         $status = 0;
