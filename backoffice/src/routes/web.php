@@ -59,6 +59,11 @@ return function (App $app, Twig $twig): void {
         return (new SetupController($twig))->restoreConfirm($request, $response);
     });
 
+    // ── API interna: endpoint senza sessione (autenticati via Bearer token) ──────
+    $app->get('/api/iam-proxy/env', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
+    });
+
     // ── Impostazioni (nuovo config panel, richiede auth) ──────────────────────────
     $app->get('/impostazioni', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->index($request, $response);

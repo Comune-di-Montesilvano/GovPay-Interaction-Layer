@@ -2,18 +2,29 @@
 
 {% block title %}Configurazione - GovPay{% endblock %}
 
+{% block head %}
+<style>
+  .imp-nav .nav-link { border-radius: 0; border-left: 3px solid transparent; }
+  .imp-nav .nav-link.active { border-left-color: var(--bs-primary); background: rgba(var(--bs-primary-rgb), .06); }
+  .imp-nav .nav-link:hover:not(.active) { background: rgba(0,0,0,.04); }
+  .imp-section-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; font-weight: 600; padding: .5rem 1rem .25rem; }
+</style>
+{% endblock %}
+
 {% block content %}
   <div class="d-flex align-items-center justify-content-between mb-3">
-    <h1 class="h4 mb-0">Configurazione</h1>
-    <div>
-      <a class="btn btn-outline-secondary" href="/">&laquo; Torna alla home</a>
+    <h1 class="h4 mb-0"><i class="fas fa-cogs me-2 text-primary"></i>Configurazione</h1>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-secondary" href="/impostazioni"><i class="fas fa-sliders-h me-1"></i>Impostazioni</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/"><i class="fas fa-arrow-left me-1"></i>Home</a>
     </div>
   </div>
-    {% if config_readonly %}
-      <div class="alert alert-warning" role="alert">
-        Sei autenticato come <strong>admin</strong>: le sezioni di configurazione sono in sola lettura. Per modificare i parametri dell'ente è necessario l'intervento di un superadmin. La scheda <strong>Utenti</strong> resta pienamente operativa.
-      </div>
-    {% endif %}
+
+  {% if config_readonly %}
+    <div class="alert alert-info py-2 mb-3" role="alert">
+      <i class="fas fa-info-circle me-2"></i>Sei autenticato come <strong>admin</strong>: le sezioni di configurazione sono in sola lettura. La scheda <strong>Utenti</strong> resta pienamente operativa.
+    </div>
+  {% endif %}
 
   {% set currentTab = current is defined and current ? current : (tab|default('dominio')) %}
   {% if currentTab == 'principali' %}
@@ -22,24 +33,59 @@
 
   <div class="row g-3 mb-4">
     <div class="col-lg-3">
-      <nav class="nav nav-pills flex-column" aria-label="Sezioni configurazione">
-    <a class="nav-link {{ currentTab == 'dominio' ? 'active' : '' }}" href="/configurazione?tab=dominio"><i class="fas fa-building me-2"></i>Dominio</a>
-    <a class="nav-link {{ currentTab == 'tipologie' ? 'active' : '' }}" href="/configurazione?tab=tipologie"><i class="fas fa-list me-2"></i>Tipologie</a>
-    <a class="nav-link {{ currentTab == 'tassonomie' ? 'active' : '' }}" href="/configurazione?tab=tassonomie"><i class="fas fa-sitemap me-2"></i>Tassonomie</a>
-    <a class="nav-link {{ currentTab == 'tipologie_esterne' ? 'active' : '' }}" href="/configurazione?tab=tipologie_esterne"><i class="fas fa-external-link-alt me-2"></i>Tipologie esterne</a>
-        <a class="nav-link {{ currentTab == 'gestionali' ? 'active' : '' }}" href="/configurazione?tab=gestionali"><i class="fas fa-cog me-2"></i>Gestionali</a>
-        <a class="nav-link {{ currentTab == 'templates' ? 'active' : '' }}" href="/configurazione?tab=templates"><i class="fas fa-file-invoice me-2"></i>Template Pendenze</a>
-    <a class="nav-link {{ currentTab == 'servizi_io' ? 'active' : '' }}" href="/configurazione?tab=servizi_io"><i class="fas fa-mobile-alt me-2"></i>Servizi App IO</a>
-  <a class="nav-link {{ currentTab == 'info' ? 'active' : '' }}" href="/configurazione?tab=info"><i class="fas fa-info-circle me-2"></i>Info</a>
-  <a class="nav-link {{ currentTab == 'logs' ? 'active' : '' }}" href="/configurazione?tab=logs"><i class="fas fa-file-alt me-2"></i>Logs</a>
-        <a class="nav-link {{ currentTab == 'applicazioni' ? 'active' : '' }}" href="/configurazione?tab=applicazioni"><i class="fas fa-puzzle-piece me-2"></i>Applicazioni</a>
-        <a class="nav-link {{ currentTab == 'confapi' ? 'active' : '' }}" href="/configurazione?tab=confapi"><i class="fas fa-code me-2"></i>Config API</a>
-          <a class="nav-link {{ currentTab == 'utenti' ? 'active' : '' }}" href="/configurazione?tab=utenti"><i class="fas fa-users me-2"></i>Utenti</a>
-        <a class="nav-link {{ currentTab == 'operatori' ? 'active' : '' }}" href="/configurazione?tab=operatori"><i class="fas fa-user-cog me-2"></i>Operatori</a>
-        {% if not config_readonly %}
-        <hr class="my-1">
-        <a class="nav-link {{ currentTab == 'backup' ? 'active' : '' }}" href="/configurazione?tab=backup"><i class="fas fa-download me-2"></i>Backup</a>
-        {% endif %}
+      <nav class="nav imp-nav flex-column border rounded bg-white" aria-label="Sezioni configurazione">
+
+        <span class="imp-section-title">Dominio</span>
+        <a class="nav-link {{ currentTab == 'dominio' ? 'active' : '' }}" href="/configurazione?tab=dominio">
+          <i class="fas fa-building me-2"></i>Dominio GovPay
+        </a>
+        <a class="nav-link {{ currentTab == 'tassonomie' ? 'active' : '' }}" href="/configurazione?tab=tassonomie">
+          <i class="fas fa-sitemap me-2"></i>Tassonomie
+        </a>
+
+        <span class="imp-section-title">Pagamenti</span>
+        <a class="nav-link {{ currentTab == 'tipologie' ? 'active' : '' }}" href="/configurazione?tab=tipologie">
+          <i class="fas fa-list me-2"></i>Tipologie pagamento
+        </a>
+        <a class="nav-link {{ currentTab == 'tipologie_esterne' ? 'active' : '' }}" href="/configurazione?tab=tipologie_esterne">
+          <i class="fas fa-external-link-alt me-2"></i>Tipologie esterne
+        </a>
+        <a class="nav-link {{ currentTab == 'gestionali' ? 'active' : '' }}" href="/configurazione?tab=gestionali">
+          <i class="fas fa-cog me-2"></i>Gestionali
+        </a>
+
+        <span class="imp-section-title">Comunicazione</span>
+        <a class="nav-link {{ currentTab == 'templates' ? 'active' : '' }}" href="/configurazione?tab=templates">
+          <i class="fas fa-file-invoice me-2"></i>Template Pendenze
+        </a>
+        <a class="nav-link {{ currentTab == 'servizi_io' ? 'active' : '' }}" href="/configurazione?tab=servizi_io">
+          <i class="fas fa-mobile-alt me-2"></i>Servizi App IO
+        </a>
+
+        <span class="imp-section-title">Utenti</span>
+        <a class="nav-link {{ currentTab == 'utenti' ? 'active' : '' }}" href="/configurazione?tab=utenti">
+          <i class="fas fa-users me-2"></i>Utenti
+        </a>
+        <a class="nav-link {{ currentTab == 'operatori' ? 'active' : '' }}" href="/configurazione?tab=operatori">
+          <i class="fas fa-user-cog me-2"></i>Operatori
+        </a>
+
+        <span class="imp-section-title">Sistema</span>
+        <a class="nav-link {{ currentTab == 'applicazioni' ? 'active' : '' }}" href="/configurazione?tab=applicazioni">
+          <i class="fas fa-puzzle-piece me-2"></i>Applicazioni
+        </a>
+        <a class="nav-link {{ currentTab == 'confapi' ? 'active' : '' }}" href="/configurazione?tab=confapi">
+          <i class="fas fa-code me-2"></i>Config API
+        </a>
+        <a class="nav-link {{ currentTab == 'info' ? 'active' : '' }}" href="/configurazione?tab=info">
+          <i class="fas fa-info-circle me-2"></i>Info
+        </a>
+        <a class="nav-link {{ currentTab == 'logs' ? 'active' : '' }}" href="/configurazione?tab=logs">
+          <i class="fas fa-file-alt me-2"></i>Logs
+        </a>
+        <a class="nav-link" href="/impostazioni?tab=backup">
+          <i class="fas fa-database me-2"></i>Backup <i class="fas fa-external-link-alt ms-1 small opacity-50"></i>
+        </a>
       </nav>
     </div>
     <div class="col-lg-9">
@@ -1574,7 +1620,10 @@
           <p class="text-muted">Nessun dettaglio JSON disponibile.</p>
         {% endif %}
       {% elseif currentTab == 'backup' %}
-        {% if not config_readonly %}
+        {# Il backup è stato centralizzato in /impostazioni?tab=backup #}
+        <script>window.location.replace('/impostazioni?tab=backup');</script>
+        <p class="text-muted">Reindirizzamento a <a href="/impostazioni?tab=backup">Impostazioni → Backup</a>…</p>
+        {% if false %}{# vecchio backup inline — disabilitato #}
           <h2 class="h5 mb-4"><i class="fas fa-download me-2 text-muted"></i>Backup configurazione</h2>
 
           {# -------- ESPORTA -------- #}
@@ -1676,7 +1725,7 @@
           </div>
         {% else %}
           <div class="alert alert-danger">Accesso negato: permessi insufficienti.</div>
-        {% endif %}
+        {% endif %}{# end vecchio backup inline #}{% endif %}
       {% else %}
         <p class="text-muted mb-0">Seleziona una sezione dalla navigazione.</p>
       {% endif %}

@@ -61,6 +61,11 @@
       <a class="nav-link {{ active_tab == 'login-proxy' ? 'active' : '' }}" href="/impostazioni?tab=login-proxy">
         <i class="fas fa-shield-alt me-2"></i>Login Proxy
       </a>
+
+      <span class="imp-section-title">Backup e ripristino</span>
+      <a class="nav-link {{ active_tab == 'backup' ? 'active' : '' }}" href="/impostazioni?tab=backup">
+        <i class="fas fa-database me-2"></i>Backup
+      </a>
     </nav>
   </div>
 
@@ -78,6 +83,8 @@
       {% include 'impostazioni/tab-frontoffice.html.twig' %}
     {% elseif active_tab == 'login-proxy' %}
       {% include 'impostazioni/tab-login-proxy.html.twig' %}
+    {% elseif active_tab == 'backup' %}
+      {% include 'impostazioni/tab-backup.html.twig' %}
     {% else %}
       {% include 'impostazioni/tab-govpay.html.twig' %}
     {% endif %}

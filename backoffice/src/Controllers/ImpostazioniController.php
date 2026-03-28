@@ -190,19 +190,32 @@ class ImpostazioniController
 
         $by = $this->currentUser();
 
-        // Mappa tutti i campi iam_proxy
-        $iamData = [
+        // Campi ordinari (non cifrati)
+        $plain = [
             'public_base_url'                  => $body['public_base_url'] ?? '',
             'saml2_idp_metadata_url'           => $body['saml2_idp_metadata_url'] ?? '',
             'saml2_idp_metadata_url_internal'  => $body['saml2_idp_metadata_url_internal'] ?? '',
             'hostname'                         => $body['hostname'] ?? '',
             'http_port'                        => $body['http_port'] ?? '',
             'debug'                            => $body['debug'] ?? 'false',
+            'frontoffice_auth_proxy_type'      => $body['frontoffice_auth_proxy_type'] ?? 'iam-proxy-saml2',
             'enable_spid'                      => $body['enable_spid'] ?? 'false',
             'enable_cie_oidc'                  => $body['enable_cie_oidc'] ?? 'false',
             'enable_it_wallet'                 => $body['enable_it_wallet'] ?? 'false',
             'enable_oidcop'                    => $body['enable_oidcop'] ?? 'false',
+            'enable_idem'                      => $body['enable_idem'] ?? 'false',
+            'enable_eidas'                     => $body['enable_eidas'] ?? 'false',
             'satosa_base'                      => $body['satosa_base'] ?? '',
+            'satosa_disco_srv'                 => $body['satosa_disco_srv'] ?? '',
+            'satosa_cancel_redirect_url'       => $body['satosa_cancel_redirect_url'] ?? '',
+            'satosa_unknow_error_redirect_page' => $body['satosa_unknow_error_redirect_page'] ?? '',
+            'satosa_get_spid_idp_metadata'     => $body['satosa_get_spid_idp_metadata'] ?? 'true',
+            'satosa_get_cie_idp_metadata'      => $body['satosa_get_cie_idp_metadata'] ?? 'true',
+            'satosa_get_ficep_idp_metadata'    => $body['satosa_get_ficep_idp_metadata'] ?? 'false',
+            'satosa_use_demo_spid_idp'         => $body['satosa_use_demo_spid_idp'] ?? 'false',
+            'satosa_use_spid_validator'        => $body['satosa_use_spid_validator'] ?? 'false',
+            'satosa_spid_validator_metadata_url' => $body['satosa_spid_validator_metadata_url'] ?? '',
+            'satosa_disable_cieoidc_backend'   => $body['satosa_disable_cieoidc_backend'] ?? 'false',
             'spid_cert_common_name'            => $body['spid_cert_common_name'] ?? '',
             'spid_cert_org_id'                 => $body['spid_cert_org_id'] ?? '',
             'spid_cert_org_name'               => $body['spid_cert_org_name'] ?? '',
@@ -211,25 +224,203 @@ class ImpostazioniController
             'spid_cert_key_size'               => $body['spid_cert_key_size'] ?? '2048',
             'spid_cert_days'                   => $body['spid_cert_days'] ?? '730',
             'satosa_org_display_name_it'       => $body['satosa_org_display_name_it'] ?? '',
+            'satosa_org_display_name_en'       => $body['satosa_org_display_name_en'] ?? '',
             'satosa_org_name_it'               => $body['satosa_org_name_it'] ?? '',
+            'satosa_org_name_en'               => $body['satosa_org_name_en'] ?? '',
+            'satosa_org_url_it'                => $body['satosa_org_url_it'] ?? '',
+            'satosa_org_url_en'                => $body['satosa_org_url_en'] ?? '',
+            'satosa_org_identifier'            => $body['satosa_org_identifier'] ?? '',
+            'satosa_contact_given_name'        => $body['satosa_contact_given_name'] ?? '',
             'satosa_contact_email'             => $body['satosa_contact_email'] ?? '',
             'satosa_contact_phone'             => $body['satosa_contact_phone'] ?? '',
             'satosa_contact_fiscalcode'        => $body['satosa_contact_fiscalcode'] ?? '',
             'satosa_contact_ipa_code'          => $body['satosa_contact_ipa_code'] ?? '',
-            'satosa_org_identifier'            => $body['satosa_org_identifier'] ?? '',
+            'satosa_contact_municipality'      => $body['satosa_contact_municipality'] ?? '',
+            'satosa_ui_display_name_it'        => $body['satosa_ui_display_name_it'] ?? '',
+            'satosa_ui_display_name_en'        => $body['satosa_ui_display_name_en'] ?? '',
+            'satosa_ui_description_it'         => $body['satosa_ui_description_it'] ?? '',
+            'satosa_ui_description_en'         => $body['satosa_ui_description_en'] ?? '',
+            'satosa_ui_information_url_it'     => $body['satosa_ui_information_url_it'] ?? '',
+            'satosa_ui_information_url_en'     => $body['satosa_ui_information_url_en'] ?? '',
+            'satosa_ui_privacy_url_it'         => $body['satosa_ui_privacy_url_it'] ?? '',
+            'satosa_ui_privacy_url_en'         => $body['satosa_ui_privacy_url_en'] ?? '',
+            'satosa_ui_legal_url_it'           => $body['satosa_ui_legal_url_it'] ?? '',
+            'satosa_ui_legal_url_en'           => $body['satosa_ui_legal_url_en'] ?? '',
+            'satosa_ui_accessibility_url_it'   => $body['satosa_ui_accessibility_url_it'] ?? '',
+            'satosa_ui_accessibility_url_en'   => $body['satosa_ui_accessibility_url_en'] ?? '',
+            'satosa_ui_logo_url'               => $body['satosa_ui_logo_url'] ?? '',
+            'satosa_ui_logo_width'             => $body['satosa_ui_logo_width'] ?? '200',
+            'satosa_ui_logo_height'            => $body['satosa_ui_logo_height'] ?? '60',
             'cie_oidc_provider_url'            => $body['cie_oidc_provider_url'] ?? '',
+            'cie_oidc_trust_anchor_url'        => $body['cie_oidc_trust_anchor_url'] ?? '',
+            'cie_oidc_authority_hint_url'      => $body['cie_oidc_authority_hint_url'] ?? '',
             'cie_oidc_client_id'               => $body['cie_oidc_client_id'] ?? '',
             'cie_oidc_client_name'             => $body['cie_oidc_client_name'] ?? '',
+            'cie_oidc_organization_name'       => $body['cie_oidc_organization_name'] ?? '',
             'cie_oidc_jwks_uri'                => $body['cie_oidc_jwks_uri'] ?? '',
+            'cie_oidc_signed_jwks_uri'         => $body['cie_oidc_signed_jwks_uri'] ?? '',
             'cie_oidc_redirect_uri'            => $body['cie_oidc_redirect_uri'] ?? '',
+            'cie_oidc_federation_resolve_endpoint'           => $body['cie_oidc_federation_resolve_endpoint'] ?? '',
+            'cie_oidc_federation_fetch_endpoint'             => $body['cie_oidc_federation_fetch_endpoint'] ?? '',
+            'cie_oidc_federation_trust_mark_status_endpoint' => $body['cie_oidc_federation_trust_mark_status_endpoint'] ?? '',
+            'cie_oidc_federation_list_endpoint'              => $body['cie_oidc_federation_list_endpoint'] ?? '',
+            'cie_oidc_homepage_uri'            => $body['cie_oidc_homepage_uri'] ?? '',
+            'cie_oidc_policy_uri'              => $body['cie_oidc_policy_uri'] ?? '',
+            'cie_oidc_logo_uri'                => $body['cie_oidc_logo_uri'] ?? '',
+            'cie_oidc_contact_email'           => $body['cie_oidc_contact_email'] ?? '',
         ];
+
+        // Chiavi crittografiche SATOSA: cifrate in DB, aggiornate solo se il form le invia
+        // (campo vuoto = non toccare il valore esistente)
+        $encrypted = [
+            'satosa_salt'               => $body['satosa_salt'] ?? '',
+            'satosa_state_encryption_key' => $body['satosa_state_encryption_key'] ?? '',
+            'satosa_encryption_key'     => $body['satosa_encryption_key'] ?? '',
+            'satosa_user_id_hash_salt'  => $body['satosa_user_id_hash_salt'] ?? '',
+        ];
+
+        // Costruisce il dataset finale
+        $iamData = $plain;
+        foreach ($encrypted as $key => $val) {
+            if ($val !== '') {
+                $iamData[$key] = ['value' => $val, 'encrypted' => true];
+            }
+            // valore vuoto → si omette: SettingsRepository::setSection lo ignora se già presente
+        }
 
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
 
-        // Le variabili IAM proxy sono ora configurate direttamente nello stack Portainer.
-        // Per applicare le modifiche riavviare manualmente i container IAM proxy da Portainer
-        // oppure usare i pulsanti "Riavvia IAM Proxy" presenti in questa pagina.
         return $this->jsonOk('Impostazioni Login Proxy salvate. Riavvia i container IAM proxy per applicarle.');
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // IAM PROXY ENV ENDPOINT (interno — chiamato da iam-proxy/startup.sh)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /api/iam-proxy/env
+     *
+     * Restituisce le impostazioni iam_proxy come dizionario piatto di variabili
+     * d'ambiente, da usare in iam-proxy/startup.sh tramite fetch HTTP interno.
+     * Autenticazione: Bearer token (MASTER_TOKEN dall'ambiente del container).
+     * Non richiede sessione PHP.
+     */
+    public function getIamProxyEnv(Request $request, Response $response): Response
+    {
+        $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
+        if (empty($masterToken)) {
+            return $this->jsonResponse(['error' => 'MASTER_TOKEN non configurato'], 503);
+        }
+
+        $authHeader = $request->getHeaderLine('Authorization');
+        if (!str_starts_with($authHeader, 'Bearer ') || !hash_equals($masterToken, substr($authHeader, 7))) {
+            return $this->jsonResponse(['error' => 'Non autorizzato'], 401);
+        }
+
+        $s = SettingsRepository::getSection('iam_proxy');
+
+        // Mappa chiave DB → nome variabile d'ambiente SATOSA/IAM-proxy
+        $map = [
+            'debug'                                          => 'IAM_PROXY_DEBUG',
+            'frontoffice_auth_proxy_type'                   => 'FRONTOFFICE_AUTH_PROXY_TYPE',
+            'hostname'                                       => 'IAM_PROXY_HOSTNAME',
+            'http_port'                                      => 'IAM_PROXY_HTTP_PORT',
+            'saml2_idp_metadata_url'                        => 'IAM_PROXY_SAML2_IDP_METADATA_URL',
+            'saml2_idp_metadata_url_internal'               => 'IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL',
+            'public_base_url'                               => 'SATOSA_BASE',
+            'satosa_disco_srv'                              => 'SATOSA_DISCO_SRV',
+            'satosa_cancel_redirect_url'                    => 'SATOSA_CANCEL_REDIRECT_URL',
+            'satosa_unknow_error_redirect_page'             => 'SATOSA_UNKNOW_ERROR_REDIRECT_PAGE',
+            'satosa_salt'                                   => 'SATOSA_SALT',
+            'satosa_state_encryption_key'                   => 'SATOSA_STATE_ENCRYPTION_KEY',
+            'satosa_encryption_key'                         => 'SATOSA_ENCRYPTION_KEY',
+            'satosa_user_id_hash_salt'                      => 'SATOSA_USER_ID_HASH_SALT',
+            'satosa_org_display_name_it'                    => 'SATOSA_ORGANIZATION_DISPLAY_NAME_IT',
+            'satosa_org_display_name_en'                    => 'SATOSA_ORGANIZATION_DISPLAY_NAME_EN',
+            'satosa_org_name_it'                            => 'SATOSA_ORGANIZATION_NAME_IT',
+            'satosa_org_name_en'                            => 'SATOSA_ORGANIZATION_NAME_EN',
+            'satosa_org_url_it'                             => 'SATOSA_ORGANIZATION_URL_IT',
+            'satosa_org_url_en'                             => 'SATOSA_ORGANIZATION_URL_EN',
+            'satosa_org_identifier'                         => 'SATOSA_ORGANIZATION_IDENTIFIER',
+            'satosa_contact_given_name'                     => 'SATOSA_CONTACT_PERSON_GIVEN_NAME',
+            'satosa_contact_email'                          => 'SATOSA_CONTACT_PERSON_EMAIL_ADDRESS',
+            'satosa_contact_phone'                          => 'SATOSA_CONTACT_PERSON_TELEPHONE_NUMBER',
+            'satosa_contact_fiscalcode'                     => 'SATOSA_CONTACT_PERSON_FISCALCODE',
+            'satosa_contact_ipa_code'                       => 'SATOSA_CONTACT_PERSON_IPA_CODE',
+            'satosa_contact_municipality'                   => 'SATOSA_CONTACT_PERSON_MUNICIPALITY',
+            'satosa_get_spid_idp_metadata'                  => 'SATOSA_GET_SPID_IDP_METADATA',
+            'satosa_get_cie_idp_metadata'                   => 'SATOSA_GET_CIE_IDP_METADATA',
+            'satosa_get_ficep_idp_metadata'                 => 'SATOSA_GET_FICEP_IDP_METADATA',
+            'satosa_get_idem_mdq_key'                       => 'SATOSA_GET_IDEM_MDQ_KEY',
+            'satosa_use_demo_spid_idp'                      => 'SATOSA_USE_DEMO_SPID_IDP',
+            'satosa_use_spid_validator'                     => 'SATOSA_USE_SPID_VALIDATOR',
+            'satosa_spid_validator_metadata_url'            => 'SATOSA_SPID_VALIDATOR_METADATA_URL',
+            'satosa_disable_cieoidc_backend'                => 'SATOSA_DISABLE_CIEOIDC_BACKEND',
+            'satosa_disable_pyeudiw_backend'                => 'SATOSA_DISABLE_PYEUDIW_BACKEND',
+            'satosa_ui_display_name_it'                     => 'SATOSA_UI_DISPLAY_NAME_IT',
+            'satosa_ui_display_name_en'                     => 'SATOSA_UI_DISPLAY_NAME_EN',
+            'satosa_ui_description_it'                      => 'SATOSA_UI_DESCRIPTION_IT',
+            'satosa_ui_description_en'                      => 'SATOSA_UI_DESCRIPTION_EN',
+            'satosa_ui_information_url_it'                  => 'SATOSA_UI_INFORMATION_URL_IT',
+            'satosa_ui_information_url_en'                  => 'SATOSA_UI_INFORMATION_URL_EN',
+            'satosa_ui_privacy_url_it'                      => 'SATOSA_UI_PRIVACY_URL_IT',
+            'satosa_ui_privacy_url_en'                      => 'SATOSA_UI_PRIVACY_URL_EN',
+            'satosa_ui_legal_url_it'                        => 'SATOSA_UI_LEGAL_URL_IT',
+            'satosa_ui_legal_url_en'                        => 'SATOSA_UI_LEGAL_URL_EN',
+            'satosa_ui_accessibility_url_it'                => 'SATOSA_UI_ACCESSIBILITY_URL_IT',
+            'satosa_ui_accessibility_url_en'                => 'SATOSA_UI_ACCESSIBILITY_URL_EN',
+            'satosa_ui_logo_url'                            => 'SATOSA_UI_LOGO_URL',
+            'satosa_ui_logo_width'                          => 'SATOSA_UI_LOGO_WIDTH',
+            'satosa_ui_logo_height'                         => 'SATOSA_UI_LOGO_HEIGHT',
+            'enable_spid'                                   => 'ENABLE_SPID',
+            'enable_cie_oidc'                               => 'ENABLE_CIE_OIDC',
+            'enable_it_wallet'                              => 'ENABLE_IT_WALLET',
+            'enable_oidcop'                                 => 'ENABLE_OIDCOP',
+            'enable_idem'                                   => 'ENABLE_IDEM',
+            'enable_eidas'                                  => 'ENABLE_EIDAS',
+            'spid_cert_entity_id'                           => 'SPID_CERT_ENTITY_ID',
+            'spid_cert_common_name'                         => 'SPID_CERT_COMMON_NAME',
+            'spid_cert_org_id'                              => 'SPID_CERT_ORG_ID',
+            'spid_cert_org_name'                            => 'SPID_CERT_ORG_NAME',
+            'spid_cert_locality_name'                       => 'SPID_CERT_LOCALITY_NAME',
+            'spid_cert_key_size'                            => 'SPID_CERT_KEY_SIZE',
+            'spid_cert_days'                                => 'SPID_CERT_DAYS',
+            'cie_oidc_provider_url'                         => 'CIE_OIDC_PROVIDER_URL',
+            'cie_oidc_trust_anchor_url'                     => 'CIE_OIDC_TRUST_ANCHOR_URL',
+            'cie_oidc_authority_hint_url'                   => 'CIE_OIDC_AUTHORITY_HINT_URL',
+            'cie_oidc_client_id'                            => 'CIE_OIDC_CLIENT_ID',
+            'cie_oidc_client_name'                          => 'CIE_OIDC_CLIENT_NAME',
+            'cie_oidc_organization_name'                    => 'CIE_OIDC_ORGANIZATION_NAME',
+            'cie_oidc_jwks_uri'                             => 'CIE_OIDC_JWKS_URI',
+            'cie_oidc_signed_jwks_uri'                      => 'CIE_OIDC_SIGNED_JWKS_URI',
+            'cie_oidc_redirect_uri'                         => 'CIE_OIDC_REDIRECT_URI',
+            'cie_oidc_federation_resolve_endpoint'          => 'CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT',
+            'cie_oidc_federation_fetch_endpoint'            => 'CIE_OIDC_FEDERATION_FETCH_ENDPOINT',
+            'cie_oidc_federation_trust_mark_status_endpoint' => 'CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT',
+            'cie_oidc_federation_list_endpoint'             => 'CIE_OIDC_FEDERATION_LIST_ENDPOINT',
+            'cie_oidc_homepage_uri'                         => 'CIE_OIDC_HOMEPAGE_URI',
+            'cie_oidc_policy_uri'                           => 'CIE_OIDC_POLICY_URI',
+            'cie_oidc_logo_uri'                             => 'CIE_OIDC_LOGO_URI',
+            'cie_oidc_contact_email'                        => 'CIE_OIDC_CONTACT_EMAIL',
+        ];
+
+        $env = [];
+        foreach ($map as $dbKey => $envVar) {
+            $val = $s[$dbKey] ?? null;
+            if ($val !== null && $val !== '') {
+                $env[$envVar] = $val;
+            }
+        }
+
+        // SATOSA_BASE_STATIC e SATOSA_HOSTNAME derivati
+        if (!empty($env['SATOSA_BASE'])) {
+            $env['SATOSA_BASE_STATIC'] = rtrim($env['SATOSA_BASE'], '/') . '/static';
+            $env['SATOSA_HOSTNAME']    = $s['hostname'] ?? ($env['IAM_PROXY_HOSTNAME'] ?? '');
+        }
+
+        $resp = new SlimResponse(200);
+        $resp->getBody()->write(json_encode($env, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        return $resp->withHeader('Content-Type', 'application/json');
     }
 
     // ──────────────────────────────────────────────────────────────────────

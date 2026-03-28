@@ -294,6 +294,105 @@
         </div>
       </div>
 
+      {# ─── Chiavi crittografiche SATOSA (solo superadmin) ─────────────────── #}
+      {% if is_superadmin %}
+      <div class="accordion-item border shadow-sm mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lp-satosa-keys">
+            <i class="fas fa-key me-2 text-danger"></i>Chiavi crittografiche SATOSA
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-2 fw-normal small">Segreti</span>
+          </button>
+        </h2>
+        <div id="lp-satosa-keys" class="accordion-collapse collapse" data-bs-parent="#acc-lp">
+          <div class="accordion-body">
+            <div class="alert alert-warning py-2 small mb-3">
+              <i class="fas fa-exclamation-triangle me-1"></i>
+              Queste chiavi vengono usate da SATOSA per firmare/cifrare le sessioni. Devono essere
+              stringhe casuali di <strong>almeno 32 caratteri</strong>. Generale con:
+              <code>openssl rand -hex 24</code>.
+              Lasciare vuoto per non sovrascrivere il valore esistente.
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Salt</label>
+                <div class="input-group">
+                  <input type="password" class="form-control font-monospace" name="satosa_salt"
+                    id="satosa-salt" placeholder="Lascia vuoto per non modificare"
+                    autocomplete="new-password">
+                  <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('satosa-salt', this)" title="Mostra/nascondi">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">State Encryption Key</label>
+                <div class="input-group">
+                  <input type="password" class="form-control font-monospace" name="satosa_state_encryption_key"
+                    id="satosa-state-key" placeholder="Lascia vuoto per non modificare"
+                    autocomplete="new-password">
+                  <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('satosa-state-key', this)" title="Mostra/nascondi">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Encryption Key</label>
+                <div class="input-group">
+                  <input type="password" class="form-control font-monospace" name="satosa_encryption_key"
+                    id="satosa-enc-key" placeholder="Lascia vuoto per non modificare"
+                    autocomplete="new-password">
+                  <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('satosa-enc-key', this)" title="Mostra/nascondi">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">User ID Hash Salt</label>
+                <div class="input-group">
+                  <input type="password" class="form-control font-monospace" name="satosa_user_id_hash_salt"
+                    id="satosa-id-salt" placeholder="Lascia vuoto per non modificare"
+                    autocomplete="new-password">
+                  <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('satosa-id-salt', this)" title="Mostra/nascondi">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <hr class="my-3">
+            <p class="small text-muted mb-2">Toggle avanzati:</p>
+            <div class="d-flex gap-4 flex-wrap">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
+                  {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }}>
+                <label class="form-check-label" for="en-idem">IDEM</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
+                  {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }}>
+                <label class="form-check-label" for="en-eidas">eIDAS</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
+                  {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
+                <label class="form-check-label" for="demo-spid">Demo SPID IdP</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
+                  {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
+                <label class="form-check-label" for="spid-validator">SPID Validator</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="satosa_disable_cieoidc_backend" id="dis-cie" value="true"
+                  {{ iam_proxy.satosa_disable_cieoidc_backend|default('false') == 'true' ? 'checked' : '' }}>
+                <label class="form-check-label" for="dis-cie">Disabilita backend CIE OIDC</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
     </div>{# /accordion #}
 
     {% if is_superadmin %}
@@ -402,6 +501,18 @@
     }
   } catch (_) { /* master non disponibile, silenzioso */ }
 })();
+
+function togglePwd(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.type === 'password') {
+    el.type = 'text';
+    btn.querySelector('i').className = 'fas fa-eye-slash';
+  } else {
+    el.type = 'password';
+    btn.querySelector('i').className = 'fas fa-eye';
+  }
+}
 
 function toggleRestoreForm(id) {
   const el = document.getElementById(id);
