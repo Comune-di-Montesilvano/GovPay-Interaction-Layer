@@ -427,11 +427,6 @@ return function (App $app, Twig $twig): void {
         return $response->withHeader('Location', '/profile?tab=password')->withStatus(302);
     });
 
-    // /configurazione reindirizza alla vista unificata in /impostazioni
-    $app->get('/configurazione', function($request, $response) {
-        $tab = $request->getQueryParams()['tab'] ?? 'dominio';
-        return $response->withHeader('Location', '/impostazioni?tab=' . urlencode($tab))->withStatus(302);
-    });
 
     // Aggiungi/aggiorna operatore - solo superadmin
     $app->post('/configurazione/operatori/add', function($request, $response) use ($twig) {

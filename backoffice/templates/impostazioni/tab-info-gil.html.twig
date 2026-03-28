@@ -1,0 +1,84 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3">
+    <h2 class="h5 mb-0"><i class="fas fa-layer-group me-2 text-primary"></i>Info GIL</h2>
+  </div>
+  <div class="card-body">
+
+    {# ─── Versione GIL ─────────────────────────────────────────────────────── #}
+    <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+      <i class="fas fa-tag me-1"></i>Versione
+    </h6>
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="border rounded p-3 h-100">
+          <div class="text-muted small">GIL Image Tag</div>
+          <div class="fw-semibold font-monospace">{{ gil_info.version }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="border rounded p-3 h-100">
+          <div class="text-muted small">PHP</div>
+          <div class="fw-semibold font-monospace">{{ gil_info.php }}</div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="border rounded p-3 h-100">
+          <div class="text-muted small">Sistema operativo</div>
+          <div class="fw-semibold small font-monospace">{{ gil_info.os }}</div>
+        </div>
+      </div>
+    </div>
+
+    {# ─── Stato container ──────────────────────────────────────────────────── #}
+    <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+      <i class="fas fa-server me-1"></i>Stato container
+    </h6>
+
+    {% if gil_info.containers_error %}
+      <div class="alert alert-warning py-2 small">
+        <i class="fas fa-exclamation-triangle me-1"></i>
+        {{ gil_info.containers_error }}
+        — configura Portainer nelle impostazioni per vedere lo stato dei container.
+      </div>
+    {% elseif gil_info.containers is not null %}
+      {% if gil_info.containers is empty %}
+        <p class="text-muted small">Nessun container rilevato.</p>
+      {% else %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Container</th>
+                <th>Stato</th>
+                <th>Dettaglio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for name, c in gil_info.containers %}
+              <tr>
+                <td class="font-monospace small">{{ name }}</td>
+                <td>
+                  {% set state = c.state|default('unknown')|lower %}
+                  {% if state == 'running' %}
+                    <span class="badge bg-success">running</span>
+                  {% elseif state in ['exited', 'dead'] %}
+                    <span class="badge bg-danger">{{ state }}</span>
+                  {% elseif state == 'paused' %}
+                    <span class="badge bg-warning text-dark">paused</span>
+                  {% else %}
+                    <span class="badge bg-secondary">{{ state }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted small">{{ c.status|default('—') }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="text-muted small">Dati non disponibili.</p>
+    {% endif %}
+
+  </div>
+</div>

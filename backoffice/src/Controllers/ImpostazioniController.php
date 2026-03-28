@@ -45,7 +45,7 @@ class ImpostazioniController
     {
         $this->requireAdminOrAbove();
 
-        $tab = $request->getQueryParams()['tab'] ?? 'govpay';
+        $tab = $request->getQueryParams()['tab'] ?? 'generale';
 
         $data = [
             'active_tab'   => $tab,
@@ -67,6 +67,24 @@ class ImpostazioniController
         if (in_array($tab, $confTabs, true)) {
             $confCtrl = new ConfigurazioneController($this->twig);
             $data = array_merge($data, $confCtrl->getTabData($tab, $request));
+        }
+
+        // Tab Info GIL: stato container e info sistema
+        if ($tab === 'info-gil') {
+            $gilInfo = [
+                'version'   => getenv('GIL_IMAGE_TAG') ?: 'dev',
+                'php'       => phpversion(),
+                'os'        => php_uname('s') . ' ' . php_uname('r'),
+                'containers' => null,
+                'containers_error' => null,
+            ];
+            $portainerResult = (new PortainerClient())->getContainersStatus();
+            if ($portainerResult['success']) {
+                $gilInfo['containers'] = $portainerResult['data'] ?? [];
+            } else {
+                $gilInfo['containers_error'] = $portainerResult['message'] ?? 'Portainer non raggiungibile';
+            }
+            $data['gil_info'] = $gilInfo;
         }
 
         return $this->twig->render($response, 'impostazioni/index.html.twig', $data);
@@ -134,20 +152,32 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
-        SettingsRepository::setSection('pagopa', [
-            'checkout_ec_base_url'      => $body['checkout_ec_base_url'] ?? '',
-            'checkout_subscription_key' => ['value' => $body['checkout_subscription_key'] ?? '', 'encrypted' => true],
-            'checkout_company_name'     => $body['checkout_company_name'] ?? '',
-            'checkout_return_ok_url'    => $body['checkout_return_ok_url'] ?? '',
-            'checkout_return_cancel_url'=> $body['checkout_return_cancel_url'] ?? '',
-            'checkout_return_error_url' => $body['checkout_return_error_url'] ?? '',
-            'payment_options_url'       => $body['payment_options_url'] ?? '',
-            'payment_options_key'       => ['value' => $body['payment_options_key'] ?? '', 'encrypted' => true],
-            'biz_events_host'           => $body['biz_events_host'] ?? '',
-            'biz_events_api_key'        => ['value' => $body['biz_events_api_key'] ?? '', 'encrypted' => true],
-            'tassonomie_url'            => $body['tassonomie_url'] ?? '',
-        ], $by);
 
+        // Merge parziale: legge i valori esistenti e aggiorna solo le chiavi presenti
+        // nella richiesta — così ogni sub-tab può salvare solo i propri campi senza
+        // azzerare quelli degli altri tab API.
+        $existing = SettingsRepository::getSection('pagopa');
+
+        $plainKeys = [
+            'checkout_ec_base_url', 'checkout_company_name',
+            'checkout_return_ok_url', 'checkout_return_cancel_url', 'checkout_return_error_url',
+            'payment_options_url', 'biz_events_host', 'tassonomie_url',
+        ];
+        $encryptedKeys = ['checkout_subscription_key', 'payment_options_key', 'biz_events_api_key'];
+
+        $merged = $existing;
+        foreach ($plainKeys as $key) {
+            if (array_key_exists($key, $body)) {
+                $merged[$key] = $body[$key];
+            }
+        }
+        foreach ($encryptedKeys as $key) {
+            if (array_key_exists($key, $body) && $body[$key] !== '') {
+                $merged[$key] = ['value' => $body[$key], 'encrypted' => true];
+            }
+        }
+
+        SettingsRepository::setSection('pagopa', $merged, $by);
         return $this->jsonOk('Impostazioni API Esterne salvate.');
     }
 

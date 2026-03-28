@@ -1,0 +1,54 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+    <h2 class="h5 mb-0"><i class="fas fa-sitemap me-2 text-primary"></i>Tassonomie API</h2>
+    <button class="btn btn-sm btn-outline-secondary" onclick="impTestTassonomie(this)">
+      <i class="fas fa-wifi me-1"></i>Test connessione
+    </button>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-4">
+      Endpoint per il recupero delle tassonomie ufficiali pagoPA (categorie di servizio e tipo servizio).
+      Utilizzato per l'aggiornamento automatico delle tassonomie nel tab
+      <a href="/impostazioni?tab=tassonomie">Pagamenti → Tassonomie ufficiali</a>.
+    </p>
+    <form id="form-api-tassonomie" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row g-3">
+        <div class="col-md-10">
+          <label class="form-label">URL endpoint tassonomie</label>
+          <input type="url" class="form-control" name="tassonomie_url"
+            value="{{ pagopa.tassonomie_url|default('') }}"
+            placeholder="https://static-contents.developer.pagopa.it/…/tassonomia.json"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="form-text">
+            URL del file JSON delle tassonomie ufficiali pagoPA.
+            Il valore di default è il file pubblicato da pagoPA sul portale developer.
+          </div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3 mt-4">
+        <button type="button" class="btn btn-primary"
+          onclick="impSaveForm('form-api-tassonomie', '/impostazioni/api-esterne/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<script>
+async function impTestTassonomie(btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Test…';
+  try {
+    const res = await fetch('/impostazioni/api-esterne/test-tassonomie');
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+  } catch(e) { impToast('Errore: ' + e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+</script>

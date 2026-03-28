@@ -192,11 +192,7 @@
                     {% if current_user %}
                       <li class="nav-item"><a class="nav-link {{ current_path starts with '/statistiche' ? 'active' : '' }}" href="/statistiche"><span>Statistiche</span></a></li>
                       {% if current_user.role in ['admin','superadmin'] %}
-                        {% set in_config = current_path starts with '/configurazione' %}
-                        <li class="nav-item">
-                          <a class="nav-link {{ in_config ? 'active' : '' }}" href="/configurazione"><span>Configurazione</span></a>
-                        </li>
-                        {% set in_impostazioni = current_path starts with '/impostazioni' %}
+                        {% set in_impostazioni = current_path starts with '/impostazioni' or current_path starts with '/configurazione' %}
                         <li class="nav-item">
                           <a class="nav-link {{ in_impostazioni ? 'active' : '' }}" href="/impostazioni"><span>Impostazioni</span></a>
                         </li>
