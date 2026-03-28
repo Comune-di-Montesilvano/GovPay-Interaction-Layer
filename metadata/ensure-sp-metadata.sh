@@ -48,6 +48,13 @@ if [ "$MODE_NEW" -eq 1 ]; then
     METADATA_BASENAME="frontoffice_sp-new.xml"
 fi
 
+# Se il proxy non è SAML2 non c'è nulla da generare
+AUTH_PROXY_TYPE="${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}"
+if [ "$AUTH_PROXY_TYPE" != "iam-proxy-saml2" ]; then
+    echo "[INFO] Auth proxy type '$AUTH_PROXY_TYPE': generazione metadata SP non necessaria."
+    exit 0
+fi
+
 METADATA_FILE="${METADATA_SP_DIR}/${METADATA_BASENAME}"
 
 metadata_is_expired() {

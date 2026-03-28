@@ -83,8 +83,6 @@ services:
       - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
       - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
       - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-}
-    profiles:
-      - iam-proxy
 
   refresh-frontoffice-sp-metadata:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
@@ -111,8 +109,6 @@ services:
       init-frontoffice-sp-metadata:
         condition: service_completed_successfully
     restart: unless-stopped
-    profiles:
-      - iam-proxy
 
   iam-proxy-italia:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
