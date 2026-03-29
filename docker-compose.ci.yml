@@ -4,3 +4,17 @@ services:
       - type: tmpfs
         target: /var/lib/mysql
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+
+  # In CI i container IAM Proxy e SP metadata non servono e causano
+  # --abort-on-container-exit quando escono. Il profilo ci-only li esclude
+  # perché COMPOSE_PROFILES non lo include in CI.
+  iam-proxy-italia:
+    profiles: [ci-only]
+  satosa-nginx:
+    profiles: [ci-only]
+  satosa-mongo:
+    profiles: [ci-only]
+  init-frontoffice-sp-metadata:
+    profiles: [ci-only]
+  refresh-frontoffice-sp-metadata:
+    profiles: [ci-only]
