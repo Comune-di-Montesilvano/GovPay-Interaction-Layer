@@ -30,7 +30,7 @@ if [ -n "$_MASTER_TOKEN" ]; then
   _MAX_ATTEMPTS=10
   _ATTEMPT=0
   while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
-    _CONF=$(curl -sf --max-time 10 \
+    _CONF=$(curl -sf -k --max-time 10 \
       -H "Authorization: Bearer ${_MASTER_TOKEN}" \
       "${_BO_URL}/api/iam-proxy/env" 2>/dev/null) && break
     _ATTEMPT=$((_ATTEMPT + 1))
