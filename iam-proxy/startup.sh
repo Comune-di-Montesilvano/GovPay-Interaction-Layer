@@ -19,42 +19,42 @@ is_true() {
 }
 
 # ── Fetch runtime config from backoffice ─────────────────────────────────────
-# Le variabili SATOSA/CIE OIDC/ENABLE_* non sono più passate via docker-compose:
-# vengono lette dal DB del backoffice tramite l'endpoint interno /api/iam-proxy/env.
+# Tutte le variabili SATOSA/CIE OIDC/ENABLE_* provengono esclusivamente dal DB
+# del backoffice tramite GET /api/iam-proxy/env. MASTER_TOKEN è obbligatorio.
 _BO_URL="${BACKOFFICE_INTERNAL_URL:-http://govpay-interaction-backoffice}"
-_MASTER_TOKEN="${MASTER_TOKEN:-}"
 
-_CONF="{}"
-if [ -n "$_MASTER_TOKEN" ]; then
-  echo "[startup] Fetch configurazione da ${_BO_URL}/api/iam-proxy/env ..."
-  _MAX_ATTEMPTS=10
-  _ATTEMPT=0
-  while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
-    _CONF=$(curl -sf -k --max-time 10 \
-      -H "Authorization: Bearer ${_MASTER_TOKEN}" \
-      "${_BO_URL}/api/iam-proxy/env" 2>/dev/null) && break
-    _ATTEMPT=$((_ATTEMPT + 1))
-    echo "[startup] Backoffice non ancora pronto (tentativo ${_ATTEMPT}/${_MAX_ATTEMPTS}), attendo 5s..."
-    sleep 5
-  done
+if [ -z "${MASTER_TOKEN:-}" ]; then
+  echo "[startup] ERRORE: MASTER_TOKEN non impostato. Variabile obbligatoria." >&2
+  exit 1
+fi
 
-  if [ "$_ATTEMPT" -ge "$_MAX_ATTEMPTS" ]; then
-    echo "[startup] ATTENZIONE: impossibile raggiungere il backoffice dopo ${_MAX_ATTEMPTS} tentativi. Procedo con i valori di default."
-    _CONF="{}"
-  fi
+echo "[startup] Fetch configurazione da ${_BO_URL}/api/iam-proxy/env ..."
+_MAX_ATTEMPTS=10
+_ATTEMPT=0
+_CONF=""
+while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
+  _CONF=$(curl -sf -k --max-time 10 \
+    -H "Authorization: Bearer ${MASTER_TOKEN}" \
+    "${_BO_URL}/api/iam-proxy/env" 2>/dev/null) && break
+  _ATTEMPT=$((_ATTEMPT + 1))
+  echo "[startup] Backoffice non ancora pronto (tentativo ${_ATTEMPT}/${_MAX_ATTEMPTS}), attendo 5s..."
+  sleep 5
+done
 
-  # Esporta ogni chiave come variabile d'ambiente
-  eval "$(echo "$_CONF" | python3 -c "
+if [ -z "${_CONF:-}" ]; then
+  echo "[startup] ERRORE: impossibile raggiungere il backoffice dopo ${_MAX_ATTEMPTS} tentativi." >&2
+  exit 1
+fi
+
+# Esporta ogni chiave come variabile d'ambiente
+eval "$(echo "$_CONF" | python3 -c "
 import json, sys, shlex
 d = json.load(sys.stdin)
 for k, v in d.items():
     if isinstance(v, str) and v:
         print('export {}={}'.format(k, shlex.quote(v)))
-" 2>/dev/null || true)"
-  echo "[startup] Configurazione runtime applicata."
-else
-  echo "[startup] MASTER_TOKEN non impostato: le variabili SATOSA devono essere passate via ambiente."
-fi
+")"
+echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Standby guard — se IAM Proxy non è abilitato nel backoffice, il container
