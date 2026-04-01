@@ -359,7 +359,9 @@ class ImpostazioniController
             return $this->jsonResponse(['error' => 'Non autorizzato'], 401);
         }
 
-        $s = SettingsRepository::getSection('iam_proxy');
+        $s            = SettingsRepository::getSection('iam_proxy');
+        $sFrontoffice = SettingsRepository::getSection('frontoffice');
+        $sEntity      = SettingsRepository::getSection('entity');
 
         // Mappa chiave DB → nome variabile d'ambiente SATOSA/IAM-proxy
         $map = [
@@ -458,6 +460,17 @@ class ImpostazioniController
         if (!empty($env['SATOSA_BASE'])) {
             $env['SATOSA_BASE_STATIC'] = rtrim($env['SATOSA_BASE'], '/') . '/static';
             $env['SATOSA_HOSTNAME']    = $s['hostname'] ?? ($env['IAM_PROXY_HOSTNAME'] ?? '');
+        }
+
+        // Variabili cross-section: frontoffice e entity
+        if (!empty($sFrontoffice['public_base_url'])) {
+            $env['FRONTOFFICE_PUBLIC_BASE_URL'] = $sFrontoffice['public_base_url'];
+        }
+        if (!empty($sEntity['name'])) {
+            $env['APP_ENTITY_NAME'] = $sEntity['name'];
+        }
+        if (!empty($sEntity['url'])) {
+            $env['APP_ENTITY_URL'] = $sEntity['url'];
         }
 
         $resp = new SlimResponse(200);
