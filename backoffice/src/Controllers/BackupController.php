@@ -40,6 +40,7 @@ class BackupController
         'spid_certs'               => '/var/www/html/spid-certs',
         'frontoffice_sp_metadata'  => '/var/www/html/metadata-sp',
         'gil_metadata_cieoidc'     => '/var/www/html/metadata-cieoidc',
+        'gil_cieoidc_keys'         => '/var/www/html/cieoidc-keys',
     ];
 
     public function __construct(private readonly Twig $twig)

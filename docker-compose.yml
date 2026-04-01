@@ -12,7 +12,8 @@ services:
       - gil_backups:/backups
       # Volumi per operazioni senza master container
       - gil_ssl_certs:/var/www/html/ssl-certs
-      - spid_certs:/var/www/html/spid-certs:ro
+      - spid_certs:/var/www/html/spid-certs
+      - gil_cieoidc_keys:/var/www/html/cieoidc-keys
       - gil_metadata_cieoidc:/var/www/html/metadata-cieoidc
       - gil_metadata_agid:/var/www/html/metadata-agid:ro
     environment:
@@ -66,66 +67,19 @@ services:
     networks:
       - govpay-network
 
-  init-frontoffice-sp-metadata:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
-    container_name: init-frontoffice-sp-metadata
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        sh /scripts/ensure-sp-metadata.sh
-    volumes:
-      - frontoffice_sp_metadata:/metadata/sp
-      - frontoffice_sp_metadata:/var/www/html/metadata-sp
-      - spid_certs:/var/www/html/spid-certs:ro
-    environment:
-      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
-      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-none}
-      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
-      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
-      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-}
-
-  refresh-frontoffice-sp-metadata:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
-    container_name: refresh-frontoffice-sp-metadata
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        while true; do
-          sh /scripts/ensure-sp-metadata.sh || true
-          sleep ${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}
-        done
-    volumes:
-      - frontoffice_sp_metadata:/metadata/sp
-      - frontoffice_sp_metadata:/var/www/html/metadata-sp
-      - spid_certs:/var/www/html/spid-certs:ro
-    environment:
-      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
-      - FRONTOFFICE_AUTH_PROXY_TYPE=${FRONTOFFICE_AUTH_PROXY_TYPE:-none}
-      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
-      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
-      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-}
-      - FRONTOFFICE_SP_METADATA_REFRESH_SECONDS=${FRONTOFFICE_SP_METADATA_REFRESH_SECONDS:-21600}
-    depends_on:
-      init-frontoffice-sp-metadata:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
   iam-proxy-italia:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
     container_name: iam-proxy-italia
     command: ["/bin/bash", "/builder/startup.sh"]
     volumes:
-      # Chiavi JWK CIE OIDC (per-deployment, generate da metadata-builder setup-cieoidc)
+      # Chiavi JWK CIE OIDC (per-deployment, generate da backoffice UI o metadata-builder setup-cieoidc)
       - gil_cieoidc_keys:/cieoidc-keys:ro
-      # SP metadata del frontoffice
-      - frontoffice_sp_metadata:/frontoffice-sp:ro
+      # SP metadata del frontoffice (rw: iam-proxy-italia genera e scrive il metadata in startup.sh)
+      - frontoffice_sp_metadata:/frontoffice-sp
       # Certificati SPID (per-deployment)
       - spid_certs:/satosa_proxy/pki
       # File statici condivisi con satosa-nginx (popolati da startup.sh)
       - iam_proxy_static:/satosa-static
-    depends_on:
-      init-frontoffice-sp-metadata:
-        condition: service_completed_successfully
     environment:
       # Variabili infrastrutturali del container (non provengono dal DB)
       - SATOSA_BY_DOCKER=1
@@ -134,6 +88,8 @@ services:
       - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-satosa-nginx}
       - IAM_PROXY_HTTP_PORT=${IAM_PROXY_HTTP_PORT:-9445}
       - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-satosa-nginx}
+      - FRONTOFFICE_PUBLIC_BASE_URL=${FRONTOFFICE_PUBLIC_BASE_URL:-}
+      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
       - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
       - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
       - FRONTOFFICE_SP_METADATA_FILE=${FRONTOFFICE_SP_METADATA_FILE:-/satosa_proxy/metadata/sp/frontoffice_sp.xml}
@@ -266,7 +222,7 @@ volumes:
   gil_images:
   # Certificati TLS server per satosa-nginx (RW backoffice per upload, RO satosa-nginx)
   gil_ssl_certs:
-  # Chiavi JWK CIE OIDC per-deployment (generate da metadata-builder setup-cieoidc)
+  # Chiavi JWK CIE OIDC private per-deployment (generate da backoffice UI o metadata-builder setup-cieoidc)
   gil_cieoidc_keys:
   # Artefatti export AgID (metadata SPID pubblico)
   gil_metadata_agid:

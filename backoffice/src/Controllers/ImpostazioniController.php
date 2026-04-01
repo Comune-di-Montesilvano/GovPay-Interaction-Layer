@@ -32,6 +32,9 @@ class ImpostazioniController
     // Path dei volumi montati sul container backoffice
     private const SPID_METADATA_PATH   = '/var/www/html/metadata-sp/frontoffice_sp.xml';
     private const CIE_METADATA_PATH    = '/var/www/html/metadata-cieoidc/entity-configuration.json';
+    private const SPID_CERTS_DIR       = '/var/www/html/spid-certs';
+    private const CIEOIDC_KEYS_DIR     = '/var/www/html/cieoidc-keys';
+    private const CIEOIDC_META_DIR     = '/var/www/html/metadata-cieoidc';
 
     public function __construct(private readonly Twig $twig)
     {
@@ -661,10 +664,8 @@ class ImpostazioniController
     public function rigeneraSpMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        $result = (new PortainerClient())->restartContainers([
-            'init-frontoffice-sp-metadata',
-            'refresh-frontoffice-sp-metadata',
-        ]);
+        // iam-proxy-italia rigenera il metadata SP in startup.sh all'avvio
+        $result = (new PortainerClient())->restartContainers(['iam-proxy-italia', 'satosa-nginx']);
         return $this->portainerResponse($result);
     }
 
@@ -764,6 +765,348 @@ class ImpostazioniController
     {
         $this->requireSuperadmin();
         return $this->saveUploadedFile($request, 'metadata_file', self::CIE_METADATA_PATH, ['application/json', 'text/plain']);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // GENERAZIONE CERT SPID / CHIAVI JWK CIE / EXPORT CIE OIDC
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Genera certificato SPID (cert.pem + privkey.pem) nel volume spid_certs.
+     * Usa openssl CLI già presente nell'immagine PHP/Apache.
+     *
+     * Body JSON atteso:
+     *   common_name, locality_name, org_id (PA:IT-...), org_name (optional),
+     *   entity_id, days (default 730), key_size (default 3072)
+     */
+    public function generaSpidCerts(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+
+        $commonName = trim($body['common_name'] ?? '');
+        $locality   = trim($body['locality_name'] ?? '');
+        $orgId      = trim($body['org_id'] ?? '');
+        $orgName    = trim($body['org_name'] ?? $commonName);
+        $entityId   = trim($body['entity_id'] ?? '');
+        $days       = max(1, min(3650, (int)($body['days'] ?? 730)));
+        $keySize    = (int)($body['key_size'] ?? 3072);
+
+        foreach (['common_name' => $commonName, 'locality_name' => $locality, 'org_id' => $orgId, 'entity_id' => $entityId] as $field => $val) {
+            if ($val === '') {
+                return $this->jsonError("Campo obbligatorio mancante: {$field}");
+            }
+        }
+        if (!preg_match('/^PA:IT-/', $orgId)) {
+            return $this->jsonError("org_id deve avere il formato 'PA:IT-<codice IPA>'");
+        }
+        if (!in_array($keySize, [2048, 3072, 4096], true)) {
+            return $this->jsonError("key_size deve essere 2048, 3072 o 4096");
+        }
+        foreach ([$commonName, $locality, $orgId, $orgName, $entityId] as $val) {
+            if (str_contains($val, "\0") || str_contains($val, "\r") || str_contains($val, "\n")) {
+                return $this->jsonError("I campi non possono contenere caratteri speciali non ammessi.");
+            }
+        }
+
+        $certsDir = self::SPID_CERTS_DIR;
+        @mkdir($certsDir, 0755, true);
+
+        $tmpCnf = tempnam(sys_get_temp_dir(), 'spid_cnf_');
+
+        $cnfContent = <<<CNF
+            oid_section=spid_oids
+
+            [ req ]
+            default_bits={$keySize}
+            default_md=sha512
+            distinguished_name=dn
+            encrypt_key=no
+            prompt=no
+            req_extensions=req_ext
+
+            [ spid_oids ]
+            agidcert=1.3.76.16.6
+            spid-publicsector-SP=1.3.76.16.4.2.1
+            uri=2.5.4.83
+
+            [ dn ]
+            commonName={$commonName}
+            countryName=IT
+            localityName={$locality}
+            organizationIdentifier={$orgId}
+            organizationName={$orgName}
+            uri={$entityId}
+
+            [ req_ext ]
+            basicConstraints=CA:FALSE
+            keyUsage=critical,digitalSignature,nonRepudiation
+            certificatePolicies=@agid_policies,@spid_policies
+
+            [ agid_policies ]
+            policyIdentifier=agidcert
+            userNotice=@agidcert_notice
+
+            [ agidcert_notice ]
+            explicitText="agIDcert"
+
+            [ spid_policies ]
+            policyIdentifier=spid-publicsector-SP
+            userNotice=@spid_notice
+
+            [ spid_notice ]
+            explicitText="cert_SP_Pub"
+            CNF;
+
+        file_put_contents($tmpCnf, $cnfContent);
+
+        $certPath = $certsDir . '/cert.pem';
+        $keyPath  = $certsDir . '/privkey.pem';
+
+        $cmd = [
+            'openssl', 'req', '-new', '-x509',
+            '-config', $tmpCnf,
+            '-days', (string)$days,
+            '-keyout', $keyPath,
+            '-out', $certPath,
+            '-extensions', 'req_ext',
+        ];
+
+        $proc = proc_open($cmd, [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes);
+
+        if ($proc === false) {
+            @unlink($tmpCnf);
+            return $this->jsonError('Impossibile avviare openssl.');
+        }
+        fclose($pipes[0]);
+        stream_get_contents($pipes[1]);
+        $stderr   = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($proc);
+        @unlink($tmpCnf);
+
+        if ($exitCode !== 0) {
+            return $this->jsonError('Generazione cert SPID fallita: ' . trim($stderr));
+        }
+
+        @chmod($certPath, 0644);
+        @chmod($keyPath, 0600);
+
+        $certInfo = [];
+        $certPem = @file_get_contents($certPath);
+        if ($certPem !== false) {
+            $cert = openssl_x509_read($certPem);
+            if ($cert !== false) {
+                $parsed = openssl_x509_parse($cert);
+                $certInfo['subject']    = $parsed['subject']['CN'] ?? '';
+                $certInfo['valid_from'] = date('c', $parsed['validFrom_time_t']);
+                $certInfo['valid_to']   = date('c', $parsed['validTo_time_t']);
+            }
+        }
+
+        return $this->jsonResponse([
+            'success' => true,
+            'message' => 'Certificati SPID generati correttamente.',
+            'cert'    => $certInfo,
+        ]);
+    }
+
+    /**
+     * Genera le 3 chiavi RSA JWK per CIE OIDC nel volume cieoidc-keys.
+     * Equivalente PHP di metadata/builder/gen-jwk.py.
+     *
+     * Body JSON: force (bool, default false) — sovrascrive chiavi esistenti recenti
+     */
+    public function generaCieKeys(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body    = $this->parseBody($request);
+        $force   = !empty($body['force']);
+        $keysDir = self::CIEOIDC_KEYS_DIR;
+
+        $generatedAt = $keysDir . '/GENERATED_AT';
+        if (!$force && is_file($generatedAt)) {
+            $ts = (int)trim((string)file_get_contents($generatedAt));
+            if ($ts > 0 && (time() - $ts) < 7 * 86400) {
+                return $this->jsonError(
+                    'Chiavi JWK CIE già presenti e generate meno di 7 giorni fa. ' .
+                    'Usa force=true solo dopo aver revocato la federazione CIE.'
+                );
+            }
+        }
+
+        @mkdir($keysDir, 0700, true);
+
+        $b64url = static fn(string $bin): string =>
+            rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
+
+        $genJwk = static function(array $extra = []) use ($b64url): array {
+            $key = openssl_pkey_new([
+                'private_key_bits' => 2048,
+                'private_key_type' => OPENSSL_KEYTYPE_RSA,
+            ]);
+            if ($key === false) {
+                throw new \RuntimeException('openssl_pkey_new fallito: ' . openssl_error_string());
+            }
+            $details = openssl_pkey_get_details($key);
+            $rsa     = $details['rsa'];
+
+            $e_b64 = $b64url($rsa['e']);
+            $n_b64 = $b64url($rsa['n']);
+
+            // RFC 7638: SHA-256 del JSON canonico {"e":..., "kty":"RSA", "n":...}
+            $canonical = json_encode(['e' => $e_b64, 'kty' => 'RSA', 'n' => $n_b64], JSON_UNESCAPED_SLASHES);
+            $kid = rtrim(strtr(base64_encode(hash('sha256', (string)$canonical, true)), '+/', '-_'), '=');
+
+            $jwk = array_merge($extra, [
+                'kty' => 'RSA',
+                'kid' => $kid,
+                'e'   => $e_b64,
+                'n'   => $n_b64,
+                'd'   => $b64url($rsa['d']),
+                'p'   => $b64url($rsa['p']),
+                'q'   => $b64url($rsa['q']),
+            ]);
+            openssl_pkey_free($key);
+            return $jwk;
+        };
+
+        try {
+            $jwkFed = $genJwk();
+            $jwkSig = $genJwk(['use' => 'sig']);
+            $jwkEnc = $genJwk(['use' => 'enc', 'alg' => 'RSA-OAEP']);
+        } catch (\RuntimeException $e) {
+            return $this->jsonError($e->getMessage());
+        }
+
+        $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
+        file_put_contents($keysDir . '/jwk-federation.json', json_encode($jwkFed, $flags));
+        file_put_contents($keysDir . '/jwk-core-sig.json',   json_encode($jwkSig, $flags));
+        file_put_contents($keysDir . '/jwk-core-enc.json',   json_encode($jwkEnc, $flags));
+        file_put_contents($keysDir . '/GENERATED_AT',        (string)time());
+        @chmod($keysDir . '/jwk-federation.json', 0600);
+        @chmod($keysDir . '/jwk-core-sig.json',   0600);
+        @chmod($keysDir . '/jwk-core-enc.json',   0600);
+
+        return $this->jsonResponse([
+            'success' => true,
+            'message' => 'Chiavi JWK CIE OIDC generate correttamente.',
+            'kids'    => [
+                'federation' => $jwkFed['kid'],
+                'sig'        => $jwkSig['kid'],
+                'enc'        => $jwkEnc['kid'],
+            ],
+        ]);
+    }
+
+    /**
+     * Esporta gli artefatti pubblici CIE OIDC dalla satosa-nginx interna.
+     * Equivalente PHP di metadata/builder/export-cieoidc.sh.
+     *
+     * Richiede iam-proxy attivo (profilo iam-proxy up).
+     * Body JSON: force (bool, default false)
+     */
+    public function exportCieOidc(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body    = $this->parseBody($request);
+        $force   = !empty($body['force']);
+        $metaDir = self::CIEOIDC_META_DIR;
+
+        $compValues = $metaDir . '/component-values.env';
+        if (!$force && is_file($compValues)) {
+            $expEpoch = null;
+            foreach (file($compValues, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+                if (str_starts_with($line, 'ENTITY_STATEMENT_EXP_EPOCH=')) {
+                    $expEpoch = (int)substr($line, strlen('ENTITY_STATEMENT_EXP_EPOCH='));
+                    break;
+                }
+            }
+            if ($expEpoch !== null && $expEpoch > time()) {
+                $daysLeft = (int)(($expEpoch - time()) / 86400);
+                return $this->jsonError(
+                    "Export CIE OIDC già presente e non scaduto ({$daysLeft} giorni residui). " .
+                    "Usa force=true solo dopo aver rigenerato le chiavi (renew-cieoidc)."
+                );
+            }
+        }
+
+        @mkdir($metaDir, 0755, true);
+
+        $fetchUrl = static function(string $url, int $timeout = 15): string|false {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => $timeout,
+                CURLOPT_FOLLOWLOCATION => false,
+            ]);
+            $data = curl_exec($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            return ($data !== false && $code === 200) ? (string)$data : false;
+        };
+
+        $base = 'http://satosa-nginx/CieOidcRp';
+
+        $jwt = $fetchUrl("{$base}/.well-known/openid-federation");
+        if ($jwt === false) {
+            return $this->jsonError('satosa-nginx non raggiungibile. Verificare che il profilo iam-proxy sia avviato.');
+        }
+        file_put_contents($metaDir . '/entity-configuration.jwt', $jwt);
+
+        $jwksJson = $fetchUrl("{$base}/openid_relying_party/jwks.json");
+        $jwksJose = $fetchUrl("{$base}/openid_relying_party/jwks.jose");
+        if ($jwksJson !== false) {
+            file_put_contents($metaDir . '/jwks-rp.json', $jwksJson);
+        }
+        if ($jwksJose !== false) {
+            file_put_contents($metaDir . '/jwks-rp.jose', $jwksJose);
+        }
+
+        // Decodifica JWT payload
+        $parts = explode('.', trim($jwt));
+        if (count($parts) < 2) {
+            return $this->jsonError('JWT entity statement non valido.');
+        }
+        $pad     = (4 - strlen($parts[1]) % 4) % 4;
+        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/') . str_repeat('=', $pad)), true);
+        if (!is_array($payload)) {
+            return $this->jsonError('Decodifica JWT payload fallita.');
+        }
+
+        $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        file_put_contents($metaDir . '/entity-configuration.json', json_encode($payload, $flags));
+
+        $federationKeys = $payload['jwks']['keys'] ?? [];
+        file_put_contents($metaDir . '/jwks-federation-public.json', json_encode(['keys' => $federationKeys], $flags));
+
+        $exp      = isset($payload['exp']) ? (int)$payload['exp'] : null;
+        $expEpoch = $exp ?? 0;
+        $expUtc   = $exp ? gmdate('Y-m-d\TH:i:s\Z', $exp) : '';
+        $expDays  = $exp ? max(0, (int)(($exp - time()) / 86400)) : 0;
+        $clientId = $payload['sub'] ?? '';
+
+        $envContent = implode("\n", [
+            "COMPONENT_IDENTIFIER={$base}",
+            "PUBLIC_COMPONENT_IDENTIFIER={$clientId}",
+            "ENTITY_STATEMENT_EXP_EPOCH={$expEpoch}",
+            "ENTITY_STATEMENT_EXP_UTC={$expUtc}",
+            "ENTITY_STATEMENT_EXP_DAYS_REMAINING={$expDays}",
+        ]) . "\n";
+        file_put_contents($compValues, $envContent);
+
+        return $this->jsonResponse([
+            'success'   => true,
+            'message'   => 'Export CIE OIDC completato correttamente.',
+            'sub'       => $clientId,
+            'exp'       => $expUtc,
+            'days_left' => $expDays,
+        ]);
     }
 
     public function getContainersStatus(Request $request, Response $response): Response

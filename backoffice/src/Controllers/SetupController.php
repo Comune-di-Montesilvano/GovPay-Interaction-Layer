@@ -611,6 +611,7 @@ class SetupController
             'volumes/spid_certs'              => '/var/www/html/spid-certs',
             'volumes/frontoffice_sp_metadata' => '/var/www/html/metadata-sp',
             'volumes/gil_metadata_cieoidc'    => '/var/www/html/metadata-cieoidc',
+            'volumes/gil_cieoidc_keys'        => '/var/www/html/cieoidc-keys',
         ];
 
         for ($i = 0; $i < $zip->numFiles; $i++) {

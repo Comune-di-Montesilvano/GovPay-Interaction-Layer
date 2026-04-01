@@ -638,6 +638,10 @@
         <button class="btn btn-sm btn-outline-warning" type="button" onclick="toggleRestoreForm('spid-restore-form')">
           <i class="fas fa-upload me-1"></i>Ripristina
         </button>
+        <button class="btn btn-sm btn-outline-success" type="button"
+          data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
+          <i class="fas fa-certificate me-1"></i>Genera cert
+        </button>
         {% endif %}
       </div>
       {% if is_superadmin %}
@@ -673,6 +677,12 @@
         <button class="btn btn-sm btn-outline-warning" type="button" onclick="toggleRestoreForm('cie-restore-form')">
           <i class="fas fa-upload me-1"></i>Ripristina
         </button>
+        <button class="btn btn-sm btn-outline-success" type="button" onclick="generaCieKeys(this)">
+          <i class="fas fa-key me-1"></i>Genera chiavi JWK
+        </button>
+        <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
+          <i class="fas fa-file-export me-1"></i>Esporta artefatti CIE
+        </button>
         {% endif %}
       </div>
       {% if is_superadmin %}
@@ -687,6 +697,69 @@
         <div class="form-text">File JSON dell'entity configuration CIE OIDC.</div>
       </div>
       {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ─── Modale generazione certificati SPID ────────────────────────────────────── #}
+<div class="modal fade" id="spidCertGeneraModal" tabindex="-1" aria-labelledby="spidCertGeneraModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="spidCertGeneraModalLabel">
+          <i class="fas fa-certificate me-2 text-success"></i>Genera certificati SPID
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Questa operazione sovrascrive <code>cert.pem</code> e <code>privkey.pem</code> nel volume SPID.
+          Dopo la generazione sarà necessario rigenerate il metadata SP e aggiornare la federazione AgID.
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Common Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control form-control-sm" id="spid-cert-cn" placeholder="es. Comune di Montesilvano">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Locality Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control form-control-sm" id="spid-cert-locality" placeholder="es. Montesilvano">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Organization ID <span class="text-danger">*</span></label>
+            <input type="text" class="form-control form-control-sm" id="spid-cert-org-id" placeholder="PA:IT-c_f376">
+            <div class="form-text">Formato: <code>PA:IT-{codice IPA}</code></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Organization Name</label>
+            <input type="text" class="form-control form-control-sm" id="spid-cert-org-name" placeholder="(default: Common Name)">
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Entity ID <span class="text-danger">*</span></label>
+            <input type="text" class="form-control form-control-sm" id="spid-cert-entity-id" placeholder="https://portale.example.it/saml/sp">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Validità (giorni)</label>
+            <input type="number" class="form-control form-control-sm" id="spid-cert-days" value="730" min="1" max="3650">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Lunghezza chiave</label>
+            <select class="form-select form-select-sm" id="spid-cert-keysize">
+              <option value="3072" selected>3072 bit (consigliato)</option>
+              <option value="2048">2048 bit</option>
+              <option value="4096">4096 bit</option>
+            </select>
+          </div>
+        </div>
+        <div id="spid-cert-result" class="mt-3" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-success" id="spid-cert-genera-btn" onclick="doGeneraSpidCerts(this)">
+          <i class="fas fa-certificate me-1"></i>Genera certificati
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -986,5 +1059,115 @@ async function restoreMetadata(type, fileInputId, btn) {
   document.getElementById('lp-public-url')?.addEventListener('input', lpDeriveFromUrl);
   document.getElementById('lp-hostname')?.addEventListener('input', lpDeriveFromUrl);
   document.getElementById('lp-cie-custom-url')?.addEventListener('input', lpUpdateCieEnv);
+
+  // Pre-popola il modale generazione cert SPID al momento dell'apertura
+  document.getElementById('spidCertGeneraModal')?.addEventListener('show.bs.modal', () => {
+    const cn       = document.getElementById('lp-spid-cn')?.value || '';
+    const locality = '{{ settings.iam_proxy.spid_cert_locality_name|default('') }}';
+    const orgId    = document.getElementById('lp-spid-org-id')?.value || '';
+    const orgName  = '{{ settings.iam_proxy.spid_cert_org_name|default('') }}';
+    const entityId = document.getElementById('lp-spid-entity-id')?.value || '';
+    if (cn)       document.getElementById('spid-cert-cn').value        = cn;
+    if (locality) document.getElementById('spid-cert-locality').value   = locality;
+    if (orgId)    document.getElementById('spid-cert-org-id').value     = orgId;
+    if (orgName)  document.getElementById('spid-cert-org-name').value   = orgName;
+    if (entityId) document.getElementById('spid-cert-entity-id').value  = entityId;
+    document.getElementById('spid-cert-result').style.display = 'none';
+  });
 })();
+
+// ── Generazione cert SPID ─────────────────────────────────────────────────────
+async function doGeneraSpidCerts(btn) {
+  const payload = {
+    common_name:   document.getElementById('spid-cert-cn')?.value?.trim()        || '',
+    locality_name: document.getElementById('spid-cert-locality')?.value?.trim()  || '',
+    org_id:        document.getElementById('spid-cert-org-id')?.value?.trim()    || '',
+    org_name:      document.getElementById('spid-cert-org-name')?.value?.trim()  || '',
+    entity_id:     document.getElementById('spid-cert-entity-id')?.value?.trim() || '',
+    days:          parseInt(document.getElementById('spid-cert-days')?.value) || 730,
+    key_size:      parseInt(document.getElementById('spid-cert-keysize')?.value) || 3072,
+  };
+  const resultEl = document.getElementById('spid-cert-result');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
+  resultEl.style.display = 'none';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/spid-certs/genera', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    const ok   = !!json.success;
+    resultEl.className = 'mt-3 alert ' + (ok ? 'alert-success' : 'alert-danger');
+    let html = (ok ? '<i class="fas fa-check-circle me-1"></i>' : '<i class="fas fa-times-circle me-1"></i>') + escHtml(json.message || '');
+    if (ok && json.cert) {
+      html += '<dl class="row small mt-2 mb-0">'
+        + metaRow('Soggetto', escHtml(json.cert.subject || '—'))
+        + metaRow('Valido dal', escHtml(json.cert.valid_from || '—'))
+        + metaRow('Valido al',  escHtml(json.cert.valid_to  || '—'))
+        + '</dl>';
+    }
+    resultEl.innerHTML = html;
+    resultEl.style.display = '';
+    if (ok) { impToast('Certificati SPID generati.', true); loadMetadataInfo('spid', null); }
+  } catch (e) {
+    resultEl.className = 'mt-3 alert alert-danger';
+    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
+    resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Generazione chiavi JWK CIE OIDC ──────────────────────────────────────────
+async function generaCieKeys(btn) {
+  if (!confirm('Genera nuove chiavi JWK CIE OIDC?\n\nAttenzione: questa operazione sovrascrive le chiavi private esistenti. Esegui solo in fase di prima installazione o dopo aver revocato la federazione CIE.')) return;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'Chiavi JWK generate.' : 'Generazione fallita.'), !!json.success);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Export artefatti CIE OIDC da satosa-nginx ─────────────────────────────────
+async function exportCieOidc(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json();
+    if (json.success) {
+      const info = json.exp ? ` (scade ${escHtml(json.exp)}, giorni rimasti: ${json.days_left})` : '';
+      impToast('Export CIE OIDC completato.' + info, true);
+      loadMetadataInfo('cie', null);
+    } else {
+      impToast(json.message || 'Export fallito.', false);
+    }
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
 </script>

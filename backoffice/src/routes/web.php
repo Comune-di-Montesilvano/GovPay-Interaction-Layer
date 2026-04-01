@@ -154,6 +154,16 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/cie-metadata/restore', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->restoreCieMetadata($request, $response);
     });
+    // Generazione SPID / CIE
+    $app->post('/impostazioni/login-proxy/spid-certs/genera', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->generaSpidCerts($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
+    });
     $app->post('/impostazioni/logo/upload', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->uploadLogo($request, $response);
     });
