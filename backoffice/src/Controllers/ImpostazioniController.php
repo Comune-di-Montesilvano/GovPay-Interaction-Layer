@@ -1130,6 +1130,121 @@ class ImpostazioniController
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // BACKUP GLOBALE IAM PROXY
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Ritorna disponibilità dei file esportabili per guidare le checkbox UI.
+     * GET /impostazioni/login-proxy/backup/status
+     */
+    public function getBackupStatus(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+
+        $spidCerts = is_file(self::SPID_CERTS_DIR . '/cert.pem') && is_file(self::SPID_CERTS_DIR . '/privkey.pem');
+        $cieKeys   = count(glob(self::CIEOIDC_KEYS_DIR . '/*.json') ?: []) > 0;
+
+        return $this->jsonResponse([
+            'config'        => true,
+            'spid_certs'    => $spidCerts,
+            'cieoidc_keys'  => $cieKeys,
+            'spid_metadata' => is_file(self::SPID_METADATA_PATH),
+            'cie_metadata'  => is_file(self::CIE_METADATA_PATH),
+        ]);
+    }
+
+    /**
+     * Esporta i file selezionati come ZIP.
+     * POST /impostazioni/login-proxy/backup/export
+     * Body JSON: { "items": ["config","spid_certs","cieoidc_keys","spid_metadata","cie_metadata"] }
+     */
+    public function exportBackupZip(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        $items = $body['items'] ?? [];
+        if (empty($items) || !is_array($items)) {
+            return $this->jsonError('Seleziona almeno un elemento da esportare.');
+        }
+
+        $allowed = ['config', 'spid_certs', 'cieoidc_keys', 'spid_metadata', 'cie_metadata'];
+        $items   = array_values(array_intersect($items, $allowed));
+        if (empty($items)) {
+            return $this->jsonError('Nessun elemento valido selezionato.');
+        }
+
+        if (!class_exists('ZipArchive')) {
+            return $this->jsonError('ZipArchive non disponibile nel container.', 500);
+        }
+
+        $tmpFile = tempnam(sys_get_temp_dir(), 'iam-backup-');
+        $zip = new \ZipArchive();
+        if ($zip->open($tmpFile, \ZipArchive::OVERWRITE) !== true) {
+            return $this->jsonError('Impossibile creare l\'archivio ZIP.', 500);
+        }
+
+        foreach ($items as $item) {
+            match ($item) {
+                'config' => $this->backupZipConfig($zip),
+                'spid_certs' => $this->backupZipSpidCerts($zip),
+                'cieoidc_keys' => $this->backupZipCieKeys($zip),
+                'spid_metadata' => $this->backupZipFile($zip, self::SPID_METADATA_PATH, 'metadata/frontoffice_sp.xml'),
+                'cie_metadata' => $this->backupZipFile($zip, self::CIE_METADATA_PATH, 'metadata/cie-entity-configuration.json'),
+                default => null,
+            };
+        }
+
+        $zip->close();
+
+        $data = file_get_contents($tmpFile);
+        unlink($tmpFile);
+
+        $filename = 'backup-iam-proxy-' . date('Y-m-d') . '.zip';
+        $resp = new \Slim\Psr7\Response(200);
+        $resp->getBody()->write($data);
+        return $resp
+            ->withHeader('Content-Type', 'application/zip')
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->withHeader('Content-Length', (string)strlen($data));
+    }
+
+    private function backupZipConfig(\ZipArchive $zip): void
+    {
+        $settings = SettingsRepository::getSection('iam_proxy') ?? [];
+        // Escludi campi encrypted per sicurezza
+        $encrypted = ['satosa_salt', 'satosa_state_encryption_key', 'satosa_encryption_key', 'satosa_user_id_hash_salt'];
+        foreach ($encrypted as $k) {
+            unset($settings[$k]);
+        }
+        $zip->addFromString('config/iam-proxy-settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function backupZipSpidCerts(\ZipArchive $zip): void
+    {
+        foreach (['cert.pem', 'privkey.pem'] as $file) {
+            $path = self::SPID_CERTS_DIR . '/' . $file;
+            if (is_file($path)) {
+                $zip->addFile($path, 'spid-certs/' . $file);
+            }
+        }
+    }
+
+    private function backupZipCieKeys(\ZipArchive $zip): void
+    {
+        $files = glob(self::CIEOIDC_KEYS_DIR . '/*.json') ?: [];
+        foreach ($files as $path) {
+            $zip->addFile($path, 'cieoidc-keys/' . basename($path));
+        }
+    }
+
+    private function backupZipFile(\ZipArchive $zip, string $path, string $entryName): void
+    {
+        if (is_file($path)) {
+            $zip->addFile($path, $entryName);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // UPLOAD LOGO / FAVICON
     // ──────────────────────────────────────────────────────────────────────
 

@@ -164,6 +164,13 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
     });
+    // Backup globale IAM proxy
+    $app->get('/impostazioni/login-proxy/backup/status', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getBackupStatus($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/backup/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportBackupZip($request, $response);
+    });
     $app->post('/impostazioni/logo/upload', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->uploadLogo($request, $response);
     });

@@ -33,6 +33,8 @@ services:
       - PORTAINER_URL=${PORTAINER_URL:-}
       - PORTAINER_API_TOKEN=${PORTAINER_API_TOKEN:-}
       - PORTAINER_ENDPOINT_ID=${PORTAINER_ENDPOINT_ID:-1}
+      # Token per autenticare le chiamate Bearer provenienti da iam-proxy/startup.sh (GET /api/iam-proxy/env)
+      - MASTER_TOKEN=${MASTER_TOKEN}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
     restart: unless-stopped
     networks:
