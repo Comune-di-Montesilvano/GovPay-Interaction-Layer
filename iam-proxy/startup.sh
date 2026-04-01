@@ -326,21 +326,122 @@ mkdir -p "$SATOSA_STATIC"
 cp -r "$SATOSA_PROXY/static/." "$SATOSA_STATIC/"
 
 # ── frontoffice SP metadata ───────────────────────────────────────────────────
-sync_frontoffice_sp_metadata() {
-  local SRC="/frontoffice-sp/frontoffice_sp.xml"
-  local DST="$SATOSA_PROXY/metadata/sp/frontoffice_sp.xml"
-  if [ -f "$SRC" ]; then
-    cp "$SRC" "$DST" && echo "[startup] frontoffice_sp.xml sincronizzato in metadata/sp/"
-  else
-    echo "[startup] WARN: /frontoffice-sp/frontoffice_sp.xml non trovato"
-  fi
-}
-sync_frontoffice_sp_metadata
+# Genera il metadata SP SAML2 del frontoffice se assente o scaduto, poi lo copia
+# nel path SATOSA. La generazione avviene qui (Python stdlib) senza container separati.
+_SP_META_SRC="/frontoffice-sp/frontoffice_sp.xml"
+_SP_META_DST="$SATOSA_PROXY/metadata/sp/frontoffice_sp.xml"
+_SP_CERT_PATH="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
+# Rendi il path assoluto se relativo
+if [[ "$_SP_CERT_PATH" != /* ]]; then
+  _SP_CERT_PATH="$SATOSA_PROXY/$_SP_CERT_PATH"
+fi
 
-# Watcher: ricopia frontoffice_sp.xml ogni 30s se mancante
+ensure_sp_metadata() {
+  local force="${1:-0}"
+  python3 - "$_SP_META_SRC" "$_SP_META_DST" "$_SP_CERT_PATH" \
+    "${FRONTOFFICE_PUBLIC_BASE_URL:-}" \
+    "${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}" \
+    "${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}" \
+    "$force" <<'PY'
+import sys, os, re, datetime, shutil
+from pathlib import Path
+
+src       = Path(sys.argv[1])
+dst       = Path(sys.argv[2])
+cert_path = Path(sys.argv[3])
+base_url  = sys.argv[4].rstrip('/')
+validity_days = int(sys.argv[5])
+cache_secs    = int(sys.argv[6])
+force         = sys.argv[7] == '1'
+
+def is_valid(path):
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.parse(str(path)).getroot()
+        valid_until = root.get('validUntil', '')
+        if not valid_until:
+            return False
+        # Parse ISO 8601 (Z suffix)
+        dt = datetime.datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
+        return dt > datetime.datetime.now(datetime.timezone.utc)
+    except Exception:
+        return False
+
+if not force and src.exists() and is_valid(src):
+    print('[startup] frontoffice_sp.xml presente e valido — copio in metadata/sp/')
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(src), str(dst))
+    sys.exit(0)
+
+if not base_url:
+    print('[startup] WARN: FRONTOFFICE_PUBLIC_BASE_URL non impostato, metadata SP non generato')
+    # copia quello esistente se c'è
+    if src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(src), str(dst))
+    sys.exit(1)
+
+print(f'[startup] Generazione frontoffice_sp.xml (base_url={base_url})...')
+
+entity_id = f'{base_url}/saml/sp'
+acs_url   = f'{base_url}/spid/callback'
+slo_url   = f'{base_url}/logout'
+
+now        = datetime.datetime.now(datetime.timezone.utc)
+valid_until = (now + datetime.timedelta(days=validity_days)).strftime('%Y-%m-%dT%H:%M:%SZ')
+cache_dur  = f'PT{cache_secs}S'
+
+cert_b64 = ''
+if cert_path.exists():
+    pem = cert_path.read_text(encoding='utf-8')
+    # Estrae solo il contenuto base64 (rimuove header/footer e newline)
+    cert_b64 = re.sub(r'-----[^-]+-----', '', pem).replace('\n', '').replace('\r', '').strip()
+
+xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<md:EntityDescriptor
+  xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
+  xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+  entityID="{entity_id}"
+  validUntil="{valid_until}"
+  cacheDuration="{cache_dur}">
+  <md:SPSSODescriptor
+    AuthnRequestsSigned="true"
+    WantAssertionsSigned="true"
+    protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo>
+        <ds:X509Data>
+          <ds:X509Certificate>{cert_b64}</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:SingleLogoutService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+      Location="{slo_url}"/>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
+    <md:AssertionConsumerService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+      Location="{acs_url}"
+      index="0"
+      isDefault="true"/>
+  </md:SPSSODescriptor>
+</md:EntityDescriptor>
+'''
+
+src.parent.mkdir(parents=True, exist_ok=True)
+src.write_text(xml, encoding='utf-8')
+dst.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy2(str(src), str(dst))
+print(f'[startup] frontoffice_sp.xml generato (entityID={entity_id}, validUntil={valid_until})')
+PY
+}
+
+ensure_sp_metadata 0
+
+# Watcher: controlla la scadenza ogni FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS
 (while true; do
-  sleep 30
-  [ -f "$SATOSA_PROXY/metadata/sp/frontoffice_sp.xml" ] || sync_frontoffice_sp_metadata || true
+  sleep "${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}"
+  ensure_sp_metadata 0 || true
 done) &
 
 # ── patch_saml2.py ────────────────────────────────────────────────────────────
