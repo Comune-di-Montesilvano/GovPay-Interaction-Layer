@@ -284,5 +284,9 @@
     "tramite il Checkout pagoPA. Lo stato potrebbe aggiornarsi entro qualche minuto.": "via le Checkout pagoPA. Le statut pourrait être mis à jour d'ici quelques minutes.",
     "un solo redirect a PagoPA per tutti gli avvisi": "une seule redirection vers PagoPA pour tous les avis",
     "voce": "élément",
-    "voci": "éléments"
+    "voci": "éléments",
+    "Accesso negato": "Accès refusé",
+    "Errore di autenticazione": "Erreur d'authentification",
+    "Riprova accesso": "Réessayer l'accès",
+    "Si &egrave; verificato un errore durante il processo di autenticazione. Il tuo accesso non ha potuto essere completato.": "Une erreur s'est produite lors du processus d'authentification. Votre accès n'a pas pu être finalisé."
 }

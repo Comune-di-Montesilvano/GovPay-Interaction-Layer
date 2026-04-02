@@ -284,5 +284,9 @@
     "tramite il Checkout pagoPA. Lo stato potrebbe aggiornarsi entro qualche minuto.": "tramite il Checkout pagoPA. Lo stato potrebbe aggiornarsi entro qualche minuto.",
     "un solo redirect a PagoPA per tutti gli avvisi": "un solo redirect a PagoPA per tutti gli avvisi",
     "voce": "voce",
-    "voci": "voci"
+    "voci": "voci",
+    "Accesso negato": "Accesso negato",
+    "Errore di autenticazione": "Errore di autenticazione",
+    "Riprova accesso": "Riprova accesso",
+    "Si &egrave; verificato un errore durante il processo di autenticazione. Il tuo accesso non ha potuto essere completato.": "Si &egrave; verificato un errore durante il processo di autenticazione. Il tuo accesso non ha potuto essere completato."
 }

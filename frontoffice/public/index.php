@@ -3683,6 +3683,17 @@ $routes = [
             ],
         ];
     },
+
+    '/accesso-negato' => static function (): array {
+        http_response_code(403);
+        $errorMessage = trim((string)($_GET['error'] ?? ''));
+        return [
+            'template' => 'errors/accesso-negato.html.twig',
+            'context' => [
+                'error_message' => $errorMessage !== '' ? $errorMessage : null,
+            ],
+        ];
+    },
 ];
 
 

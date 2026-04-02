@@ -284,5 +284,9 @@
     "tramite il Checkout pagoPA. Lo stato potrebbe aggiornarsi entro qualche minuto.": "via PagoPA Checkout. The status might update within a few minutes.",
     "un solo redirect a PagoPA per tutti gli avvisi": "single redirect to PagoPA for all notices",
     "voce": "item",
-    "voci": "items"
+    "voci": "items",
+    "Accesso negato": "Access denied",
+    "Errore di autenticazione": "Authentication error",
+    "Riprova accesso": "Try again",
+    "Si &egrave; verificato un errore durante il processo di autenticazione. Il tuo accesso non ha potuto essere completato.": "An error occurred during the authentication process. Your access could not be completed."
 }

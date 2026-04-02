@@ -1,0 +1,26 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'Accesso negato'|trans }} - {{ app_entity.name }}{% endblock %}
+
+{% block content %}
+  <section class="py-5">
+    <div class="container-xxl">
+      <div class="row justify-content-center">
+        <div class="col-lg-8">
+          <div class="text-center py-5">
+            <p class="text-uppercase text-muted small mb-2">{{ 'Errore di autenticazione'|trans }}</p>
+            <h1 class="display-5 mb-3">{{ 'Accesso negato'|trans }}</h1>
+            <p class="lead text-muted mb-4">{{ 'Si &egrave; verificato un errore durante il processo di autenticazione. Il tuo accesso non ha potuto essere completato.'|trans|raw }}</p>
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+              <a class="btn btn-primary" href="/">{{ 'Torna alla home'|trans }}</a>
+              <a class="btn btn-outline-primary" href="/login">{{ 'Riprova accesso'|trans }}</a>
+            </div>
+            {% if error_message is defined and error_message %}
+              <p class="small text-muted mt-4 mb-0">{{ error_message }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}
