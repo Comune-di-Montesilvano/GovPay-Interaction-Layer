@@ -717,11 +717,9 @@ class ImpostazioniController
         }
 
         $result = (new PortainerClient())->startContainers([
-            'init-frontoffice-sp-metadata',
+            'satosa-mongo',
             'iam-proxy-italia',
             'satosa-nginx',
-            'satosa-mongo',
-            'refresh-frontoffice-sp-metadata',
         ]);
         return $this->portainerResponse($result);
     }
@@ -730,9 +728,8 @@ class ImpostazioniController
     {
         $this->requireSuperadmin();
         $result = (new PortainerClient())->stopContainers([
-            'refresh-frontoffice-sp-metadata',
-            'iam-proxy-italia',
             'satosa-nginx',
+            'iam-proxy-italia',
             'satosa-mongo',
         ]);
         return $this->portainerResponse($result);
@@ -741,7 +738,7 @@ class ImpostazioniController
     public function riavviaIamProxy(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        $result = (new PortainerClient())->restartContainers(['iam-proxy-italia', 'satosa-nginx']);
+        $result = (new PortainerClient())->restartContainers(['satosa-mongo', 'iam-proxy-italia', 'satosa-nginx']);
         return $this->portainerResponse($result);
     }
 
@@ -1055,6 +1052,10 @@ class ImpostazioniController
                 'd'   => $b64url($rsa['d']),
                 'p'   => $b64url($rsa['p']),
                 'q'   => $b64url($rsa['q']),
+                // Parametri CRT obbligatori per jwcrypto/Python (RFC 7517 §9.3)
+                'dp'  => $b64url($rsa['dmp1']),
+                'dq'  => $b64url($rsa['dmq1']),
+                'qi'  => $b64url($rsa['iqmp']),
             ]);
             openssl_pkey_free($key);
             return $jwk;
