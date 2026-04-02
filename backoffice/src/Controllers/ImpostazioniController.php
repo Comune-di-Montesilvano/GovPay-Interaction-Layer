@@ -865,13 +865,35 @@ class ImpostazioniController
         $this->requireSuperadmin();
         $body = $this->parseBody($request);
 
-        $commonName = trim($body['common_name'] ?? '');
-        $locality   = trim($body['locality_name'] ?? '');
-        $orgId      = trim($body['org_id'] ?? '');
-        $orgName    = trim($body['org_name'] ?? $commonName);
-        $entityId   = trim($body['entity_id'] ?? '');
-        $days       = max(1, min(3650, (int)($body['days'] ?? 730)));
-        $keySize    = (int)($body['key_size'] ?? 3072);
+        // Fallback robusto: se il body parser non ha decodificato JSON,
+        // prova a leggere il payload raw per evitare errori sui campi obbligatori.
+        if ($body === []) {
+            $raw = trim((string)$request->getBody());
+            if ($raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $body = $decoded;
+                }
+            }
+        }
+
+        $iamSettings = SettingsRepository::getSection('iam_proxy');
+        $foSettings  = SettingsRepository::getSection('frontoffice');
+        $entity      = SettingsRepository::getSection('entity');
+
+        $frontofficeBase = rtrim((string)($foSettings['public_base_url'] ?? ''), '/');
+        if ($frontofficeBase === '') {
+            $frontofficeBase = 'https://127.0.0.1:8444';
+        }
+        $derivedEntityId = $frontofficeBase . '/saml/sp';
+
+        $commonName = trim((string)($body['common_name'] ?? $body['spid_cert_common_name'] ?? $iamSettings['spid_cert_common_name'] ?? $iamSettings['hostname'] ?? $entity['name'] ?? ''));
+        $locality   = trim((string)($body['locality_name'] ?? $body['spid_cert_locality_name'] ?? $iamSettings['spid_cert_locality_name'] ?? ''));
+        $orgId      = trim((string)($body['org_id'] ?? $body['spid_cert_org_id'] ?? $iamSettings['spid_cert_org_id'] ?? ''));
+        $orgName    = trim((string)($body['org_name'] ?? $body['spid_cert_org_name'] ?? $iamSettings['spid_cert_org_name'] ?? $commonName));
+        $entityId   = trim((string)($body['entity_id'] ?? $body['spid_cert_entity_id'] ?? $iamSettings['spid_cert_entity_id'] ?? $derivedEntityId));
+        $days       = max(1, min(3650, (int)($body['days'] ?? $body['spid_cert_days'] ?? $iamSettings['spid_cert_days'] ?? 730)));
+        $keySize    = (int)($body['key_size'] ?? $body['spid_cert_key_size'] ?? $iamSettings['spid_cert_key_size'] ?? 3072);
 
         foreach (['common_name' => $commonName, 'locality_name' => $locality, 'org_id' => $orgId, 'entity_id' => $entityId] as $field => $val) {
             if ($val === '') {
