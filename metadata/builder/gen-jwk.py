@@ -41,6 +41,9 @@ def gen_rsa_jwk(extra_fields=None):
         "d": int_to_b64url(priv.d),
         "p": int_to_b64url(priv.p),
         "q": int_to_b64url(priv.q),
+        "dp": int_to_b64url(priv.dmp1),
+        "dq": int_to_b64url(priv.dmq1),
+        "qi": int_to_b64url(priv.iqmp),
     }
     if extra_fields:
         jwk = {**extra_fields, **jwk}

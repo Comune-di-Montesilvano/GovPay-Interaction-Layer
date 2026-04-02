@@ -702,8 +702,14 @@ class ImpostazioniController
             $errors[] = 'Certificati SPID mancanti. Genera prima cert.pem e privkey.pem (Impostazioni → Login Proxy → Certificati SPID).';
         }
 
-        // 2. URL pubblico SATOSA (SATOSA_BASE) obbligatorio per il parsing YAML
+        // 3. Chiavi JWK CIE OIDC (se CIE OIDC abilitato)
         $iamProxy = SettingsRepository::getSection('iam_proxy');
+        $enableCie = in_array(trim((string)($iamProxy['enable_cie_oidc'] ?? '')), ['1', 'true', 'yes', 'on'], true);
+        if ($enableCie && count(glob(self::CIEOIDC_KEYS_DIR . '/*.json') ?: []) < 3) {
+            $errors[] = 'Chiavi JWK CIE OIDC mancanti o incomplete. Genera le chiavi CIE prima di avviare IAM Proxy.';
+        }
+
+        // 2. URL pubblico SATOSA (SATOSA_BASE) obbligatorio per il parsing YAML
         if (empty(trim((string)($iamProxy['public_base_url'] ?? '')))) {
             $errors[] = 'URL pubblico SATOSA (SATOSA_BASE) non configurato. Imposta il campo nella sezione Login Proxy.';
         }

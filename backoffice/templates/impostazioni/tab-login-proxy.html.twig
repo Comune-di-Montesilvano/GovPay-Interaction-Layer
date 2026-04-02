@@ -1327,12 +1327,25 @@ async function generaCieKeys(btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
   try {
-    const res  = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
+    let res  = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
-    const json = await res.json();
+    let json = await res.json();
+
+    if (!json.success && (json.message || '').includes('già presenti')) {
+      const doForce = confirm('Le chiavi sono già state generate di recente.\n\nForza la rigenerazione solo se hai revocato la federazione CIE.\n\nProcedere?');
+      if (doForce) {
+        res = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: true }),
+        });
+        json = await res.json();
+      }
+    }
+
     impToast(json.message || (json.success ? 'Chiavi JWK generate.' : 'Generazione fallita.'), !!json.success);
   } catch (e) {
     impToast('Errore: ' + e.message, false);
@@ -1348,12 +1361,25 @@ async function exportCieOidc(btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
   try {
-    const res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
+    let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
-    const json = await res.json();
+    let json = await res.json();
+
+    if (!json.success && (json.message || '').includes('già presente e non scaduto')) {
+      const doForce = confirm('L\'export CIE è già presente e non scaduto.\n\nForzare l\'export ora?');
+      if (doForce) {
+        res = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: true }),
+        });
+        json = await res.json();
+      }
+    }
+
     if (json.success) {
       const info = json.exp ? ` (scade ${escHtml(json.exp)}, giorni rimasti: ${json.days_left})` : '';
       impToast('Export CIE OIDC completato.' + info, true);
