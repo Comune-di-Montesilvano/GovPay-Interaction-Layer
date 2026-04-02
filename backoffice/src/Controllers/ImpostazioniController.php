@@ -384,6 +384,21 @@ class ImpostazioniController
             $s = SettingsRepository::getSection('iam_proxy');
         }
 
+        // Garantisce URL di redirect errore SATOSA sempre valorizzato e assoluto.
+        // Priorita: valore esplicito in iam_proxy; fallback su frontoffice + /accesso-negato.
+        $satosaErrorRedirect = trim((string)($s['satosa_unknow_error_redirect_page'] ?? ''));
+        if ($satosaErrorRedirect === '') {
+            $frontofficeBase = rtrim((string)($sFrontoffice['public_base_url'] ?? ''), '/');
+            if ($frontofficeBase === '') {
+                $frontofficeBase = 'https://127.0.0.1:8444';
+                error_log('[ImpostazioniController:getIamProxyEnv] FRONTOFFICE_PUBLIC_BASE_URL non configurato, uso fallback di sicurezza per SATOSA_UNKNOW_ERROR_REDIRECT_PAGE.');
+            }
+
+            $satosaErrorRedirect = $frontofficeBase . '/accesso-negato';
+            $s['satosa_unknow_error_redirect_page'] = $satosaErrorRedirect;
+            SettingsRepository::set('iam_proxy', 'satosa_unknow_error_redirect_page', $satosaErrorRedirect, false, 'system_autogen');
+        }
+
         // Mappa chiave DB → nome variabile d'ambiente SATOSA/IAM-proxy
         $map = [
             'debug'                                          => 'IAM_PROXY_DEBUG',
