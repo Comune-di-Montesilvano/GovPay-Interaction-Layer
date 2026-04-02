@@ -510,6 +510,116 @@
                 </div>
               </div>
             </details>
+
+            {# UI IDP — testi e logo mostrati al cittadino sulla pagina di login SATOSA #}
+            <details class="mt-2">
+              <summary class="text-muted small fw-semibold" style="cursor:pointer">
+                <i class="fas fa-caret-right me-1"></i>UI IDP — testi e logo pagina di login (avanzati)
+              </summary>
+              <div class="alert alert-info py-2 small mt-2 mb-0">
+                <i class="fas fa-info-circle me-1"></i>
+                Testi e URL mostrati nella schermata di scelta IdP (disco.html) e nei metadata SAML2.
+                Se lasciati vuoti vengono usate stringhe vuote (SATOSA accetta ma l'interfaccia potrebbe risultare incompleta).
+              </div>
+              <div class="row g-3 mt-1">
+                <div class="col-md-6">
+                  <label class="form-label">Display Name (IT)</label>
+                  <input type="text" class="form-control" name="satosa_ui_display_name_it"
+                    value="{{ iam_proxy.satosa_ui_display_name_it|default('') }}"
+                    placeholder="{{ entity.name|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Display Name (EN)</label>
+                  <input type="text" class="form-control" name="satosa_ui_display_name_en"
+                    value="{{ iam_proxy.satosa_ui_display_name_en|default('') }}"
+                    placeholder="{{ entity.name|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Descrizione (IT)</label>
+                  <input type="text" class="form-control" name="satosa_ui_description_it"
+                    value="{{ iam_proxy.satosa_ui_description_it|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Descrizione (EN)</label>
+                  <input type="text" class="form-control" name="satosa_ui_description_en"
+                    value="{{ iam_proxy.satosa_ui_description_en|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Informazioni (IT)</label>
+                  <input type="url" class="form-control" name="satosa_ui_information_url_it"
+                    value="{{ iam_proxy.satosa_ui_information_url_it|default(entity.url|default('')) }}"
+                    placeholder="{{ entity.url|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Informazioni (EN)</label>
+                  <input type="url" class="form-control" name="satosa_ui_information_url_en"
+                    value="{{ iam_proxy.satosa_ui_information_url_en|default(entity.url|default('')) }}"
+                    placeholder="{{ entity.url|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Privacy (IT)</label>
+                  <input type="url" class="form-control" name="satosa_ui_privacy_url_it"
+                    value="{{ iam_proxy.satosa_ui_privacy_url_it|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Privacy (EN)</label>
+                  <input type="url" class="form-control" name="satosa_ui_privacy_url_en"
+                    value="{{ iam_proxy.satosa_ui_privacy_url_en|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Note legali (IT)</label>
+                  <input type="url" class="form-control" name="satosa_ui_legal_url_it"
+                    value="{{ iam_proxy.satosa_ui_legal_url_it|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Note legali (EN)</label>
+                  <input type="url" class="form-control" name="satosa_ui_legal_url_en"
+                    value="{{ iam_proxy.satosa_ui_legal_url_en|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Accessibilità (IT)</label>
+                  <input type="url" class="form-control" name="satosa_ui_accessibility_url_it"
+                    value="{{ iam_proxy.satosa_ui_accessibility_url_it|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">URL Accessibilità (EN)</label>
+                  <input type="url" class="form-control" name="satosa_ui_accessibility_url_en"
+                    value="{{ iam_proxy.satosa_ui_accessibility_url_en|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-8">
+                  <label class="form-label">URL Logo</label>
+                  <input type="url" class="form-control" name="satosa_ui_logo_url"
+                    value="{{ iam_proxy.satosa_ui_logo_url|default('') }}"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Larghezza logo (px)</label>
+                  <input type="number" class="form-control" name="satosa_ui_logo_width"
+                    value="{{ iam_proxy.satosa_ui_logo_width|default('200') }}"
+                    min="1" max="9999"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Altezza logo (px)</label>
+                  <input type="number" class="form-control" name="satosa_ui_logo_height"
+                    value="{{ iam_proxy.satosa_ui_logo_height|default('60') }}"
+                    min="1" max="9999"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+              </div>
+            </details>
           </div>
         </div>
       </div>
