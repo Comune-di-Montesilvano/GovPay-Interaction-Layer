@@ -506,6 +506,15 @@ class ImpostazioniController
             }
         }
 
+        // Garantisce che tutti gli ENABLE_* abbiano un valore default esplicito (false se mancante).
+        // Questo previene crash di SATOSA quando il valore è NULL nel DB.
+        $enableFlags = ['ENABLE_SPID', 'ENABLE_CIE', 'ENABLE_CIE_OIDC', 'ENABLE_IT_WALLET', 'ENABLE_OIDCOP', 'ENABLE_IDEM', 'ENABLE_EIDAS'];
+        foreach ($enableFlags as $flag) {
+            if (!array_key_exists($flag, $env)) {
+                $env[$flag] = 'false';  // Default esplicito a 'false' se non valorizzato in DB
+            }
+        }
+
         // SATOSA_BASE_STATIC e SATOSA_HOSTNAME derivati
         if (!empty($env['SATOSA_BASE'])) {
             $env['SATOSA_BASE_STATIC'] = rtrim($env['SATOSA_BASE'], '/') . '/static';
