@@ -133,7 +133,7 @@ services:
       # File statici SATOSA (disco.html, wallets, etc.) popolati da iam-proxy-italia/startup.sh
       - iam_proxy_static:/satosa-project/static:ro
       # Certificati TLS server per-dominio
-      - gil_ssl_certs:/etc/nginx/certs:ro
+      - gil_ssl_certs:/etc/nginx/certs
     restart: 'no'
     networks:
       - govpay-network
@@ -219,7 +219,7 @@ volumes:
   gil_certs:
   # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:
-  # Certificati TLS server per satosa-nginx (RW backoffice per upload, RO satosa-nginx)
+  # Certificati TLS server per satosa-nginx (RW backoffice e satosa-nginx per bootstrap)
   gil_ssl_certs:
   # Chiavi JWK CIE OIDC private per-deployment (generate da backoffice UI o metadata-builder setup-cieoidc)
   gil_cieoidc_keys:
