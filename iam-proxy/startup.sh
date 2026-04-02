@@ -114,6 +114,26 @@ done
 echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Verifica chiavi PKI SATOSA ────────────────────────────────────────────────
+# SATOSA_PRIVATE_KEY e SATOSA_PUBLIC_KEY sono path di file (default ./pki/privkey.pem
+# e ./pki/cert.pem, relativi a $SATOSA_PROXY). Se i file non esistono SATOSA crasha
+# in profondità con FileNotFoundError. Fail-fast qui con messaggio chiaro.
+_PKI_KEY="${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}"
+_PKI_CERT="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
+if [[ "$_PKI_KEY"  != /* ]]; then _PKI_KEY="$SATOSA_PROXY/$_PKI_KEY";   fi
+if [[ "$_PKI_CERT" != /* ]]; then _PKI_CERT="$SATOSA_PROXY/$_PKI_CERT"; fi
+
+if [ ! -f "$_PKI_KEY" ] || [ ! -f "$_PKI_CERT" ]; then
+  echo "[startup] ERRORE: Chiavi PKI SATOSA non trovate." >&2
+  echo "[startup]   Atteso: $_PKI_KEY" >&2
+  echo "[startup]   Atteso: $_PKI_CERT" >&2
+  echo "[startup] Generare i certificati SPID dal backoffice: Impostazioni → Login Proxy → Certificati SPID" >&2
+  echo "[startup] Poi avviare IAM Proxy tramite il pulsante dedicato nell'interfaccia." >&2
+  exit 1
+fi
+echo "[startup] Chiavi PKI verificate: $_PKI_KEY, $_PKI_CERT"
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Standby guard — se IAM Proxy non è abilitato nel backoffice, il container
 # non avvia SATOSA e rimane in Exited(0). Il healthcheck non passerà mai
 # (entrypoint.sh non viene creato), così satosa-nginx non partirà.
