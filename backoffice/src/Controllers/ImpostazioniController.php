@@ -901,16 +901,19 @@ class ImpostazioniController
         $days       = max(1, min(3650, (int)($body['days'] ?? $body['spid_cert_days'] ?? $iamSettings['spid_cert_days'] ?? 730)));
         $keySize    = (int)($body['key_size'] ?? $body['spid_cert_key_size'] ?? $iamSettings['spid_cert_key_size'] ?? 3072);
 
-        foreach (['common_name' => $commonName, 'locality_name' => $locality, 'org_id' => $orgId, 'entity_id' => $entityId] as $field => $val) {
+        foreach (['common_name' => $commonName, 'locality_name' => $locality, 'org_id' => $orgId, 'org_name' => $orgName, 'entity_id' => $entityId] as $field => $val) {
             if ($val === '') {
                 return $this->jsonError("Campo obbligatorio mancante: {$field}");
             }
         }
-        if (!preg_match('/^PA:IT-/', $orgId)) {
-            return $this->jsonError("org_id deve avere il formato 'PA:IT-<codice IPA>'");
+        if (!preg_match('/^PA:IT-[A-Za-z0-9_]+$/', $orgId)) {
+            return $this->jsonError("org_id deve avere il formato 'PA:IT-<codice IPA>' (es. PA:IT-c_f646)");
         }
         if (!in_array($keySize, [2048, 3072, 4096], true)) {
             return $this->jsonError("key_size deve essere 2048, 3072 o 4096");
+        }
+        if (filter_var($entityId, FILTER_VALIDATE_URL) === false) {
+            return $this->jsonError("entity_id deve essere un URL valido (es. https://dominio/saml/sp)");
         }
         foreach ([$commonName, $locality, $orgId, $orgName, $entityId] as $val) {
             if (str_contains($val, "\0") || str_contains($val, "\r") || str_contains($val, "\n")) {
@@ -929,6 +932,8 @@ class ImpostazioniController
             [ req ]
             default_bits={$keySize}
             default_md=sha512
+            utf8=yes
+            string_mask=utf8only
             distinguished_name=dn
             encrypt_key=no
             prompt=no
