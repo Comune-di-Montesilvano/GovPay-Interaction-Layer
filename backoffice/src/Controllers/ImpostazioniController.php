@@ -866,25 +866,39 @@ class ImpostazioniController
 
         @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
 
-        $ch = curl_init('http://satosa-nginx/spidSaml2/metadata');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
-            CURLOPT_FOLLOWLOCATION => false,
-        ]);
-        $data = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
-        curl_close($ch);
-
-        if ($data === false || $httpCode !== 200) {
-            $detail = $curlErr !== '' ? $curlErr : 'HTTP ' . ($httpCode > 0 ? $httpCode : '0');
-            return $this->jsonError('Export metadata pubblico SPID fallito: satosa-nginx non raggiungibile (' . $detail . ').');
+        $portainer = new PortainerClient();
+        if (!PortainerClient::isConfigured()) {
+            return $this->jsonError('Export metadata pubblico SPID fallito: Portainer non configurato.');
         }
 
-        $xml = trim((string) $data);
+        $builderContainers = [
+            'gil-metadata-builder-1',
+            'govpay-interaction-layer-metadata-builder-1',
+            'metadata-builder',
+        ];
+
+        $execErrors = [];
+        $execOk = false;
+        foreach ($builderContainers as $containerName) {
+            $exec = $portainer->execInContainer($containerName, ['export-agid'], 180);
+            if (($exec['success'] ?? false) === true) {
+                $execOk = true;
+                break;
+            }
+            $execErrors[] = $containerName . ': ' . ($exec['message'] ?? 'errore sconosciuto');
+        }
+
+        if (!$execOk) {
+            return $this->jsonError('Export metadata pubblico SPID fallito: impossibile eseguire export-agid su metadata-builder (' . implode('; ', $execErrors) . ').');
+        }
+
+        if (!is_file(self::PUBLIC_SPID_METADATA_PATH)) {
+            return $this->jsonError('Export metadata pubblico SPID fallito: file output non trovato dopo export-agid.');
+        }
+
+        $xml = trim((string) file_get_contents(self::PUBLIC_SPID_METADATA_PATH));
         if ($xml === '') {
-            return $this->jsonError('Export metadata pubblico SPID fallito: risposta vuota da satosa-nginx.');
+            return $this->jsonError('Export metadata pubblico SPID fallito: file output vuoto dopo export-agid.');
         }
 
         libxml_use_internal_errors(true);
