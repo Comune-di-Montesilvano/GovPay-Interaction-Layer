@@ -103,13 +103,18 @@ for _v in \
   SATOSA_UI_DESCRIPTION_EN            SATOSA_UI_DESCRIPTION_IT \
   SATOSA_UI_INFORMATION_URL_EN        SATOSA_UI_INFORMATION_URL_IT \
   SATOSA_UI_PRIVACY_URL_EN            SATOSA_UI_PRIVACY_URL_IT \
-  SATOSA_UI_LOGO_URL                  SATOSA_UI_LOGO_WIDTH \
-  SATOSA_UI_LOGO_HEIGHT               SATOSA_BASE_STATIC; do
+  SATOSA_UI_LOGO_URL                  SATOSA_BASE_STATIC; do
   if ! [[ -v "$_v" ]]; then
     export "$_v="
     echo "[startup] WARN: $_v non configurato nel DB, impostato a stringa vuota"
   fi
 done
+
+# Default numerici per logo — pysaml2 serializza width/height come XML integer:
+# una stringa vuota '' causa un errore 400 su GET /Saml2IDP/metadata.
+: "${SATOSA_UI_LOGO_WIDTH:=200}"
+: "${SATOSA_UI_LOGO_HEIGHT:=60}"
+export SATOSA_UI_LOGO_WIDTH SATOSA_UI_LOGO_HEIGHT
 
 echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
