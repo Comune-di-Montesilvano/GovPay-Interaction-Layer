@@ -217,7 +217,7 @@ Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazion
 ## Distinzione fondamentale
 
 - `metadata/agid/satosa_spid_public_metadata.xml` — metadata pubblico SATOSA (`/spidSaml2/metadata`) da inviare ad AgID.
-- Metadata interno Frontoffice SP — gestito automaticamente nel volume Docker `frontoffice_sp_metadata` (auto-rinnovato ogni 6h).
+- Metadata interno Frontoffice SP — gestito automaticamente nel volume Docker `frontoffice_sp_metadata` (auto-rinnovato ogni 6h), non esposto né gestito dalla UI.
 - Certificati SPID — nel volume Docker `govpay_spid_certs` (o nel volume indicato da `SPID_CERTS_DOCKER_VOLUME`).
 
 ## Variabili rilevanti in `.iam-proxy.env`

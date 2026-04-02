@@ -124,8 +124,8 @@
             <div class="alert alert-info py-2 small mb-3">
               <i class="fas fa-info-circle me-1"></i>
               Questi URL puntano ai <strong>metadata SAML2 del proxy SATOSA stesso</strong>
-              (non al registro nazionale SPID), usati dal frontoffice per configurare il suo SP.
-              Vengono calcolati automaticamente dall'URL pubblico del proxy.
+              (non al registro nazionale SPID). Il riallineamento del canale interno avviene automaticamente:
+              in UI viene esposto solo l'endpoint pubblico calcolato dall'URL del proxy.
             </div>
             <div class="row g-3 mb-4">
               <div class="col-md-8">
@@ -143,21 +143,10 @@
                 </div>
                 <div class="form-text">Calcolato: <code id="lp-saml2-meta-pub-hint"></code></div>
               </div>
-              <div class="col-md-8">
-                <label class="form-label">URL metadata SATOSA IdP (interno/container)</label>
-                <div class="input-group">
-                  <input type="url" class="form-control font-monospace" name="saml2_idp_metadata_url_internal"
-                    id="lp-saml2-meta-int"
-                    value="{{ iam_proxy.saml2_idp_metadata_url_internal|default('') }}"
-                    {{ not is_superadmin ? 'readonly' : 'readonly data-derived="true"' }}>
-                  {% if is_superadmin %}
-                  <button class="btn btn-outline-secondary" type="button" onclick="lpUnlock('lp-saml2-meta-int', this)" title="Modifica manualmente">
-                    <i class="fas fa-pencil-alt"></i>
-                  </button>
-                  {% endif %}
-                </div>
-                <div class="form-text">Calcolato: <code id="lp-saml2-meta-int-hint"></code></div>
-              </div>
+              <input type="hidden" name="saml2_idp_metadata_url_internal"
+                id="lp-saml2-meta-int"
+                value="{{ iam_proxy.saml2_idp_metadata_url_internal|default('') }}"
+                {{ not is_superadmin ? 'readonly' : 'readonly data-derived="true"' }}>
             </div>
 
             {# Parametri certificato SP #}
@@ -695,25 +684,25 @@
     <h5 class="mb-0">Metadata</h5>
   </div>
   <p class="text-muted small mb-3">
-    Visualizza le informazioni sui metadata correnti e rigenera dopo ogni modifica alla configurazione o alle chiavi.
+    La UI gestisce solo gli artifact pubblici federabili. Il metadata interno frontoffice↔iam-proxy si autogenera e si riallinea da solo.
   </p>
   <div class="row g-3 mb-2">
     <div class="col-md-6" id="lp-meta-spid-card"
       style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata SP SPID</h6>
+          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
           <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
             <i class="fas fa-sync-alt"></i>
           </button>
         </div>
         <div class="card-body" id="spid-metadata-body">
-          <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+          <p class="text-muted small mb-0">Esporta il file da inviare ad AgID e usa <i class="fas fa-sync-alt"></i> per verificarne lo stato.</p>
         </div>
         {% if is_superadmin %}
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-primary" type="button" onclick="lpPreviewRigenera(this)">
-            <i class="fas fa-redo me-1"></i>Rigenera metadata SP
+          <button class="btn btn-sm btn-outline-success" type="button" onclick="exportSpidMetadata(this)">
+            <i class="fas fa-file-export me-1"></i>Esporta metadata AgID
           </button>
         </div>
         {% endif %}
@@ -787,12 +776,6 @@
               </label>
             </div>
             <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="bk-spid-meta" value="spid_metadata">
-              <label class="form-check-label" for="bk-spid-meta">
-                <i class="fas fa-id-card me-1 text-success"></i>Metadata SPID <span class="text-muted small">(frontoffice_sp.xml)</span>
-              </label>
-            </div>
-            <div class="form-check">
               <input class="form-check-input" type="checkbox" id="bk-cie-meta" value="cie_metadata">
               <label class="form-check-label" for="bk-cie-meta">
                 <i class="fas fa-address-card me-1 text-info"></i>Metadata CIE OIDC <span class="text-muted small">(entity-configuration.json)</span>
@@ -815,16 +798,6 @@
         </div>
         <div class="card-body">
           <p class="small text-muted mb-3">Il file caricato sovrascrive il file esistente sul volume.</p>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold"><i class="fas fa-id-card me-1 text-success"></i>Metadata SPID (XML)</label>
-            <div class="input-group input-group-sm">
-              <input type="file" class="form-control" id="spid-restore-file" accept=".xml">
-              <button class="btn btn-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
-                <i class="fas fa-upload me-1"></i>Ripristina
-              </button>
-            </div>
-            <div class="form-text">File XML SAML2 del Service Provider SPID.</div>
-          </div>
           <div>
             <label class="form-label small fw-semibold"><i class="fas fa-address-card me-1 text-info"></i>Metadata CIE OIDC (JSON)</label>
             <div class="input-group input-group-sm">
@@ -857,7 +830,7 @@
         <div class="alert alert-warning small mb-3">
           <i class="fas fa-exclamation-triangle me-1"></i>
           Questa operazione sovrascrive <code>cert.pem</code> e <code>privkey.pem</code> nel volume SPID.
-          Dopo la generazione sarà necessario rigenerate il metadata SP e aggiornare la federazione AgID.
+          Dopo la generazione sarà necessario esportare nuovamente il metadata pubblico da inviare ad AgID.
         </div>
         <div class="row g-3">
           <div class="col-md-6">
@@ -907,29 +880,6 @@
 </div>
 
 {# ─── Modale anteprima Rigenera SP Metadata ──────────────────────────────────── #}
-<div class="modal fade" id="lpRegeneraModal" tabindex="-1" aria-labelledby="lpRegeneraModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="lpRegeneraModalLabel">
-          <i class="fas fa-eye me-2 text-primary"></i>Anteprima configurazione — Rigenera SP Metadata
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body" id="lp-rigenera-preview-body">
-        <p class="text-muted small">Caricamento…</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn btn-primary" id="lp-rigenera-confirm-btn"
-          onclick="lpConfirmRigenera(this)">
-          <i class="fas fa-redo me-1"></i>Conferma e rigenera
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
 // ── Costanti CIE ────────────────────────────────────────────────────────────
 const CIE_PROD_URL    = 'https://oidc.idserver.servizicie.interno.gov.it';
@@ -946,7 +896,6 @@ function lpDeriveFromUrl() {
   lpSetDerived('lp-saml2-meta-pub', pub ? pub + '/Saml2IDP/metadata' : '');
   lpSetHint('lp-saml2-meta-pub-hint', pub ? pub + '/Saml2IDP/metadata' : '—');
   lpSetDerived('lp-saml2-meta-int', host ? 'http://' + host + '/Saml2IDP/metadata' : '');
-  lpSetHint('lp-saml2-meta-int-hint', host ? 'http://' + host + '/Saml2IDP/metadata' : '—');
 
   // SPID cert fields
   lpSetDerived('lp-spid-cn', host);
@@ -1042,54 +991,6 @@ function lpUpdateCieEnv(updateFields = true) {
       lpSetHint('lp-cie-auth-hint-hint', trustUrl);
     }
   }
-}
-
-// ── Modale anteprima rigenera ─────────────────────────────────────────────────
-function lpPreviewRigenera(triggerBtn) {
-  const form = document.getElementById('form-login-proxy');
-  const pub = document.getElementById('lp-public-url')?.value || '—';
-  const spid = document.getElementById('en-spid')?.checked;
-  const cie  = document.getElementById('en-cie')?.checked;
-  const cn  = form?.querySelector('[name="spid_cert_common_name"]')?.value || '—';
-  const orgId = form?.querySelector('[name="spid_cert_org_id"]')?.value || document.getElementById('lp-spid-org-id')?.getAttribute('placeholder') || '—';
-  const entityId = form?.querySelector('[name="spid_cert_entity_id"]')?.value || '—';
-  const days = form?.querySelector('[name="spid_cert_days"]')?.value || '730';
-  const cieEnvSel = document.getElementById('lp-cie-env');
-  const cieEnvLabel = cieEnvSel ? cieEnvSel.options[cieEnvSel.selectedIndex]?.text : '—';
-  const cieClientId = document.getElementById('lp-cie-client-id')?.value || '—';
-
-  const row = (label, val) =>
-    `<tr><th class="fw-normal text-muted" style="width:40%">${escHtml(label)}</th><td class="font-monospace small">${escHtml(String(val))}</td></tr>`;
-
-  let html = '<table class="table table-sm mb-0">';
-  html += `<tr><td colspan="2" class="bg-light fw-semibold py-1">Metodi abilitati</td></tr>`;
-  html += row('SPID', spid ? '✓ abilitato' : '✗ disabilitato');
-  html += row('CIE OIDC', cie ? '✓ abilitato' : '✗ disabilitato');
-  html += `<tr><td colspan="2" class="bg-light fw-semibold py-1">Proxy</td></tr>`;
-  html += row('URL pubblico proxy', pub);
-  if (spid) {
-    html += `<tr><td colspan="2" class="bg-light fw-semibold py-1">Certificato SPID SP</td></tr>`;
-    html += row('Common Name (CN)', cn);
-    html += row('Organization ID', orgId);
-    html += row('Entity ID', entityId);
-    html += row('Validità (giorni)', days);
-  }
-  if (cie) {
-    html += `<tr><td colspan="2" class="bg-light fw-semibold py-1">CIE OIDC</td></tr>`;
-    html += row('Ambiente', cieEnvLabel);
-    html += row('Client ID', cieClientId);
-  }
-  html += '</table>';
-  if (!spid && !cie) {
-    html = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-1"></i>Nessun metodo di autenticazione abilitato. Abilita almeno SPID o CIE OIDC nella sezione Generale prima di rigenerare.</div>' + html;
-  }
-  document.getElementById('lp-rigenera-preview-body').innerHTML = html;
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('lpRegeneraModal')).show();
-}
-
-async function lpConfirmRigenera(btn) {
-  bootstrap.Modal.getInstance(document.getElementById('lpRegeneraModal'))?.hide();
-  await impAction('/impostazioni/login-proxy/rigenera-sp-metadata', btn, 'Rigenerazione…');
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -1250,7 +1151,7 @@ async function restoreMetadata(type, fileInputId, btn) {
     if (bkRes.ok) {
       const bkJson = await bkRes.json();
       const bkData = bkJson.data || bkJson;
-      const bkMap = { 'bk-spid-certs': 'spid_certs', 'bk-cie-keys': 'cieoidc_keys', 'bk-spid-meta': 'spid_metadata', 'bk-cie-meta': 'cie_metadata' };
+      const bkMap = { 'bk-spid-certs': 'spid_certs', 'bk-cie-keys': 'cieoidc_keys', 'bk-cie-meta': 'cie_metadata' };
       for (const [cbId, key] of Object.entries(bkMap)) {
         const cb = document.getElementById(cbId);
         if (cb && !bkData[key]) { cb.disabled = true; cb.checked = false; cb.closest('.form-check').classList.add('opacity-50'); }
@@ -1401,7 +1302,7 @@ async function loadSpidCertInfo(btn) {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
   try {
-    const res = await fetch('/impostazioni/login-proxy/spid-metadata/info');
+    const res = await fetch('/impostazioni/login-proxy/spid-certs/info');
     const json = await res.json();
     const d = json.data || json;
     if (!d.exists) {
@@ -1471,6 +1372,32 @@ async function lpExportBackupZip(btn) {
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
     impToast('Backup esportato: ' + escHtml(filename), true);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+async function exportSpidMetadata(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json();
+    if (json.success) {
+      const exp = json.valid_until ? ' (validUntil ' + escHtml(json.valid_until) + ')' : '';
+      impToast('Export metadata pubblico SPID completato.' + exp, true);
+      loadMetadataInfo('spid', null);
+    } else {
+      impToast(json.message || 'Export metadata pubblico SPID fallito.', false);
+    }
   } catch (e) {
     impToast('Errore: ' + e.message, false);
   } finally {

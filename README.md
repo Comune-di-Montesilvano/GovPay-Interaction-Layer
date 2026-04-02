@@ -236,9 +236,12 @@ https://localhost:9445/static/disco.html    ← pagina di scelta IdP
 | **Metadata SATOSA IdP interno** (`/Saml2IDP/metadata`) | Runtime SATOSA (dinamico) | `https://<iam-proxy>/Saml2IDP/metadata` | Frontoffice (config `IAM_PROXY_SAML2_IDP_METADATA_URL*`) | ❌ No |
 | **Metadata SATOSA SPID pubblico** (`/spidSaml2/metadata`) | Runtime SATOSA (dinamico) | `https://<iam-proxy>/spidSaml2/metadata` | Federazione SPID / AgID / IdP SPID | ✅ **Sì** |
 
-In breve: `frontoffice_sp.xml` serve solo nel canale interno Frontoffice → SATOSA; ad AgID si invia il metadata pubblico esposto da SATOSA a `/spidSaml2/metadata`.
+In breve: `frontoffice_sp.xml` serve solo nel canale interno Frontoffice → SATOSA, si autogenera e si riallinea senza interventi da UI; ad AgID si invia il metadata pubblico esposto da SATOSA a `/spidSaml2/metadata`.
 
-Per esportare una copia locale del metadata pubblico da inviare ad AgID (consigliato):
+Per esportare una copia locale del metadata pubblico da inviare ad AgID:
+
+- da backoffice: Impostazioni → Login Proxy → Fase 3 → "Esporta metadata AgID"
+- da CLI:
 
 ```bash
 docker compose run --rm metadata-builder export-agid
@@ -248,16 +251,10 @@ In produzione usa il dominio pubblico del proxy (es. `https://login.ente.gov.it/
 
 ### 5. Metadata Service Provider (frontoffice)
 
-SATOSA ha bisogno dei metadata del frontoffice (Service Provider) per accettare le richieste di autenticazione. Sono generati automaticamente all'avvio e mantenuti in volume Docker interno (`frontoffice_sp_metadata`), senza file nel repository.
-
-Per rigenerarli manualmente (es. dopo aver cambiato `FRONTOFFICE_PUBLIC_BASE_URL`):
-
-```powershell
-docker compose --profile iam-proxy up -d --force-recreate init-frontoffice-sp-metadata refresh-frontoffice-sp-metadata iam-proxy-italia
-```
+SATOSA ha bisogno dei metadata del frontoffice (Service Provider) per accettare le richieste di autenticazione. Sono generati automaticamente all'avvio e mantenuti in volume Docker interno (`frontoffice_sp_metadata`), senza file nel repository e senza gestione manuale da UI.
 
 > [!WARNING]
-> Il metadata interno Frontoffice SP non e' piu' su filesystem di progetto. Qualsiasi rigenerazione interna passa dai servizi Docker `init-frontoffice-sp-metadata` / `refresh-frontoffice-sp-metadata`.
+> Il metadata interno Frontoffice SP non è un artifact operativo per l'utente. Se manca o va fuori sync, il runtime IAM proxy lo rigenera automaticamente.
 
 I metadata SP del frontoffice sono **interni a SATOSA** e non vanno inviati ad AgID. Ad AgID si inviano i metadata al path `/spidSaml2/metadata` (esportabili localmente in `metadata/agid/satosa_spid_public_metadata.xml`).
 

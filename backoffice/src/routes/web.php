@@ -131,12 +131,18 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/rigenera-sp-metadata', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->rigeneraSpMetadata($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/spid-certs/info', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getSpidCertInfo($request, $response);
+    });
     $app->get('/impostazioni/containers/status', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getContainersStatus($request, $response);
     });
     // SPID metadata
     $app->get('/impostazioni/login-proxy/spid-metadata/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getSpidMetadataInfo($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
     });
     $app->get('/impostazioni/login-proxy/spid-metadata/download', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->downloadSpidMetadata($request, $response);
