@@ -693,6 +693,29 @@ class ImpostazioniController
     public function avviaIamProxy(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
+
+        // Pre-flight: verifica prerequisiti prima di avviare iam-proxy-italia.
+        $errors = [];
+
+        // 1. Certificati PKI SATOSA (cert.pem + privkey.pem nel volume spid_certs)
+        if (!is_file(self::SPID_CERTS_DIR . '/cert.pem') || !is_file(self::SPID_CERTS_DIR . '/privkey.pem')) {
+            $errors[] = 'Certificati SPID mancanti. Genera prima cert.pem e privkey.pem (Impostazioni → Login Proxy → Certificati SPID).';
+        }
+
+        // 2. URL pubblico SATOSA (SATOSA_BASE) obbligatorio per il parsing YAML
+        $iamProxy = SettingsRepository::getSection('iam_proxy');
+        if (empty(trim((string)($iamProxy['public_base_url'] ?? '')))) {
+            $errors[] = 'URL pubblico SATOSA (SATOSA_BASE) non configurato. Imposta il campo nella sezione Login Proxy.';
+        }
+
+        if ($errors) {
+            return $this->jsonResponse([
+                'success' => false,
+                'message' => 'Impossibile avviare IAM Proxy: prerequisiti mancanti.',
+                'errors'  => $errors,
+            ], 422);
+        }
+
         $result = (new PortainerClient())->startContainers([
             'init-frontoffice-sp-metadata',
             'iam-proxy-italia',
