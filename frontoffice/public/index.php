@@ -50,6 +50,16 @@ if (!function_exists('frontoffice_env_value')) {
             $value = $_ENV[$key] ?? $_SERVER[$key] ?? null;
         }
         if ($value === null || $value === '') {
+            try {
+                $cfgValue = \App\Config\Config::get($key, null);
+                if ($cfgValue !== null && $cfgValue !== '') {
+                    return (string) $cfgValue;
+                }
+            } catch (\Throwable) {
+                // Se la risoluzione DB/config non e' disponibile, usa il default.
+            }
+        }
+        if ($value === null || $value === '') {
             return $default ?? '';
         }
         return (string) $value;
