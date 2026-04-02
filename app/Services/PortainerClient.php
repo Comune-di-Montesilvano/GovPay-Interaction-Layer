@@ -108,6 +108,87 @@ class PortainerClient
         return ['success' => true, 'data' => $containers];
     }
 
+    /**
+     * Esegue un comando dentro un container esistente tramite Docker Exec API.
+     *
+     * @param  string   $containerName Nome container Docker (es. gil-metadata-builder-1)
+     * @param  string[] $command       Comando e argomenti (es. ['export-agid'])
+     * @param  int      $timeoutSeconds Timeout massimo in secondi
+     * @return array{success: bool, message: string, output?: string, exit_code?: int}
+     */
+    public function execInContainer(string $containerName, array $command, int $timeoutSeconds = 120): array
+    {
+        if (!self::isConfigured()) {
+            return $this->notConfigured();
+        }
+
+        if ($containerName === '' || $command === []) {
+            return ['success' => false, 'message' => 'Container o comando non valido.'];
+        }
+
+        $container = rawurlencode($containerName);
+
+        $create = $this->request('POST', "/api/endpoints/{$this->endpointId}/docker/containers/{$container}/exec", [
+            'AttachStdout' => true,
+            'AttachStderr' => true,
+            'Tty'          => false,
+            'Cmd'          => array_values($command),
+        ]);
+
+        if (!$create['ok']) {
+            return ['success' => false, 'message' => "Impossibile creare exec su {$containerName}: {$create['error']}"];
+        }
+
+        $execId = is_array($create['body']) ? (string)($create['body']['Id'] ?? '') : '';
+        if ($execId === '') {
+            return ['success' => false, 'message' => "Exec ID non disponibile per {$containerName}."];
+        }
+
+        $start = $this->request('POST', "/api/endpoints/{$this->endpointId}/docker/exec/{$execId}/start", [
+            'Detach' => false,
+            'Tty'    => false,
+        ]);
+
+        if (!$start['ok']) {
+            return ['success' => false, 'message' => "Impossibile avviare exec su {$containerName}: {$start['error']}"];
+        }
+
+        $deadline = microtime(true) + max(5, $timeoutSeconds);
+        $exitCode = null;
+
+        while (microtime(true) < $deadline) {
+            $inspect = $this->request('GET', "/api/endpoints/{$this->endpointId}/docker/exec/{$execId}/json");
+            if ($inspect['ok'] && is_array($inspect['body'])) {
+                $running = (bool)($inspect['body']['Running'] ?? false);
+                if (!$running) {
+                    $exitCode = (int)($inspect['body']['ExitCode'] ?? -1);
+                    break;
+                }
+            }
+            usleep(200000);
+        }
+
+        if ($exitCode === null) {
+            return ['success' => false, 'message' => "Timeout exec su {$containerName} dopo {$timeoutSeconds}s."];
+        }
+
+        $output = is_string($start['body']) ? trim($start['body']) : '';
+        if ($exitCode !== 0) {
+            $msg = "Comando fallito in {$containerName} (exit {$exitCode})";
+            if ($output !== '') {
+                $msg .= ': ' . $output;
+            }
+            return ['success' => false, 'message' => $msg, 'output' => $output, 'exit_code' => $exitCode];
+        }
+
+        return [
+            'success'   => true,
+            'message'   => "Comando eseguito correttamente in {$containerName}.",
+            'output'    => $output,
+            'exit_code' => 0,
+        ];
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Internals
     // ──────────────────────────────────────────────────────────────────────
