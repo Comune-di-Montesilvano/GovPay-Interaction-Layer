@@ -100,8 +100,9 @@ services:
       - MONGODB_PORT=${MONGODB_PORT:-27017}
       - MONGODB_DB=${MONGODB_DB:-satosa}
       # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* vengono lette dal DB backoffice
-      # tramite GET http://govpay-interaction-backoffice/api/iam-proxy/env all'avvio.
-      - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-http://govpay-interaction-backoffice}
+      # tramite GET ${BACKOFFICE_INTERNAL_URL:-<derivato da SSL>}/api/iam-proxy/env all'avvio.
+      - SSL=${SSL:-off}
+      - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-}
       - MASTER_TOKEN=${MASTER_TOKEN}
     restart: 'no'
     healthcheck:
