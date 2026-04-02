@@ -363,6 +363,27 @@ class ImpostazioniController
         $sFrontoffice = SettingsRepository::getSection('frontoffice');
         $sEntity      = SettingsRepository::getSection('entity');
 
+        // Auto-genera e persiste le chiavi crittografiche SATOSA obbligatorie se mancanti.
+        // Queste chiavi devono esistere per far partire SATOSA; se l'operatore non le ha
+        // ancora configurate via UI vengono generate automaticamente al primo avvio.
+        $satosaAutoKeys = [
+            'satosa_salt'                 => 64,  // 32 bytes hex
+            'satosa_state_encryption_key' => 32,  // 16 bytes hex
+            'satosa_encryption_key'       => 32,  // 16 bytes hex
+            'satosa_user_id_hash_salt'    => 64,  // 32 bytes hex
+        ];
+        $needsReload = false;
+        foreach ($satosaAutoKeys as $dbKey => $hexLen) {
+            if (empty($s[$dbKey])) {
+                $generated = bin2hex(random_bytes(intdiv($hexLen, 2)));
+                SettingsRepository::set('iam_proxy', $dbKey, $generated, true, 'system_autogen');
+                $needsReload = true;
+            }
+        }
+        if ($needsReload) {
+            $s = SettingsRepository::getSection('iam_proxy');
+        }
+
         // Mappa chiave DB → nome variabile d'ambiente SATOSA/IAM-proxy
         $map = [
             'debug'                                          => 'IAM_PROXY_DEBUG',
