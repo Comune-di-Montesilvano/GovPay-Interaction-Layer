@@ -117,7 +117,7 @@ echo "[startup] Configurazione runtime applicata."
 # ── Default MongoDB backend CIE OIDC ─────────────────────────────────────────
 # Derivati dalle variabili infrastrutturali MONGODB_* (da docker-compose).
 # Non configurabili da UI backoffice: usano lo stesso satosa-mongo dello stack.
-: "${MONGO_CIE_OIDC_BACKEND_HOST:=mongodb://${MONGODB_HOST:-satosa-mongo}:${MONGODB_PORT:-27017}}"
+: "${MONGO_CIE_OIDC_BACKEND_HOST:=mongodb://${MONGODB_HOST:-satosa-mongo}:${MONGODB_PORT:-27017}/?authSource=admin}"
 : "${MONGO_CIE_OIDC_BACKEND_DB_NAME:=${MONGODB_DB:-satosa}}"
 : "${MONGO_CIE_OIDC_BACKEND_AUTH_COLLECTION:=cie_oidc_authz}"
 : "${MONGO_CIE_OIDC_BACKEND_TOKEN_COLLECTION:=cie_oidc_token}"
