@@ -87,6 +87,30 @@ if [ -z "${SATOSA_DISCO_SRV:-}" ]; then
   export SATOSA_DISCO_SRV
 fi
 
+# Garantisce che TUTTE le variabili !ENV nei YAML SATOSA siano presenti nell'ambiente.
+# SATOSA crasha con "Cannot construct value: None" se una variabile è assente.
+# Una stringa vuota '' è accettata da SATOSA; None no.
+# Questo blocco copre le variabili configurabili dall'utente (org/contact/UI)
+# che il backoffice omette dalla risposta quando non valorizzate nel DB.
+for _v in \
+  SATOSA_ORGANIZATION_DISPLAY_NAME_EN SATOSA_ORGANIZATION_DISPLAY_NAME_IT \
+  SATOSA_ORGANIZATION_NAME_EN         SATOSA_ORGANIZATION_NAME_IT \
+  SATOSA_ORGANIZATION_URL_EN          SATOSA_ORGANIZATION_URL_IT \
+  SATOSA_CONTACT_PERSON_GIVEN_NAME    SATOSA_CONTACT_PERSON_EMAIL_ADDRESS \
+  SATOSA_CONTACT_PERSON_TELEPHONE_NUMBER SATOSA_CONTACT_PERSON_FISCALCODE \
+  SATOSA_CONTACT_PERSON_IPA_CODE      SATOSA_CONTACT_PERSON_MUNICIPALITY \
+  SATOSA_UI_DISPLAY_NAME_EN           SATOSA_UI_DISPLAY_NAME_IT \
+  SATOSA_UI_DESCRIPTION_EN            SATOSA_UI_DESCRIPTION_IT \
+  SATOSA_UI_INFORMATION_URL_EN        SATOSA_UI_INFORMATION_URL_IT \
+  SATOSA_UI_PRIVACY_URL_EN            SATOSA_UI_PRIVACY_URL_IT \
+  SATOSA_UI_LOGO_URL                  SATOSA_UI_LOGO_WIDTH \
+  SATOSA_UI_LOGO_HEIGHT               SATOSA_BASE_STATIC; do
+  if ! [[ -v "$_v" ]]; then
+    export "$_v="
+    echo "[startup] WARN: $_v non configurato nel DB, impostato a stringa vuota"
+  fi
+done
+
 echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
 
