@@ -71,3 +71,18 @@ INSERT IGNORE INTO settings (section, key_name, value, encrypted) VALUES
   ('iam_proxy', 'cie_oidc_policy_uri',               NULL, 0),
   ('iam_proxy', 'cie_oidc_logo_uri',                 NULL, 0),
   ('iam_proxy', 'cie_oidc_contact_email',            NULL, 0);
+
+-- Default URL redirect errore SATOSA: usa FRONTOFFICE public_base_url + /accesso-negato.
+-- Se frontoffice non e configurato, fallback di sicurezza su https://127.0.0.1:8444/accesso-negato.
+UPDATE settings s
+JOIN (
+  SELECT COALESCE(
+    NULLIF(TRIM(MAX(CASE WHEN section = 'frontoffice' AND key_name = 'public_base_url' THEN value END)), ''),
+    'https://127.0.0.1:8444'
+  ) AS frontoffice_base
+  FROM settings
+) src
+SET s.value = CONCAT(TRIM(TRAILING '/' FROM src.frontoffice_base), '/accesso-negato')
+WHERE s.section = 'iam_proxy'
+  AND s.key_name = 'satosa_unknow_error_redirect_page'
+  AND (s.value IS NULL OR TRIM(s.value) = '');

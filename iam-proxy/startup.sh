@@ -63,6 +63,18 @@ for k, v in d.items():
     if isinstance(v, str) and v:
         print('export {}={}'.format(k, shlex.quote(v)))
 ")"
+
+# Hardening: evita crash SATOSA su !ENV quando redirect errore non e valorizzato.
+if [ -z "${SATOSA_UNKNOW_ERROR_REDIRECT_PAGE:-}" ]; then
+  if [ -n "${FRONTOFFICE_PUBLIC_BASE_URL:-}" ]; then
+    SATOSA_UNKNOW_ERROR_REDIRECT_PAGE="${FRONTOFFICE_PUBLIC_BASE_URL%/}/accesso-negato"
+  else
+    SATOSA_UNKNOW_ERROR_REDIRECT_PAGE="https://127.0.0.1:8444/accesso-negato"
+    echo "[startup] WARN: FRONTOFFICE_PUBLIC_BASE_URL non impostato, uso fallback di sicurezza per SATOSA_UNKNOW_ERROR_REDIRECT_PAGE"
+  fi
+  export SATOSA_UNKNOW_ERROR_REDIRECT_PAGE
+fi
+
 echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
 
