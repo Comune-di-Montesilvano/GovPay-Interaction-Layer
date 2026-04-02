@@ -296,7 +296,7 @@ paths = {
     "__CIE_OIDC_JWK_CORE_SIG_YAML__":   Path(sys.argv[3]),
     "__CIE_OIDC_JWK_CORE_ENC_YAML__":   Path(sys.argv[4]),
 }
-FIELD_ORDER = ["use", "alg", "kty", "kid", "e", "n", "d", "p", "q"]
+FIELD_ORDER = ["use", "alg", "kty", "kid", "e", "n", "d", "p", "q", "dp", "dq", "qi"]
 
 def jwk_to_yaml_block(jwk, indent):
     keys = sorted(jwk.keys(), key=lambda k: (FIELD_ORDER.index(k) if k in FIELD_ORDER else 99, k))
