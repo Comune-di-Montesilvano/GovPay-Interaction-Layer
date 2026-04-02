@@ -30,11 +30,13 @@ use App\Controllers\ConfigurazioneController;
 class ImpostazioniController
 {
     // Path dei volumi montati sul container backoffice
-    private const SPID_METADATA_PATH   = '/var/www/html/metadata-sp/frontoffice_sp.xml';
-    private const CIE_METADATA_PATH    = '/var/www/html/metadata-cieoidc/entity-configuration.json';
-    private const SPID_CERTS_DIR       = '/var/www/html/spid-certs';
-    private const CIEOIDC_KEYS_DIR     = '/var/www/html/cieoidc-keys';
-    private const CIEOIDC_META_DIR     = '/var/www/html/metadata-cieoidc';
+    private const INTERNAL_SPID_METADATA_PATH = '/var/www/html/metadata-sp/frontoffice_sp.xml';
+    private const PUBLIC_SPID_METADATA_PATH   = '/var/www/html/metadata-agid/satosa_spid_public_metadata.xml';
+    private const CIE_METADATA_PATH           = '/var/www/html/metadata-cieoidc/entity-configuration.json';
+    private const SPID_CERTS_DIR              = '/var/www/html/spid-certs';
+    private const CIEOIDC_KEYS_DIR            = '/var/www/html/cieoidc-keys';
+    private const CIEOIDC_META_DIR            = '/var/www/html/metadata-cieoidc';
+    private const SPID_PUBLIC_META_DIR        = '/var/www/html/metadata-agid';
 
     public function __construct(private readonly Twig $twig)
     {
@@ -756,6 +758,45 @@ class ImpostazioniController
         return $this->portainerResponse($result);
     }
 
+    public function getSpidCertInfo(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $path = self::INTERNAL_SPID_METADATA_PATH;
+        if (!is_file($path)) {
+            return $this->jsonResponse(['exists' => false, 'message' => 'Certificato SPID non ancora disponibile nel metadata interno.']);
+        }
+
+        $info = [
+            'exists'     => true,
+            'file_mtime' => date('c', filemtime($path)),
+        ];
+
+        try {
+            $xml = simplexml_load_file($path);
+            if ($xml !== false) {
+                $info['entity_id'] = (string) ($xml['entityID'] ?? '');
+                $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
+                if ($spSso) {
+                    $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
+                    if ($keyCert) {
+                        $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
+                        if ($cert) {
+                            $parsed = openssl_x509_parse($cert);
+                            if (isset($parsed['validTo_time_t'])) {
+                                $info['cert_expiry'] = date('c', $parsed['validTo_time_t']);
+                                $info['cert_expired'] = $parsed['validTo_time_t'] <= time();
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $info['parse_error'] = $e->getMessage();
+        }
+
+        return $this->jsonResponse($info);
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // METADATA SPID / CIE (lettura diretta dai volumi montati)
     // ──────────────────────────────────────────────────────────────────────
@@ -763,57 +804,120 @@ class ImpostazioniController
     public function getSpidMetadataInfo(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $path = self::SPID_METADATA_PATH;
+        $path = self::PUBLIC_SPID_METADATA_PATH;
         if (!is_file($path)) {
-            return $this->jsonResponse(['exists' => false, 'message' => 'Metadata SP non ancora generato.']);
+            return $this->jsonResponse(['exists' => false, 'message' => 'Metadata pubblico SPID non ancora esportato.']);
         }
-        $info = ['exists' => true, 'size' => filesize($path), 'modified' => date('c', filemtime($path))];
+        $info = ['exists' => true, 'size' => filesize($path), 'file_mtime' => date('c', filemtime($path))];
         try {
             $xml = simplexml_load_file($path);
             if ($xml !== false) {
                 $info['entity_id'] = (string) ($xml['entityID'] ?? '');
-                $ns = $xml->getDocNamespaces(true);
-                $md = array_search('urn:oasis:names:tc:SAML:2.0:metadata', $ns, true) ?: '';
+                $attrs = $xml->attributes();
+                $validUntil = isset($attrs['validUntil']) ? (string) $attrs['validUntil'] : '';
+                if ($validUntil !== '') {
+                    $validTs = strtotime($validUntil);
+                    $info['valid_until'] = $validUntil;
+                    $info['valid_until_expired'] = $validTs !== false ? $validTs <= time() : null;
+                }
+
                 $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
                 if ($spSso) {
+                    $acsUrls = [];
+                    foreach ($spSso->AssertionConsumerService ?? [] as $acs) {
+                        $location = (string) ($acs['Location'] ?? '');
+                        if ($location !== '') {
+                            $acsUrls[] = $location;
+                        }
+                    }
+                    $info['acs_urls'] = $acsUrls;
+
                     $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
                     if ($keyCert) {
-                        $der  = base64_decode((string) $keyCert);
                         $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
                         if ($cert) {
                             $parsed = openssl_x509_parse($cert);
-                            $info['cert_subject']     = $parsed['subject']['CN'] ?? '';
-                            $info['cert_valid_to']    = date('c', $parsed['validTo_time_t']);
-                            $info['cert_valid_from']  = date('c', $parsed['validFrom_time_t']);
+                            if (isset($parsed['validTo_time_t'])) {
+                                $info['cert_expiry'] = date('c', $parsed['validTo_time_t']);
+                                $info['cert_expired'] = $parsed['validTo_time_t'] <= time();
+                            }
                         }
                     }
                 }
             }
-        } catch (\Throwable) {
-            // info di base già presenti
+        } catch (\Throwable $e) {
+            $info['parse_error'] = $e->getMessage();
         }
         return $this->jsonResponse($info);
+    }
+
+    public function exportSpidMetadata(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+
+        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+
+        $ch = curl_init('http://satosa-nginx/spidSaml2/metadata');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_FOLLOWLOCATION => false,
+        ]);
+        $data = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($data === false || $httpCode !== 200) {
+            $detail = $curlErr !== '' ? $curlErr : 'HTTP ' . ($httpCode > 0 ? $httpCode : '0');
+            return $this->jsonError('Export metadata pubblico SPID fallito: satosa-nginx non raggiungibile (' . $detail . ').');
+        }
+
+        $xml = trim((string) $data);
+        if ($xml === '') {
+            return $this->jsonError('Export metadata pubblico SPID fallito: risposta vuota da satosa-nginx.');
+        }
+
+        libxml_use_internal_errors(true);
+        $parsed = simplexml_load_string($xml);
+        if ($parsed === false) {
+            return $this->jsonError('Export metadata pubblico SPID fallito: XML non valido restituito da satosa-nginx.');
+        }
+
+        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n") === false) {
+            return $this->jsonError('Export metadata pubblico SPID fallito: impossibile scrivere il file di output.');
+        }
+        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+
+        $validUntil = isset($parsed['validUntil']) ? (string) $parsed['validUntil'] : '';
+
+        return $this->jsonResponse([
+            'success' => true,
+            'message' => 'Metadata pubblico SPID esportato correttamente.',
+            'entity_id' => (string) ($parsed['entityID'] ?? ''),
+            'valid_until' => $validUntil,
+        ]);
     }
 
     public function downloadSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $path = self::SPID_METADATA_PATH;
+        $path = self::PUBLIC_SPID_METADATA_PATH;
         if (!is_file($path)) {
-            return $this->jsonError('Metadata SP non trovato nel volume.');
+            return $this->jsonError('Metadata pubblico SPID non trovato nel volume.');
         }
         $data = file_get_contents($path);
         $resp = new \Slim\Psr7\Response(200);
         $resp->getBody()->write($data);
         return $resp
             ->withHeader('Content-Type', 'application/xml')
-            ->withHeader('Content-Disposition', 'attachment; filename="frontoffice_sp.xml"');
+            ->withHeader('Content-Disposition', 'attachment; filename="satosa_spid_public_metadata.xml"');
     }
 
     public function restoreSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->saveUploadedFile($request, 'metadata_file', self::SPID_METADATA_PATH, ['application/xml', 'text/xml']);
+        return $this->jsonError('Il metadata pubblico SPID non si ripristina manualmente da UI. Usa Export AgID per rigenerarlo.', 405);
     }
 
     public function getCieMetadataInfo(Request $request, Response $response): Response
@@ -1253,7 +1357,7 @@ class ImpostazioniController
             'config'        => true,
             'spid_certs'    => $spidCerts,
             'cieoidc_keys'  => $cieKeys,
-            'spid_metadata' => is_file(self::SPID_METADATA_PATH),
+            'spid_public_metadata' => is_file(self::PUBLIC_SPID_METADATA_PATH),
             'cie_metadata'  => is_file(self::CIE_METADATA_PATH),
         ]);
     }
@@ -1261,7 +1365,7 @@ class ImpostazioniController
     /**
      * Esporta i file selezionati come ZIP.
      * POST /impostazioni/login-proxy/backup/export
-     * Body JSON: { "items": ["config","spid_certs","cieoidc_keys","spid_metadata","cie_metadata"] }
+    * Body JSON: { "items": ["config","spid_certs","cieoidc_keys","cie_metadata"] }
      */
     public function exportBackupZip(Request $request, Response $response): Response
     {
@@ -1272,7 +1376,7 @@ class ImpostazioniController
             return $this->jsonError('Seleziona almeno un elemento da esportare.');
         }
 
-        $allowed = ['config', 'spid_certs', 'cieoidc_keys', 'spid_metadata', 'cie_metadata'];
+        $allowed = ['config', 'spid_certs', 'cieoidc_keys', 'cie_metadata'];
         $items   = array_values(array_intersect($items, $allowed));
         if (empty($items)) {
             return $this->jsonError('Nessun elemento valido selezionato.');
@@ -1293,7 +1397,6 @@ class ImpostazioniController
                 'config' => $this->backupZipConfig($zip),
                 'spid_certs' => $this->backupZipSpidCerts($zip),
                 'cieoidc_keys' => $this->backupZipCieKeys($zip),
-                'spid_metadata' => $this->backupZipFile($zip, self::SPID_METADATA_PATH, 'metadata/frontoffice_sp.xml'),
                 'cie_metadata' => $this->backupZipFile($zip, self::CIE_METADATA_PATH, 'metadata/cie-entity-configuration.json'),
                 default => null,
             };

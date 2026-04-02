@@ -15,7 +15,7 @@ services:
       - spid_certs:/var/www/html/spid-certs
       - gil_cieoidc_keys:/var/www/html/cieoidc-keys
       - gil_metadata_cieoidc:/var/www/html/metadata-cieoidc
-      - gil_metadata_agid:/var/www/html/metadata-agid:ro
+      - gil_metadata_agid:/var/www/html/metadata-agid
     environment:
       - APP_SUITE=backoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
