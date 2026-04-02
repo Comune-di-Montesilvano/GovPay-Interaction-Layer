@@ -811,8 +811,12 @@
         </div>
         {% if is_superadmin %}
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-success" type="button" onclick="exportSpidMetadata(this)">
-            <i class="fas fa-file-export me-1"></i>Esporta metadata AgID
+          <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
+            <i class="fas fa-download me-1"></i>Scarica XML
+          </button>
+          <button class="btn btn-sm btn-outline-success" type="button"
+                  data-bs-toggle="modal" data-bs-target="#spidMetaGeneraModal">
+            <i class="fas fa-file-export me-1"></i>Genera metadata AgID
           </button>
         </div>
         {% endif %}
@@ -880,6 +884,12 @@
               </label>
             </div>
             <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="bk-spid-meta" value="spid_metadata">
+              <label class="form-check-label" for="bk-spid-meta">
+                <i class="fas fa-id-card me-1 text-success"></i>Metadata pubblico SPID <span class="text-muted small">(satosa_spid_public_metadata.xml)</span>
+              </label>
+            </div>
+            <div class="form-check">
               <input class="form-check-input" type="checkbox" id="bk-cie-keys" value="cieoidc_keys">
               <label class="form-check-label" for="bk-cie-keys">
                 <i class="fas fa-key me-1 text-info"></i>Chiavi JWK CIE OIDC <span class="text-muted small">(jwk-*.json)</span>
@@ -908,6 +918,16 @@
         </div>
         <div class="card-body">
           <p class="small text-muted mb-3">Il file caricato sovrascrive il file esistente sul volume.</p>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold"><i class="fas fa-id-card me-1 text-success"></i>Metadata pubblico SPID (XML)</label>
+            <div class="input-group input-group-sm">
+              <input type="file" class="form-control" id="spid-restore-file" accept=".xml">
+              <button class="btn btn-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
+                <i class="fas fa-upload me-1"></i>Ripristina
+              </button>
+            </div>
+            <div class="form-text">File XML metadata pubblico SPID (satosa_spid_public_metadata.xml).</div>
+          </div>
           <div>
             <label class="form-label small fw-semibold"><i class="fas fa-address-card me-1 text-info"></i>Metadata CIE OIDC (JSON)</label>
             <div class="input-group input-group-sm">
@@ -990,6 +1010,43 @@
 </div>
 
 {# ─── Modale anteprima Rigenera SP Metadata ──────────────────────────────────── #}
+<div class="modal fade" id="spidMetaGeneraModal" tabindex="-1" aria-labelledby="spidMetaGeneraModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="spidMetaGeneraModalLabel">
+          <i class="fas fa-id-card me-2 text-success"></i>Genera metadata pubblico SPID
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Questa operazione recupera il metadata live da SATOSA e sovrascrive
+          <code>satosa_spid_public_metadata.xml</code> sul volume.
+          Esegui questo passo dopo ogni rigenerazione del certificato SPID (Fase 2).
+        </div>
+        <dl class="row small mb-0">
+          <dt class="col-sm-4">Entity ID</dt>
+          <dd class="col-sm-8 text-break font-monospace" id="spid-meta-modal-entity-id">
+            {{ settings.iam_proxy.spid_entity_id|default('—') }}
+          </dd>
+          <dt class="col-sm-4">Endpoint SATOSA</dt>
+          <dd class="col-sm-8 text-muted"><code>/spidSaml2/metadata</code></dd>
+        </dl>
+        <div id="spid-meta-genera-result" class="mt-3" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-success" id="spid-meta-genera-btn"
+                onclick="doGeneraSpidMetadata(this)">
+          <i class="fas fa-file-export me-1"></i>Genera metadata
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Costanti CIE ────────────────────────────────────────────────────────────
 const CIE_PROD_URL    = 'https://oidc.idserver.servizicie.interno.gov.it';
@@ -1261,7 +1318,7 @@ async function restoreMetadata(type, fileInputId, btn) {
     if (bkRes.ok) {
       const bkJson = await bkRes.json();
       const bkData = bkJson.data || bkJson;
-      const bkMap = { 'bk-spid-certs': 'spid_certs', 'bk-cie-keys': 'cieoidc_keys', 'bk-cie-meta': 'cie_metadata' };
+      const bkMap = { 'bk-spid-certs': 'spid_certs', 'bk-spid-meta': 'spid_public_metadata', 'bk-cie-keys': 'cieoidc_keys', 'bk-cie-meta': 'cie_metadata' };
       for (const [cbId, key] of Object.entries(bkMap)) {
         const cb = document.getElementById(cbId);
         if (cb && !bkData[key]) { cb.disabled = true; cb.checked = false; cb.closest('.form-check').classList.add('opacity-50'); }
@@ -1514,5 +1571,49 @@ async function exportSpidMetadata(btn) {
     btn.disabled = false;
     btn.innerHTML = orig;
   }
+}
+
+async function doGeneraSpidMetadata(btn) {
+  const orig = btn.innerHTML;
+  const resultEl = document.getElementById('spid-meta-genera-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
+  resultEl.style.display = 'none';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json();
+    if (json.success) {
+      const exp = json.valid_until ? '<br><strong>validUntil:</strong> ' + escHtml(json.valid_until) : '';
+      const eid = json.entity_id ? '<br><strong>Entity ID:</strong> ' + escHtml(json.entity_id) : '';
+      resultEl.className = 'mt-3 alert alert-success small';
+      resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Metadata generato con successo.' + eid + exp;
+      resultEl.style.display = '';
+      loadMetadataInfo('spid', null);
+    } else {
+      resultEl.className = 'mt-3 alert alert-danger small';
+      resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>' + escHtml(json.message || 'Generazione metadata SPID fallita.');
+      resultEl.style.display = '';
+    }
+  } catch (e) {
+    resultEl.className = 'mt-3 alert alert-danger small';
+    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
+    resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+function downloadSpidMetadata(btn) {
+  const a = document.createElement('a');
+  a.href = '/impostazioni/login-proxy/spid-metadata/download';
+  a.download = 'satosa_spid_public_metadata.xml';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 </script>

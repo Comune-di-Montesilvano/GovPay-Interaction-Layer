@@ -1374,7 +1374,7 @@ class ImpostazioniController
     /**
      * Esporta i file selezionati come ZIP.
      * POST /impostazioni/login-proxy/backup/export
-    * Body JSON: { "items": ["config","spid_certs","cieoidc_keys","cie_metadata"] }
+    * Body JSON: { "items": ["config","spid_certs","spid_metadata","cieoidc_keys","cie_metadata"] }
      */
     public function exportBackupZip(Request $request, Response $response): Response
     {
@@ -1385,7 +1385,7 @@ class ImpostazioniController
             return $this->jsonError('Seleziona almeno un elemento da esportare.');
         }
 
-        $allowed = ['config', 'spid_certs', 'cieoidc_keys', 'cie_metadata'];
+        $allowed = ['config', 'spid_certs', 'spid_metadata', 'cieoidc_keys', 'cie_metadata'];
         $items   = array_values(array_intersect($items, $allowed));
         if (empty($items)) {
             return $this->jsonError('Nessun elemento valido selezionato.');
@@ -1405,6 +1405,7 @@ class ImpostazioniController
             match ($item) {
                 'config' => $this->backupZipConfig($zip),
                 'spid_certs' => $this->backupZipSpidCerts($zip),
+                'spid_metadata' => $this->backupZipFile($zip, self::PUBLIC_SPID_METADATA_PATH, 'metadata/satosa_spid_public_metadata.xml'),
                 'cieoidc_keys' => $this->backupZipCieKeys($zip),
                 'cie_metadata' => $this->backupZipFile($zip, self::CIE_METADATA_PATH, 'metadata/cie-entity-configuration.json'),
                 default => null,
