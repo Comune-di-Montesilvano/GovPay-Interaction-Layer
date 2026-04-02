@@ -615,6 +615,10 @@ return function (App $app, Twig $twig): void {
         return (new BackupController($twig))->systemBackupDownload($request, $response);
     });
 
+    $app->post('/backup/sistema/ripristina', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupRestore($request, $response);
+    });
+
     $app->get('/users/new', function($request, $response) use ($twig) {
         if (isset($_SESSION['user'])) {
             $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);

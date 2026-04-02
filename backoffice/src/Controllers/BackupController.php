@@ -395,6 +395,180 @@ class BackupController
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // RIPRISTINO DA ZIP
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * POST /backup/sistema/ripristina — carica un archivio ZIP e ripristina:
+     *   - settings.json  → tutte le sezioni DB (incluse chiavi SATOSA, cifrate al primo salvataggio UI)
+     *   - volumes/<nome> → file sui volumi montati (spid_certs, cieoidc_keys, metadata…)
+     *   - govpay-config.json → dati applicativi (tipologie, templates, IO, utenti) se presenti
+     */
+    public function systemBackupRestore(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $uploadedFiles = $request->getUploadedFiles();
+        $file = $uploadedFiles['backup_file'] ?? null;
+
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('Nessun file caricato o errore nel trasferimento.');
+        }
+
+        $originalName = $file->getClientFilename() ?? 'backup.zip';
+        if (!str_ends_with(strtolower($originalName), '.zip')) {
+            return $this->jsonError('Il file deve essere un archivio .zip.');
+        }
+
+        // Scrivi su file temporaneo
+        $tmpPath = sys_get_temp_dir() . '/gil-restore-' . bin2hex(random_bytes(8)) . '.zip';
+        try {
+            $stream = $file->getStream();
+            file_put_contents($tmpPath, (string) $stream);
+
+            $result = $this->doRestoreFromZip($tmpPath);
+
+            Logger::getInstance()->info('Ripristino ZIP completato', array_merge(['file' => $originalName], $result));
+            return $this->jsonResponse([
+                'success' => true,
+                'message' => 'Ripristino completato.',
+                'detail'  => $result,
+            ]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore ripristino ZIP', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore durante il ripristino: ' . $e->getMessage());
+        } finally {
+            @unlink($tmpPath);
+        }
+    }
+
+    /**
+     * Esegue il ripristino da un file ZIP già su disco.
+     * Restituisce un array di statistiche.
+     */
+    private function doRestoreFromZip(string $zipPath): array
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            throw new \RuntimeException('Impossibile aprire il file ZIP.');
+        }
+
+        $stats = ['settings_sections' => 0, 'volume_files' => 0, 'govpay_sections' => 0];
+
+        // 1. settings.json → DB
+        $settingsJson = $zip->getFromName('settings.json');
+        if ($settingsJson) {
+            $settings = json_decode($settingsJson, true) ?? [];
+            foreach ($settings as $section => $values) {
+                if (is_array($values) && !empty($values)) {
+                    SettingsRepository::setSection($section, $values, 'restore');
+                    $stats['settings_sections']++;
+                }
+            }
+        }
+
+        // 2. govpay-config.json → dati applicativi
+        $govpayJson = $zip->getFromName('govpay-config.json');
+        if ($govpayJson) {
+            $govpay = json_decode($govpayJson, true) ?? [];
+            $sections = $govpay['sections'] ?? [];
+            $idDominio = (string)(\App\Config\Config::get('ID_DOMINIO') ?: '');
+            $pdo = Connection::getPDO();
+
+            if (!empty($sections['tipologie'])) {
+                (new EntrateRepository())->replaceLocalOverrides($idDominio, $sections['tipologie']);
+                $stats['govpay_sections']++;
+            }
+            if (!empty($sections['tipologie_esterne'])) {
+                $pdo->exec('DELETE FROM tipologie_pagamento_esterne');
+                $extRepo = new ExternalPaymentTypeRepository();
+                foreach ($sections['tipologie_esterne'] as $t) {
+                    if (!empty($t['descrizione']) && !empty($t['url'])) {
+                        $extRepo->create($t['descrizione'], $t['descrizione_estesa'] ?? null, $t['url']);
+                    }
+                }
+                $stats['govpay_sections']++;
+            }
+            if (!empty($sections['io_services'])) {
+                $pdo->exec('DELETE FROM io_service_tipologie');
+                $pdo->exec('DELETE FROM io_services');
+                $ioRepo = new \App\Database\IoServiceRepository();
+                foreach ($sections['io_services'] as $s) {
+                    if (empty($s['nome']) || empty($s['id_service']) || empty($s['api_key_primaria'])) {
+                        continue;
+                    }
+                    $newId = $ioRepo->create($s['nome'], $s['descrizione'] ?? null, $s['id_service'], $s['api_key_primaria'], $s['api_key_secondaria'] ?? null, $s['codice_catalogo'] ?? null, !empty($s['is_default']));
+                    foreach ($s['tipologie'] ?? [] as $idEntrata) {
+                        $ioRepo->setTipologiaService((string)$idEntrata, $newId);
+                    }
+                }
+                $stats['govpay_sections']++;
+            }
+            if (!empty($sections['templates'])) {
+                $tplRepo = new \App\Database\PendenzaTemplateRepository();
+                $tplRepo->deleteAllByDominio($idDominio);
+                $usersStmt = $pdo->query('SELECT id, email FROM users');
+                $emailToId = [];
+                foreach ($usersStmt->fetchAll() as $u) {
+                    $emailToId[strtolower($u['email'])] = (int)$u['id'];
+                }
+                foreach ($sections['templates'] as $t) {
+                    if (empty($t['titolo']) || empty($t['id_tipo_pendenza'])) {
+                        continue;
+                    }
+                    $newId = $tplRepo->create(['id_dominio' => $idDominio, 'titolo' => $t['titolo'], 'id_tipo_pendenza' => $t['id_tipo_pendenza'], 'causale' => $t['causale'] ?? '', 'importo' => (float)($t['importo'] ?? 0)]);
+                    $userIds = array_filter(array_map(fn($e) => $emailToId[strtolower((string)$e)] ?? null, $t['assigned_users'] ?? []));
+                    if ($userIds) {
+                        $tplRepo->assignUsers($newId, array_values($userIds));
+                    }
+                }
+                $stats['govpay_sections']++;
+            }
+            if (!empty($sections['utenti'])) {
+                $upsert = $pdo->prepare('INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, created_at, updated_at) VALUES (:email, :role, :fn, :ln, :disabled, :hash, NOW(), NOW()) ON DUPLICATE KEY UPDATE role=VALUES(role), first_name=VALUES(first_name), last_name=VALUES(last_name), is_disabled=VALUES(is_disabled), password_hash=COALESCE(VALUES(password_hash), password_hash), updated_at=NOW()');
+                foreach ($sections['utenti'] as $u) {
+                    if (empty($u['email'])) {
+                        continue;
+                    }
+                    $upsert->execute([':email' => $u['email'], ':role' => $u['role'] ?? 'user', ':fn' => $u['first_name'] ?? '', ':ln' => $u['last_name'] ?? '', ':disabled' => empty($u['is_disabled']) ? 0 : 1, ':hash' => $u['password_hash'] ?? null]);
+                }
+                $stats['govpay_sections']++;
+            }
+        }
+
+        // 3. volumes/* → path montati
+        $volumeMap = [];
+        foreach (self::BACKUP_VOLUMES as $name => $mountPath) {
+            $volumeMap["volumes/{$name}"] = $mountPath;
+        }
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false || str_ends_with($name, '/')) {
+                continue;
+            }
+            foreach ($volumeMap as $prefix => $destBase) {
+                if (str_starts_with($name, $prefix . '/')) {
+                    $relPath  = substr($name, strlen($prefix) + 1);
+                    $destPath = $destBase . '/' . $relPath;
+                    @mkdir(dirname($destPath), 0755, true);
+                    $content = $zip->getFromIndex($i);
+                    if ($content !== false) {
+                        file_put_contents($destPath, $content);
+                        $stats['volume_files']++;
+                    }
+                    break;
+                }
+            }
+        }
+
+        $zip->close();
+        return $stats;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ──────────────────────────────────────────────────────────────────────
 
