@@ -75,6 +75,18 @@ if [ -z "${SATOSA_UNKNOW_ERROR_REDIRECT_PAGE:-}" ]; then
   export SATOSA_UNKNOW_ERROR_REDIRECT_PAGE
 fi
 
+# Hardening: evita crash SATOSA su !ENV quando SATOSA_DISCO_SRV non è valorizzato.
+if [ -z "${SATOSA_DISCO_SRV:-}" ]; then
+  if [ -n "${SATOSA_BASE:-}" ]; then
+    SATOSA_DISCO_SRV="${SATOSA_BASE%/}/static/disco.html"
+    echo "[startup] SATOSA_DISCO_SRV non configurato, uso default: ${SATOSA_DISCO_SRV}"
+  else
+    SATOSA_DISCO_SRV="https://127.0.0.1/static/disco.html"
+    echo "[startup] WARN: SATOSA_BASE non impostato, uso fallback di sicurezza per SATOSA_DISCO_SRV"
+  fi
+  export SATOSA_DISCO_SRV
+fi
+
 echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
 

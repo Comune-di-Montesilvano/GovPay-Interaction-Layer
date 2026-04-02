@@ -399,6 +399,18 @@ class ImpostazioniController
             SettingsRepository::set('iam_proxy', 'satosa_unknow_error_redirect_page', $satosaErrorRedirect, false, 'system_autogen');
         }
 
+        // Garantisce SATOSA_DISCO_SRV sempre valorizzato.
+        // Priorità: valore esplicito in iam_proxy; fallback su {SATOSA_BASE}/static/disco.html.
+        $satosaDiscoSrv = trim((string)($s['satosa_disco_srv'] ?? ''));
+        if ($satosaDiscoSrv === '') {
+            $satosaBase = rtrim((string)($s['public_base_url'] ?? ''), '/');
+            if ($satosaBase !== '') {
+                $satosaDiscoSrv = $satosaBase . '/static/disco.html';
+                $s['satosa_disco_srv'] = $satosaDiscoSrv;
+                SettingsRepository::set('iam_proxy', 'satosa_disco_srv', $satosaDiscoSrv, false, 'system_autogen');
+            }
+        }
+
         // Mappa chiave DB → nome variabile d'ambiente SATOSA/IAM-proxy
         $map = [
             'debug'                                          => 'IAM_PROXY_DEBUG',
