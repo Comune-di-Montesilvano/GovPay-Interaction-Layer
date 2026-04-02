@@ -183,6 +183,9 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
     mkdir -p /var/www/certificate
     chown www-data:www-data /var/www/certificate 2>/dev/null || true
     chmod 755 /var/www/certificate 2>/dev/null || true
+  mkdir -p /var/www/html/spid-certs
+  chown www-data:www-data /var/www/html/spid-certs 2>/dev/null || true
+  chmod 775 /var/www/html/spid-certs 2>/dev/null || true
 fi
 
 echo "--- Setup completato. Eseguo controllo first-run DB ---"
