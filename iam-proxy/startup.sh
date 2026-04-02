@@ -114,6 +114,22 @@ done
 echo "[startup] Configurazione runtime applicata."
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Default MongoDB backend CIE OIDC ─────────────────────────────────────────
+# Derivati dalle variabili infrastrutturali MONGODB_* (da docker-compose).
+# Non configurabili da UI backoffice: usano lo stesso satosa-mongo dello stack.
+: "${MONGO_CIE_OIDC_BACKEND_HOST:=mongodb://${MONGODB_HOST:-satosa-mongo}:${MONGODB_PORT:-27017}}"
+: "${MONGO_CIE_OIDC_BACKEND_DB_NAME:=${MONGODB_DB:-satosa}}"
+: "${MONGO_CIE_OIDC_BACKEND_AUTH_COLLECTION:=cie_oidc_authz}"
+: "${MONGO_CIE_OIDC_BACKEND_TOKEN_COLLECTION:=cie_oidc_token}"
+: "${MONGO_CIE_OIDC_BACKEND_USER_COLLECTION:=cie_oidc_user}"
+: "${MONGODB_CIE_OIDC_BACKEND_USERNAME:=${MONGODB_USERNAME:-satosa_user}}"
+: "${MONGODB_CIE_OIDC_BACKEND_PASSWORD:=${MONGODB_PASSWORD:-satosa_password}}"
+export MONGO_CIE_OIDC_BACKEND_HOST MONGO_CIE_OIDC_BACKEND_DB_NAME \
+       MONGO_CIE_OIDC_BACKEND_AUTH_COLLECTION MONGO_CIE_OIDC_BACKEND_TOKEN_COLLECTION \
+       MONGO_CIE_OIDC_BACKEND_USER_COLLECTION MONGODB_CIE_OIDC_BACKEND_USERNAME \
+       MONGODB_CIE_OIDC_BACKEND_PASSWORD
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Verifica chiavi PKI SATOSA ────────────────────────────────────────────────
 # SATOSA_PRIVATE_KEY e SATOSA_PUBLIC_KEY sono path di file (default ./pki/privkey.pem
 # e ./pki/cert.pem, relativi a $SATOSA_PROXY). Se i file non esistono SATOSA crasha
