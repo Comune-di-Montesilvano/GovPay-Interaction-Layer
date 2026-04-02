@@ -21,7 +21,16 @@ is_true() {
 # ── Fetch runtime config from backoffice ─────────────────────────────────────
 # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* provengono esclusivamente dal DB
 # del backoffice tramite GET /api/iam-proxy/env. MASTER_TOKEN è obbligatorio.
-_BO_URL="${BACKOFFICE_INTERNAL_URL:-http://govpay-interaction-backoffice}"
+if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
+  _BO_URL="${BACKOFFICE_INTERNAL_URL}"
+else
+  # Regola unica: SSL=on -> HTTPS interno; altrimenti (anche assente) -> HTTP.
+  if [ "${SSL:-off}" = "on" ]; then
+    _BO_URL="https://govpay-interaction-backoffice:80"
+  else
+    _BO_URL="http://govpay-interaction-backoffice"
+  fi
+fi
 
 if [ -z "${MASTER_TOKEN:-}" ]; then
   echo "[startup] ERRORE: MASTER_TOKEN non impostato. Variabile obbligatoria." >&2
