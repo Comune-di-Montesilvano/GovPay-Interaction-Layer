@@ -25,14 +25,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
         $isHttps = strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https';
     }
 
-    $authProxyTypeFrontoffice = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', '') ?? '')));
-    if ($authProxyTypeFrontoffice !== '') {
-        $spidEnabledByProfile = $authProxyTypeFrontoffice !== 'none';
-    } else {
-        // Fallback retrocompatibile su vecchia chiave iam_proxy.
-        $authProxyType = strtolower(trim((string)(\App\Config\SettingsRepository::get('iam_proxy', 'frontoffice_auth_proxy_type', 'none') ?? 'none')));
-        $spidEnabledByProfile = $authProxyType !== '' && $authProxyType !== 'none';
-    }
+    $authProxyTypeFrontoffice = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
+    $spidEnabledByProfile = in_array($authProxyTypeFrontoffice, ['spid', 'cie', 'spid_cie'], true);
 
     // Per callback SPID via POST cross-site (dal proxy al frontoffice) i browser non inviano cookie SameSite=Lax.
     // Quindi, quando SPID è abilitato, serve SameSite=None (che richiede anche Secure).
@@ -569,25 +563,10 @@ if (!function_exists('frontoffice_spid_mode')) {
      */
     function frontoffice_spid_mode(): string
     {
-        // Nuova sorgente canonica: configurazione Frontoffice da UI.
-        $frontofficeType = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', '') ?? '')));
-        if ($frontofficeType === 'none') {
-            return 'none';
-        }
+        // Sorgente canonica: configurazione Frontoffice da UI.
+        $frontofficeType = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
         if (in_array($frontofficeType, ['spid', 'cie', 'spid_cie'], true)) {
             return 'iam-proxy';
-        }
-
-        // Fallback retrocompatibile su vecchia chiave iam_proxy.
-        $type = strtolower(trim((string)(\App\Config\SettingsRepository::get('iam_proxy', 'frontoffice_auth_proxy_type', 'none') ?? 'none')));
-        if (in_array($type, ['iam-proxy-saml2', 'satosa', 'satosa-saml2', 'iam-proxy'], true)) {
-            return 'iam-proxy';
-        }
-        if ($type === 'external') {
-            return 'external';
-        }
-        if ($type === 'php-proxy' || $type === 'internal') {
-            return 'internal';
         }
         return 'none';
     }
@@ -607,11 +586,6 @@ if (!function_exists('frontoffice_auth_proxy_type')) {
     function frontoffice_auth_proxy_type(): string
     {
         if (frontoffice_spid_mode() === 'iam-proxy') {
-            return 'iam-proxy-saml2';
-        }
-
-        $raw = strtolower(trim((string)(\App\Config\SettingsRepository::get('iam_proxy', 'frontoffice_auth_proxy_type', 'none') ?? 'none')));
-        if (in_array($raw, ['iam-proxy-saml2', 'satosa', 'satosa-saml2', 'iam-proxy'], true)) {
             return 'iam-proxy-saml2';
         }
         return 'php-proxy';

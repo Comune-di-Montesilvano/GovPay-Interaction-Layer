@@ -242,7 +242,6 @@ class ImpostazioniController
             'hostname'                         => $body['hostname'] ?? '',
             'http_port'                        => $body['http_port'] ?? '',
             'debug'                            => $body['debug'] ?? 'false',
-            'frontoffice_auth_proxy_type'      => $body['frontoffice_auth_proxy_type'] ?? 'iam-proxy-saml2',
             'enable_spid'                      => $body['enable_spid'] ?? 'false',
             'enable_cie_oidc'                  => $body['enable_cie_oidc'] ?? 'false',
             'enable_it_wallet'                 => $body['enable_it_wallet'] ?? 'false',
@@ -313,6 +312,11 @@ class ImpostazioniController
             'cie_oidc_logo_uri'                => $body['cie_oidc_logo_uri'] ?? '',
             'cie_oidc_contact_email'           => $body['cie_oidc_contact_email'] ?? '',
         ];
+
+        // Non reintrodurre default legacy se il campo non e' inviato dal form.
+        if (array_key_exists('frontoffice_auth_proxy_type', $body)) {
+            $plain['frontoffice_auth_proxy_type'] = (string)$body['frontoffice_auth_proxy_type'];
+        }
 
         // Chiavi crittografiche SATOSA: cifrate in DB, aggiornate solo se il form le invia
         // (campo vuoto = non toccare il valore esistente)
