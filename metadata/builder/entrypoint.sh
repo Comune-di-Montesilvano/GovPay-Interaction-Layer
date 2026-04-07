@@ -19,6 +19,7 @@ case "${1:-help}" in
   status)            bash /builder/status.sh ;;
   renew-spid)        bash /builder/renew-spid.sh ;;
   renew-cieoidc)     bash /builder/renew-cieoidc.sh ;;
+  server)            exec python3 /builder/server.py ;;
   help|-h|--help|*)
     cat <<EOF
 

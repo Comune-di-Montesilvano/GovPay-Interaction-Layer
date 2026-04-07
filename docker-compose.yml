@@ -35,6 +35,7 @@ services:
       - PORTAINER_ENDPOINT_ID=${PORTAINER_ENDPOINT_ID:-1}
       # Token per autenticare le chiamate Bearer provenienti da iam-proxy/startup.sh (GET /api/iam-proxy/env)
       - MASTER_TOKEN=${MASTER_TOKEN}
+      - METADATA_BUILDER_INTERNAL_URL=${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
     restart: unless-stopped
     networks:
@@ -104,7 +105,9 @@ services:
       - SSL=${SSL:-off}
       - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-}
       - MASTER_TOKEN=${MASTER_TOKEN}
-    restart: 'no'
+      # Watchdog: intervallo polling config backoffice (secondi, default 300)
+      - IAM_WATCHDOG_INTERVAL=${IAM_WATCHDOG_INTERVAL:-300}
+    restart: always
     healthcheck:
       test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]
       interval: 5s
@@ -169,6 +172,7 @@ services:
 
   metadata-builder:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-metadata-builder:${APP_VERSION:-latest}
+    command: ["server"]
     volumes:
       - spid_certs:/certs
       - frontoffice_sp_metadata:/sp-metadata
@@ -177,6 +181,7 @@ services:
       - gil_metadata_cieoidc:/output/cieoidc
       - gil_backups:/backup
     environment:
+      - MASTER_TOKEN=${MASTER_TOKEN}
       - SPID_CERT_KEY_SIZE=${SPID_CERT_KEY_SIZE:-3072}
       - SPID_CERT_COMMON_NAME=${SPID_CERT_COMMON_NAME:-}
       - SPID_CERT_DAYS=${SPID_CERT_DAYS:-730}

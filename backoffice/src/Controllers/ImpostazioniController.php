@@ -870,30 +870,23 @@ class ImpostazioniController
 
         @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
 
-        $portainer = new PortainerClient();
-        if (!PortainerClient::isConfigured()) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: Portainer non configurato.');
-        }
+        $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
+        $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
 
-        $builderContainers = [
-            'gil-metadata-builder-1',
-            'govpay-interaction-layer-metadata-builder-1',
-            'metadata-builder',
-        ];
+        $ctx = stream_context_create([
+            'http' => [
+                'method'        => 'POST',
+                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
+                'timeout'       => 180,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $raw    = @file_get_contents("{$builderUrl}/run/export-agid", false, $ctx);
+        $result = $raw !== false ? json_decode($raw, true) : null;
 
-        $execErrors = [];
-        $execOk = false;
-        foreach ($builderContainers as $containerName) {
-            $exec = $portainer->execInContainer($containerName, ['export-agid'], 180);
-            if (($exec['success'] ?? false) === true) {
-                $execOk = true;
-                break;
-            }
-            $execErrors[] = $containerName . ': ' . ($exec['message'] ?? 'errore sconosciuto');
-        }
-
-        if (!$execOk) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: impossibile eseguire export-agid su metadata-builder (' . implode('; ', $execErrors) . ').');
+        if (!($result['success'] ?? false)) {
+            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
+            return $this->jsonError("Export metadata pubblico SPID fallito: {$err}");
         }
 
         if (!is_file(self::PUBLIC_SPID_METADATA_PATH)) {
@@ -1287,67 +1280,44 @@ class ImpostazioniController
 
         @mkdir($metaDir, 0755, true);
 
-        $fetchUrl = static function(string $url, int $timeout = 15): string|false {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => $timeout,
-                CURLOPT_FOLLOWLOCATION => false,
-            ]);
-            $data = curl_exec($ch);
-            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            return ($data !== false && $code === 200) ? (string)$data : false;
-        };
+        $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
+        $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
+        $endpoint    = "{$builderUrl}/run/export-cieoidc" . ($force ? '?force=1' : '');
 
-        $base = 'http://satosa-nginx/CieOidcRp';
+        $ctx = stream_context_create([
+            'http' => [
+                'method'        => 'POST',
+                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
+                'timeout'       => 180,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $raw    = @file_get_contents($endpoint, false, $ctx);
+        $result = $raw !== false ? json_decode($raw, true) : null;
 
-        $jwt = $fetchUrl("{$base}/.well-known/openid-federation");
-        if ($jwt === false) {
-            return $this->jsonError('satosa-nginx non raggiungibile. Verificare che il profilo iam-proxy sia avviato.');
-        }
-        file_put_contents($metaDir . '/entity-configuration.jwt', $jwt);
-
-        $jwksJson = $fetchUrl("{$base}/openid_relying_party/jwks.json");
-        $jwksJose = $fetchUrl("{$base}/openid_relying_party/jwks.jose");
-        if ($jwksJson !== false) {
-            file_put_contents($metaDir . '/jwks-rp.json', $jwksJson);
-        }
-        if ($jwksJose !== false) {
-            file_put_contents($metaDir . '/jwks-rp.jose', $jwksJose);
+        if (!($result['success'] ?? false)) {
+            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
+            return $this->jsonError("Export CIE OIDC fallito: {$err}");
         }
 
-        // Decodifica JWT payload
-        $parts = explode('.', trim($jwt));
-        if (count($parts) < 2) {
-            return $this->jsonError('JWT entity statement non valido.');
+        // Leggi i valori scritti da export-cieoidc.sh nel volume condiviso
+        $expEpoch = 0;
+        $expUtc   = '';
+        $expDays  = 0;
+        $clientId = '';
+        if (is_file($compValues)) {
+            foreach (file($compValues, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+                if (str_starts_with($line, 'ENTITY_STATEMENT_EXP_EPOCH=')) {
+                    $expEpoch = (int)substr($line, strlen('ENTITY_STATEMENT_EXP_EPOCH='));
+                } elseif (str_starts_with($line, 'ENTITY_STATEMENT_EXP_UTC=')) {
+                    $expUtc = substr($line, strlen('ENTITY_STATEMENT_EXP_UTC='));
+                } elseif (str_starts_with($line, 'ENTITY_STATEMENT_EXP_DAYS_REMAINING=')) {
+                    $expDays = (int)substr($line, strlen('ENTITY_STATEMENT_EXP_DAYS_REMAINING='));
+                } elseif (str_starts_with($line, 'PUBLIC_COMPONENT_IDENTIFIER=')) {
+                    $clientId = substr($line, strlen('PUBLIC_COMPONENT_IDENTIFIER='));
+                }
+            }
         }
-        $pad     = (4 - strlen($parts[1]) % 4) % 4;
-        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/') . str_repeat('=', $pad)), true);
-        if (!is_array($payload)) {
-            return $this->jsonError('Decodifica JWT payload fallita.');
-        }
-
-        $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
-        file_put_contents($metaDir . '/entity-configuration.json', json_encode($payload, $flags));
-
-        $federationKeys = $payload['jwks']['keys'] ?? [];
-        file_put_contents($metaDir . '/jwks-federation-public.json', json_encode(['keys' => $federationKeys], $flags));
-
-        $exp      = isset($payload['exp']) ? (int)$payload['exp'] : null;
-        $expEpoch = $exp ?? 0;
-        $expUtc   = $exp ? gmdate('Y-m-d\TH:i:s\Z', $exp) : '';
-        $expDays  = $exp ? max(0, (int)(($exp - time()) / 86400)) : 0;
-        $clientId = $payload['sub'] ?? '';
-
-        $envContent = implode("\n", [
-            "COMPONENT_IDENTIFIER={$base}",
-            "PUBLIC_COMPONENT_IDENTIFIER={$clientId}",
-            "ENTITY_STATEMENT_EXP_EPOCH={$expEpoch}",
-            "ENTITY_STATEMENT_EXP_UTC={$expUtc}",
-            "ENTITY_STATEMENT_EXP_DAYS_REMAINING={$expDays}",
-        ]) . "\n";
-        file_put_contents($compValues, $envContent);
 
         return $this->jsonResponse([
             'success'   => true,
