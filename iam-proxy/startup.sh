@@ -135,29 +135,7 @@ export MONGO_CIE_OIDC_BACKEND_HOST MONGO_CIE_OIDC_BACKEND_DB_NAME \
        MONGODB_CIE_OIDC_BACKEND_PASSWORD
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Verifica chiavi PKI SATOSA ────────────────────────────────────────────────
-# SATOSA_PRIVATE_KEY e SATOSA_PUBLIC_KEY sono path di file (default ./pki/privkey.pem
-# e ./pki/cert.pem, relativi a $SATOSA_PROXY). Se i file non esistono SATOSA crasha
-# in profondità con FileNotFoundError. Fail-fast qui con messaggio chiaro.
-_PKI_KEY="${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}"
-_PKI_CERT="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
-if [[ "$_PKI_KEY"  != /* ]]; then _PKI_KEY="$SATOSA_PROXY/$_PKI_KEY";   fi
-if [[ "$_PKI_CERT" != /* ]]; then _PKI_CERT="$SATOSA_PROXY/$_PKI_CERT"; fi
-
-if [ ! -f "$_PKI_KEY" ] || [ ! -f "$_PKI_CERT" ]; then
-  echo "[startup] ERRORE: Chiavi PKI SATOSA non trovate." >&2
-  echo "[startup]   Atteso: $_PKI_KEY" >&2
-  echo "[startup]   Atteso: $_PKI_CERT" >&2
-  echo "[startup] Generare i certificati SPID dal backoffice: Impostazioni → Login Proxy → Certificati SPID" >&2
-  echo "[startup] Poi avviare IAM Proxy tramite il pulsante dedicato nell'interfaccia." >&2
-  exit 1
-fi
-echo "[startup] Chiavi PKI verificate: $_PKI_KEY, $_PKI_CERT"
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Standby guard — se IAM Proxy non è abilitato nel backoffice, il container
-# non avvia SATOSA e rimane in Exited(0). Il healthcheck non passerà mai
-# (entrypoint.sh non viene creato), così satosa-nginx non partirà.
+# Valuta feature flags dal config iniziale (usato dal boot e dall'avvio iniziale watchdog)
 _enable_spid=$(echo "$_CONF" | python3 -c "
 import json, sys
 try:
@@ -177,10 +155,39 @@ except Exception:
     print('false')
 " 2>/dev/null || echo "false")
 
-if [ "$_enable_spid" != "true" ] && [ "$_enable_cie" != "true" ]; then
-  echo "[startup] IAM Proxy non abilitato (ENABLE_SPID=false, ENABLE_CIE_OIDC=false). Container in standby."
-  exit 0
-fi
+# ── Supervisore SATOSA: funzioni watchdog ─────────────────────────────────────
+# Il container rimane sempre in esecuzione (restart: always in docker-compose).
+# SATOSA è gestito internamente: avviato/fermato in base alla config backoffice.
+_WATCHDOG_INTERVAL="${IAM_WATCHDOG_INTERVAL:-300}"
+_SATOSA_PID=""
+
+satosa_running() { [ -n "${_SATOSA_PID:-}" ] && kill -0 "$_SATOSA_PID" 2>/dev/null; }
+
+stop_satosa() {
+  if satosa_running; then
+    echo "[watchdog] SIGTERM a SATOSA (PID=$_SATOSA_PID)..."
+    _pgid=$(ps -o pgid= -p "$_SATOSA_PID" 2>/dev/null | tr -d ' ')
+    [ -n "$_pgid" ] && kill -TERM -- "-$_pgid" 2>/dev/null || kill -TERM "$_SATOSA_PID" 2>/dev/null || true
+    wait "$_SATOSA_PID" 2>/dev/null || true
+    _SATOSA_PID=""
+    echo "[watchdog] SATOSA fermato."
+  fi
+}
+
+setup_satosa() {
+  # Verifica chiavi PKI SATOSA — fail-fast se mancanti (return 1 per gestione watchdog)
+  local _pki_key="${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}"
+  local _pki_cert="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
+  [[ "$_pki_key"  != /* ]] && _pki_key="$SATOSA_PROXY/$_pki_key"
+  [[ "$_pki_cert" != /* ]] && _pki_cert="$SATOSA_PROXY/$_pki_cert"
+  if [ ! -f "$_pki_key" ] || [ ! -f "$_pki_cert" ]; then
+    echo "[startup] ERRORE: Chiavi PKI SATOSA non trovate." >&2
+    echo "[startup]   Atteso: $_pki_key" >&2
+    echo "[startup]   Atteso: $_pki_cert" >&2
+    echo "[startup] Generare i certificati SPID dal backoffice: Impostazioni → Login Proxy → Certificati SPID" >&2
+    return 1
+  fi
+  echo "[startup] Chiavi PKI verificate: $_pki_key, $_pki_cert"
 
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
@@ -548,5 +555,83 @@ if [ -f "$SATOSA_PROXY/patch_saml2.py" ]; then
   python3 "$SATOSA_PROXY/patch_saml2.py"
 fi
 
-echo "[startup] Configurazione completata. Avvio SATOSA..."
-exec /bin/bash "$SATOSA_PROXY/entrypoint.sh"
+  echo "[startup] Configurazione SATOSA completata."
+} # fine setup_satosa()
+
+start_satosa() {
+  setup_satosa || { echo "[watchdog] Setup SATOSA fallito — verrà riprovato al prossimo ciclo." >&2; return 1; }
+  /bin/bash "$SATOSA_PROXY/entrypoint.sh" &
+  _SATOSA_PID=$!
+  echo "[watchdog] SATOSA avviato (PID=$_SATOSA_PID)"
+}
+
+fetch_conf() {
+  curl -sf -k --max-time 10 \
+    -H "Authorization: Bearer ${MASTER_TOKEN}" \
+    "${_BO_URL}/api/iam-proxy/env" 2>/dev/null
+}
+
+auth_on() {
+  local _conf="$1" _s _c
+  _s=$(printf '%s' "$_conf" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+v=str(d.get('ENABLE_SPID','false')).lower()
+print('true' if v in ('1','true','yes','on') else 'false')
+" 2>/dev/null || echo "false")
+  _c=$(printf '%s' "$_conf" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+v=str(d.get('ENABLE_CIE_OIDC','false')).lower()
+print('true' if v in ('1','true','yes','on') else 'false')
+" 2>/dev/null || echo "false")
+  [ "$_s" = "true" ] || [ "$_c" = "true" ]
+}
+
+# ── Avvio iniziale ────────────────────────────────────────────────────────────
+if [ "$_enable_spid" = "true" ] || [ "$_enable_cie" = "true" ]; then
+  echo "[startup] Auth abilitato al boot — avvio SATOSA iniziale..."
+  start_satosa || true
+else
+  echo "[startup] IAM Proxy non abilitato al boot. In standby (poll ogni ${_WATCHDOG_INTERVAL}s)."
+fi
+
+# ── Loop watchdog ─────────────────────────────────────────────────────────────
+echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s)."
+while true; do
+  sleep "$_WATCHDOG_INTERVAL"
+
+  # Rileva crash spontaneo di SATOSA
+  if [ -n "${_SATOSA_PID:-}" ] && ! satosa_running; then
+    echo "[watchdog] SATOSA (PID=$_SATOSA_PID) terminato inaspettatamente."
+    _SATOSA_PID=""
+  fi
+
+  _NEW=$(fetch_conf) || {
+    echo "[watchdog] Fetch config fallito — stato invariato"
+    continue
+  }
+
+  if auth_on "$_NEW"; then
+    if ! satosa_running; then
+      echo "[watchdog] Auth abilitato, SATOSA non in esecuzione — avvio..."
+      eval "$(printf '%s' "$_NEW" | python3 -c "
+import json,sys,shlex
+for k,v in json.load(sys.stdin).items():
+    if isinstance(v,str) and v and k.replace('_','').replace('-','').isalnum() and k[0].isalpha():
+        print('export {}={}'.format(k,shlex.quote(v)))
+")"
+      start_satosa || true
+    else
+      echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+    fi
+  else
+    if satosa_running; then
+      echo "[watchdog] Auth disabilitato dal backoffice — arresto SATOSA..."
+      stop_satosa
+      echo "[watchdog] In standby. SATOSA ripartirà quando auth sarà ri-abilitato."
+    else
+      echo "[watchdog] Auth disabilitato, SATOSA già fermo — standby"
+    fi
+  fi
+done

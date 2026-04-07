@@ -20,8 +20,9 @@ COPY metadata/builder/restore.sh       /builder/restore.sh
 COPY metadata/builder/status.sh        /builder/status.sh
 COPY metadata/builder/renew-spid.sh    /builder/renew-spid.sh
 COPY metadata/builder/renew-cieoidc.sh /builder/renew-cieoidc.sh
+COPY metadata/builder/server.py        /builder/server.py
 
 RUN chmod +x /builder/*.sh
 
 ENTRYPOINT ["/builder/entrypoint.sh"]
-CMD ["help"]
+CMD ["server"]
