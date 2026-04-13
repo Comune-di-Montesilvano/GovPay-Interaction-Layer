@@ -311,7 +311,13 @@ fi
 # Attivo solo nel container frontoffice se MASTER_TOKEN è configurato.
 if [ "$APP_SUITE" = "frontoffice" ] && [ -n "${MASTER_TOKEN:-}" ]; then
   (
-    BACKOFFICE_URL="${BACKOFFICE_INTERNAL_URL:-http://backoffice}"
+    if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
+      BACKOFFICE_URL="${BACKOFFICE_INTERNAL_URL}"
+    elif [ "${SSL:-on}" = "on" ]; then
+      BACKOFFICE_URL="https://backoffice"
+    else
+      BACKOFFICE_URL="http://backoffice"
+    fi
     WATCHDOG_INTERVAL="${FRONTOFFICE_WATCHDOG_INTERVAL:-300}"
     LAST_HASH=""
     # Aspetta che backoffice sia pronto (max 60s)

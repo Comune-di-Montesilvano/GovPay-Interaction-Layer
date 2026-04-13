@@ -26,7 +26,7 @@ if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
 else
   # Regola unica: SSL=on -> HTTPS interno; altrimenti (anche assente) -> HTTP.
   if [ "${SSL:-off}" = "on" ]; then
-    _BO_URL="https://backoffice:80"
+    _BO_URL="https://backoffice"
   else
     _BO_URL="http://backoffice"
   fi
