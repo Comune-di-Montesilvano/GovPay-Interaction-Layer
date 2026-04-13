@@ -10,7 +10,7 @@ FORCE="${FORCE:-0}"
 SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
 SATOSA_SCHEME="$( [ "${SSL:-off}" = "on" ] && echo "https" || echo "http" )"
 IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}"
-CURL_INSECURE="$( [ "${SSL:-off}" = "on" ] && echo "-k" )"
+CURL_INSECURE="$( [ "${SSL:-off}" = "on" ] && echo "-k" ) --connect-timeout 5 --max-time 10"
 
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"

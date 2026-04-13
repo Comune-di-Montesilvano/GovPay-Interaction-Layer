@@ -6,7 +6,7 @@ set -euo pipefail
 SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
 SATOSA_SCHEME="$( [ "${SSL:-off}" = "on" ] && echo "https" || echo "http" )"
 SATOSA_URL="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}/spidSaml2/metadata"
-CURL_OPTS="-sf$( [ "${SSL:-off}" = "on" ] && echo "k" )"
+CURL_OPTS="-sf$( [ "${SSL:-off}" = "on" ] && echo "k" ) --connect-timeout 5 --max-time 10"
 OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
 mkdir -p /output/agid
 
