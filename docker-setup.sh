@@ -313,8 +313,8 @@ if [ "$APP_SUITE" = "frontoffice" ] && [ -n "${MASTER_TOKEN:-}" ]; then
   (
     if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
       BACKOFFICE_URL="${BACKOFFICE_INTERNAL_URL}"
-    elif [ "${SSL:-on}" = "on" ]; then
-      BACKOFFICE_URL="https://backoffice"
+    elif [ "${SSL:-off}" = "on" ]; then
+      BACKOFFICE_URL="https://backoffice:80"
     else
       BACKOFFICE_URL="http://backoffice"
     fi
