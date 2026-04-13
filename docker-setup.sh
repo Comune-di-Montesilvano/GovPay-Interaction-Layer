@@ -186,7 +186,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
   mkdir -p /var/www/html/spid-certs
   chown www-data:www-data /var/www/html/spid-certs 2>/dev/null || true
   chmod 775 /var/www/html/spid-certs 2>/dev/null || true
-  # Rendi leggibili i certificati SPID dai container iam-proxy-italia e satosa-nginx
+  # Rendi leggibili i certificati SPID dai container auth-proxy e auth-proxy-nginx
   find /var/www/html/spid-certs -name "*.pem" -type f -exec chmod 644 {} \; 2>/dev/null || true
   mkdir -p /var/www/html/cieoidc-keys /var/www/html/metadata-cieoidc /var/www/html/metadata-agid
   chown www-data:www-data /var/www/html/cieoidc-keys /var/www/html/metadata-cieoidc /var/www/html/metadata-agid 2>/dev/null || true
@@ -304,6 +304,38 @@ fi
 if [ -f /etc/apache2/envvars ]; then
   # shellcheck disable=SC1091
   . /etc/apache2/envvars
+fi
+
+# Watchdog configurazione frontoffice: rileva cambi in /api/frontoffice/config
+# e invia SIGUSR1 ad Apache (graceful reload) senza riavviare il container.
+# Attivo solo nel container frontoffice se MASTER_TOKEN è configurato.
+if [ "$APP_SUITE" = "frontoffice" ] && [ -n "${MASTER_TOKEN:-}" ]; then
+  (
+    BACKOFFICE_URL="${BACKOFFICE_INTERNAL_URL:-http://backoffice}"
+    WATCHDOG_INTERVAL="${FRONTOFFICE_WATCHDOG_INTERVAL:-300}"
+    LAST_HASH=""
+    # Aspetta che backoffice sia pronto (max 60s)
+    for i in $(seq 1 12); do
+      if curl -sf -o /dev/null -H "Authorization: Bearer ${MASTER_TOKEN}" \
+          "${BACKOFFICE_URL}/api/frontoffice/config" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 5
+    done
+    while true; do
+      sleep "${WATCHDOG_INTERVAL}"
+      CONFIG=$(curl -sf -H "Authorization: Bearer ${MASTER_TOKEN}" \
+        "${BACKOFFICE_URL}/api/frontoffice/config" 2>/dev/null) || continue
+      HASH=$(printf '%s' "${CONFIG}" | md5sum | cut -d' ' -f1)
+      if [ "${HASH}" != "${LAST_HASH}" ]; then
+        LAST_HASH="${HASH}"
+        # Graceful reload Apache: ricarica config senza interrompere connessioni attive
+        if [ -f /var/run/apache2/apache2.pid ]; then
+          kill -USR1 "$(cat /var/run/apache2/apache2.pid)" 2>/dev/null || true
+        fi
+      fi
+    done
+  ) &
 fi
 
 if [ "$SSL_ON" = "on" ]; then

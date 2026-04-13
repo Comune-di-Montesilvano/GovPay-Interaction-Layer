@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # GovPay Interaction Layer (GIL)
 
 Piattaforma containerizzata per la gestione dei pagamenti pagoPA, sviluppata per il Comune di Montesilvano. Integra GovPay, pagoPA Checkout, App IO e SPID/CIE.
@@ -6,13 +10,15 @@ Piattaforma containerizzata per la gestione dei pagamenti pagoPA, sviluppata per
 
 Applicazione multi-container Docker. I container principali sono:
 
-| Container | Stack | Scopo |
-|---|---|---|
-| `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute |
-| `frontoffice` | PHP 8.5 + Slim 4 + Apache | Portale cittadino per visualizzare e pagare pendenze |
-| `master` | Python (FastAPI) | Orchestrazione, configurazione, backup, comunicazione interna |
-| `db` | MariaDB 10.x | Database condiviso con utenti separati per backoffice (RW) e frontoffice (RO) |
-| `satosa` / `iam-proxy-nginx` | Python SATOSA + Nginx | Proxy SPID/CIE (profilo opzionale `iam-proxy`) |
+| Container | Service | Stack | Scopo |
+|---|---|---|---|
+| `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute |
+| `gil-frontoffice` | `frontoffice` | PHP 8.5 + Slim 4 + Apache | Portale cittadino per visualizzare e pagare pendenze |
+| `gil-db` | `db` | MariaDB 10.x | Database condiviso con utenti separati per backoffice (RW) e frontoffice (RO) |
+| `gil-auth-proxy` | `auth-proxy` | Python SATOSA | Proxy SPID/CIE: legge config da backoffice, gestisce SATOSA |
+| `gil-auth-proxy-nginx` | `auth-proxy-nginx` | Nginx | Reverse proxy per SATOSA, serve metadata e disco SPID |
+| `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
+| `gil-metadata-builder` | `metadata-builder` | Bash + OpenSSL | Generazione certificati e metadata SPID/CIE (setup iniziale) |
 
 La comunicazione backoffice → master avviene via Bearer token (`MASTER_TOKEN`). I segreti sensibili (chiavi App IO, ecc.) sono cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
 
@@ -20,20 +26,20 @@ La comunicazione backoffice → master avviene via Bearer token (`MASTER_TOKEN`)
 
 ```bash
 # Avvio sviluppo locale
-cp .env.example .env   # personalizza le variabili
+cp .env.example .env   # configura solo le variabili di bootstrap
 docker compose up -d --build
 
 # Produzione (immagini pre-built da GHCR)
 docker compose pull && docker compose up -d
 
-# Con IAM Proxy SPID/CIE abilitato
-COMPOSE_PROFILES=iam-proxy docker compose up -d
+# Tutti i servizi (backoffice, frontoffice, auth-proxy, db, metadata-builder)
+# partono sempre. SPID/CIE si abilita via Backoffice → Impostazioni → Login Proxy.
 
 # Esegui test PHP
 docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build --abort-on-container-exit
 
 # Cron batch pendenze massive
-docker exec govpay-interaction-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
+docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
 ```
 
 ## Struttura directory
@@ -56,18 +62,28 @@ metadata/       Metadata SPID/CIE
 
 ## Configurazione
 
-- **`.env`** — variabili di deploy (non versionato). Template: `.env.example`
-- **`.iam-proxy.env`** — configurazione SATOSA/SPID (opzionale). Template: `.iam-proxy.env.example`
-- **`docker-compose.yml`** — definizione servizi
-- **`docker-compose.override.yml`** — override sviluppo locale
+### Bootstrap (`.env`)
 
-Variabili obbligatorie prima del primo avvio: `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD`, `MASTER_TOKEN`, `APP_ENCRYPTION_KEY`.
+Contiene solo le variabili necessarie all'avvio dei container. Template: `.env.example`.
 
-Generazione valori sicuri:
+Obbligatorie prima del primo avvio:
+
 ```bash
+DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD, FRONTOFFICE_DB_PASSWORD
+APP_ENCRYPTION_KEY   # esattamente 32 caratteri
+MASTER_TOKEN         # token Bearer interno
+
 openssl rand -hex 24   # MASTER_TOKEN
-openssl rand -hex 16   # APP_ENCRYPTION_KEY (esattamente 32 chars)
+openssl rand -hex 16   # APP_ENCRYPTION_KEY
 ```
+
+### Configurazione applicativa (DB → UI)
+
+Tutto il resto (GovPay, pagoPA, SPID/CIE, entità, App IO, mail, branding) si
+configura via **Backoffice → Impostazioni** e viene salvato nella tabella `settings`.
+Nessuna variabile `.env` aggiuntiva richiesta.
+
+Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsRepository`) → `config.json` → default.
 
 ## CI/CD
 
@@ -98,3 +114,54 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. La variabile `GIL_IMAGE_TAG` nel com
 | pagoPA GPD | Gestione posizioni debitorie |
 | App IO | Notifiche e pagamenti cittadini |
 | SPID / CIE | Autenticazione federata cittadini |
+
+## Configurazione: DB vs .env
+
+`App\Config\Config::get('ENV_KEY')` è il punto unico di lettura. Priorità:
+1. Tabella `settings` in DB (sezioni: `entity`, `backoffice`, `frontoffice`, `govpay`, `pagopa`, `iam_proxy`, `ui`) — valori sensibili cifrati con `APP_ENCRYPTION_KEY` via `App\Security\Crypto`
+2. `config.json` (bootstrap keys, letto da `ConfigLoader`)
+3. Default passato come secondo argomento
+
+~60 variabili ex-.env ora vivono in DB. Le uniche variabili che restano obbligatorie in `.env` sono quelle di bootstrap (credenziali DB, `MASTER_TOKEN`, `APP_ENCRYPTION_KEY`).
+
+## Autoloading e namespace PHP
+
+Il namespace `App\` è mappato su **due** source roots:
+- `app/` — librerie condivise (Config, Database, Security, Services, Logger)
+- `backoffice/src/` — controller, middleware, auth backoffice
+
+Il frontoffice non usa Composer/autoload proprio: carica direttamente via `require` le classi condivise da `app/`.
+
+## Flusso request backoffice
+
+```
+index.php → bootstrap/app.php → Slim App
+  Middleware stack (LIFO order):
+    ErrorMiddleware (aggiunta per ultima, eseguita per prima)
+    CurrentPathMiddleware (popola current_user da sessione)
+    SessionMiddleware → FlashMiddleware → SetupMiddleware → AuthMiddleware
+  → Route → Controller → GovPay/pagoPA client (via vendor/)
+```
+
+`/api/*` è pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `master` e `iam-proxy`.
+
+## Master service (FastAPI)
+
+`master/` espone API interne consumate dal backoffice via `App\Services\PortainerClient`. Routers principali: `backup`, `config`, `containers`, `health`, `iam_proxy`. Autenticazione tramite `MASTER_TOKEN` in `auth.py`.
+
+## Migrazioni DB
+
+File SQL in `migrations/` (numerati es. `003_...sql`). Non c'è runner automatico — le migrazioni vengono applicate manualmente o tramite `docker/db-init/` al primo avvio del container MariaDB.
+
+## Test
+
+Nessun `phpunit.xml` nel progetto root — i test esistenti sono nei client generati (`govpay-clients/`, `pagopa-clients/`). Per aggiungere test applicativi, creare `phpunit.xml` nella root e target su `tests/`.
+
+```bash
+# Esegui test su singolo client generato
+cd govpay-clients/generated-clients/pendenze-v2/pendenze-client && vendor/bin/phpunit
+```
+
+## Generazione API client
+
+I client PHP in `govpay-clients/` e `pagopa-clients/` sono **generati** (OpenAPI Generator). Non modificarli a mano — rigenera dalla spec OpenAPI se necessario. Sono referenziati come `path` repository in `composer.json`.

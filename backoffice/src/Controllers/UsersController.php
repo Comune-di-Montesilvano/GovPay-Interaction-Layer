@@ -281,6 +281,6 @@ class UsersController
 
     private function usersHome(): string
     {
-        return '/configurazione?tab=utenti';
+        return '/impostazioni?tab=utenti';
     }
 }
