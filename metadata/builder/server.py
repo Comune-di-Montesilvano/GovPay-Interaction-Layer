@@ -92,6 +92,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         ok = result.returncode == 0
+        if result.stdout:
+            print(result.stdout, end="", file=sys.stderr, flush=True)
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr, flush=True)
         self._respond(
             200 if ok else 500,
             {
