@@ -83,6 +83,8 @@ class ImpostazioniController
             $data['gil_info'] = $gilInfo;
         }
 
+        $data['ssl_on'] = (strtolower((string)(getenv('SSL') ?: 'off')) === 'on');
+
         return $this->twig->render($response, 'impostazioni/index.html.twig', $data);
     }
 
