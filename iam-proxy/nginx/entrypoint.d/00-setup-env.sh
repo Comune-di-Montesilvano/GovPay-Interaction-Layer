@@ -4,7 +4,7 @@
 
 set -e
 
-NGINX_HOST="${NGINX_HOST:-satosa-nginx}"
+NGINX_HOST="${NGINX_HOST:-auth-proxy-nginx}"
 SSL_ENABLED="${SSL:-on}"
 
 echo "[nginx-setup] Initializing configuration from templates..."

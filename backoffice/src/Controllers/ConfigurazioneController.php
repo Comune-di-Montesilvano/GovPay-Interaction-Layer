@@ -2636,7 +2636,7 @@ class ConfigurazioneController
 
     private function redirectToTab(Response $response, string $tab): Response
     {
-        return $response->withHeader('Location', '/configurazione?tab=' . $tab)->withStatus(302);
+        return $response->withHeader('Location', '/impostazioni?tab=' . $tab)->withStatus(302);
     }
 
     private function isSuperadmin(): bool

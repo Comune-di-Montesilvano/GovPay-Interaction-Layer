@@ -26,9 +26,11 @@ use Slim\Views\Twig;
  *    - importBackup() — carica e applica un JSON di backup dati
  *
  * 2. Backup di sistema (lettura/scrittura diretta sul volume gil_backups):
- *    - systemBackupCreate()   — crea un ZIP con settings DB + dati GovPay + volumi certificati
- *    - systemBackupList()     — lista i .zip in /backups
- *    - systemBackupDownload() — scarica un archivio .zip
+ *    - systemBackupCreate()      — crea un ZIP con settings DB + dati GovPay + volumi certificati + DB dump
+ *    - systemBackupList()        — lista i .zip in /backups
+ *    - systemBackupDownload()    — scarica un archivio .zip
+ *    - systemBackupRestore()     — carica un .zip e ripristina (upload via form)
+ *    - systemBackupUploadRestore() — carica un .zip e ripristina immediatamente (API JSON)
  */
 class BackupController
 {
@@ -324,7 +326,13 @@ class BackupController
             $govpayConfig = $this->buildFullGovpayExport();
             $zip->addFromString('govpay-config.json', json_encode($govpayConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
-            // 3. Volumi montati
+            // 3. DB dump via mysqldump
+            $dbDumpFile = $this->runMysqldump();
+            if ($dbDumpFile !== null) {
+                $zip->addFile($dbDumpFile, 'db_dump.sql.gz');
+            }
+
+            // 4. Volumi montati
             foreach (self::BACKUP_VOLUMES as $name => $mountPath) {
                 if (is_dir($mountPath)) {
                     $this->addDirToZip($zip, $mountPath, "volumes/{$name}");
@@ -332,11 +340,17 @@ class BackupController
             }
 
             $zip->close();
+            if ($dbDumpFile !== null) {
+                @unlink($dbDumpFile);
+            }
             Logger::getInstance()->info('Backup di sistema creato', ['file' => "backup-{$timestamp}.zip"]);
             return $this->jsonOk("Backup creato: backup-{$timestamp}.zip");
         } catch (\Throwable $e) {
             if (isset($zip) && $zip instanceof \ZipArchive) {
                 @$zip->close();
+            }
+            if (isset($dbDumpFile) && $dbDumpFile !== null) {
+                @unlink($dbDumpFile);
             }
             @unlink($zipPath);
             Logger::getInstance()->error('Errore creazione backup sistema', ['error' => $e->getMessage()]);
@@ -455,7 +469,7 @@ class BackupController
             throw new \RuntimeException('Impossibile aprire il file ZIP.');
         }
 
-        $stats = ['settings_sections' => 0, 'volume_files' => 0, 'govpay_sections' => 0];
+        $stats = ['settings_sections' => 0, 'volume_files' => 0, 'govpay_sections' => 0, 'db_restored' => false];
 
         // 1. settings.json → DB
         $settingsJson = $zip->getFromName('settings.json');
@@ -538,7 +552,20 @@ class BackupController
             }
         }
 
-        // 3. volumes/* → path montati
+        // 3. DB restore
+        $dbDumpEntry = $zip->getFromName('db_dump.sql.gz');
+        if ($dbDumpEntry !== false) {
+            $tmpDump = sys_get_temp_dir() . '/gil-dbrestore-' . bin2hex(random_bytes(6)) . '.sql.gz';
+            file_put_contents($tmpDump, $dbDumpEntry);
+            try {
+                $this->runMysqlRestore($tmpDump);
+                $stats['db_restored'] = true;
+            } finally {
+                @unlink($tmpDump);
+            }
+        }
+
+        // 4. volumes/* → path montati
         $volumeMap = [];
         foreach (self::BACKUP_VOLUMES as $name => $mountPath) {
             $volumeMap["volumes/{$name}"] = $mountPath;
@@ -568,9 +595,122 @@ class BackupController
         return $stats;
     }
 
+    /**
+     * POST /backup/sistema/carica-ripristina — carica un ZIP e ripristina immediatamente.
+     * Risposta JSON (non redirect), per uso da UI o API.
+     */
+    public function systemBackupUploadRestore(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $uploadedFiles = $request->getUploadedFiles();
+        $file = $uploadedFiles['backup_file'] ?? null;
+
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('Nessun file caricato o errore nel trasferimento.');
+        }
+
+        $originalName = $file->getClientFilename() ?? 'backup.zip';
+        if (!str_ends_with(strtolower($originalName), '.zip')) {
+            return $this->jsonError('Il file deve essere un archivio .zip.');
+        }
+
+        $tmpPath = sys_get_temp_dir() . '/gil-upload-restore-' . bin2hex(random_bytes(8)) . '.zip';
+        try {
+            $stream = $file->getStream();
+            file_put_contents($tmpPath, (string) $stream);
+
+            $result = $this->doRestoreFromZip($tmpPath);
+
+            Logger::getInstance()->info('Upload e ripristino ZIP completato', array_merge(['file' => $originalName], $result));
+            return $this->jsonResponse([
+                'success' => true,
+                'message' => 'Ripristino completato.',
+                'detail'  => $result,
+            ]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore upload-ripristino ZIP', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore durante il ripristino: ' . $e->getMessage());
+        } finally {
+            @unlink($tmpPath);
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Esegue mysqldump e restituisce il path del file .sql.gz temporaneo,
+     * oppure null se mysqldump non è disponibile o fallisce.
+     */
+    private function runMysqldump(): ?string
+    {
+        $dbHost = (string)(getenv('DB_HOST') ?: '127.0.0.1');
+        $dbPort = (string)(getenv('DB_PORT') ?: '3306');
+        $dbName = (string)(getenv('DB_NAME') ?: '');
+        $dbUser = (string)(getenv('DB_USER') ?: '');
+        $dbPass = (string)(getenv('DB_PASSWORD') ?: '');
+
+        if ($dbName === '' || $dbUser === '') {
+            Logger::getInstance()->warning('mysqldump saltato: DB_NAME o DB_USER non configurati');
+            return null;
+        }
+
+        $outFile = sys_get_temp_dir() . '/gil-dbdump-' . bin2hex(random_bytes(6)) . '.sql.gz';
+        $cmd = sprintf(
+            'mysqldump --single-transaction --routines --triggers -h %s -P %s -u %s -p%s %s 2>/dev/null | gzip > %s',
+            escapeshellarg($dbHost),
+            escapeshellarg($dbPort),
+            escapeshellarg($dbUser),
+            escapeshellarg($dbPass),
+            escapeshellarg($dbName),
+            escapeshellarg($outFile)
+        );
+        exec($cmd, $output, $exitCode);
+
+        if ($exitCode !== 0 || !is_file($outFile) || filesize($outFile) === 0) {
+            Logger::getInstance()->warning('mysqldump fallito o output vuoto', ['exit_code' => $exitCode]);
+            @unlink($outFile);
+            return null;
+        }
+
+        return $outFile;
+    }
+
+    /**
+     * Ripristina il DB da un file .sql.gz via mysql CLI.
+     */
+    private function runMysqlRestore(string $gzFile): void
+    {
+        $dbHost = (string)(getenv('DB_HOST') ?: '127.0.0.1');
+        $dbPort = (string)(getenv('DB_PORT') ?: '3306');
+        $dbName = (string)(getenv('DB_NAME') ?: '');
+        $dbUser = (string)(getenv('DB_USER') ?: '');
+        $dbPass = (string)(getenv('DB_PASSWORD') ?: '');
+
+        if ($dbName === '' || $dbUser === '') {
+            throw new \RuntimeException('DB_NAME o DB_USER non configurati: impossibile ripristinare il database.');
+        }
+
+        $cmd = sprintf(
+            'zcat %s | mysql -h %s -P %s -u %s -p%s %s 2>&1',
+            escapeshellarg($gzFile),
+            escapeshellarg($dbHost),
+            escapeshellarg($dbPort),
+            escapeshellarg($dbUser),
+            escapeshellarg($dbPass),
+            escapeshellarg($dbName)
+        );
+        exec($cmd, $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            $errMsg = implode("\n", $output);
+            throw new \RuntimeException("Ripristino DB fallito (exit {$exitCode}): {$errMsg}");
+        }
+    }
 
     private function isSuperadmin(): bool
     {
@@ -579,7 +719,7 @@ class BackupController
 
     private function redirectToConfigTab(Response $response, string $tab): Response
     {
-        return $response->withHeader('Location', '/configurazione?tab=' . $tab)->withStatus(302);
+        return $response->withHeader('Location', '/impostazioni?tab=' . $tab)->withStatus(302);
     }
 
     /**

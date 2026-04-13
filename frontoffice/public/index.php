@@ -765,14 +765,14 @@ if (!function_exists('frontoffice_satosa_saml_auth')) {
             return null;
         }
 
-        // Se l'SSO URL nei metadata punta a host interni (satosa-nginx/localhost), usa la base pubblica.
+        // Se l'SSO URL nei metadata punta a host interni (auth-proxy-nginx/localhost), usa la base pubblica.
         $proxyBase = rtrim((string)frontoffice_env_value('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
         if ($proxyBase === '') {
             $proxyBase = rtrim((string)frontoffice_env_value('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
         }
         if ($proxyBase !== '' && isset($idp['ssoUrl']) && is_string($idp['ssoUrl'])) {
             $ssoUrl = $idp['ssoUrl'];
-            if (preg_match('#^https?://(satosa-nginx|localhost|127\\.0\\.0\\.1)(:[0-9]+)?/#i', $ssoUrl)) {
+            if (preg_match('#^https?://(auth-proxy-nginx|localhost|127\\.0\\.0\\.1)(:[0-9]+)?/#i', $ssoUrl)) {
                 $parts = parse_url($ssoUrl);
                 $path = $parts['path'] ?? '';
                 $query = isset($parts['query']) ? '?' . $parts['query'] : '';
@@ -901,7 +901,7 @@ if (!function_exists('frontoffice_spid_proxy_insecure_ssl')) {
     function frontoffice_spid_proxy_insecure_ssl(string $proxyBaseUrl): bool
     {
         $host = (string)(parse_url($proxyBaseUrl, PHP_URL_HOST) ?: '');
-        return in_array($host, ['localhost', '127.0.0.1', '::1', 'satosa-nginx'], true);
+        return in_array($host, ['localhost', '127.0.0.1', '::1', 'auth-proxy-nginx'], true);
     }
 }
 
@@ -2715,8 +2715,8 @@ $routes = [
             if ($proxyBase === '') {
                 $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
             }
-            // Preferisci l'URL interno (per il container frontoffice -> satosa-nginx:443)
-            // Fallback all'URL esterno (per il browser -> satosa-nginx:9445)
+            // Preferisci l'URL interno (per il container frontoffice -> auth-proxy-nginx:443)
+            // Fallback all'URL esterno (per il browser -> auth-proxy-nginx:9445)
             $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
             if ($metadataUrl === '') {
                 $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
@@ -2907,8 +2907,8 @@ $routes = [
             if ($proxyBase === '') {
                 $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
             }
-            // Preferisci l'URL interno (per il container frontoffice -> satosa-nginx:443)
-            // Fallback all'URL esterno (per il browser -> satosa-nginx:9445)
+            // Preferisci l'URL interno (per il container frontoffice -> auth-proxy-nginx:443)
+            // Fallback all'URL esterno (per il browser -> auth-proxy-nginx:9445)
             $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
             if ($metadataUrl === '') {
                 $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');

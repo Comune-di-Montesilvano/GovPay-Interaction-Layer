@@ -1,7 +1,7 @@
 services:
-  govpay-interaction-backoffice:
+  backoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
-    container_name: govpay-interaction-backoffice
+    container_name: gil-backoffice
     ports:
       - "${BACKOFFICE_HTTP_PORT:-8443}:80"
     volumes:
@@ -28,22 +28,17 @@ services:
       - DB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      # Portainer API — opzionale; se non configurato le funzioni di container management
-      # mostrano un banner informativo anziché restituire errori.
-      - PORTAINER_URL=${PORTAINER_URL:-}
-      - PORTAINER_API_TOKEN=${PORTAINER_API_TOKEN:-}
-      - PORTAINER_ENDPOINT_ID=${PORTAINER_ENDPOINT_ID:-1}
-      # Token per autenticare le chiamate Bearer provenienti da iam-proxy/startup.sh (GET /api/iam-proxy/env)
+      # Token per autenticare le chiamate Bearer provenienti da auth-proxy/startup.sh
       - MASTER_TOKEN=${MASTER_TOKEN}
       - METADATA_BUILDER_INTERNAL_URL=${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}
-    entrypoint: [ "/usr/local/bin/docker-setup.sh" ] # Esegue script di setup (composer/autoload + cert) poi CMD apache
+    entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     networks:
       - govpay-network
 
-  govpay-interaction-frontoffice:
+  frontoffice:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
-    container_name: govpay-interaction-frontoffice
+    container_name: gil-frontoffice
     ports:
       - "${FRONTOFFICE_HTTP_PORT:-8444}:80"
     volumes:
@@ -64,24 +59,26 @@ services:
       - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=http://satosa-nginx:80/Saml2IDP/metadata
+      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=http://auth-proxy-nginx:80/Saml2IDP/metadata
+      - MASTER_TOKEN=${MASTER_TOKEN}
+      - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     networks:
       - govpay-network
 
-  iam-proxy-italia:
+  auth-proxy:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
-    container_name: iam-proxy-italia
+    container_name: gil-auth-proxy
     command: ["/bin/bash", "/builder/startup.sh"]
     volumes:
       # Chiavi JWK CIE OIDC (per-deployment, generate da backoffice UI o metadata-builder setup-cieoidc)
       - gil_cieoidc_keys:/cieoidc-keys:ro
-      # SP metadata del frontoffice (rw: iam-proxy-italia genera e scrive il metadata in startup.sh)
+      # SP metadata del frontoffice (rw: auth-proxy genera e scrive il metadata in startup.sh)
       - frontoffice_sp_metadata:/frontoffice-sp
       # Certificati SPID (per-deployment)
       - spid_certs:/satosa_proxy/pki
-      # File statici condivisi con satosa-nginx (popolati da startup.sh)
+      # File statici condivisi con auth-proxy-nginx (popolati da startup.sh)
       - iam_proxy_static:/satosa-static
     environment:
       # Variabili infrastrutturali del container (non provengono dal DB)
@@ -97,7 +94,7 @@ services:
       # MongoDB — credenziali infrastrutturali container-to-container
       - MONGODB_USERNAME=${MONGODB_USERNAME:-satosa_user}
       - MONGODB_PASSWORD=${MONGODB_PASSWORD:-satosa_password}
-      - MONGODB_HOST=${MONGODB_HOST:-satosa-mongo}
+      - MONGODB_HOST=${MONGODB_HOST:-auth-proxy-db}
       - MONGODB_PORT=${MONGODB_PORT:-27017}
       - MONGODB_DB=${MONGODB_DB:-satosa}
       # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* vengono lette dal DB backoffice
@@ -117,23 +114,23 @@ services:
     networks:
       - govpay-network
 
-  satosa-nginx:
+  auth-proxy-nginx:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx:${APP_VERSION:-latest}
-    container_name: satosa-nginx
+    container_name: gil-auth-proxy-nginx
     depends_on:
-      iam-proxy-italia:
+      auth-proxy:
         condition: service_healthy
     ports:
       - "${IAM_PROXY_HTTP_PORT:-9445}:80"
     environment:
       # Variabili di rete/routing nginx (infrastrutturali)
-      - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-satosa-nginx}
+      - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-auth-proxy-nginx}
       - IAM_PROXY_HTTP_PORT=${IAM_PROXY_HTTP_PORT:-9445}
-      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-satosa-nginx}
+      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
       # I flag ENABLE_* non sono usati in nginx.conf: il disco.html viene già generato
-      # con il contenuto corretto da iam-proxy-italia/startup.sh (che li legge dal DB).
+      # con il contenuto corretto da auth-proxy/startup.sh (che li legge dal DB).
     volumes:
-      # File statici SATOSA (disco.html, wallets, etc.) popolati da iam-proxy-italia/startup.sh
+      # File statici SATOSA (disco.html, wallets, etc.) popolati da auth-proxy/startup.sh
       - iam_proxy_static:/satosa-project/static:ro
       # Certificati TLS server per-dominio
       - gil_ssl_certs:/etc/nginx/certs
@@ -143,7 +140,7 @@ services:
 
   db:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
-    container_name: govpay-interaction-mariadb
+    container_name: gil-db
     restart: always
     environment:
       - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
@@ -157,9 +154,9 @@ services:
     networks:
       - govpay-network
 
-  satosa-mongo:
+  auth-proxy-db:
     image: mongo:7
-    container_name: satosa-mongo
+    container_name: gil-auth-proxy-db
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USERNAME:-satosa_user}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-satosa_password}
@@ -172,6 +169,7 @@ services:
 
   metadata-builder:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-metadata-builder:${APP_VERSION:-latest}
+    container_name: gil-metadata-builder
     command: ["server"]
     volumes:
       - spid_certs:/certs
@@ -208,6 +206,7 @@ services:
       - CIE_OIDC_PROVIDER_URL=${CIE_OIDC_PROVIDER_URL:-https://oidc.idserver.servizicie.interno.gov.it}
       - CIE_OIDC_TRUST_ANCHOR_URL=${CIE_OIDC_TRUST_ANCHOR_URL:-https://oidc.registry.servizicie.interno.gov.it}
       - CIE_OIDC_AUTHORITY_HINT_URL=${CIE_OIDC_AUTHORITY_HINT_URL:-https://oidc.registry.servizicie.interno.gov.it}
+      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
     networks:
       - govpay-network
 
@@ -228,7 +227,7 @@ volumes:
   gil_certs:
   # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:
-  # Certificati TLS server per satosa-nginx (RW backoffice e satosa-nginx per bootstrap)
+  # Certificati TLS server per auth-proxy-nginx (RW backoffice e auth-proxy-nginx per bootstrap)
   gil_ssl_certs:
   # Chiavi JWK CIE OIDC private per-deployment (generate da backoffice UI o metadata-builder setup-cieoidc)
   gil_cieoidc_keys:

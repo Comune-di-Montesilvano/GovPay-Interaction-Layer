@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# startup.sh — eseguito da iam-proxy-italia all'avvio.
+# startup.sh — eseguito da auth-proxy (gil-auth-proxy) all'avvio.
 # Sostituisce sync-iam-proxy: applica envsubst sui template, inietta chiavi JWK CIE OIDC,
 # applica patch di configurazione, poi avvia SATOSA via entrypoint.sh.
 # Il progetto SATOSA è già in /satosa_proxy/ (baked nell'immagine Docker).
@@ -9,7 +9,7 @@ set -euo pipefail
 SATOSA_PROXY="/satosa_proxy"
 TEMPLATES="/builder/templates"
 CIEOIDC_KEYS="/cieoidc-keys"
-SATOSA_STATIC="/satosa-static"   # volume condiviso con satosa-nginx
+SATOSA_STATIC="/satosa-static"   # volume condiviso con auth-proxy-nginx
 
 is_true() {
   case "${1:-}" in
@@ -26,9 +26,9 @@ if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
 else
   # Regola unica: SSL=on -> HTTPS interno; altrimenti (anche assente) -> HTTP.
   if [ "${SSL:-off}" = "on" ]; then
-    _BO_URL="https://govpay-interaction-backoffice:80"
+    _BO_URL="https://backoffice:80"
   else
-    _BO_URL="http://govpay-interaction-backoffice"
+    _BO_URL="http://backoffice"
   fi
 fi
 
@@ -121,8 +121,8 @@ echo "[startup] Configurazione runtime applicata."
 
 # ── Default MongoDB backend CIE OIDC ─────────────────────────────────────────
 # Derivati dalle variabili infrastrutturali MONGODB_* (da docker-compose).
-# Non configurabili da UI backoffice: usano lo stesso satosa-mongo dello stack.
-: "${MONGO_CIE_OIDC_BACKEND_HOST:=mongodb://${MONGODB_HOST:-satosa-mongo}:${MONGODB_PORT:-27017}/?authSource=admin}"
+# Non configurabili da UI backoffice: usano lo stesso auth-proxy-db dello stack.
+: "${MONGO_CIE_OIDC_BACKEND_HOST:=mongodb://${MONGODB_HOST:-auth-proxy-db}:${MONGODB_PORT:-27017}/?authSource=admin}"
 : "${MONGO_CIE_OIDC_BACKEND_DB_NAME:=${MONGODB_DB:-satosa}}"
 : "${MONGO_CIE_OIDC_BACKEND_AUTH_COLLECTION:=cie_oidc_authz}"
 : "${MONGO_CIE_OIDC_BACKEND_TOKEN_COLLECTION:=cie_oidc_token}"
@@ -193,7 +193,7 @@ setup_satosa() {
 : "${APP_VERSION:=unknown}"
 export APP_VERSION
 
-echo "[startup] iam-proxy-italia startup — applicazione configurazione... (v${APP_VERSION:-unknown})"
+echo "[startup] auth-proxy startup — applicazione configurazione... (v${APP_VERSION:-unknown})"
 
 # ── i18n wallets ─────────────────────────────────────────────────────────────
 echo "[startup] Generazione wallets i18n JSON..."
@@ -425,7 +425,7 @@ if [ -f "$ROUTING" ]; then
   fi
 fi
 
-# ── copia static files nel volume condiviso con satosa-nginx ─────────────────
+# ── copia static files nel volume condiviso con auth-proxy-nginx ─────────────
 echo "[startup] Copia static files in $SATOSA_STATIC..."
 mkdir -p "$SATOSA_STATIC"
 cp -r "$SATOSA_PROXY/static/." "$SATOSA_STATIC/"
