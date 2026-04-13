@@ -1,26 +1,26 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guida per Claude Code (claude.ai/code) su questo repository.
 
 # GovPay Interaction Layer (GIL)
 
-Piattaforma containerizzata per la gestione dei pagamenti pagoPA, sviluppata per il Comune di Montesilvano. Integra GovPay, pagoPA Checkout, App IO e SPID/CIE.
+Piattaforma containerizzata per pagamenti pagoPA, sviluppata per Comune di Montesilvano. Integra GovPay, pagoPA Checkout, App IO, SPID/CIE.
 
 ## Architettura
 
-Applicazione multi-container Docker. I container principali sono:
+Multi-container Docker. Container principali:
 
 | Container | Service | Stack | Scopo |
 |---|---|---|---|
 | `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute |
-| `gil-frontoffice` | `frontoffice` | PHP 8.5 + Slim 4 + Apache | Portale cittadino per visualizzare e pagare pendenze |
-| `gil-db` | `db` | MariaDB 10.x | Database condiviso con utenti separati per backoffice (RW) e frontoffice (RO) |
+| `gil-frontoffice` | `frontoffice` | PHP 8.5 + Slim 4 + Apache | Portale cittadino: visualizza e paga pendenze |
+| `gil-db` | `db` | MariaDB 10.x | DB condiviso, utenti separati backoffice (RW) / frontoffice (RO) |
 | `gil-auth-proxy` | `auth-proxy` | Python SATOSA | Proxy SPID/CIE: legge config da backoffice, gestisce SATOSA |
 | `gil-auth-proxy-nginx` | `auth-proxy-nginx` | Nginx | Reverse proxy per SATOSA, serve metadata e disco SPID |
 | `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
 | `gil-metadata-builder` | `metadata-builder` | Bash + OpenSSL | Generazione certificati e metadata SPID/CIE (setup iniziale) |
 
-La comunicazione backoffice → master avviene via Bearer token (`MASTER_TOKEN`). I segreti sensibili (chiavi App IO, ecc.) sono cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
+Backoffice → master via Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
 
 ## Comandi principali
 
@@ -64,7 +64,7 @@ metadata/       Metadata SPID/CIE
 
 ### Bootstrap (`.env`)
 
-Contiene solo le variabili necessarie all'avvio dei container. Template: `.env.example`.
+Solo variabili necessarie all'avvio. Template: `.env.example`.
 
 Obbligatorie prima del primo avvio:
 
@@ -79,9 +79,7 @@ openssl rand -hex 16   # APP_ENCRYPTION_KEY
 
 ### Configurazione applicativa (DB → UI)
 
-Tutto il resto (GovPay, pagoPA, SPID/CIE, entità, App IO, mail, branding) si
-configura via **Backoffice → Impostazioni** e viene salvato nella tabella `settings`.
-Nessuna variabile `.env` aggiuntiva richiesta.
+Tutto il resto (GovPay, pagoPA, SPID/CIE, entità, App IO, mail, branding) si configura via **Backoffice → Impostazioni**, salvato in tabella `settings`. Nessuna variabile `.env` aggiuntiva.
 
 Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsRepository`) → `config.json` → default.
 
@@ -89,15 +87,15 @@ Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsReposito
 
 **GitHub Actions** (`.github/workflows/`):
 
-- **`ci.yml`** — si attiva su push/PR a `main`/`dev`: installa PHP 8.5, avvia lo stack Docker, esegue PHPUnit
-- **`docker-publish.yml`** — si attiva su tag `vX.Y.Z` o push a `dev`: builda e pubblica 7 immagini su `ghcr.io/comune-di-montesilvano/`
+- **`ci.yml`** — push/PR su `main`/`dev`: installa PHP 8.5, avvia stack Docker, esegue PHPUnit
+- **`docker-publish.yml`** — tag `vX.Y.Z` o push su `dev`: builda e pubblica 7 immagini su `ghcr.io/comune-di-montesilvano/`
 
-Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. La variabile `GIL_IMAGE_TAG` nel compose seleziona la versione.
+Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `GIL_IMAGE_TAG` nel compose seleziona versione.
 
 ## Convenzioni di sviluppo
 
 - **Branch principale**: `main` (production-ready); sviluppo attivo su `dev`
-- **PHP**: PSR-4 autoloading via Composer; namespace `App\` per le librerie condivise
+- **PHP**: PSR-4 autoloading via Composer; namespace `App\` per librerie condivise
 - **Routing**: Slim 4 con middleware per autenticazione e CSRF
 - **Template**: Twig 3 con estensioni custom; i18n via file JSON in `locales/`
 - **SSL**: `SSL=on` attiva HTTPS diretto su Apache; `SSL=off` per deploy dietro reverse proxy (es. Portainer + Traefik). Usa `SSL_HEADER` per X-Forwarded-Proto in modalità proxy.
@@ -117,20 +115,20 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. La variabile `GIL_IMAGE_TAG` nel com
 
 ## Configurazione: DB vs .env
 
-`App\Config\Config::get('ENV_KEY')` è il punto unico di lettura. Priorità:
+`App\Config\Config::get('ENV_KEY')` punto unico di lettura. Priorità:
 1. Tabella `settings` in DB (sezioni: `entity`, `backoffice`, `frontoffice`, `govpay`, `pagopa`, `iam_proxy`, `ui`) — valori sensibili cifrati con `APP_ENCRYPTION_KEY` via `App\Security\Crypto`
 2. `config.json` (bootstrap keys, letto da `ConfigLoader`)
-3. Default passato come secondo argomento
+3. Default come secondo argomento
 
-~60 variabili ex-.env ora vivono in DB. Le uniche variabili che restano obbligatorie in `.env` sono quelle di bootstrap (credenziali DB, `MASTER_TOKEN`, `APP_ENCRYPTION_KEY`).
+~60 variabili ex-.env ora in DB. Obbligatorie in `.env` solo variabili bootstrap (credenziali DB, `MASTER_TOKEN`, `APP_ENCRYPTION_KEY`).
 
 ## Autoloading e namespace PHP
 
-Il namespace `App\` è mappato su **due** source roots:
+Namespace `App\` mappato su **due** source roots:
 - `app/` — librerie condivise (Config, Database, Security, Services, Logger)
 - `backoffice/src/` — controller, middleware, auth backoffice
 
-Il frontoffice non usa Composer/autoload proprio: carica direttamente via `require` le classi condivise da `app/`.
+Frontoffice non usa Composer/autoload proprio: carica via `require` le classi condivise da `app/`.
 
 ## Flusso request backoffice
 
@@ -143,19 +141,19 @@ index.php → bootstrap/app.php → Slim App
   → Route → Controller → GovPay/pagoPA client (via vendor/)
 ```
 
-`/api/*` è pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `master` e `iam-proxy`.
+`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `master` e `iam-proxy`.
 
 ## Master service (FastAPI)
 
-`master/` espone API interne consumate dal backoffice via `App\Services\PortainerClient`. Routers principali: `backup`, `config`, `containers`, `health`, `iam_proxy`. Autenticazione tramite `MASTER_TOKEN` in `auth.py`.
+`master/` espone API interne consumate dal backoffice via `App\Services\PortainerClient`. Routers principali: `backup`, `config`, `containers`, `health`, `iam_proxy`. Autenticazione via `MASTER_TOKEN` in `auth.py`.
 
 ## Migrazioni DB
 
-File SQL in `migrations/` (numerati es. `003_...sql`). Non c'è runner automatico — le migrazioni vengono applicate manualmente o tramite `docker/db-init/` al primo avvio del container MariaDB.
+File SQL in `migrations/` (numerati es. `003_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
 
 ## Test
 
-Nessun `phpunit.xml` nel progetto root — i test esistenti sono nei client generati (`govpay-clients/`, `pagopa-clients/`). Per aggiungere test applicativi, creare `phpunit.xml` nella root e target su `tests/`.
+Nessun `phpunit.xml` nella root — test esistenti nei client generati (`govpay-clients/`, `pagopa-clients/`). Per aggiungere test applicativi: creare `phpunit.xml` nella root, target su `tests/`.
 
 ```bash
 # Esegui test su singolo client generato
@@ -164,4 +162,16 @@ cd govpay-clients/generated-clients/pendenze-v2/pendenze-client && vendor/bin/ph
 
 ## Generazione API client
 
-I client PHP in `govpay-clients/` e `pagopa-clients/` sono **generati** (OpenAPI Generator). Non modificarli a mano — rigenera dalla spec OpenAPI se necessario. Sono referenziati come `path` repository in `composer.json`.
+Client PHP in `govpay-clients/` e `pagopa-clients/` sono **generati** (OpenAPI Generator). Non modificare a mano — rigenera dalla spec OpenAPI se necessario. Referenziati come `path` repository in `composer.json`.
+
+## Convenzioni comunicazione e commit
+
+Sessione usa **caveman mode** (plugin `caveman`). Regole attive:
+
+- Risposte brevi, frammenti OK, no articoli/filler
+- **Commit: usa sempre `/caveman:caveman-commit` per generare il messaggio, poi esegui `git commit`**
+- Conventional Commits (`feat/fix/refactor/...`), imperativo, ≤72 char subject, body solo se non ovvio dal diff
+- No "Generated with Claude Code", no emoji nei commit salvo convenzione progetto
+- `/caveman:compress <file>` per comprimere file `.md` di memoria/note
+
+Livelli: `lite` | `full` (default) | `ultra`. Cambia con `/caveman lite|full|ultra`. Disattiva con `stop caveman` / `normal mode`.
