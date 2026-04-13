@@ -207,6 +207,7 @@ services:
       - CIE_OIDC_TRUST_ANCHOR_URL=${CIE_OIDC_TRUST_ANCHOR_URL:-https://oidc.registry.servizicie.interno.gov.it}
       - CIE_OIDC_AUTHORITY_HINT_URL=${CIE_OIDC_AUTHORITY_HINT_URL:-https://oidc.registry.servizicie.interno.gov.it}
       - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
+      - SSL=${SSL:-off}
     networks:
       - govpay-network
 
