@@ -12,7 +12,7 @@ config:
       module: backends.cieoidc.storage.impl.mongo_storage
       class: MongoStorage
       init_params:
-        url: mongodb://satosa-mongo:27017
+        url: !ENV MONGO_CIE_OIDC_BACKEND_HOST
         conf:
           db_name: cie_oidc
           db_auth_collection: authentication
