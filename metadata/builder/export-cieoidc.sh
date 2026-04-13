@@ -8,7 +8,9 @@ FORCE="${FORCE:-0}"
 
 # URL interno Docker (service name) per i curl
 SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
-IAM_PROXY_INTERNAL_BASE="http://${SATOSA_HOSTNAME}"
+SATOSA_SCHEME="$( [ "${SSL:-off}" = "on" ] && echo "https" || echo "http" )"
+IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}"
+CURL_INSECURE="$( [ "${SSL:-off}" = "on" ] && echo "-k" )"
 
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
@@ -58,7 +60,7 @@ JWKS_RP_JSON_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.json"
 JWKS_RP_JOSE_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.jose"
 
 for i in $(seq 1 40); do
-  if curl -sf "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
+  if curl -sf $CURL_INSECURE "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
     break
   fi
   echo "  Tentativo $i/40 (3s)..."
@@ -69,8 +71,8 @@ for i in $(seq 1 40); do
   fi
 done
 
-curl -fsSL "$JWKS_RP_JSON_URL" -o "$OUTPUT_DIR/jwks-rp.json"
-curl -fsSL "$JWKS_RP_JOSE_URL" -o "$OUTPUT_DIR/jwks-rp.jose"
+curl -fsSL $CURL_INSECURE "$JWKS_RP_JSON_URL" -o "$OUTPUT_DIR/jwks-rp.json"
+curl -fsSL $CURL_INSECURE "$JWKS_RP_JOSE_URL" -o "$OUTPUT_DIR/jwks-rp.jose"
 
 # Decode JWT payload → entity-configuration.json + jwks-federation-public.json + EXP
 python3 - "$OUTPUT_DIR/entity-configuration.jwt" \

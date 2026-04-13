@@ -4,13 +4,15 @@
 set -euo pipefail
 
 SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
-SATOSA_URL="http://${SATOSA_HOSTNAME}/spidSaml2/metadata"
+SATOSA_SCHEME="$( [ "${SSL:-off}" = "on" ] && echo "https" || echo "http" )"
+SATOSA_URL="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}/spidSaml2/metadata"
+CURL_OPTS="-sf$( [ "${SSL:-off}" = "on" ] && echo "k" )"
 OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
 mkdir -p /output/agid
 
 echo "[INFO] Attendo che ${SATOSA_HOSTNAME} sia disponibile..."
 for i in $(seq 1 40); do
-  if curl -sf "$SATOSA_URL" -o "$OUTPUT" 2>/dev/null; then
+  if curl $CURL_OPTS "$SATOSA_URL" -o "$OUTPUT" 2>/dev/null; then
     xmllint --format "$OUTPUT" -o "$OUTPUT" 2>/dev/null || true
     echo "[OK] Metadata esportato: metadata/agid/satosa_spid_public_metadata.xml"
     echo ""
