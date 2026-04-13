@@ -2724,6 +2724,10 @@ $routes = [
             if ($metadataUrl === '' && $proxyBase !== '') {
                 $metadataUrl = $proxyBase . '/Saml2IDP/metadata';
             }
+            // Con SSL=on nginx richiede HTTPS anche sulla porta 80 interna
+            if (getenv('SSL') === 'on' && str_starts_with($metadataUrl, 'http://')) {
+                $metadataUrl = 'https://' . substr($metadataUrl, 7);
+            }
 
             if ($frontofficeBaseUrl === '' || $metadataUrl === '') {
                 http_response_code(503);

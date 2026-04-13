@@ -1049,7 +1049,8 @@ function lpDeriveFromUrl() {
   // SATOSA metadata URLs
   lpSetDerived('lp-saml2-meta-pub', pub ? pub + '/Saml2IDP/metadata' : '');
   lpSetHint('lp-saml2-meta-pub-hint', pub ? pub + '/Saml2IDP/metadata' : '—');
-  lpSetDerived('lp-saml2-meta-int', host ? 'http://' + host + '/Saml2IDP/metadata' : '');
+  const _intScheme = {{ ssl_on is defined and ssl_on ? 'true' : 'false' }} ? 'https' : 'http';
+  lpSetDerived('lp-saml2-meta-int', host ? _intScheme + '://' + host + '/Saml2IDP/metadata' : '');
 
   // SPID cert fields
   lpSetDerived('lp-spid-cn', host);
