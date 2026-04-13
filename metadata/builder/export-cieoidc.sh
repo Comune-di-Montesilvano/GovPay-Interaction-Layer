@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # export-cieoidc.sh — esporta artifact CIE OIDC per onboarding alla federazione
-# Curla satosa-nginx via rete Docker interna (servizio deve essere up)
+# Curla auth-proxy-nginx via rete Docker interna (servizio deve essere up)
 set -euo pipefail
 
 OUTPUT_DIR="/output/cieoidc"
 FORCE="${FORCE:-0}"
 
 # URL interno Docker (service name) per i curl
-IAM_PROXY_INTERNAL_BASE="http://satosa-nginx"
+SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
+IAM_PROXY_INTERNAL_BASE="http://${SATOSA_HOSTNAME}"
 
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
@@ -50,7 +51,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 echo "[INFO] Export CIE OIDC da: $INTERNAL_COMPONENT_IDENTIFIER"
-echo "[INFO] Attendo satosa-nginx..."
+echo "[INFO] Attendo ${SATOSA_HOSTNAME}..."
 
 ENTITY_CONFIG_URL="$INTERNAL_COMPONENT_IDENTIFIER/.well-known/openid-federation"
 JWKS_RP_JSON_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.json"
@@ -63,7 +64,7 @@ for i in $(seq 1 40); do
   echo "  Tentativo $i/40 (3s)..."
   sleep 3
   if [[ $i -eq 40 ]]; then
-    echo "[ERROR] satosa-nginx non risponde. Verificare che il profilo iam-proxy sia avviato." >&2
+    echo "[ERROR] ${SATOSA_HOSTNAME} non risponde. Verificare che il servizio auth-proxy sia avviato." >&2
     exit 1
   fi
 done

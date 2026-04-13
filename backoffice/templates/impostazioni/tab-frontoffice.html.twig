@@ -1,11 +1,6 @@
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white d-flex align-items-center justify-content-between py-3">
+  <div class="card-header bg-white py-3">
     <h2 class="h5 mb-0"><i class="fas fa-desktop me-2 text-primary"></i>Frontoffice</h2>
-    {% if is_superadmin %}
-    <button class="btn btn-sm btn-outline-warning" onclick="impAction('/impostazioni/frontoffice/restart', this, 'Riavvio…')">
-      <i class="fas fa-sync-alt me-1"></i>Riavvia Frontoffice
-    </button>
-    {% endif %}
   </div>
   <div class="card-body">
     <form id="form-frontoffice" onsubmit="return false;">

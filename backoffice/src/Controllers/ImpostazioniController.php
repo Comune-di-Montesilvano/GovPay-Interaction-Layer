@@ -14,7 +14,6 @@ use Slim\Psr7\Response as SlimResponse;
 use Slim\Views\Twig;
 use App\Config\SettingsRepository;
 use App\Logger;
-use App\Services\PortainerClient;
 use App\Controllers\ConfigurazioneController;
 
 /**
@@ -77,18 +76,10 @@ class ImpostazioniController
         // Tab Info GIL: stato container e info sistema
         if ($tab === 'info-gil') {
             $gilInfo = [
-                'version'   => getenv('GIL_IMAGE_TAG') ?: 'dev',
-                'php'       => phpversion(),
-                'os'        => php_uname('s') . ' ' . php_uname('r'),
-                'containers' => null,
-                'containers_error' => null,
+                'version' => getenv('GIL_IMAGE_TAG') ?: 'dev',
+                'php'     => phpversion(),
+                'os'      => php_uname('s') . ' ' . php_uname('r'),
             ];
-            $portainerResult = (new PortainerClient())->getContainersStatus();
-            if ($portainerResult['success']) {
-                $gilInfo['containers'] = $portainerResult['data'] ?? [];
-            } else {
-                $gilInfo['containers_error'] = $portainerResult['message'] ?? 'Portainer non raggiungibile';
-            }
             $data['gil_info'] = $gilInfo;
         }
 
@@ -694,83 +685,6 @@ class ImpostazioniController
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // CONTAINER ACTIONS (via Portainer API)
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function restartFrontoffice(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        $result = (new PortainerClient())->restartContainers(['govpay-interaction-frontoffice']);
-        return $this->portainerResponse($result);
-    }
-
-    public function avviaIamProxy(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-
-        // Pre-flight: verifica prerequisiti prima di avviare iam-proxy-italia.
-        $errors = [];
-
-        // 1. Certificati PKI SATOSA (cert.pem + privkey.pem nel volume spid_certs)
-        if (!is_file(self::SPID_CERTS_DIR . '/cert.pem') || !is_file(self::SPID_CERTS_DIR . '/privkey.pem')) {
-            $errors[] = 'Certificati SPID mancanti. Genera prima cert.pem e privkey.pem (Impostazioni → Login Proxy → Certificati SPID).';
-        }
-
-        // 3. Chiavi JWK CIE OIDC (se CIE OIDC abilitato)
-        $iamProxy = SettingsRepository::getSection('iam_proxy');
-        $enableCie = in_array(trim((string)($iamProxy['enable_cie_oidc'] ?? '')), ['1', 'true', 'yes', 'on'], true);
-        if ($enableCie && count(glob(self::CIEOIDC_KEYS_DIR . '/*.json') ?: []) < 3) {
-            $errors[] = 'Chiavi JWK CIE OIDC mancanti o incomplete. Genera le chiavi CIE prima di avviare IAM Proxy.';
-        }
-
-        // 2. URL pubblico SATOSA (SATOSA_BASE) obbligatorio per il parsing YAML
-        if (empty(trim((string)($iamProxy['public_base_url'] ?? '')))) {
-            $errors[] = 'URL pubblico SATOSA (SATOSA_BASE) non configurato. Imposta il campo nella sezione Login Proxy.';
-        }
-
-        if ($errors) {
-            return $this->jsonResponse([
-                'success' => false,
-                'message' => 'Impossibile avviare IAM Proxy: prerequisiti mancanti.',
-                'errors'  => $errors,
-            ], 422);
-        }
-
-        $result = (new PortainerClient())->startContainers([
-            'satosa-mongo',
-            'iam-proxy-italia',
-            'satosa-nginx',
-        ]);
-        return $this->portainerResponse($result);
-    }
-
-    public function arrestaIamProxy(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        $result = (new PortainerClient())->stopContainers([
-            'satosa-nginx',
-            'iam-proxy-italia',
-            'satosa-mongo',
-        ]);
-        return $this->portainerResponse($result);
-    }
-
-    public function riavviaIamProxy(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        $result = (new PortainerClient())->restartContainers(['satosa-mongo', 'iam-proxy-italia', 'satosa-nginx']);
-        return $this->portainerResponse($result);
-    }
-
-    public function rigeneraSpMetadata(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        // iam-proxy-italia rigenera il metadata SP in startup.sh all'avvio
-        $result = (new PortainerClient())->restartContainers(['iam-proxy-italia', 'satosa-nginx']);
-        return $this->portainerResponse($result);
-    }
-
     public function getSpidCertInfo(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
@@ -901,7 +815,7 @@ class ImpostazioniController
         libxml_use_internal_errors(true);
         $parsed = simplexml_load_string($xml);
         if ($parsed === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: XML non valido restituito da satosa-nginx.');
+            return $this->jsonError('Export metadata pubblico SPID fallito: XML non valido restituito da auth-proxy-nginx.');
         }
 
         if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n") === false) {
@@ -1247,7 +1161,7 @@ class ImpostazioniController
     }
 
     /**
-     * Esporta gli artefatti pubblici CIE OIDC dalla satosa-nginx interna.
+     * Esporta gli artefatti pubblici CIE OIDC dalla auth-proxy-nginx interna.
      * Equivalente PHP di metadata/builder/export-cieoidc.sh.
      *
      * Richiede iam-proxy attivo (profilo iam-proxy up).
@@ -1328,11 +1242,53 @@ class ImpostazioniController
         ]);
     }
 
-    public function getContainersStatus(Request $request, Response $response): Response
+    /**
+     * GET /api/frontoffice/config
+     *
+     * Restituisce le impostazioni rilevanti per il frontoffice come dizionario piatto,
+     * usato dal watchdog daemon in docker-setup.sh per rilevare cambi di configurazione.
+     * Autenticazione: Bearer token (MASTER_TOKEN dall'ambiente del container).
+     * Non richiede sessione PHP.
+     */
+    public function getFrontofficeConfig(Request $request, Response $response): Response
     {
-        $this->requireAdminOrAbove();
-        $result = (new PortainerClient())->getContainersStatus();
-        return $this->portainerResponse($result);
+        $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
+        if (empty($masterToken)) {
+            return $this->jsonResponse(['error' => 'MASTER_TOKEN non configurato'], 503);
+        }
+
+        $authHeader = $request->getHeaderLine('Authorization');
+        if (!str_starts_with($authHeader, 'Bearer ') || !hash_equals($masterToken, substr($authHeader, 7))) {
+            return $this->jsonResponse(['error' => 'Non autorizzato'], 401);
+        }
+
+        $frontoffice = SettingsRepository::getSection('frontoffice');
+        $entity      = SettingsRepository::getSection('entity');
+        $iamProxy    = SettingsRepository::getSection('iam_proxy');
+        $ui          = SettingsRepository::getSection('ui');
+
+        $config = [
+            // frontoffice
+            'FRONTOFFICE_PUBLIC_BASE_URL'  => $frontoffice['public_base_url']   ?? '',
+            'FRONTOFFICE_AUTH_PROXY_TYPE'  => $frontoffice['auth_proxy_type']   ?? '',
+            // entity
+            'APP_ENTITY_NAME'              => $entity['name']                   ?? '',
+            'APP_ENTITY_SUFFIX'            => $entity['suffix']                 ?? '',
+            'APP_ENTITY_GOVERNMENT'        => $entity['government']             ?? '',
+            'APP_SUPPORT_EMAIL'            => $entity['support_email']          ?? '',
+            'APP_SUPPORT_PHONE'            => $entity['support_phone']          ?? '',
+            'APP_SUPPORT_HOURS'            => $entity['support_hours']          ?? '',
+            'APP_SUPPORT_LOCATION'         => $entity['support_location']       ?? '',
+            // iam_proxy feature flags
+            'ENABLE_SPID'                  => $iamProxy['enable_spid']          ?? '',
+            'ENABLE_CIE_OIDC'              => $iamProxy['enable_cie_oidc']      ?? '',
+            'IAM_PROXY_PUBLIC_BASE_URL'    => $iamProxy['public_base_url']      ?? '',
+            // ui
+            'APP_LOGO_SRC'                 => $ui['logo_src']                   ?? '',
+            'APP_LOGO_TYPE'                => $ui['logo_type']                  ?? '',
+        ];
+
+        return $this->jsonResponse($config);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -1617,18 +1573,6 @@ class ImpostazioniController
         $resp = new SlimResponse($status);
         $resp->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
         return $resp->withHeader('Content-Type', 'application/json');
-    }
-
-    /**
-     * Converte il risultato di PortainerClient in una Response HTTP.
-     * Gestisce anche il caso portainer_not_configured con un messaggio chiaro.
-     */
-    private function portainerResponse(array $result): Response
-    {
-        if (($result['reason'] ?? '') === 'portainer_not_configured') {
-            return $this->jsonResponse($result, 503);
-        }
-        return $this->jsonResponse($result, ($result['success'] ?? false) ? 200 : 500);
     }
 
     /**
