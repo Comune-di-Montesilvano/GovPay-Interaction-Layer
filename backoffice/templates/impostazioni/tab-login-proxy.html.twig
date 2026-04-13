@@ -8,19 +8,6 @@
         <span id="lp-status-text" class="text-muted small">Stato sconosciuto</span>
         <span id="lp-config-badge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-normal small ms-1" style="display:none;"></span>
       </div>
-      {% if is_superadmin %}
-      <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-sm btn-success" onclick="impAction('/impostazioni/login-proxy/avvia', this, 'Avvio…')">
-          <i class="fas fa-play me-1"></i>Avvia
-        </button>
-        <button class="btn btn-sm btn-danger" onclick="impAction('/impostazioni/login-proxy/arresta', this, 'Arresto…')">
-          <i class="fas fa-stop me-1"></i>Arresta
-        </button>
-        <button class="btn btn-sm btn-warning" onclick="impAction('/impostazioni/login-proxy/riavvia', this, 'Riavvio…')">
-          <i class="fas fa-sync-alt me-1"></i>Riavvia
-        </button>
-      </div>
-      {% endif %}
     </div>
   </div>
 
@@ -1247,23 +1234,6 @@ async function restoreMetadata(type, fileInputId, btn) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function () {
-  // Stato container IAM proxy
-  try {
-    const res = await fetch('/impostazioni/containers/status');
-    if (!res.ok) return;
-    const data = await res.json();
-    const services = data.services || {};
-    const iamRunning = Object.entries(services).some(([name, info]) =>
-      (name.includes('iam-proxy') || name.includes('satosa')) && info.running
-    );
-    const dot  = document.getElementById('lp-status-dot');
-    const text = document.getElementById('lp-status-text');
-    if (dot && text) {
-      dot.className = 'master-status-dot ' + (iamRunning ? 'bg-success' : 'bg-danger');
-      text.textContent = iamRunning ? 'In esecuzione' : 'Fermo';
-    }
-  } catch (_) {}
-
   // Derivazione campi al caricamento
   lpDeriveFromUrl();
   document.getElementById('lp-public-url')?.addEventListener('input', lpDeriveFromUrl);

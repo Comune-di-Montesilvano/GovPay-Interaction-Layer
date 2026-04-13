@@ -64,6 +64,10 @@ return function (App $app, Twig $twig): void {
         return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
     });
 
+    $app->get('/api/frontoffice/config', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getFrontofficeConfig($request, $response);
+    });
+
     // ── Impostazioni (nuovo config panel, richiede auth) ──────────────────────────
     $app->get('/impostazioni', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->index($request, $response);
@@ -116,26 +120,8 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/backoffice/test-email', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testEmail($request, $response);
     });
-    $app->post('/impostazioni/frontoffice/restart', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->restartFrontoffice($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/avvia', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->avviaIamProxy($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/arresta', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->arrestaIamProxy($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/riavvia', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->riavviaIamProxy($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/rigenera-sp-metadata', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->rigeneraSpMetadata($request, $response);
-    });
     $app->get('/impostazioni/login-proxy/spid-certs/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getSpidCertInfo($request, $response);
-    });
-    $app->get('/impostazioni/containers/status', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getContainersStatus($request, $response);
     });
     // SPID metadata
     $app->get('/impostazioni/login-proxy/spid-metadata/info', function (Request $request, Response $response) use ($twig): Response {
@@ -741,7 +727,7 @@ return function (App $app, Twig $twig): void {
         }
         
         $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente aggiornato'];
-        return $response->withHeader('Location', '/configurazione?tab=utenti')->withStatus(302);
+        return $response->withHeader('Location', '/impostazioni?tab=utenti')->withStatus(302);
     });
 
     $app->post('/users/{id}/disable', function($request, $response, $args) {
@@ -1013,5 +999,9 @@ return function (App $app, Twig $twig): void {
     $app->get('/api/biz-event', function($request, $response) use ($twig) {
         $controller = new FlussiController($twig);
         return $controller->fetchBizEvent($request, $response);
+    });
+
+    $app->post('/backup/sistema/carica-ripristina', function (Request $request, Response $response) use ($twig): Response {
+        return (new \App\Controllers\BackupController($twig))->systemBackupUploadRestore($request, $response);
     });
 };
