@@ -148,6 +148,9 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/spid-metadata/restore', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->restoreSpidMetadata($request, $response);
     });
+    $app->post('/impostazioni/login-proxy/spid-metadata/restore-from-db', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreSpidMetadataFromDb($request, $response);
+    });
     // CIE metadata
     $app->get('/impostazioni/login-proxy/cie-metadata/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getCieMetadataInfo($request, $response);
