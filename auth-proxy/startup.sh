@@ -20,7 +20,7 @@ is_true() {
 
 # ── Fetch runtime config from backoffice ─────────────────────────────────────
 # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* provengono esclusivamente dal DB
-# del backoffice tramite GET /api/iam-proxy/env. MASTER_TOKEN è obbligatorio.
+# del backoffice tramite GET /api/auth-proxy/env. MASTER_TOKEN è obbligatorio.
 if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
   _BO_URL="${BACKOFFICE_INTERNAL_URL}"
 else
@@ -37,14 +37,14 @@ if [ -z "${MASTER_TOKEN:-}" ]; then
   exit 1
 fi
 
-echo "[startup] Fetch configurazione da ${_BO_URL}/api/iam-proxy/env ..."
+echo "[startup] Fetch configurazione da ${_BO_URL}/api/auth-proxy/env ..."
 _MAX_ATTEMPTS=10
 _ATTEMPT=0
 _CONF=""
 while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
   _CONF=$(curl -sf -k --max-time 10 \
     -H "Authorization: Bearer ${MASTER_TOKEN}" \
-    "${_BO_URL}/api/iam-proxy/env" 2>/dev/null) && break
+    "${_BO_URL}/api/auth-proxy/env" 2>/dev/null) && break
   _ATTEMPT=$((_ATTEMPT + 1))
   echo "[startup] Backoffice non ancora pronto (tentativo ${_ATTEMPT}/${_MAX_ATTEMPTS}), attendo 5s..."
   sleep 5
@@ -188,6 +188,8 @@ setup_satosa() {
     return 1
   fi
   echo "[startup] Chiavi PKI verificate: $_pki_key, $_pki_cert"
+  # Garantisce leggibilità PKI (startup gira come root; SATOSA gira come utente non-root)
+  chmod 644 "$_pki_key" "$_pki_cert"
 
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
@@ -568,7 +570,7 @@ start_satosa() {
 fetch_conf() {
   curl -sf -k --max-time 10 \
     -H "Authorization: Bearer ${MASTER_TOKEN}" \
-    "${_BO_URL}/api/iam-proxy/env" 2>/dev/null
+    "${_BO_URL}/api/auth-proxy/env" 2>/dev/null
 }
 
 auth_on() {

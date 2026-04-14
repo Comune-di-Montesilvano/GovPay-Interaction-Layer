@@ -10,7 +10,7 @@ from auth import require_auth
 from schemas.responses import OperationResponse
 from services import docker_service
 
-router = APIRouter(prefix="/iam-proxy", tags=["iam-proxy"])
+router = APIRouter(prefix="/auth-proxy", tags=["auth-proxy"])
 
 SP_METADATA_PATH = os.getenv("SP_METADATA_PATH", "/sp-metadata")
 SP_METADATA_FILE = os.path.join(SP_METADATA_PATH, "frontoffice_sp.xml")
@@ -131,11 +131,11 @@ def _parse_cie_metadata() -> dict:
 # ── Existing endpoints ──────────────────────────────────────────────────────
 
 @router.post("/restart", response_model=OperationResponse)
-def restart_iam_proxy(_token: str = Depends(require_auth)):
-    """Riavvia i container dell'IAM Proxy (iam-proxy-italia e satosa-nginx)."""
+def restart_auth_proxy(_token: str = Depends(require_auth)):
+    """Riavvia i container dell'auth-proxy (auth-proxy e auth-proxy-nginx)."""
     try:
-        results = docker_service.restart_services(["iam-proxy-italia", "satosa-nginx"])
-        return OperationResponse(success=True, message="IAM Proxy riavviato.", details=results)
+        results = docker_service.restart_services(["auth-proxy", "auth-proxy-nginx"])
+        return OperationResponse(success=True, message="Auth Proxy riavviato.", details=results)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

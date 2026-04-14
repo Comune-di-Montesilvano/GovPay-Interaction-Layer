@@ -569,14 +569,14 @@ if (!function_exists('frontoffice_compose_profiles')) {
 
 if (!function_exists('frontoffice_spid_mode')) {
     /**
-     * @return 'none'|'external'|'internal'|'iam-proxy'
+     * @return 'none'|'external'|'internal'|'auth-proxy'
      */
     function frontoffice_spid_mode(): string
     {
         // Sorgente canonica: configurazione Frontoffice da UI.
         $frontofficeType = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
         if (in_array($frontofficeType, ['spid', 'cie', 'spid_cie'], true)) {
-            return 'iam-proxy';
+            return 'auth-proxy';
         }
         return 'none';
     }
@@ -591,12 +591,12 @@ if (!function_exists('frontoffice_spid_enabled')) {
 
 if (!function_exists('frontoffice_auth_proxy_type')) {
     /**
-     * @return 'php-proxy'|'iam-proxy-saml2'
+     * @return 'php-proxy'|'auth-proxy-saml2'
      */
     function frontoffice_auth_proxy_type(): string
     {
-        if (frontoffice_spid_mode() === 'iam-proxy') {
-            return 'iam-proxy-saml2';
+        if (frontoffice_spid_mode() === 'auth-proxy') {
+            return 'auth-proxy-saml2';
         }
         return 'php-proxy';
     }
@@ -2684,7 +2684,7 @@ $routes = [
             ];
         }
 
-        if (frontoffice_auth_proxy_type() === 'iam-proxy-saml2') {
+        if (frontoffice_auth_proxy_type() === 'auth-proxy-saml2') {
             $frontofficeBaseUrl = rtrim($env('FRONTOFFICE_PUBLIC_BASE_URL', ''), '/');
             $envValue = $env('FRONTOFFICE_PUBLIC_BASE_URL', '');
             $httpHost = (string)($_SERVER['HTTP_HOST'] ?? '');
@@ -2883,8 +2883,8 @@ $routes = [
             ];
         }
 
-        if (frontoffice_auth_proxy_type() === 'iam-proxy-saml2') {
-            file_put_contents('/tmp/spid_callback.log', date('Y-m-d H:i:s') . " - ENTERING iam-proxy-saml2 block\n", FILE_APPEND);
+        if (frontoffice_auth_proxy_type() === 'auth-proxy-saml2') {
+            file_put_contents('/tmp/spid_callback.log', date('Y-m-d H:i:s') . " - ENTERING auth-proxy-saml2 block\n", FILE_APPEND);
             // Get debug info from session (set in /login handler)
             $debugFromSession = $_SESSION['debug_spid_url_config'] ?? [];
             $debugFromSessionStr = $debugFromSession ? json_encode($debugFromSession) : 'no debug data';

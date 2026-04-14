@@ -49,7 +49,7 @@ app/            Librerie PHP condivise (Config, Database, Security, Services)
 backoffice/     Applicazione backoffice (src/, templates/, public/)
 frontoffice/    Applicazione frontoffice (locales/, templates/, public/)
 master/         Servizio Python master (routers/, services/, auth.py)
-iam-proxy/      Proxy SATOSA per SPID/CIE
+auth-proxy/     Proxy SATOSA per SPID/CIE
 docker/db/      Dockerfile MariaDB + schema iniziale
 migrations/     Migrazioni SQL
 scripts/        Script batch/cron PHP
@@ -141,7 +141,7 @@ index.php → bootstrap/app.php → Slim App
   → Route → Controller → GovPay/pagoPA client (via vendor/)
 ```
 
-`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `master` e `iam-proxy`.
+`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `master` e `auth-proxy`.
 
 ## Master service (FastAPI)
 

@@ -68,7 +68,7 @@ services:
       - govpay-network
 
   auth-proxy:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-italia:${APP_VERSION:-latest}
     container_name: gil-auth-proxy
     command: ["/bin/bash", "/builder/startup.sh"]
     volumes:
@@ -98,7 +98,7 @@ services:
       - MONGODB_PORT=${MONGODB_PORT:-27017}
       - MONGODB_DB=${MONGODB_DB:-satosa}
       # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* vengono lette dal DB backoffice
-      # tramite GET ${BACKOFFICE_INTERNAL_URL:-<derivato da SSL>}/api/iam-proxy/env all'avvio.
+      # tramite GET ${BACKOFFICE_INTERNAL_URL:-<derivato da SSL>}/api/auth-proxy/env all'avvio.
       - SSL=${SSL:-off}
       - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-}
       - MASTER_TOKEN=${MASTER_TOKEN}
@@ -115,7 +115,7 @@ services:
       - govpay-network
 
   auth-proxy-nginx:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-nginx:${APP_VERSION:-latest}
     container_name: gil-auth-proxy-nginx
     depends_on:
       auth-proxy:

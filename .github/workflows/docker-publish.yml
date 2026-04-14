@@ -93,14 +93,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: iam-proxy-italia
+          - image: auth-proxy-italia
             context: .
-            file: iam-proxy/Dockerfile
-            scope: iam-proxy-italia
-          - image: iam-proxy-nginx
-            context: iam-proxy/nginx
+            file: auth-proxy/Dockerfile
+            scope: auth-proxy-italia
+          - image: auth-proxy-nginx
+            context: auth-proxy/nginx
             file: ""
-            scope: iam-proxy-nginx
+            scope: auth-proxy-nginx
           - image: db
             context: docker
             file: docker/db/Dockerfile

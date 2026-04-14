@@ -335,14 +335,14 @@ class ImpostazioniController
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // IAM PROXY ENV ENDPOINT (interno — chiamato da iam-proxy/startup.sh)
+    // IAM PROXY ENV ENDPOINT (interno — chiamato da auth-proxy/startup.sh)
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * GET /api/iam-proxy/env
+     * GET /api/auth-proxy/env
      *
      * Restituisce le impostazioni iam_proxy come dizionario piatto di variabili
-     * d'ambiente, da usare in iam-proxy/startup.sh tramite fetch HTTP interno.
+     * d'ambiente, da usare in auth-proxy/startup.sh tramite fetch HTTP interno.
      * Autenticazione: Bearer token (MASTER_TOKEN dall'ambiente del container).
      * Non richiede sessione PHP.
      */
@@ -1166,7 +1166,7 @@ class ImpostazioniController
      * Esporta gli artefatti pubblici CIE OIDC dalla auth-proxy-nginx interna.
      * Equivalente PHP di metadata/builder/export-cieoidc.sh.
      *
-     * Richiede iam-proxy attivo (profilo iam-proxy up).
+     * Richiede auth-proxy attivo (profilo auth-proxy up).
      * Body JSON: force (bool, default false)
      */
     public function exportCieOidc(Request $request, Response $response): Response
@@ -1363,7 +1363,7 @@ class ImpostazioniController
         $data = file_get_contents($tmpFile);
         unlink($tmpFile);
 
-        $filename = 'backup-iam-proxy-' . date('Y-m-d') . '.zip';
+        $filename = 'backup-auth-proxy-' . date('Y-m-d') . '.zip';
         $resp = new \Slim\Psr7\Response(200);
         $resp->getBody()->write($data);
         return $resp
@@ -1380,7 +1380,7 @@ class ImpostazioniController
         foreach ($encrypted as $k) {
             unset($settings[$k]);
         }
-        $zip->addFromString('config/iam-proxy-settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $zip->addFromString('config/auth-proxy-settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
     private function backupZipSpidCerts(\ZipArchive $zip): void

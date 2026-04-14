@@ -60,7 +60,7 @@ return function (App $app, Twig $twig): void {
     });
 
     // ── API interna: endpoint senza sessione (autenticati via Bearer token) ──────
-    $app->get('/api/iam-proxy/env', function (Request $request, Response $response) use ($twig): Response {
+    $app->get('/api/auth-proxy/env', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
     });
 

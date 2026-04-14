@@ -21,20 +21,20 @@ RUN git clone --depth 1 --branch "${IAM_PROXY_REF}" \
     && rm -rf /tmp/upstream
 
 # Templates (envsubst a startup, dipendono da variabili d'ambiente)
-COPY iam-proxy/disco.static.html.template               /builder/templates/disco.static.html.template
-COPY iam-proxy/wallets-it.json.template                 /builder/templates/wallets-it.json.template
-COPY iam-proxy/wallets-en.json.template                 /builder/templates/wallets-en.json.template
-COPY iam-proxy/wallets-config.json.template             /builder/templates/wallets-config.json.template
-COPY iam-proxy/wallets-spid-demo-override.json.template /builder/templates/wallets-spid-demo-override.json.template
-COPY iam-proxy/spid_base_override.html.template         /builder/templates/spid_base_override.html.template
-COPY iam-proxy/cieoidc_backend.override.yaml.template   /builder/templates/cieoidc_backend.override.yaml.template
+COPY auth-proxy/disco.static.html.template               /builder/templates/disco.static.html.template
+COPY auth-proxy/wallets-it.json.template                 /builder/templates/wallets-it.json.template
+COPY auth-proxy/wallets-en.json.template                 /builder/templates/wallets-en.json.template
+COPY auth-proxy/wallets-config.json.template             /builder/templates/wallets-config.json.template
+COPY auth-proxy/wallets-spid-demo-override.json.template /builder/templates/wallets-spid-demo-override.json.template
+COPY auth-proxy/spid_base_override.html.template         /builder/templates/spid_base_override.html.template
+COPY auth-proxy/cieoidc_backend.override.yaml.template   /builder/templates/cieoidc_backend.override.yaml.template
 
 # File custom (non dipendono da env vars → installati a build time)
-COPY iam-proxy/cieoidc-endpoints/ /builder/cieoidc-endpoints/
-COPY iam-proxy/cieoidc-models/    /builder/cieoidc-models/
-COPY iam-proxy/static-overrides/  /builder/static-overrides/
-COPY iam-proxy/patch_saml2.py     /builder/patch_saml2.py
-COPY iam-proxy/startup.sh         /builder/startup.sh
+COPY auth-proxy/cieoidc-endpoints/ /builder/cieoidc-endpoints/
+COPY auth-proxy/cieoidc-models/    /builder/cieoidc-models/
+COPY auth-proxy/static-overrides/  /builder/static-overrides/
+COPY auth-proxy/patch_saml2.py     /builder/patch_saml2.py
+COPY auth-proxy/startup.sh         /builder/startup.sh
 
 RUN chmod +x /builder/startup.sh \
     # Installa file custom nel progetto (non dipendono da env vars)

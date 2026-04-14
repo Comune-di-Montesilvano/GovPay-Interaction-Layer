@@ -23,7 +23,7 @@ if compgen -G "/sp-metadata/*" > /dev/null 2>&1; then
   tar czf "$DEST/frontoffice_sp_metadata_${TS}.tar.gz" -C /sp-metadata .
   echo "    OK: frontoffice_sp_metadata_${TS}.tar.gz"
 else
-  echo "    SKIP: /sp-metadata vuoto (avviare il profilo iam-proxy prima)"
+  echo "    SKIP: /sp-metadata vuoto (avviare il profilo auth-proxy prima)"
 fi
 
 echo ""
