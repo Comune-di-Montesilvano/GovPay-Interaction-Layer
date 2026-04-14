@@ -188,8 +188,18 @@ setup_satosa() {
     return 1
   fi
   echo "[startup] Chiavi PKI verificate: $_pki_key, $_pki_cert"
-  # Garantisce leggibilità PKI (startup gira come root; SATOSA gira come utente non-root)
-  chmod 644 "$_pki_key" "$_pki_cert"
+  # Garantisce attraversamento directory + leggibilita PKI
+  # (startup gira come root; SATOSA gira come utente non-root).
+  local _pki_dir
+  _pki_dir="$(dirname "$_pki_key")"
+  chmod 755 "$SATOSA_PROXY" "$_pki_dir" 2>/dev/null || true
+  chmod 644 "$_pki_key" "$_pki_cert" 2>/dev/null || true
+  if ! test -r "$_pki_key" || ! test -r "$_pki_cert"; then
+    echo "[startup] ERRORE: permessi PKI insufficienti dopo hardening." >&2
+    ls -ld "$SATOSA_PROXY" "$_pki_dir" >&2 || true
+    ls -l "$_pki_key" "$_pki_cert" >&2 || true
+    return 1
+  fi
 
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
