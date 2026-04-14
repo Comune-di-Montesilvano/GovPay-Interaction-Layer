@@ -41,7 +41,7 @@ def recreate_services(body: RestartRequest, _token: str = Depends(require_auth))
 
 @router.post("/start-profile", response_model=OperationResponse)
 def start_profile(body: ProfileRequest, _token: str = Depends(require_auth)):
-    """Avvia tutti i servizi di un profilo compose (es. iam-proxy)."""
+    """Avvia tutti i servizi di un profilo compose (es. auth-proxy)."""
     try:
         out = docker_service.start_profile(body.profile)
         return OperationResponse(success=True, message=f"Profilo '{body.profile}' avviato.", details={"output": out[:500]})

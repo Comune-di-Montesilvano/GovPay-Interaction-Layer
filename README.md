@@ -123,7 +123,7 @@ GIL si integra con i seguenti servizi esterni. Tutte le credenziali vanno config
 | **pagoPA Checkout** | Avvio pagamenti online tramite redirect al portale pagoPA | `PAGOPA_CHECKOUT_EC_BASE_URL`, `PAGOPA_CHECKOUT_SUBSCRIPTION_KEY` |
 | **pagoPA Biz Events** | Recupero on-demand delle ricevute di pagamento dal dettaglio flusso | `BIZ_EVENTS_HOST`, `BIZ_EVENTS_API_KEY` |
 | **App IO** | Invio messaggi e avvisi di pagamento ai cittadini (con CTA e dati avviso pagoPA) | `APP_IO_FEATURE_LEVEL_TYPE` (opz.); chiave API configurabile per tipologia |
-| **SPID/CIE** | Autenticazione federata per il frontoffice cittadini | `.iam-proxy.env` — vedi sezione [SPID/CIE](#spidcie-opzionale) |
+| **SPID/CIE** | Autenticazione federata per il frontoffice cittadini | `.auth-proxy.env` — vedi sezione [SPID/CIE](#spidcie-opzionale) |
 
 ### Certificati client GovPay (mTLS)
 
@@ -151,7 +151,7 @@ Vedi [certificate/README.md](certificate/README.md) per dettagli su nomi file ac
 
 ## SPID/CIE (opzionale)
 
-Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)** e si avvia con il profilo Docker Compose `iam-proxy`.
+Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)** e si avvia con il profilo Docker Compose `auth-proxy`.
 
 > **Stato attuale**: SPID è funzionante. L'integrazione CIE OIDC è in fase di sviluppo/test e non è ancora abilitata nel frontoffice.
 
@@ -160,12 +160,12 @@ Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)** e si avvia con il p
 - Porta libera: `9445` (proxy IAM, configurabile con `IAM_PROXY_HTTP_PORT`)
 - Certificati SPID nel volume Docker `govpay_spid_certs` (generati automaticamente da `metadata/setup-sp.*` se mancanti)
 
-### 1. Configura `.iam-proxy.env`
+### 1. Configura `.auth-proxy.env`
 
 Copia l'example e personalizza le variabili essenziali:
 
 ```bash
-cp .iam-proxy.env.example .iam-proxy.env
+cp .auth-proxy.env.example .auth-proxy.env
 ```
 
 Variabili essenziali da modificare:
@@ -192,17 +192,17 @@ ENABLE_CIE=false
 ENABLE_CIE_OIDC=false
 ```
 
-Il file `.iam-proxy.env.example` contiene tutte le variabili disponibili con commenti.
+Il file `.auth-proxy.env.example` contiene tutte le variabili disponibili con commenti.
 
-### 2. Avvia il profilo iam-proxy
+### 2. Avvia il profilo auth-proxy
 
 ```bash
-docker compose --profile iam-proxy up -d --build
+docker compose --profile auth-proxy up -d --build
 ```
 
-> `--build` rebuilda le immagini con `build:` locale (iam-proxy-italia, nginx, db). Per aggiornare le immagini GHCR, usare `docker compose pull`.
+> `--build` rebuilda le immagini con `build:` locale (auth-proxy-italia, nginx, db). Per aggiornare le immagini GHCR, usare `docker compose pull`.
 
-Prima di avviare il profilo `iam-proxy`, genera cert e chiavi CIE OIDC:
+Prima di avviare il profilo `auth-proxy`, genera cert e chiavi CIE OIDC:
 ```bash
 docker compose run --rm metadata-builder setup
 ```
@@ -232,9 +232,9 @@ https://localhost:9445/static/disco.html    ← pagina di scelta IdP
 
 | Tipo metadata | Dove si genera | Dove lo trovi | Chi lo usa | Va inviato ad AgID? |
 |---|---|---|---|:---:|
-| **Metadata Frontoffice SP interno** (`frontoffice_sp.xml`) | Automatico all'avvio profilo `iam-proxy` (service `init-frontoffice-sp-metadata` + `refresh-frontoffice-sp-metadata`) | Volume Docker `frontoffice_sp_metadata` (mount in SATOSA `/satosa_proxy/metadata/sp/frontoffice_sp.xml`) | SATOSA per riconoscere il Frontoffice come SP chiamante | ❌ No |
-| **Metadata SATOSA IdP interno** (`/Saml2IDP/metadata`) | Runtime SATOSA (dinamico) | `https://<iam-proxy>/Saml2IDP/metadata` | Frontoffice (config `IAM_PROXY_SAML2_IDP_METADATA_URL*`) | ❌ No |
-| **Metadata SATOSA SPID pubblico** (`/spidSaml2/metadata`) | Runtime SATOSA (dinamico) | `https://<iam-proxy>/spidSaml2/metadata` | Federazione SPID / AgID / IdP SPID | ✅ **Sì** |
+| **Metadata Frontoffice SP interno** (`frontoffice_sp.xml`) | Automatico all'avvio profilo `auth-proxy` (service `init-frontoffice-sp-metadata` + `refresh-frontoffice-sp-metadata`) | Volume Docker `frontoffice_sp_metadata` (mount in SATOSA `/satosa_proxy/metadata/sp/frontoffice_sp.xml`) | SATOSA per riconoscere il Frontoffice come SP chiamante | ❌ No |
+| **Metadata SATOSA IdP interno** (`/Saml2IDP/metadata`) | Runtime SATOSA (dinamico) | `https://<auth-proxy>/Saml2IDP/metadata` | Frontoffice (config `IAM_PROXY_SAML2_IDP_METADATA_URL*`) | ❌ No |
+| **Metadata SATOSA SPID pubblico** (`/spidSaml2/metadata`) | Runtime SATOSA (dinamico) | `https://<auth-proxy>/spidSaml2/metadata` | Federazione SPID / AgID / IdP SPID | ✅ **Sì** |
 
 In breve: `frontoffice_sp.xml` serve solo nel canale interno Frontoffice → SATOSA, si autogenera e si riallinea senza interventi da UI; ad AgID si invia il metadata pubblico esposto da SATOSA a `/spidSaml2/metadata`.
 
@@ -272,7 +272,7 @@ BACKOFFICE_PUBLIC_BASE_URL=https://backoffice.ente.gov.it
 FRONTOFFICE_PUBLIC_BASE_URL=https://pagamenti.ente.gov.it
 ```
 
-E nel `.iam-proxy.env` (se usi SPID):
+E nel `.auth-proxy.env` (se usi SPID):
 ```env
 IAM_PROXY_PUBLIC_BASE_URL=https://login.ente.gov.it
 ```
@@ -312,11 +312,11 @@ docker compose up -d
 Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` su:
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice`
-- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-sync`
-- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx`
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-italia`
+- `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-nginx`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db`
 
-Per un server di produzione sono sufficienti: `.env`, `.iam-proxy.env`, la cartella `ssl/`, `certificate/`, `metadata/cieoidc-keys/` e il `docker-compose.yml`.
+Per un server di produzione sono sufficienti: `.env`, `.auth-proxy.env`, la cartella `ssl/`, `certificate/`, `metadata/cieoidc-keys/` e il `docker-compose.yml`.
 
 ---
 
@@ -343,8 +343,8 @@ Il workflow parte automaticamente. Puoi seguire l'avanzamento su GitHub → Acti
 |---|---|
 | `govpay-interaction-layer-backoffice` | Applicazione backoffice (PHP/Apache) |
 | `govpay-interaction-layer-frontoffice` | Applicazione frontoffice (PHP/Apache) |
-| `govpay-interaction-layer-iam-proxy-sync` | Setup SATOSA (one-shot, profilo iam-proxy) |
-| `govpay-interaction-layer-iam-proxy-nginx` | Reverse proxy SATOSA (Nginx) |
+| `govpay-interaction-layer-auth-proxy-italia` | Proxy SATOSA SPID/CIE (profilo auth-proxy) |
+| `govpay-interaction-layer-auth-proxy-nginx` | Reverse proxy SATOSA (Nginx) |
 | `govpay-interaction-layer-db` | Database MariaDB con schema iniziale |
 
 Registry: `ghcr.io/comune-di-montesilvano/`
@@ -481,25 +481,25 @@ GovPay-Interaction-Layer/
 ├── docker-compose.override.yml   # override sviluppo (debug mount — non usare in prod)
 ├── Dockerfile
 ├── .env                          # da creare (non versionato)
-├── .iam-proxy.env                # da creare (solo se usi SPID/CIE)
-├── .iam-proxy.env.example        # template per .iam-proxy.env
+├── .auth-proxy.env               # da creare (solo se usi SPID/CIE)
+├── .auth-proxy.env.example       # template per .auth-proxy.env
 ├── .github/workflows/
 │   ├── ci.yml                    # CI: test PHP su push/PR
 │   └── docker-publish.yml        # CD: build e push immagini GHCR su tag vX.Y.Z
 ├── backoffice/               # applicazione backoffice (Slim 4 + Twig)
 ├── frontoffice/              # applicazione frontoffice
 ├── app/                      # codice PHP condiviso
-├── iam-proxy/                # proxy SPID/CIE (SATOSA)
-│   ├── Dockerfile            # immagine iam-proxy-italia (wrapper con progetto SATOSA baked-in)
+├── auth-proxy/               # proxy SPID/CIE (SATOSA)
+│   ├── Dockerfile            # immagine auth-proxy-italia (wrapper con progetto SATOSA baked-in)
 │   ├── startup.sh            # inizializzazione container (envsubst, JWK, patch config)
-│   └── nginx/Dockerfile      # immagine iam-proxy-nginx
+│   └── nginx/Dockerfile      # immagine auth-proxy-nginx
 ├── docker/
 │   └── db/Dockerfile         # immagine govpay-db
 ├── metadata/                 # setup metadata/cert SPID (setup-sp.ps1/setup-sp.sh)
 ├── ssl/                      # certificati TLS server (browser → app) — vedi ssl/README.md
 ├── certificate/              # certificati client GovPay (app → GovPay) — vedi certificate/README.md
 ├── img/                      # immagini/loghi — vedi img/README.md
-├── scripts/                  # script di utilità runtime (cron, sync iam-proxy)
+├── scripts/                  # script di utilità runtime (cron)
 ├── migrations/               # migrazioni DB
 ├── govpay-clients/           # client API GovPay generati
 ├── pagopa-clients/           # client API pagoPA generati

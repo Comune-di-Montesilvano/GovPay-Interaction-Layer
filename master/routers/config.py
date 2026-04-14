@@ -60,16 +60,16 @@ def write_env_bootstrap_endpoint(body: EnvBootstrapRequest):
 @router.post("/generate-iam-env", response_model=OperationResponse)
 def generate_iam_env(body: IamProxyEnvRequest, _token: str = Depends(require_auth)):
     """
-    Genera ./runtime/.iam-proxy.env dai settings iam_proxy forniti dal backoffice.
-    Il file viene letto dai servizi SATOSA (iam-proxy-italia, satosa-nginx, ecc.)
+    Genera ./runtime/.auth-proxy.env dai settings iam_proxy forniti dal backoffice.
+    Il file viene letto dai servizi SATOSA (auth-proxy, auth-proxy-nginx, ecc.)
     tramite env_file al prossimo recreate del container.
     """
     try:
         runtime_dir = Path(os.getenv("RUNTIME_DIR", "/runtime"))
         runtime_dir.mkdir(parents=True, exist_ok=True)
-        env_file = runtime_dir / ".iam-proxy.env"
+        env_file = runtime_dir / ".auth-proxy.env"
         lines = [f"{k}={v}" for k, v in body.settings.items() if v is not None]
         env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return OperationResponse(success=True, message=f"File .iam-proxy.env generato ({len(lines)} variabili).")
+        return OperationResponse(success=True, message=f"File .auth-proxy.env generato ({len(lines)} variabili).")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

@@ -171,7 +171,7 @@ return (function (): array {
     });
 
     // Percorsi pubblici che non richiedono sessione (AuthMiddleware li salta).
-    // Aggiungiamo '/api/*' per permettere chiamate interne autenticata via Bearer (es. iam-proxy/startup.sh)
+    // Aggiungiamo '/api/*' per permettere chiamate interne autenticata via Bearer (es. auth-proxy/startup.sh)
     $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health', '/api/*'];
     $app->add(new AuthMiddleware($publicPaths));
     // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack

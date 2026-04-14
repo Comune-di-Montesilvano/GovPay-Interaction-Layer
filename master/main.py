@@ -4,7 +4,7 @@ API interna per gestione configurazione e container.
 Porta 8099, accessibile SOLO dalla rete interna govpay-network.
 """
 from fastapi import FastAPI
-from routers import health, config, containers, backup, iam_proxy
+from routers import health, config, containers, backup, auth_proxy
 
 app = FastAPI(
     title="GIL Master",
@@ -18,4 +18,4 @@ app.include_router(health.router)
 app.include_router(config.router)
 app.include_router(containers.router)
 app.include_router(backup.router)
-app.include_router(iam_proxy.router)
+app.include_router(auth_proxy.router)

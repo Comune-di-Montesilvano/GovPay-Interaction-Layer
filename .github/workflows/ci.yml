@@ -26,9 +26,9 @@ jobs:
           DB_PASSWORD=apppass
           EOF
 
-          # In docker-compose.yml si usa .iam-proxy.env per SATOSA.
+          # In docker-compose.yml si usa .auth-proxy.env per SATOSA.
           # Nel CI non usiamo SPID, ma il file deve esistere per non fallire l'up.
-          cat > .iam-proxy.env <<'EOF'
+          cat > .auth-proxy.env <<'EOF'
           IAM_PROXY_PUBLIC_BASE_URL=https://localhost:9445
           IAM_PROXY_SAML2_IDP_METADATA_URL=https://satosa-nginx:9445/Saml2IDP/metadata
           IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=https://auth-proxy-nginx:80/Saml2IDP/metadata
