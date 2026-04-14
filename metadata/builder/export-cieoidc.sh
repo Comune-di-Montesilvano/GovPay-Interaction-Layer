@@ -6,11 +6,15 @@ set -euo pipefail
 OUTPUT_DIR="/output/cieoidc"
 FORCE="${FORCE:-0}"
 
-# URL interno Docker (service name) per i curl
-SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
+# URL interno Docker (diretta A SATOSA, not via nginx)
+SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy}"
+SATOSA_PORT="${SATOSA_INTERNAL_PORT:-10000}"
 SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
-IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}"
-CURL_INSECURE="$( [ "${SATOSA_SCHEME}" = "https" ] && echo "-k" ) --connect-timeout 5 --max-time 10"
+IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}"
+CURL_INSECURE="--connect-timeout 5 --max-time 10"
+if [ "${SATOSA_SCHEME}" = "https" ]; then
+  CURL_INSECURE="${CURL_INSECURE} -k"
+fi
 
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
