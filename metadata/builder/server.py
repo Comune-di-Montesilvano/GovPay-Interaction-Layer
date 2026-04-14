@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from urllib.parse import urlparse, parse_qs
 
 MASTER_TOKEN = os.environ.get("MASTER_TOKEN", "")
@@ -35,7 +36,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except BrokenPipeError:
+            # Il client puo chiudere la connessione prima della risposta finale.
+            print("[server] Client disconnected before response write", file=sys.stderr, flush=True)
+
+    @staticmethod
+    def _drain_stream(pipe, collector, label):
+        try:
+            for line in iter(pipe.readline, ""):
+                collector.append(line)
+                print(line, end="", file=sys.stderr, flush=True)
+        finally:
+            pipe.close()
 
     def _auth_ok(self):
         auth = self.headers.get("Authorization", "")
@@ -79,31 +93,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
             file=sys.stderr,
             flush=True,
         )
+        timeout_seconds = int(os.environ.get("METADATA_BUILDER_COMMAND_TIMEOUT", "600"))
+        proc = subprocess.Popen(
+            ["/builder/entrypoint.sh", cmd],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=extra_env,
+        )
+        out_lines = []
+        err_lines = []
+        t_out = threading.Thread(target=self._drain_stream, args=(proc.stdout, out_lines, "stdout"), daemon=True)
+        t_err = threading.Thread(target=self._drain_stream, args=(proc.stderr, err_lines, "stderr"), daemon=True)
+        t_out.start()
+        t_err.start()
+
         try:
-            result = subprocess.run(
-                ["/builder/entrypoint.sh", cmd],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=extra_env,
-            )
+            rc = proc.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired:
-            self._respond(504, {"success": False, "command": cmd, "error": "Timeout (300s)"})
+            proc.kill()
+            t_out.join(timeout=2)
+            t_err.join(timeout=2)
+            self._respond(504, {"success": False, "command": cmd, "error": f"Timeout ({timeout_seconds}s)"})
             return
 
-        ok = result.returncode == 0
-        if result.stdout:
-            print(result.stdout, end="", file=sys.stderr, flush=True)
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr, flush=True)
+        t_out.join(timeout=2)
+        t_err.join(timeout=2)
+        stdout = "".join(out_lines)
+        stderr = "".join(err_lines)
+        ok = rc == 0
         self._respond(
             200 if ok else 500,
             {
                 "success": ok,
                 "command": cmd,
-                "exit_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "exit_code": rc,
+                "stdout": stdout,
+                "stderr": stderr,
             },
         )
 
