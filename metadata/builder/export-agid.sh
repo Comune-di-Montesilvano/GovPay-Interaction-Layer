@@ -136,5 +136,5 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
   sleep "$SLEEP_SECONDS"
 done
 
-echo "[ERROR] SATOSA non risponde. Ultimo URL=${LAST_URL}. Ultimo HTTP code=${LAST_HTTP}. Ultimo errore curl: ${LAST_ERR}. Verifica SATOSA_INTERNAL_HOST_HEADER e IAM_PROXY_PUBLIC_BASE_URL nel metadata-builder." >&2
+echo "[ERROR] SATOSA non risponde. Ultimo URL=${LAST_URL}. Ultimo HTTP code=${LAST_HTTP}. Ultimo errore curl: ${LAST_ERR}. Verifica public_base_url in impostazioni Login Proxy." >&2
 exit 1
