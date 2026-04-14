@@ -4,9 +4,10 @@
 FROM node:lts-trixie-slim AS asset_builder
 
 # Installa dipendenze necessarie per la fase di build (Git, Wget, Unzip)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates unzip wget && \
-    rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git ca-certificates unzip wget
 
 WORKDIR /app
 
@@ -72,15 +73,8 @@ RUN --mount=type=cache,target=/root/.composer,sharing=locked \
 ######################################################################
 FROM php:8.5-apache-trixie AS runtime-base
 
-# Versione immagine iniettata a build-time dalla CI (es. "dev", "1.2.3")
-ARG GIL_IMAGE_TAG=dev
-ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
-
-# Commit SHA iniettato a build-time dalla CI
-ARG GIT_COMMIT_SHA=unknown
-ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
-
-# Installazione delle dipendenze di sistema e PHP (inclusi unzip e wget)
+# System deps + PHP extensions FIRST — stable layer, cache must not be busted
+# by per-commit ARGs. All volatile ARG/ENV go AFTER this RUN.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -88,8 +82,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libicu-dev libzip-dev libonig-dev \
     ca-certificates curl unzip openssl \
     && docker-php-ext-install intl mbstring pdo_mysql zip \
+    && apt-get purge -y --auto-remove libicu-dev libzip-dev libonig-dev \
     && a2enmod ssl rewrite headers \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf
+
+# Versione immagine iniettata a build-time dalla CI (es. "dev", "1.2.3")
+ARG GIL_IMAGE_TAG=dev
+ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
+
+# Commit SHA iniettato a build-time dalla CI
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 
 # Copia vendor dal builder
 COPY --from=vendor_builder /app/vendor /var/www/html/vendor
