@@ -1184,18 +1184,22 @@ class ImpostazioniController
 
         $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
         $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
+        $builderTimeout = (int) (getenv('METADATA_BUILDER_HTTP_TIMEOUT') ?: 180);
+        if ($builderTimeout < 30) {
+            $builderTimeout = 30;
+        }
 
         $ctx = stream_context_create([
             'http' => [
                 'method'        => 'POST',
                 'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => 30,
+                'timeout'       => $builderTimeout,
                 'ignore_errors' => true,
             ],
         ]);
         $raw    = @file_get_contents("{$builderUrl}/run/export-agid", false, $ctx);
         if ($raw === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: metadata-builder non raggiungibile. Verifica che il container auth-proxy-nginx sia avviato e risponda su /spidSaml2/metadata.');
+            return $this->jsonError('Export metadata pubblico SPID fallito: metadata-builder non raggiungibile o timeout scaduto. Verifica che auth-proxy sia avviato e che /spidSaml2/metadata risponda 200.');
         }
         $result = json_decode($raw, true);
 
