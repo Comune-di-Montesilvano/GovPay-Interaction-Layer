@@ -16,6 +16,36 @@ if [ "${SATOSA_SCHEME}" = "https" ]; then
   CURL_INSECURE="${CURL_INSECURE} -k"
 fi
 
+fetch_internal() {
+  local url="$1"
+  local out_file="$2"
+  local tmp_err="/tmp/export-cieoidc-curl.err.$$"
+
+  if [[ -z "$SATOSA_HOST_HEADER" ]]; then
+    echo "[ERROR] SATOSA_HOST_HEADER non configurato" >&2
+    return 1
+  fi
+
+  # Primo tentativo: schema configurato (default http)
+  if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$url" -o "$out_file" 2>"$tmp_err"; then
+    rm -f "$tmp_err"
+    return 0
+  fi
+
+  # Fallback: nginx interno può parlare HTTPS su porta 80
+  if [[ "$SATOSA_SCHEME" = "http" ]] && grep -qi "plain HTTP request was sent to HTTPS port" "$tmp_err"; then
+    local https_url
+    https_url="${url/http:\/\//https://}"
+    if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$https_url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
+  fi
+
+  rm -f "$tmp_err"
+  return 1
+}
+
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
 CIE_OIDC_CLIENT_ID="${CIE_OIDC_CLIENT_ID:-}"
@@ -68,22 +98,8 @@ JWKS_RP_JSON_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.json"
 JWKS_RP_JOSE_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.jose"
 
 for i in $(seq 1 40); do
-  if [[ -n "$SATOSA_HOST_HEADER" ]]; then
-    if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
-      break
-    fi
-  else
-    if curl $CURL_INSECURE "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
-      break
-    fi
-  fi
-  if [[ "$SATOSA_SCHEME" = "http" ]]; then
-    HTTPS_ENTITY_CONFIG_URL="https://${SATOSA_HOSTNAME}:${SATOSA_PORT}/CieOidcRp/.well-known/openid-federation"
-    if [[ -n "$SATOSA_HOST_HEADER" ]]; then
-      if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$HTTPS_ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
-        break
-      fi
-    fi
+  if fetch_internal "$ENTITY_CONFIG_URL" "$OUTPUT_DIR/entity-configuration.jwt"; then
+    break
   fi
   echo "  Tentativo $i/40 (3s)..."
   sleep 3
@@ -93,8 +109,15 @@ for i in $(seq 1 40); do
   fi
 done
 
-curl -fsSL $CURL_INSECURE "$JWKS_RP_JSON_URL" -o "$OUTPUT_DIR/jwks-rp.json"
-curl -fsSL $CURL_INSECURE "$JWKS_RP_JOSE_URL" -o "$OUTPUT_DIR/jwks-rp.jose"
+if ! fetch_internal "$JWKS_RP_JSON_URL" "$OUTPUT_DIR/jwks-rp.json"; then
+  echo "[ERROR] Export CIE OIDC fallito: impossibile scaricare jwks-rp.json da endpoint interno." >&2
+  exit 1
+fi
+
+if ! fetch_internal "$JWKS_RP_JOSE_URL" "$OUTPUT_DIR/jwks-rp.jose"; then
+  echo "[ERROR] Export CIE OIDC fallito: impossibile scaricare jwks-rp.jose da endpoint interno." >&2
+  exit 1
+fi
 
 # Decode JWT payload → entity-configuration.json + jwks-federation-public.json + EXP
 python3 - "$OUTPUT_DIR/entity-configuration.jwt" \
