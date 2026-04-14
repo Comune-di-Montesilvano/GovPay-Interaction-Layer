@@ -232,7 +232,6 @@ class ImpostazioniController
             'public_base_url'                  => $body['public_base_url'] ?? '',
             'saml2_idp_metadata_url'           => $body['saml2_idp_metadata_url'] ?? '',
             'saml2_idp_metadata_url_internal'  => $body['saml2_idp_metadata_url_internal'] ?? '',
-            'hostname'                         => $body['hostname'] ?? '',
             'http_port'                        => $body['http_port'] ?? '',
             'debug'                            => $body['debug'] ?? 'false',
             'enable_spid'                      => $body['enable_spid'] ?? 'false',
@@ -251,18 +250,13 @@ class ImpostazioniController
             'satosa_use_demo_spid_idp'         => $body['satosa_use_demo_spid_idp'] ?? 'false',
             'satosa_use_spid_validator'        => $body['satosa_use_spid_validator'] ?? 'false',
             'satosa_spid_validator_metadata_url' => $body['satosa_spid_validator_metadata_url'] ?? '',
-            'satosa_disable_cieoidc_backend'   => $body['satosa_disable_cieoidc_backend'] ?? 'false',
-            'spid_cert_common_name'            => $body['spid_cert_common_name'] ?? '',
+            'satosa_disable_cieoidc_backend'   => 'false', // legacy: sempre disabilitato
             'spid_cert_org_id'                 => $body['spid_cert_org_id'] ?? '',
-            'spid_cert_org_name'               => $body['spid_cert_org_name'] ?? '',
             'spid_cert_entity_id'              => $body['spid_cert_entity_id'] ?? '',
-            'spid_cert_locality_name'          => $body['spid_cert_locality_name'] ?? '',
             'spid_cert_key_size'               => $body['spid_cert_key_size'] ?? '2048',
             'spid_cert_days'                   => $body['spid_cert_days'] ?? '730',
             'satosa_org_display_name_it'       => $body['satosa_org_display_name_it'] ?? '',
             'satosa_org_display_name_en'       => $body['satosa_org_display_name_en'] ?? '',
-            'satosa_org_name_it'               => $body['satosa_org_name_it'] ?? '',
-            'satosa_org_name_en'               => $body['satosa_org_name_en'] ?? '',
             'satosa_org_url_it'                => $body['satosa_org_url_it'] ?? '',
             'satosa_org_url_en'                => $body['satosa_org_url_en'] ?? '',
             'satosa_org_identifier'            => $body['satosa_org_identifier'] ?? '',
@@ -292,7 +286,6 @@ class ImpostazioniController
             'cie_oidc_authority_hint_url'      => $body['cie_oidc_authority_hint_url'] ?? '',
             'cie_oidc_client_id'               => $body['cie_oidc_client_id'] ?? '',
             'cie_oidc_client_name'             => $body['cie_oidc_client_name'] ?? '',
-            'cie_oidc_organization_name'       => $body['cie_oidc_organization_name'] ?? '',
             'cie_oidc_jwks_uri'                => $body['cie_oidc_jwks_uri'] ?? '',
             'cie_oidc_signed_jwks_uri'         => $body['cie_oidc_signed_jwks_uri'] ?? '',
             'cie_oidc_redirect_uri'            => $body['cie_oidc_redirect_uri'] ?? '',
@@ -305,6 +298,69 @@ class ImpostazioniController
             'cie_oidc_logo_uri'                => $body['cie_oidc_logo_uri'] ?? '',
             'cie_oidc_contact_email'           => $body['cie_oidc_contact_email'] ?? '',
         ];
+
+        // Campi derivabili: aggiorna i valori del DB con quelli calcolati se il form non li invia esplicitamente.
+        // Questo garantisce che getIamProxyEnv() abbia sempre valori coerenti anche se i campi non
+        // sono più presenti nel form (rimossi come ridondanti).
+        $publicUrl = trim($plain['public_base_url']);
+        $derivedHostname = $publicUrl !== '' && filter_var($publicUrl, FILTER_VALIDATE_URL)
+            ? (string) parse_url($publicUrl, PHP_URL_HOST)
+            : '';
+
+        // hostname: usa quello inviato dal form (hidden) oppure deriva dall'URL pubblico
+        $hostname = trim((string)($body['hostname'] ?? ''));
+        if ($hostname === '' && $derivedHostname !== '') {
+            $hostname = $derivedHostname;
+        }
+        $plain['hostname'] = $hostname;
+
+        // spid_cert_common_name: usa quello inviato (hidden) oppure deriva dall'hostname
+        $certCn = trim((string)($body['spid_cert_common_name'] ?? ''));
+        if ($certCn === '' && $hostname !== '') {
+            $certCn = $hostname;
+        }
+        $plain['spid_cert_common_name'] = $certCn;
+
+        // spid_cert_org_name: usa quello inviato (hidden) oppure prende entity.name
+        $certOrgName = trim((string)($body['spid_cert_org_name'] ?? ''));
+        if ($certOrgName === '') {
+            $sEntity = SettingsRepository::getSection('entity');
+            $certOrgName = (string)($sEntity['name'] ?? '');
+        }
+        $plain['spid_cert_org_name'] = $certOrgName;
+
+        // spid_cert_locality_name: usa quello inviato (hidden) oppure prende entity.city
+        $certLocality = trim((string)($body['spid_cert_locality_name'] ?? ''));
+        if ($certLocality === '') {
+            if (!isset($sEntity)) {
+                $sEntity = SettingsRepository::getSection('entity');
+            }
+            $certLocality = (string)($sEntity['city'] ?? '');
+        }
+        $plain['spid_cert_locality_name'] = $certLocality;
+
+        // satosa_org_name_it: usa quello inviato (hidden) oppure prende entity.name
+        $orgNameIt = trim((string)($body['satosa_org_name_it'] ?? ''));
+        if ($orgNameIt === '') {
+            if (!isset($sEntity)) {
+                $sEntity = SettingsRepository::getSection('entity');
+            }
+            $orgNameIt = (string)($sEntity['name'] ?? '');
+        }
+        $plain['satosa_org_name_it'] = $orgNameIt;
+
+        // satosa_org_name_en: usa quello inviato oppure rimane vuoto (opzionale)
+        $plain['satosa_org_name_en'] = trim((string)($body['satosa_org_name_en'] ?? ''));
+
+        // cie_oidc_organization_name: usa quello inviato (hidden) oppure prende entity.name
+        $cieOrgName = trim((string)($body['cie_oidc_organization_name'] ?? ''));
+        if ($cieOrgName === '') {
+            if (!isset($sEntity)) {
+                $sEntity = SettingsRepository::getSection('entity');
+            }
+            $cieOrgName = (string)($sEntity['name'] ?? '');
+        }
+        $plain['cie_oidc_organization_name'] = $cieOrgName;
 
         // Non reintrodurre default legacy se il campo non e' inviato dal form.
         if (array_key_exists('frontoffice_auth_proxy_type', $body)) {
@@ -515,7 +571,33 @@ class ImpostazioniController
         // SATOSA_BASE_STATIC e SATOSA_HOSTNAME derivati
         if (!empty($env['SATOSA_BASE'])) {
             $env['SATOSA_BASE_STATIC'] = rtrim($env['SATOSA_BASE'], '/') . '/static';
-            $env['SATOSA_HOSTNAME']    = $s['hostname'] ?? ($env['IAM_PROXY_HOSTNAME'] ?? '');
+            // SATOSA_HOSTNAME: priorità al campo DB; fallback: parse dall'URL pubblico
+            $hostname = $s['hostname'] ?? '';
+            if ($hostname === '') {
+                $hostname = (string) parse_url((string)($s['public_base_url'] ?? ''), PHP_URL_HOST);
+            }
+            $env['SATOSA_HOSTNAME'] = $hostname;
+        }
+
+        // Fallback per campi derivabili rimossi dal form: garantisce che le ENV var
+        // abbiano sempre un valore anche su installazioni precedenti al refactor.
+        if (empty($env['SPID_CERT_ORG_NAME'])) {
+            $env['SPID_CERT_ORG_NAME'] = (string)($sEntity['name'] ?? '');
+        }
+        if (empty($env['SPID_CERT_COMMON_NAME'])) {
+            $env['SPID_CERT_COMMON_NAME'] = $env['SATOSA_HOSTNAME'] ?? (string)($s['hostname'] ?? '');
+        }
+        if (empty($env['SPID_CERT_LOCALITY_NAME'])) {
+            $env['SPID_CERT_LOCALITY_NAME'] = (string)($sEntity['city'] ?? '');
+        }
+        if (empty($env['SATOSA_ORGANIZATION_NAME_IT'])) {
+            $env['SATOSA_ORGANIZATION_NAME_IT'] = (string)($sEntity['name'] ?? '');
+        }
+        if (empty($env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'])) {
+            $env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'] = (string)($sEntity['name'] ?? '');
+        }
+        if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
+            $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
         }
 
         // Variabili cross-section: frontoffice e entity
@@ -1047,6 +1129,11 @@ class ImpostazioniController
             return $this->jsonResponse(['exists' => false, 'message' => 'Metadata pubblico SPID non ancora esportato.']);
         }
         $info = ['exists' => true, 'size' => filesize($path), 'file_mtime' => date('c', filemtime($path))];
+        // Aggiunge info backup DB
+        $sIam = SettingsRepository::getSection('iam_proxy');
+        $dbBackupAt = $sIam['spid_public_metadata_xml_at'] ?? '';
+        $info['db_backup_available'] = !empty($sIam['spid_public_metadata_xml']);
+        $info['db_backup_at'] = $dbBackupAt;
         try {
             $xml = simplexml_load_file($path);
             if ($xml !== false) {
@@ -1102,12 +1189,15 @@ class ImpostazioniController
             'http' => [
                 'method'        => 'POST',
                 'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => 180,
+                'timeout'       => 30,
                 'ignore_errors' => true,
             ],
         ]);
         $raw    = @file_get_contents("{$builderUrl}/run/export-agid", false, $ctx);
-        $result = $raw !== false ? json_decode($raw, true) : null;
+        if ($raw === false) {
+            return $this->jsonError('Export metadata pubblico SPID fallito: metadata-builder non raggiungibile. Verifica che il container auth-proxy-nginx sia avviato e risponda su /spidSaml2/metadata.');
+        }
+        $result = json_decode($raw, true);
 
         if (!($result['success'] ?? false)) {
             $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
@@ -1133,6 +1223,11 @@ class ImpostazioniController
             return $this->jsonError('Export metadata pubblico SPID fallito: impossibile scrivere il file di output.');
         }
         @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+
+        // Dual-storage: salva copia in DB come base64 per ripristino senza volume
+        $by = $this->currentUser();
+        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml', base64_encode($xml . "\n"), false, $by);
+        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml_at', date('c'), false, $by);
 
         $validUntil = isset($parsed['validUntil']) ? (string) $parsed['validUntil'] : '';
 
@@ -1179,6 +1274,12 @@ class ImpostazioniController
             return $this->jsonError('Impossibile scrivere il file nel volume.');
         }
         @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+
+        // Dual-storage: salva copia in DB come base64 per ripristino senza volume
+        $by = $this->currentUser();
+        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml', base64_encode($content), false, $by);
+        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml_at', date('c'), false, $by);
+
         $entityId   = (string)($xml['entityID'] ?? '');
         $validUntil = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
         return $this->jsonResponse([
@@ -1186,6 +1287,42 @@ class ImpostazioniController
             'message'     => 'Metadata pubblico SPID ripristinato correttamente.',
             'entity_id'   => $entityId,
             'valid_until' => $validUntil,
+        ]);
+    }
+
+    /**
+     * POST /impostazioni/login-proxy/spid-metadata/restore-from-db
+     *
+     * Ripristina il metadata SPID pubblico dal backup in DB (base64) al volume Docker.
+     * Utile quando il volume viene ricreato e si vuole ripristinare senza file zip.
+     */
+    public function restoreSpidMetadataFromDb(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $sIam = SettingsRepository::getSection('iam_proxy');
+        $b64 = $sIam['spid_public_metadata_xml'] ?? '';
+        if (empty($b64)) {
+            return $this->jsonError('Nessun backup metadata SPID disponibile nel database.');
+        }
+        $content = base64_decode($b64, true);
+        if ($content === false || $content === '') {
+            return $this->jsonError('Backup in DB corrotto o vuoto. Ripristina da file XML manuale.');
+        }
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($content);
+        if ($xml === false || !str_contains($content, 'EntityDescriptor')) {
+            return $this->jsonError('Backup in DB non valido: deve essere un XML metadata SAML2 con EntityDescriptor.');
+        }
+        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content) === false) {
+            return $this->jsonError('Impossibile scrivere il file nel volume.');
+        }
+        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+        return $this->jsonResponse([
+            'success'    => true,
+            'message'    => 'Metadata SPID ripristinato dal backup DB al volume.',
+            'entity_id'  => (string)($xml['entityID'] ?? ''),
+            'backed_up'  => $sIam['spid_public_metadata_xml_at'] ?? '',
         ]);
     }
 

@@ -41,14 +41,10 @@
                 <input type="url" class="form-control" name="public_base_url" id="lp-public-url"
                   value="{{ iam_proxy.public_base_url|default('') }}" placeholder="https://login.comune.example.it"
                   {{ not is_superadmin ? 'readonly' : '' }}>
-                <div class="form-text">URL radice del proxy IAM (es. <code>https://login.comune.example.it</code>). Usato per derivare automaticamente i vari endpoint.</div>
+                <div class="form-text">URL radice del proxy IAM (es. <code>https://login.comune.example.it</code>). Usato per derivare automaticamente gli endpoint.</div>
               </div>
-              <div class="col-md-4">
-                <label class="form-label">Hostname interno</label>
-                <input type="text" class="form-control font-monospace" name="hostname" id="lp-hostname"
-                  value="{{ iam_proxy.hostname|default('') }}" placeholder="login.comune.example.it"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# Hostname derivato automaticamente dall'URL pubblico — non mostrato nel form #}
+              <input type="hidden" name="hostname" id="lp-hostname" value="{{ iam_proxy.hostname|default('') }}">
               <div class="col-md-3">
                 <label class="form-label">Porta HTTP</label>
                 <input type="number" class="form-control" name="http_port"
@@ -90,6 +86,56 @@
             {# Mantieni i valori nascosti per IT Wallet e OIDCOP (non ancora supportati nell'UI) #}
             <input type="hidden" name="enable_it_wallet" value="{{ iam_proxy.enable_it_wallet|default('false') }}">
             <input type="hidden" name="enable_oidcop" value="{{ iam_proxy.enable_oidcop|default('false') }}">
+
+            {# ─── Opzioni avanzate ───────────────────────────────────────────── #}
+            {% if is_superadmin %}
+            <hr class="my-3">
+            <details id="lp-advanced-opts">
+              <summary class="text-muted small fw-semibold" style="cursor:pointer">
+                <i class="fas fa-caret-right me-1"></i>Opzioni avanzate (test / pre-produzione)
+              </summary>
+              <div class="d-flex gap-4 flex-wrap mt-3">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
+                    {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="demo-spid">
+                    Demo SPID IdP
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Solo sviluppo</span>
+                  </label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
+                    {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="spid-validator">
+                    SPID Validator (AgID)
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Pre-produzione</span>
+                  </label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
+                    {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="en-idem">IDEM</label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
+                    {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="en-eidas">eIDAS</label>
+                </div>
+              </div>
+              {% if iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' or iam_proxy.satosa_use_spid_validator|default('false') == 'true' %}
+              <div class="alert alert-warning py-2 small mt-3 mb-0">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                <strong>Attenzione:</strong> Demo SPID e/o SPID Validator sono attivi — questo non è un ambiente di produzione.
+              </div>
+              {% endif %}
+            </details>
+            {% else %}
+            {# Mantieni i valori nascosti per utenti non-superadmin #}
+            <input type="hidden" name="satosa_use_demo_spid_idp" value="{{ iam_proxy.satosa_use_demo_spid_idp|default('false') }}">
+            <input type="hidden" name="satosa_use_spid_validator" value="{{ iam_proxy.satosa_use_spid_validator|default('false') }}">
+            <input type="hidden" name="enable_idem" value="{{ iam_proxy.enable_idem|default('false') }}">
+            <input type="hidden" name="enable_eidas" value="{{ iam_proxy.enable_eidas|default('false') }}">
+            {% endif %}
           </div>
         </div>
       </div>
@@ -144,23 +190,9 @@
               Usati per generare il certificato SAML2 del Service Provider.
               I campi pre-compilati sono derivati dai <a href="/impostazioni?tab=generale">Dati ente</a>.
             </p>
+            {# spid_cert_common_name e spid_cert_org_name derivati automaticamente da hostname ed entity.name — non mostrati nel form #}
+            <input type="hidden" name="spid_cert_common_name" id="lp-spid-cn" value="{{ iam_proxy.spid_cert_common_name|default('') }}">
             <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Common Name (CN)</label>
-                <input type="text" class="form-control" name="spid_cert_common_name"
-                  id="lp-spid-cn"
-                  value="{{ iam_proxy.spid_cert_common_name|default('') }}"
-                  placeholder="{{ iam_proxy.hostname|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-                <div class="form-text">Di norma: hostname del proxy (es. <code>login.comune.example.it</code>).</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Organization Name</label>
-                <input type="text" class="form-control" name="spid_cert_org_name"
-                  value="{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}"
-                  placeholder="{{ entity.name|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
               <div class="col-md-4">
                 <label class="form-label">Organization ID</label>
                 <div class="input-group">
@@ -193,13 +225,8 @@
                 </div>
                 <div class="form-text">Calcolato: <code id="lp-spid-entity-id-hint"></code></div>
               </div>
-              <div class="col-md-4">
-                <label class="form-label">Locality (città)</label>
-                <input type="text" class="form-control" name="spid_cert_locality_name"
-                  value="{{ iam_proxy.spid_cert_locality_name|default('') }}"
-                  placeholder="Es. Montesilvano"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# spid_cert_locality_name derivato da entity.city — non mostrato nel form #}
+              <input type="hidden" name="spid_cert_locality_name" value="{{ iam_proxy.spid_cert_locality_name|default('') }}">
               <div class="col-md-3">
                 <label class="form-label">Key size (bit)</label>
                 <select class="form-select" name="spid_cert_key_size" {{ not is_superadmin ? 'disabled' : '' }}>
@@ -307,13 +334,8 @@
                   placeholder="{{ entity.name|default('') ~ ' - CIE OIDC RP' }}"
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
-              <div class="col-md-6">
-                <label class="form-label">Organization Name</label>
-                <input type="text" class="form-control" name="cie_oidc_organization_name"
-                  value="{{ iam_proxy.cie_oidc_organization_name|default(entity.name|default('')) }}"
-                  placeholder="{{ entity.name|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# cie_oidc_organization_name derivato da entity.name — nascosto #}
+              <input type="hidden" name="cie_oidc_organization_name" value="{{ iam_proxy.cie_oidc_organization_name|default(entity.name|default('')) }}">
               <div class="col-md-6">
                 <label class="form-label">E-mail di contatto</label>
                 <input type="email" class="form-control" name="cie_oidc_contact_email"
@@ -402,13 +424,8 @@
                   placeholder="{{ entity.name|default('') }}"
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
-              <div class="col-md-6">
-                <label class="form-label">Organization Name (IT)</label>
-                <input type="text" class="form-control" name="satosa_org_name_it"
-                  value="{{ iam_proxy.satosa_org_name_it|default(entity.name|default('')) }}"
-                  placeholder="{{ entity.name|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# satosa_org_name_it derivato da entity.name — nascosto #}
+              <input type="hidden" name="satosa_org_name_it" value="{{ iam_proxy.satosa_org_name_it|default(entity.name|default('')) }}">
               <div class="col-md-6">
                 <label class="form-label">Organization Identifier</label>
                 <input type="text" class="form-control font-monospace" name="satosa_org_identifier"
@@ -481,13 +498,8 @@
                     placeholder="{{ entity.name|default('') }}"
                     {{ not is_superadmin ? 'readonly' : '' }}>
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label">Organization Name (EN)</label>
-                  <input type="text" class="form-control" name="satosa_org_name_en"
-                    value="{{ iam_proxy.satosa_org_name_en|default('') }}"
-                    placeholder="{{ entity.name|default('') }}"
-                    {{ not is_superadmin ? 'readonly' : '' }}>
-                </div>
+              {# satosa_org_name_en nascosto, aggiornabile se necessario tramite i campi EN in dettagli avanzati #}
+              <input type="hidden" name="satosa_org_name_en" value="{{ iam_proxy.satosa_org_name_en|default('') }}">
                 <div class="col-md-6">
                   <label class="form-label">Organization URL (EN)</label>
                   <input type="url" class="form-control" name="satosa_org_url_en"
@@ -663,35 +675,8 @@
               </div>
             </div>
 
-            <hr class="my-3">
-            <p class="small text-muted mb-2">Toggle avanzati:</p>
-            <div class="d-flex gap-4 flex-wrap">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
-                  {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="en-idem">IDEM</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
-                  {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="en-eidas">eIDAS</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
-                  {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="demo-spid">Demo SPID IdP</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
-                  {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="spid-validator">SPID Validator</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="satosa_disable_cieoidc_backend" id="dis-cie" value="true"
-                  {{ iam_proxy.satosa_disable_cieoidc_backend|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="dis-cie">Disabilita backend CIE OIDC</label>
-              </div>
-            </div>
+            {# satosa_disable_cieoidc_backend rimosso (legacy, non più usato) #}
+            <input type="hidden" name="satosa_disable_cieoidc_backend" value="false">
           </div>
         </div>
       </div>
@@ -809,6 +794,14 @@
           <p class="text-muted small mb-0">Esporta il file da inviare ad AgID e usa <i class="fas fa-sync-alt"></i> per verificarne lo stato.</p>
         </div>
         {% if is_superadmin %}
+        <div id="spid-metadata-db-backup-row" class="px-3 pb-2" style="display:none;">
+          <div class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+            <span><i class="fas fa-database me-1"></i>Backup DB disponibile — <span id="spid-metadata-db-backup-at" class="text-muted"></span></span>
+            <button class="btn btn-sm btn-outline-info" onclick="restoreSpidMetadataFromDb(this)">
+              <i class="fas fa-undo me-1"></i>Ripristina da DB → Volume
+            </button>
+          </div>
+        </div>
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
             <i class="fas fa-download me-1"></i>Scarica XML
@@ -863,6 +856,7 @@
   <p class="text-muted small mb-3">
     Esporta in un unico archivio ZIP la configurazione e/o i file di chiavi e metadata.
     Il ripristino sostituisce i file esistenti sul volume.
+    Il metadata SPID viene salvato automaticamente in DB ad ogni esportazione o ripristino: è possibile ripristinarlo direttamente dalla card Fase 3 senza necessità di file ZIP.
   </p>
   <div class="row g-3 mb-2">
     {# Export ZIP #}
@@ -1182,7 +1176,13 @@ const CIE_TRUST_PREPROD = 'https://preprod.registry.servizicie.interno.gov.it';
 // ── Derivazione campi da URL pubblico ────────────────────────────────────────
 function lpDeriveFromUrl() {
   const pub = (document.getElementById('lp-public-url')?.value || '').replace(/\/$/, '');
-  const host = document.getElementById('lp-hostname')?.value || '';
+  // Hostname: derivato dall'URL pubblico, aggiorna il campo hidden
+  let host = '';
+  if (pub) {
+    try { host = new URL(pub).hostname; } catch (_) {}
+  }
+  const hostnameHidden = document.getElementById('lp-hostname');
+  if (hostnameHidden && host) hostnameHidden.value = host;
 
   // SATOSA metadata URLs
   lpSetDerived('lp-saml2-meta-pub', pub ? pub + '/Saml2IDP/metadata' : '');
@@ -1190,8 +1190,11 @@ function lpDeriveFromUrl() {
   const _intScheme = {{ ssl_on is defined and ssl_on ? 'true' : 'false' }} ? 'https' : 'http';
   lpSetDerived('lp-saml2-meta-int', host ? _intScheme + '://' + host + '/Saml2IDP/metadata' : '');
 
-  // SPID cert fields
-  lpSetDerived('lp-spid-cn', host);
+  // SPID cert CN (campo hidden): aggiorna con l'hostname derivato
+  const spidCnHidden = document.getElementById('lp-spid-cn');
+  if (spidCnHidden && host && !spidCnHidden.dataset.manuallySet) spidCnHidden.value = host;
+
+  // SPID fields
   const fo = '{{ frontoffice.public_url|default('') }}';
   const entityId = fo ? fo.replace(/\/$/, '') + '/saml/sp' : (pub ? pub + '/saml/sp' : '');
   lpSetDerived('lp-spid-entity-id', entityId);
@@ -1328,6 +1331,16 @@ async function loadMetadataInfo(type, btn) {
       }
       html += metaRow('Scadenza metadata', expiryBadge(d.valid_until, d.valid_until_expired));
       html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
+      // Mostra info backup DB
+      const dbRow = document.getElementById('spid-metadata-db-backup-row');
+      if (dbRow) {
+        if (d.db_backup_available) {
+          document.getElementById('spid-metadata-db-backup-at').textContent = d.db_backup_at || '';
+          dbRow.style.display = '';
+        } else {
+          dbRow.style.display = 'none';
+        }
+      }
     } else {
       html += metaRow('Issuer', '<code class="small">' + escHtml(d.iss || '—') + '</code>');
       html += metaRow('Subject', '<code class="small">' + escHtml(d.sub || '—') + '</code>');
@@ -1384,7 +1397,6 @@ async function restoreMetadata(type, fileInputId, btn) {
   // Derivazione campi al caricamento
   lpDeriveFromUrl();
   document.getElementById('lp-public-url')?.addEventListener('input', lpDeriveFromUrl);
-  document.getElementById('lp-hostname')?.addEventListener('input', lpDeriveFromUrl);
   document.getElementById('lp-cie-custom-url')?.addEventListener('input', lpUpdateCieEnv);
 
   // Badge configurazione e visibilità card condizionali
@@ -1445,10 +1457,15 @@ async function restoreMetadata(type, fileInputId, btn) {
 
   // Pre-popola il modale generazione cert SPID al momento dell'apertura
   document.getElementById('spidCertGeneraModal')?.addEventListener('show.bs.modal', () => {
-    const cn       = document.getElementById('lp-spid-cn')?.value || '';
-    const locality = '{{ settings.iam_proxy.spid_cert_locality_name|default('') }}';
+    // Common Name: hostname del proxy (da campo hidden derivato)
+    const cn = document.getElementById('lp-spid-cn')?.value
+      || document.getElementById('lp-hostname')?.value
+      || '{{ iam_proxy.spid_cert_common_name|default('') }}';
+    // Locality: da dati ente (già salvato in DB come spid_cert_locality_name)
+    const locality = '{{ iam_proxy.spid_cert_locality_name|default(entity.city|default('')) }}';
     const orgId    = document.getElementById('lp-spid-org-id')?.value || '';
-    const orgName  = '{{ settings.iam_proxy.spid_cert_org_name|default('') }}';
+    // Org Name: da dati ente
+    const orgName  = '{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}';
     const entityId = document.getElementById('lp-spid-entity-id')?.value || '';
     if (cn)       document.getElementById('spid-cert-cn').value        = cn;
     if (locality) document.getElementById('spid-cert-locality').value   = locality;
@@ -1780,6 +1797,29 @@ async function doRestoreSpidMetadata(btn) {
     resultEl.className = 'mt-2 alert alert-danger small';
     resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
     resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Ripristino metadata SPID da backup DB ─────────────────────────────────────
+async function restoreSpidMetadataFromDb(btn) {
+  if (!confirm('Ripristina il metadata SPID dal backup nel database?\n\nIl file sul volume verrà sovrascritto con la copia salvata in DB.')) return;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ripristino…';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/spid-metadata/restore-from-db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'Metadata ripristinato dal DB.' : 'Ripristino fallito.'), !!json.success);
+    if (json.success) loadMetadataInfo('spid', null);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
