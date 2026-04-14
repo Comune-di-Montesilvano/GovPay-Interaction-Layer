@@ -206,6 +206,9 @@ services:
       - CIE_OIDC_PROVIDER_URL=${CIE_OIDC_PROVIDER_URL:-https://oidc.idserver.servizicie.interno.gov.it}
       - CIE_OIDC_TRUST_ANCHOR_URL=${CIE_OIDC_TRUST_ANCHOR_URL:-https://oidc.registry.servizicie.interno.gov.it}
       - CIE_OIDC_AUTHORITY_HINT_URL=${CIE_OIDC_AUTHORITY_HINT_URL:-https://oidc.registry.servizicie.interno.gov.it}
+      - SATOSA_INTERNAL_HOSTNAME=${SATOSA_INTERNAL_HOSTNAME:-auth-proxy}
+      - SATOSA_INTERNAL_PORT=${SATOSA_INTERNAL_PORT:-10000}
+      - SATOSA_INTERNAL_SCHEME=${SATOSA_INTERNAL_SCHEME:-http}
       - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
       - SSL=${SSL:-off}
     networks:

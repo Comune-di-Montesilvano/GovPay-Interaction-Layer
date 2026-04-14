@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # export-cieoidc.sh — esporta artifact CIE OIDC per onboarding alla federazione
-# Curla auth-proxy-nginx via rete Docker interna (servizio deve essere up)
+# Curla SATOSA direttamente via rete Docker interna (service auth-proxy)
 set -euo pipefail
 
 OUTPUT_DIR="/output/cieoidc"
 FORCE="${FORCE:-0}"
 
 # URL interno Docker (diretta A SATOSA, not via nginx)
-SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy}"
+SATOSA_HOSTNAME="${SATOSA_INTERNAL_HOSTNAME:-auth-proxy}"
 SATOSA_PORT="${SATOSA_INTERNAL_PORT:-10000}"
 SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
 IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}"

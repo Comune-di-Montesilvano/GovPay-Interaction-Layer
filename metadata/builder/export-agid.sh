@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # export-agid.sh — esporta metadata pubblico SATOSA SPID per AgID
-# Curla auth-proxy-nginx via rete Docker interna (servizio deve essere up)
+# Curla SATOSA direttamente via rete Docker interna (service auth-proxy)
 set -euo pipefail
 
 trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO, exit $?)" >&2; exit 1' ERR
 
-SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy}"
+SATOSA_HOSTNAME="${SATOSA_INTERNAL_HOSTNAME:-auth-proxy}"
 SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
 SATOSA_PORT="${SATOSA_INTERNAL_PORT:-10000}"
 SATOSA_URL="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}/spidSaml2/metadata"
