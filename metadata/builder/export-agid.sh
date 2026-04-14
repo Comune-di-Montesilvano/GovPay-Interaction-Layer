@@ -5,9 +5,10 @@ set -euo pipefail
 
 trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO, exit $?)" >&2; exit 1' ERR
 
-SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
+SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy}"
 SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
-SATOSA_URL="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}/spidSaml2/metadata"
+SATOSA_PORT="${SATOSA_INTERNAL_PORT:-10000}"
+SATOSA_URL="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}/spidSaml2/metadata"
 OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
 LAST_ERR=""
 LAST_HTTP=""
@@ -18,7 +19,7 @@ if [ "${SATOSA_SCHEME}" = "https" ]; then
   CURL_OPTS="${CURL_OPTS} -k"
 fi
 
-echo "[DEBUG] Configurazione: SATOSA_HOSTNAME=$SATOSA_HOSTNAME SATOSA_SCHEME=$SATOSA_SCHEME OUTPUT=$OUTPUT CURL_OPTS='$CURL_OPTS'" >&2
+echo "[DEBUG] Configurazione: SATOSA_HOSTNAME=$SATOSA_HOSTNAME SATOSA_SCHEME=$SATOSA_SCHEME SATOSA_PORT=$SATOSA_PORT OUTPUT=$OUTPUT CURL_OPTS='$CURL_OPTS'" >&2
 mkdir -p /output/agid || {
   echo "[ERROR] Impossibile creare directory /output/agid. Verifica permessi e mount del volume." >&2
   exit 1
@@ -65,5 +66,5 @@ for i in $(seq 1 40); do
   sleep 3
 done
 
-echo "[ERROR] ${SATOSA_HOSTNAME} non risponde su ${SATOSA_URL}. Ultimo HTTP code=${LAST_HTTP}. Ultimo errore curl: ${LAST_ERR}. Verifica che auth-proxy-nginx sia raggiungibile e /spidSaml2/metadata ritorni 200." >&2
+echo "[ERROR] ${SATOSA_HOSTNAME}:${SATOSA_PORT} non risponde su ${SATOSA_URL}. Ultimo HTTP code=${LAST_HTTP}. Ultimo errore curl: ${LAST_ERR}. Verifica che auth-proxy sia raggiungibile e /spidSaml2/metadata ritorni 200." >&2
 exit 1
