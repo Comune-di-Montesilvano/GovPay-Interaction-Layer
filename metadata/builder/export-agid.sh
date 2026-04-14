@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 # export-agid.sh — esporta metadata pubblico SATOSA SPID per AgID
 # Curla auth-proxy-nginx via rete Docker interna (servizio deve essere up)
-set -u pipefail
+set -euo pipefail
 
-trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO): $?" >&2; exit 1' ERR
+trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO, exit $?)" >&2; exit 1' ERR
 
 SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
 SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
 SATOSA_URL="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}/spidSaml2/metadata"
-CURL_OPTS="-sf$( [ "${SATOSA_SCHEME}" = "https" ] && echo "k" ) --connect-timeout 5 --max-time 10"
 OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
 LAST_ERR=""
 LAST_HTTP=""
 
-echo "[DEBUG] Configurazione: SATOSA_HOSTNAME=$SATOSA_HOSTNAME SATOSA_SCHEME=$SATOSA_SCHEME OUTPUT=$OUTPUT" >&2
-if ! mkdir -p /output/agid 2>&1; then
+# Costruisci CURL_OPTS in forma robusta
+CURL_OPTS="-sf --connect-timeout 5 --max-time 10"
+if [ "${SATOSA_SCHEME}" = "https" ]; then
+  CURL_OPTS="${CURL_OPTS} -k"
+fi
+
+echo "[DEBUG] Configurazione: SATOSA_HOSTNAME=$SATOSA_HOSTNAME SATOSA_SCHEME=$SATOSA_SCHEME OUTPUT=$OUTPUT CURL_OPTS='$CURL_OPTS'" >&2
+mkdir -p /output/agid || {
   echo "[ERROR] Impossibile creare directory /output/agid. Verifica permessi e mount del volume." >&2
   exit 1
-fi
+}
 echo "[DEBUG] Directory /output/agid pronta" >&2
 
 echo "[INFO] Attendo che ${SATOSA_HOSTNAME} sia disponibile su ${SATOSA_URL}..."
