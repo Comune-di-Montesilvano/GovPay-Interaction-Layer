@@ -1184,6 +1184,16 @@ class ImpostazioniController
 
         $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
         $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
+        $iamProxy = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $query = [];
+        if ($publicBaseUrl !== '') {
+            $query['public_base_url'] = $publicBaseUrl;
+        }
+        $endpoint = "{$builderUrl}/run/export-agid";
+        if (!empty($query)) {
+            $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
         $builderTimeout = (int) (getenv('METADATA_BUILDER_HTTP_TIMEOUT') ?: 180);
         if ($builderTimeout < 30) {
             $builderTimeout = 30;
@@ -1197,7 +1207,7 @@ class ImpostazioniController
                 'ignore_errors' => true,
             ],
         ]);
-        $raw    = @file_get_contents("{$builderUrl}/run/export-agid", false, $ctx);
+        $raw    = @file_get_contents($endpoint, false, $ctx);
         if ($raw === false) {
             return $this->jsonError('Export metadata pubblico SPID fallito: metadata-builder non raggiungibile o timeout scaduto. Verifica che auth-proxy sia avviato e che /spidSaml2/metadata risponda 200.');
         }
@@ -1697,7 +1707,19 @@ class ImpostazioniController
 
         $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
         $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
-        $endpoint    = "{$builderUrl}/run/export-cieoidc" . ($force ? '?force=1' : '');
+        $iamProxy    = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $query = [];
+        if ($force) {
+            $query['force'] = '1';
+        }
+        if ($publicBaseUrl !== '') {
+            $query['public_base_url'] = $publicBaseUrl;
+        }
+        $endpoint = "{$builderUrl}/run/export-cieoidc";
+        if (!empty($query)) {
+            $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
 
         $ctx = stream_context_create([
             'http' => [

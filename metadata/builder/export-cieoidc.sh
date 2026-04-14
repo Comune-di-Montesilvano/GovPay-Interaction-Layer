@@ -28,7 +28,7 @@ if [[ -z "$CIE_OIDC_CLIENT_ID" ]]; then
   if [[ -n "$IAM_PROXY_PUBLIC_BASE_URL" ]]; then
     CIE_OIDC_CLIENT_ID="${IAM_PROXY_PUBLIC_BASE_URL%/}/CieOidcRp"
   else
-    echo "[WARN] CIE_OIDC_CLIENT_ID non impostato. Imposta IAM_PROXY_PUBLIC_BASE_URL in .auth-proxy.env"
+    echo "[WARN] CIE_OIDC_CLIENT_ID non impostato. Configura public_base_url in Login Proxy"
     CIE_OIDC_CLIENT_ID="https://CONFIGURA_IAM_PROXY_PUBLIC_BASE_URL/CieOidcRp"
   fi
 fi
