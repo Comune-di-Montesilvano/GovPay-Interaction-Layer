@@ -123,6 +123,18 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni/login-proxy/spid-certs/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getSpidCertInfo($request, $response);
     });
+    $app->post('/impostazioni/login-proxy/spid-certs/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreSpidCerts($request, $response);
+    });
+    $app->get('/impostazioni/login-proxy/cie-keys/info', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getCieKeyDetails($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/cie-keys/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreCieKeys($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/backup/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreBackupZip($request, $response);
+    });
     // SPID metadata
     $app->get('/impostazioni/login-proxy/spid-metadata/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getSpidMetadataInfo($request, $response);

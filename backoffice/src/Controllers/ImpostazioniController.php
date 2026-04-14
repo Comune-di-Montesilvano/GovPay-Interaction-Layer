@@ -690,40 +690,349 @@ class ImpostazioniController
     public function getSpidCertInfo(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $path = self::INTERNAL_SPID_METADATA_PATH;
-        if (!is_file($path)) {
-            return $this->jsonResponse(['exists' => false, 'message' => 'Certificato SPID non ancora disponibile nel metadata interno.']);
+        $certPath = self::SPID_CERTS_DIR . '/cert.pem';
+        $keyPath  = self::SPID_CERTS_DIR . '/privkey.pem';
+
+        if (!is_file($certPath)) {
+            return $this->jsonResponse([
+                'exists'  => false,
+                'message' => 'Certificato SPID non ancora generato. Usa "Genera certificato SPID".',
+            ]);
         }
 
         $info = [
-            'exists'     => true,
-            'file_mtime' => date('c', filemtime($path)),
+            'exists'   => true,
+            'has_key'  => is_file($keyPath),
+            'file_mtime' => date('c', filemtime($certPath)),
         ];
 
-        try {
-            $xml = simplexml_load_file($path);
-            if ($xml !== false) {
-                $info['entity_id'] = (string) ($xml['entityID'] ?? '');
-                $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
-                if ($spSso) {
-                    $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
-                    if ($keyCert) {
-                        $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
-                        if ($cert) {
-                            $parsed = openssl_x509_parse($cert);
-                            if (isset($parsed['validTo_time_t'])) {
-                                $info['cert_expiry'] = date('c', $parsed['validTo_time_t']);
-                                $info['cert_expired'] = $parsed['validTo_time_t'] <= time();
-                            }
-                        }
-                    }
+        $certPem = @file_get_contents($certPath);
+        if ($certPem !== false) {
+            $cert = openssl_x509_read($certPem);
+            if ($cert !== false) {
+                $parsed = openssl_x509_parse($cert);
+                $info['subject_cn']  = $parsed['subject']['CN'] ?? '';
+                $info['subject_o']   = $parsed['subject']['O'] ?? '';
+                $info['subject_l']   = $parsed['subject']['L'] ?? '';
+                $info['subject_c']   = $parsed['subject']['C'] ?? '';
+                $info['valid_from']  = isset($parsed['validFrom_time_t']) ? date('c', $parsed['validFrom_time_t']) : '';
+                $info['valid_to']    = isset($parsed['validTo_time_t']) ? date('c', $parsed['validTo_time_t']) : '';
+                $info['expired']     = isset($parsed['validTo_time_t']) ? ($parsed['validTo_time_t'] <= time()) : null;
+                $info['days_left']   = isset($parsed['validTo_time_t']) ? max(0, (int)(($parsed['validTo_time_t'] - time()) / 86400)) : null;
+                $info['fingerprint_sha256'] = openssl_x509_fingerprint($cert, 'sha256') ?: '';
+                $pubKey = openssl_pkey_get_public($cert);
+                if ($pubKey !== false) {
+                    $keyDetails = openssl_pkey_get_details($pubKey);
+                    $info['key_bits'] = $keyDetails['bits'] ?? null;
+                    $info['key_type'] = match ($keyDetails['type'] ?? -1) {
+                        OPENSSL_KEYTYPE_RSA => 'RSA',
+                        OPENSSL_KEYTYPE_EC  => 'EC',
+                        default => 'unknown',
+                    };
                 }
             }
-        } catch (\Throwable $e) {
-            $info['parse_error'] = $e->getMessage();
         }
 
         return $this->jsonResponse($info);
+    }
+
+    public function restoreSpidCerts(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $uploadedFiles = $request->getUploadedFiles();
+        $certsDir = self::SPID_CERTS_DIR;
+        @mkdir($certsDir, 0755, true);
+
+        // ZIP mode
+        if (isset($uploadedFiles['backup_zip']) && $uploadedFiles['backup_zip']->getError() === UPLOAD_ERR_OK) {
+            $tmpZip = tempnam(sys_get_temp_dir(), 'spid_zip_');
+            $uploadedFiles['backup_zip']->moveTo($tmpZip);
+            $zip = new \ZipArchive();
+            if ($zip->open($tmpZip) !== true) {
+                @unlink($tmpZip);
+                return $this->jsonError('File ZIP non valido.');
+            }
+            $certContent = null;
+            $keyContent  = null;
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+                if (str_ends_with($name, 'cert.pem')) {
+                    $certContent = $zip->getFromIndex($i);
+                } elseif (str_ends_with($name, 'privkey.pem')) {
+                    $keyContent = $zip->getFromIndex($i);
+                }
+            }
+            $zip->close();
+            @unlink($tmpZip);
+            if ($certContent === null || $keyContent === null) {
+                return $this->jsonError('ZIP non contiene cert.pem e/o privkey.pem.');
+            }
+        } else {
+            // Dual file upload
+            $certFile = $uploadedFiles['cert_file'] ?? null;
+            $keyFile  = $uploadedFiles['key_file'] ?? null;
+            if (!$certFile || $certFile->getError() !== UPLOAD_ERR_OK) {
+                return $this->jsonError('File certificato (cert_file) mancante o errore upload.');
+            }
+            if (!$keyFile || $keyFile->getError() !== UPLOAD_ERR_OK) {
+                return $this->jsonError('File chiave privata (key_file) mancante o errore upload.');
+            }
+            $certContent = (string)$certFile->getStream();
+            $keyContent  = (string)$keyFile->getStream();
+        }
+
+        $cert = openssl_x509_read($certContent);
+        if ($cert === false) {
+            return $this->jsonError('File certificato non valido (non è un PEM X.509 valido).');
+        }
+        $key = openssl_pkey_get_private($keyContent);
+        if ($key === false) {
+            return $this->jsonError('File chiave privata non valido (non è un PEM RSA valido).');
+        }
+        if (!openssl_x509_check_private_key($cert, $key)) {
+            return $this->jsonError('Certificato e chiave privata non corrispondono.');
+        }
+
+        file_put_contents($certsDir . '/cert.pem', $certContent);
+        file_put_contents($certsDir . '/privkey.pem', $keyContent);
+        @chmod($certsDir . '/cert.pem', 0644);
+        @chmod($certsDir . '/privkey.pem', 0600);
+
+        $parsed = openssl_x509_parse($cert);
+        return $this->jsonResponse([
+            'success'    => true,
+            'message'    => 'Certificato SPID ripristinato correttamente.',
+            'subject_cn' => $parsed['subject']['CN'] ?? '',
+            'valid_to'   => isset($parsed['validTo_time_t']) ? date('c', $parsed['validTo_time_t']) : '',
+        ]);
+    }
+
+    public function getCieKeyDetails(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $keysDir     = self::CIEOIDC_KEYS_DIR;
+        $generatedAt = $keysDir . '/GENERATED_AT';
+        $files       = glob($keysDir . '/*.json') ?: [];
+
+        if (empty($files)) {
+            return $this->jsonResponse([
+                'exists'  => false,
+                'message' => 'Chiavi JWK CIE OIDC non ancora generate. Usa "Genera chiavi JWK".',
+            ]);
+        }
+
+        $generatedTs = is_file($generatedAt) ? (int)trim((string)file_get_contents($generatedAt)) : null;
+
+        $keys = [];
+        foreach ($files as $filePath) {
+            $content = @file_get_contents($filePath);
+            if ($content === false) {
+                continue;
+            }
+            $jwk = json_decode($content, true);
+            if (!is_array($jwk)) {
+                continue;
+            }
+            $keyData = isset($jwk['keys']) ? ($jwk['keys'][0] ?? null) : $jwk;
+            if (!is_array($keyData)) {
+                continue;
+            }
+            $entry = [
+                'file'    => basename($filePath),
+                'kid'     => $keyData['kid'] ?? '',
+                'kty'     => $keyData['kty'] ?? '',
+                'use'     => $keyData['use'] ?? '',
+            ];
+            if (isset($keyData['n'])) {
+                $n = base64_decode(strtr($keyData['n'], '-_', '+/'));
+                $entry['key_bits'] = strlen($n) * 8;
+            } elseif (isset($keyData['crv'])) {
+                $entry['crv'] = $keyData['crv'];
+            }
+            $keys[] = $entry;
+        }
+
+        return $this->jsonResponse([
+            'exists'       => true,
+            'keys'         => $keys,
+            'key_count'    => count($keys),
+            'generated_at' => $generatedTs ? date('c', $generatedTs) : null,
+        ]);
+    }
+
+    public function restoreCieKeys(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $uploadedFiles = $request->getUploadedFiles();
+        $keysDir = self::CIEOIDC_KEYS_DIR;
+        @mkdir($keysDir, 0755, true);
+
+        // ZIP mode
+        if (isset($uploadedFiles['backup_zip']) && $uploadedFiles['backup_zip']->getError() === UPLOAD_ERR_OK) {
+            $tmpZip = tempnam(sys_get_temp_dir(), 'cie_zip_');
+            $uploadedFiles['backup_zip']->moveTo($tmpZip);
+            $zip = new \ZipArchive();
+            if ($zip->open($tmpZip) !== true) {
+                @unlink($tmpZip);
+                return $this->jsonError('File ZIP non valido.');
+            }
+            $restored = [];
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name     = $zip->getNameIndex($i);
+                $basename = basename($name);
+                if (str_starts_with($basename, 'jwk-') && str_ends_with($basename, '.json')) {
+                    $content = $zip->getFromIndex($i);
+                    if (is_array(json_decode($content, true))) {
+                        file_put_contents($keysDir . '/' . $basename, $content);
+                        $restored[] = $basename;
+                    }
+                }
+            }
+            $zip->close();
+            @unlink($tmpZip);
+            if (empty($restored)) {
+                return $this->jsonError('ZIP non contiene file JWK CIE OIDC validi (jwk-*.json).');
+            }
+            return $this->jsonResponse(['success' => true, 'message' => 'Chiavi JWK CIE OIDC ripristinate.', 'restored' => $restored]);
+        }
+
+        // Individual file upload
+        $allowedFiles = ['jwk-federation.json', 'jwk-core-sig.json', 'jwk-core-enc.json'];
+        $restored = [];
+        foreach ($allowedFiles as $fname) {
+            $inputKey = str_replace(['-', '.'], '_', $fname);
+            $file     = $uploadedFiles[$fname] ?? $uploadedFiles[$inputKey] ?? null;
+            if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+                continue;
+            }
+            $content = (string)$file->getStream();
+            $decoded = json_decode($content, true);
+            if (!is_array($decoded)) {
+                return $this->jsonError("File {$fname} non è un JSON valido.");
+            }
+            $keyObj = isset($decoded['keys']) ? ($decoded['keys'][0] ?? null) : $decoded;
+            if (!isset($keyObj['kty'])) {
+                return $this->jsonError("File {$fname} non è un JWK valido (campo 'kty' mancante).");
+            }
+            file_put_contents($keysDir . '/' . $fname, $content);
+            $restored[] = $fname;
+        }
+
+        if (empty($restored)) {
+            return $this->jsonError('Nessun file JWK valido caricato. Usa i campi jwk-federation.json, jwk-core-sig.json, jwk-core-enc.json.');
+        }
+
+        return $this->jsonResponse(['success' => true, 'message' => 'Chiavi JWK CIE OIDC ripristinate.', 'restored' => $restored]);
+    }
+
+    public function restoreBackupZip(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $uploadedFiles = $request->getUploadedFiles();
+
+        $zipFile = $uploadedFiles['backup_zip'] ?? null;
+        if (!$zipFile || $zipFile->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('File ZIP mancante o errore upload.');
+        }
+        if (!class_exists('ZipArchive')) {
+            return $this->jsonError('ZipArchive non disponibile nel container.', 500);
+        }
+
+        $tmpZip = tempnam(sys_get_temp_dir(), 'restore_zip_');
+        $zipFile->moveTo($tmpZip);
+        $zip = new \ZipArchive();
+        if ($zip->open($tmpZip) !== true) {
+            @unlink($tmpZip);
+            return $this->jsonError('File ZIP non valido o corrotto.');
+        }
+
+        // Index archive contents
+        $contents = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $contents[] = $zip->getNameIndex($i);
+        }
+
+        $results = [];
+
+        // SPID certs
+        $certContent = null;
+        $keyContent  = null;
+        foreach ($contents as $name) {
+            if (str_ends_with($name, 'cert.pem')) {
+                $certContent = $zip->getFromName($name);
+            } elseif (str_ends_with($name, 'privkey.pem')) {
+                $keyContent = $zip->getFromName($name);
+            }
+        }
+        if ($certContent !== null && $keyContent !== null) {
+            $cert = openssl_x509_read($certContent);
+            $key  = openssl_pkey_get_private($keyContent);
+            if ($cert && $key && openssl_x509_check_private_key($cert, $key)) {
+                @mkdir(self::SPID_CERTS_DIR, 0755, true);
+                file_put_contents(self::SPID_CERTS_DIR . '/cert.pem', $certContent);
+                file_put_contents(self::SPID_CERTS_DIR . '/privkey.pem', $keyContent);
+                @chmod(self::SPID_CERTS_DIR . '/cert.pem', 0644);
+                @chmod(self::SPID_CERTS_DIR . '/privkey.pem', 0600);
+                $results['spid_certs'] = ['success' => true, 'message' => 'Certificati SPID ripristinati.'];
+            } else {
+                $results['spid_certs'] = ['success' => false, 'message' => 'Certificati SPID nel ZIP non validi o non corrispondenti.'];
+            }
+        }
+
+        // CIE OIDC keys
+        $cieRestored = [];
+        foreach ($contents as $name) {
+            $basename = basename($name);
+            if (str_starts_with($basename, 'jwk-') && str_ends_with($basename, '.json')) {
+                $content = $zip->getFromName($name);
+                if (is_array(json_decode($content, true))) {
+                    @mkdir(self::CIEOIDC_KEYS_DIR, 0755, true);
+                    file_put_contents(self::CIEOIDC_KEYS_DIR . '/' . $basename, $content);
+                    $cieRestored[] = $basename;
+                }
+            }
+        }
+        if (!empty($cieRestored)) {
+            $results['cieoidc_keys'] = ['success' => true, 'message' => 'Chiavi CIE OIDC ripristinate: ' . implode(', ', $cieRestored)];
+        }
+
+        // SPID public metadata
+        foreach ($contents as $name) {
+            if (str_ends_with($name, '.xml')) {
+                $content = $zip->getFromName($name);
+                if ($content !== false && str_contains($content, 'EntityDescriptor')) {
+                    @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+                    file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content);
+                    @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+                    $results['spid_metadata'] = ['success' => true, 'message' => 'Metadata pubblico SPID ripristinato.'];
+                    break;
+                }
+            }
+        }
+
+        // CIE entity configuration
+        foreach ($contents as $name) {
+            $basename = basename($name);
+            if (str_ends_with($basename, '.json') && !str_starts_with($basename, 'jwk-') && $basename !== 'auth-proxy-settings.json') {
+                $content = $zip->getFromName($name);
+                $decoded = json_decode($content, true);
+                if (is_array($decoded) && isset($decoded['sub'])) {
+                    @mkdir(self::CIEOIDC_META_DIR, 0775, true);
+                    file_put_contents(self::CIE_METADATA_PATH, $content);
+                    $results['cie_metadata'] = ['success' => true, 'message' => 'Entity configuration CIE OIDC ripristinata.'];
+                    break;
+                }
+            }
+        }
+
+        $zip->close();
+        @unlink($tmpZip);
+
+        return $this->jsonResponse([
+            'success' => true,
+            'results' => $results,
+            'message' => 'Ripristino completato. ' . count($results) . ' elemento/i elaborato/i.',
+        ]);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -853,7 +1162,31 @@ class ImpostazioniController
     public function restoreSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->jsonError('Il metadata pubblico SPID non si ripristina manualmente da UI. Usa Export AgID per rigenerarlo.', 405);
+        $uploadedFiles = $request->getUploadedFiles();
+        $file = $uploadedFiles['metadata_file'] ?? null;
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('File metadata SPID (metadata_file) mancante o errore upload.');
+        }
+        $content = (string)$file->getStream();
+        // Basic XML validation
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($content);
+        if ($xml === false || !str_contains($content, 'EntityDescriptor')) {
+            return $this->jsonError('File non valido: deve essere un XML metadata SAML2 con EntityDescriptor.');
+        }
+        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content) === false) {
+            return $this->jsonError('Impossibile scrivere il file nel volume.');
+        }
+        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+        $entityId   = (string)($xml['entityID'] ?? '');
+        $validUntil = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
+        return $this->jsonResponse([
+            'success'     => true,
+            'message'     => 'Metadata pubblico SPID ripristinato correttamente.',
+            'entity_id'   => $entityId,
+            'valid_until' => $validUntil,
+        ]);
     }
 
     public function getCieMetadataInfo(Request $request, Response $response): Response
@@ -861,14 +1194,29 @@ class ImpostazioniController
         $this->requireAdminOrAbove();
         $path = self::CIE_METADATA_PATH;
         if (!is_file($path)) {
-            return $this->jsonResponse(['exists' => false, 'message' => 'Entity configuration CIE non ancora generata.']);
+            return $this->jsonResponse(['exists' => false, 'message' => 'Entity configuration CIE non ancora esportata.']);
         }
         $info = ['exists' => true, 'size' => filesize($path), 'modified' => date('c', filemtime($path))];
-        $json = json_decode(file_get_contents($path), true);
+        $json = json_decode((string)file_get_contents($path), true);
         if (is_array($json)) {
-            $info['sub']       = $json['sub'] ?? '';
-            $info['iat']       = isset($json['iat']) ? date('c', $json['iat']) : '';
-            $info['exp']       = isset($json['exp']) ? date('c', $json['exp']) : '';
+            $info['sub'] = $json['sub'] ?? '';
+            $info['iss'] = $json['iss'] ?? '';
+            if (isset($json['iat'])) {
+                $info['iat'] = date('c', (int)$json['iat']);
+            }
+            if (isset($json['exp'])) {
+                $expTs = (int)$json['exp'];
+                $info['exp']           = date('c', $expTs);
+                $info['exp_expired']   = $expTs <= time();
+                $info['exp_days_left'] = max(0, (int)(($expTs - time()) / 86400));
+            }
+            // Federation JWK count
+            $fedJwks = $json['jwks']['keys'] ?? [];
+            $info['federation_jwk_count'] = count($fedJwks);
+            // RP metadata
+            $rpMeta = $json['metadata']['openid_relying_party'] ?? [];
+            $info['client_name']   = $rpMeta['client_name'] ?? ($rpMeta['client_name#it'] ?? '');
+            $info['redirect_uris'] = $rpMeta['redirect_uris'] ?? [];
         }
         return $this->jsonResponse($info);
     }
@@ -947,6 +1295,7 @@ class ImpostazioniController
             }
         }
         if (!preg_match('/^PA:IT-[A-Za-z0-9_]+$/', $orgId)) {
+
             return $this->jsonError("org_id deve avere il formato 'PA:IT-<codice IPA>' (es. PA:IT-c_f646)");
         }
         if (!in_array($keySize, [2048, 3072, 4096], true)) {
@@ -960,6 +1309,15 @@ class ImpostazioniController
                 return $this->jsonError("I campi non possono contenere caratteri speciali non ammessi.");
             }
         }
+
+        // Persist parameters to DB so they survive modal close
+        SettingsRepository::set('iam_proxy', 'spid_cert_common_name', $commonName);
+        SettingsRepository::set('iam_proxy', 'spid_cert_locality_name', $locality);
+        SettingsRepository::set('iam_proxy', 'spid_cert_org_id', $orgId);
+        SettingsRepository::set('iam_proxy', 'spid_cert_org_name', $orgName);
+        SettingsRepository::set('iam_proxy', 'spid_cert_entity_id', $entityId);
+        SettingsRepository::set('iam_proxy', 'spid_cert_days', (string)$days);
+        SettingsRepository::set('iam_proxy', 'spid_cert_key_size', (string)$keySize);
 
         $certsDir = self::SPID_CERTS_DIR;
         @mkdir($certsDir, 0755, true);

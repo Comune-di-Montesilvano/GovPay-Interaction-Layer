@@ -735,10 +735,16 @@
             <i class="fas fa-sync-alt me-1"></i>Stato
           </button>
           {% if is_superadmin %}
-          <button class="btn btn-sm btn-outline-success" type="button"
-            data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
-            <i class="fas fa-certificate me-1"></i>Genera certificato SPID
-          </button>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-warning" type="button"
+              data-bs-toggle="modal" data-bs-target="#spidCertRestoreModal">
+              <i class="fas fa-upload me-1"></i>Ripristina
+            </button>
+            <button class="btn btn-sm btn-outline-success" type="button"
+              data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
+              <i class="fas fa-certificate me-1"></i>Genera
+            </button>
+          </div>
           {% endif %}
         </div>
       </div>
@@ -759,9 +765,15 @@
             <i class="fas fa-sync-alt me-1"></i>Stato
           </button>
           {% if is_superadmin %}
-          <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
-            <i class="fas fa-key me-1"></i>Genera chiavi JWK
-          </button>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-warning" type="button"
+              data-bs-toggle="modal" data-bs-target="#cieKeysRestoreModal">
+              <i class="fas fa-upload me-1"></i>Ripristina
+            </button>
+            <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
+              <i class="fas fa-key me-1"></i>Genera
+            </button>
+          </div>
           {% endif %}
         </div>
       </div>
@@ -801,9 +813,13 @@
           <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
             <i class="fas fa-download me-1"></i>Scarica XML
           </button>
+          <button class="btn btn-sm btn-outline-warning" type="button"
+            data-bs-toggle="modal" data-bs-target="#spidMetaRestoreModal">
+            <i class="fas fa-upload me-1"></i>Ripristina XML
+          </button>
           <button class="btn btn-sm btn-outline-success" type="button"
                   data-bs-toggle="modal" data-bs-target="#spidMetaGeneraModal">
-            <i class="fas fa-file-export me-1"></i>Genera metadata AgID
+            <i class="fas fa-file-export me-1"></i>Genera da SATOSA
           </button>
         </div>
         {% endif %}
@@ -904,22 +920,36 @@
           <h6 class="mb-0"><i class="fas fa-upload me-2 text-warning"></i>Ripristino</h6>
         </div>
         <div class="card-body">
-          <p class="small text-muted mb-3">Il file caricato sovrascrive il file esistente sul volume.</p>
+          <p class="small text-muted mb-3">Ripristina da archivio ZIP completo o singoli file.</p>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold"><i class="fas fa-file-archive me-1 text-secondary"></i>Ripristino da backup ZIP</label>
+            <div class="input-group input-group-sm">
+              <input type="file" class="form-control" id="bk-restore-zip" accept=".zip">
+              <button class="btn btn-warning" type="button" onclick="lpRestoreBackupZip(this)">
+                <i class="fas fa-upload me-1"></i>Ripristina
+              </button>
+            </div>
+            <div class="form-text">ZIP esportato da questo pannello. Ripristina automaticamente cert, chiavi JWK e metadata trovati nel file.</div>
+          </div>
+
+          <hr class="my-2">
+
           <div class="mb-3">
             <label class="form-label small fw-semibold"><i class="fas fa-id-card me-1 text-success"></i>Metadata pubblico SPID (XML)</label>
             <div class="input-group input-group-sm">
               <input type="file" class="form-control" id="spid-restore-file" accept=".xml">
-              <button class="btn btn-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
+              <button class="btn btn-outline-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
                 <i class="fas fa-upload me-1"></i>Ripristina
               </button>
             </div>
             <div class="form-text">File XML metadata pubblico SPID (satosa_spid_public_metadata.xml).</div>
           </div>
           <div>
-            <label class="form-label small fw-semibold"><i class="fas fa-address-card me-1 text-info"></i>Metadata CIE OIDC (JSON)</label>
+            <label class="form-label small fw-semibold"><i class="fas fa-address-card me-1 text-info"></i>Entity configuration CIE OIDC (JSON)</label>
             <div class="input-group input-group-sm">
               <input type="file" class="form-control" id="cie-restore-file" accept=".json">
-              <button class="btn btn-warning" type="button" onclick="restoreMetadata('cie', 'cie-restore-file', this)">
+              <button class="btn btn-outline-warning" type="button" onclick="restoreMetadata('cie', 'cie-restore-file', this)">
                 <i class="fas fa-upload me-1"></i>Ripristina
               </button>
             </div>
@@ -1028,6 +1058,114 @@
         <button type="button" class="btn btn-success" id="spid-meta-genera-btn"
                 onclick="doGeneraSpidMetadata(this)">
           <i class="fas fa-file-export me-1"></i>Genera metadata
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ─── Modale ripristino metadata pubblico SPID ───────────────────────────────── #}
+<div class="modal fade" id="spidMetaRestoreModal" tabindex="-1" aria-labelledby="spidMetaRestoreModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="spidMetaRestoreModalLabel">
+          <i class="fas fa-upload me-2 text-warning"></i>Ripristina metadata pubblico SPID
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small mb-3">
+          <i class="fas fa-info-circle me-1"></i>
+          Usato per ripristinare un metadata SPID AgID precedentemente esportato (es. da backup o da un'altra installazione).
+          Per riesportarlo dal proxy SATOSA usa <strong>Genera da SATOSA</strong>.
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">File XML metadata pubblico SPID <span class="text-danger">*</span></label>
+          <input type="file" class="form-control form-control-sm" id="spid-meta-restore-file" accept=".xml">
+          <div class="form-text">Deve contenere un <code>EntityDescriptor</code> SAML2.</div>
+        </div>
+        <div id="spid-meta-restore-result" class="mt-2" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-warning" onclick="doRestoreSpidMetadata(this)">
+          <i class="fas fa-upload me-1"></i>Ripristina metadata
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ─── Modale ripristino certificati SPID ─────────────────────────────────────── #}
+<div class="modal fade" id="spidCertRestoreModal" tabindex="-1" aria-labelledby="spidCertRestoreModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="spidCertRestoreModalLabel">
+          <i class="fas fa-upload me-2 text-warning"></i>Ripristina certificato SPID
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Sovrascrive <code>cert.pem</code> e <code>privkey.pem</code> nel volume SPID. Il certificato e la chiave devono corrispondere.
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Certificato (cert.pem) <span class="text-danger">*</span></label>
+          <input type="file" class="form-control form-control-sm" id="spid-restore-cert-file" accept=".pem,.crt,.cer">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Chiave privata (privkey.pem) <span class="text-danger">*</span></label>
+          <input type="file" class="form-control form-control-sm" id="spid-restore-key-file" accept=".pem,.key">
+        </div>
+        <div id="spid-cert-restore-result" class="mt-2" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-warning" onclick="doRestoreSpidCerts(this)">
+          <i class="fas fa-upload me-1"></i>Ripristina certificato
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ─── Modale ripristino chiavi JWK CIE OIDC ──────────────────────────────────── #}
+<div class="modal fade" id="cieKeysRestoreModal" tabindex="-1" aria-labelledby="cieKeysRestoreModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cieKeysRestoreModalLabel">
+          <i class="fas fa-upload me-2 text-warning"></i>Ripristina chiavi JWK CIE OIDC
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Sovrascrive i file JWK nel volume. Usa per ripristinare le chiavi federate senza rigenerare (conserva il kid).
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">jwk-federation.json</label>
+          <input type="file" class="form-control form-control-sm" id="cie-restore-fed" accept=".json">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">jwk-core-sig.json</label>
+          <input type="file" class="form-control form-control-sm" id="cie-restore-sig" accept=".json">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">jwk-core-enc.json</label>
+          <input type="file" class="form-control form-control-sm" id="cie-restore-enc" accept=".json">
+        </div>
+        <p class="text-muted small mt-2 mb-0">Carica anche solo uno o più file (non è necessario caricarli tutti).</p>
+        <div id="cie-keys-restore-result" class="mt-2" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button type="button" class="btn btn-warning" onclick="doRestoreCieKeys(this)">
+          <i class="fas fa-upload me-1"></i>Ripristina chiavi
         </button>
       </div>
     </div>
@@ -1191,11 +1329,19 @@ async function loadMetadataInfo(type, btn) {
       html += metaRow('Scadenza metadata', expiryBadge(d.valid_until, d.valid_until_expired));
       html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
     } else {
-      html += metaRow('Issuer', escHtml(d.iss || '—'));
-      html += metaRow('Subject', escHtml(d.sub || '—'));
-      html += metaRow('Scadenza (exp)', expiryBadge(d.exp, d.exp_expired));
-      html += metaRow('Emesso (iat)', '<span class="text-muted">' + escHtml(d.iat || '—') + '</span>');
-      html += metaRow('Chiavi JWK', '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">' + (d.jwk_count || 0) + ' chiavi</span>');
+      html += metaRow('Issuer', '<code class="small">' + escHtml(d.iss || '—') + '</code>');
+      html += metaRow('Subject', '<code class="small">' + escHtml(d.sub || '—') + '</code>');
+      if (d.exp) {
+        const daysLeft = d.exp_days_left ?? 0;
+        const expired = d.exp_expired;
+        const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle' : (daysLeft < 30 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-success-subtle text-success border-success-subtle');
+        const icon = expired ? 'fa-times-circle' : (daysLeft < 30 ? 'fa-exclamation-circle' : 'fa-check-circle');
+        const lbl = expired ? 'SCADUTO' : (daysLeft + ' giorni');
+        html += metaRow('Scadenza (exp)', '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(d.exp) + ' (' + lbl + ')</span>');
+      }
+      if (d.iat) html += metaRow('Emesso (iat)', '<span class="text-muted">' + escHtml(d.iat) + '</span>');
+      html += metaRow('Chiavi federazione', '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">' + (d.federation_jwk_count || 0) + ' JWK</span>');
+      if (d.client_name) html += metaRow('Client name', escHtml(d.client_name));
     }
     html += metaRow('Aggiornato', '<span class="text-muted">' + escHtml(d.file_mtime || '—') + '</span>');
     html += '</dl>';
@@ -1348,7 +1494,7 @@ async function doGeneraSpidCerts(btn) {
     }
     resultEl.innerHTML = html;
     resultEl.style.display = '';
-    if (ok) { impToast('Certificati SPID generati.', true); loadMetadataInfo('spid', null); }
+    if (ok) { impToast('Certificati SPID generati.', true); loadSpidCertInfo(null); }
   } catch (e) {
     resultEl.className = 'mt-3 alert alert-danger';
     resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
@@ -1444,13 +1590,24 @@ async function loadSpidCertInfo(btn) {
     const json = await res.json();
     const d = json.data || json;
     if (!d.exists) {
-      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Certificato non trovato</span><p class="text-muted small mt-2 mb-0">Genera il certificato SPID per procedere.</p>';
+      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Certificato non presente</span><p class="text-muted small mt-2 mb-0">' + escHtml(d.message || 'Genera o ripristina il certificato SPID.') + '</p>';
       return;
     }
     let html = '<dl class="row small mb-0">';
-    if (d.cert_expiry) html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
-    if (d.entity_id)   html += metaRow('Entity ID', '<code class="small">' + escHtml(d.entity_id) + '</code>');
-    html += metaRow('File metadata', '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>Presente</span>');
+    html += metaRow('CN', '<code class="small">' + escHtml(d.subject_cn || '—') + '</code>');
+    if (d.subject_o) html += metaRow('Organizzazione', escHtml(d.subject_o));
+    if (d.subject_l) html += metaRow('Locality', escHtml(d.subject_l));
+    if (d.key_bits)  html += metaRow('Chiave', escHtml(d.key_type || 'RSA') + ' ' + d.key_bits + ' bit');
+    if (d.valid_to) {
+      const daysLeft = d.days_left ?? 0;
+      const expiredFlag = d.expired;
+      const cls = expiredFlag ? 'bg-danger-subtle text-danger border-danger-subtle' : (daysLeft < 30 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-success-subtle text-success border-success-subtle');
+      const icon = expiredFlag ? 'fa-times-circle' : (daysLeft < 30 ? 'fa-exclamation-circle' : 'fa-check-circle');
+      const label = expiredFlag ? 'SCADUTO' : (daysLeft + ' giorni');
+      html += metaRow('Scadenza', '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(d.valid_to) + ' (' + label + ')</span>');
+    }
+    if (d.fingerprint_sha256) html += metaRow('SHA-256', '<code class="small text-break">' + escHtml(d.fingerprint_sha256) + '</code>');
+    html += metaRow('Chiave privata', d.has_key ? '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>Presente</span>' : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-times-circle me-1"></i>Mancante</span>');
     html += '</dl>';
     bodyEl.innerHTML = html;
   } catch (e) {
@@ -1467,14 +1624,25 @@ async function loadCieKeysInfo(btn) {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
   try {
-    const res = await fetch('/impostazioni/login-proxy/backup/status');
+    const res = await fetch('/impostazioni/login-proxy/cie-keys/info');
     const json = await res.json();
     const d = json.data || json;
-    if (!d.cieoidc_keys) {
-      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Chiavi non trovate</span><p class="text-muted small mt-2 mb-0">Genera le chiavi JWK per procedere.</p>';
+    if (!d.exists) {
+      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Chiavi non presenti</span><p class="text-muted small mt-2 mb-0">' + escHtml(d.message || 'Genera o ripristina le chiavi JWK CIE OIDC.') + '</p>';
       return;
     }
-    bodyEl.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>Chiavi JWK presenti sul volume</span><p class="text-muted small mt-2 mb-0">Genera i metadata nella Fase 3 dopo aver aggiornato le chiavi.</p>';
+    let html = '<dl class="row small mb-0">';
+    html += metaRow('Chiavi JWK', '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>' + d.key_count + ' chiavi</span>');
+    if (d.generated_at) html += metaRow('Generate il', escHtml(d.generated_at));
+    if (d.keys && d.keys.length) {
+      d.keys.forEach(k => {
+        const label = k.file.replace('.json','');
+        const detail = (k.kty || '') + (k.key_bits ? ' ' + k.key_bits + ' bit' : (k.crv ? ' ' + k.crv : ''));
+        html += metaRow(label, '<code class="small">' + escHtml(k.kid || '—') + '</code> <span class="text-muted">(' + escHtml(detail) + ')</span>');
+      });
+    }
+    html += '</dl>';
+    bodyEl.innerHTML = html;
   } catch (e) {
     bodyEl.innerHTML = '<div class="text-danger small">Errore: ' + escHtml(e.message) + '</div>';
   } finally {
@@ -1586,5 +1754,136 @@ function downloadSpidMetadata(btn) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+// ── Ripristino metadata pubblico SPID da file ────────────────────────────────
+async function doRestoreSpidMetadata(btn) {
+  const fileEl = document.getElementById('spid-meta-restore-file');
+  if (!fileEl || !fileEl.files[0]) { impToast('Seleziona un file XML.', false); return; }
+  const fd = new FormData();
+  fd.append('metadata_file', fileEl.files[0]);
+  const resultEl = document.getElementById('spid-meta-restore-result');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  resultEl.style.display = 'none';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/spid-metadata/restore', { method: 'POST', body: fd });
+    const json = await res.json();
+    resultEl.className = 'mt-2 alert ' + (json.success ? 'alert-success' : 'alert-danger') + ' small';
+    resultEl.innerHTML = (json.success ? '<i class="fas fa-check-circle me-1"></i>' : '<i class="fas fa-times-circle me-1"></i>') + escHtml(json.message || '');
+    if (json.entity_id) resultEl.innerHTML += '<br><strong>Entity ID:</strong> ' + escHtml(json.entity_id);
+    if (json.valid_until) resultEl.innerHTML += '<br><strong>validUntil:</strong> ' + escHtml(json.valid_until);
+    resultEl.style.display = '';
+    if (json.success) { impToast('Metadata SPID ripristinato.', true); loadMetadataInfo('spid', null); }
+  } catch (e) {
+    resultEl.className = 'mt-2 alert alert-danger small';
+    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
+    resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Ripristino certificato SPID da file ───────────────────────────────────────
+async function doRestoreSpidCerts(btn) {
+  const certFile = document.getElementById('spid-restore-cert-file')?.files[0];
+  const keyFile  = document.getElementById('spid-restore-key-file')?.files[0];
+  if (!certFile || !keyFile) { impToast('Seleziona sia il certificato che la chiave privata.', false); return; }
+  const fd = new FormData();
+  fd.append('cert_file', certFile);
+  fd.append('key_file', keyFile);
+  const resultEl = document.getElementById('spid-cert-restore-result');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  resultEl.style.display = 'none';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/spid-certs/restore', { method: 'POST', body: fd });
+    const json = await res.json();
+    resultEl.className = 'mt-2 alert ' + (json.success ? 'alert-success' : 'alert-danger') + ' small';
+    resultEl.innerHTML = (json.success ? '<i class="fas fa-check-circle me-1"></i>' : '<i class="fas fa-times-circle me-1"></i>') + escHtml(json.message || '');
+    if (json.success && json.subject_cn) resultEl.innerHTML += '<br><strong>CN:</strong> ' + escHtml(json.subject_cn) + (json.valid_to ? ', scade: ' + escHtml(json.valid_to) : '');
+    resultEl.style.display = '';
+    if (json.success) { impToast('Certificato SPID ripristinato.', true); loadSpidCertInfo(null); }
+  } catch (e) {
+    resultEl.className = 'mt-2 alert alert-danger small';
+    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
+    resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Ripristino chiavi JWK CIE OIDC da file ───────────────────────────────────
+async function doRestoreCieKeys(btn) {
+  const fedFile = document.getElementById('cie-restore-fed')?.files[0];
+  const sigFile = document.getElementById('cie-restore-sig')?.files[0];
+  const encFile = document.getElementById('cie-restore-enc')?.files[0];
+  if (!fedFile && !sigFile && !encFile) { impToast('Seleziona almeno un file JWK da ripristinare.', false); return; }
+  const fd = new FormData();
+  if (fedFile) fd.append('jwk-federation.json', fedFile);
+  if (sigFile) fd.append('jwk-core-sig.json', sigFile);
+  if (encFile) fd.append('jwk-core-enc.json', encFile);
+  const resultEl = document.getElementById('cie-keys-restore-result');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  resultEl.style.display = 'none';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/cie-keys/restore', { method: 'POST', body: fd });
+    const json = await res.json();
+    resultEl.className = 'mt-2 alert ' + (json.success ? 'alert-success' : 'alert-danger') + ' small';
+    resultEl.innerHTML = (json.success ? '<i class="fas fa-check-circle me-1"></i>' : '<i class="fas fa-times-circle me-1"></i>') + escHtml(json.message || '');
+    if (json.success && json.restored) resultEl.innerHTML += '<br>Ripristinati: ' + json.restored.map(f => '<code>' + escHtml(f) + '</code>').join(', ');
+    resultEl.style.display = '';
+    if (json.success) { impToast('Chiavi JWK CIE OIDC ripristinate.', true); loadCieKeysInfo(null); }
+  } catch (e) {
+    resultEl.className = 'mt-2 alert alert-danger small';
+    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
+    resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Ripristino da backup ZIP completo ─────────────────────────────────────────
+async function lpRestoreBackupZip(btn) {
+  const fileEl = document.getElementById('bk-restore-zip');
+  if (!fileEl || !fileEl.files[0]) { impToast('Seleziona un file ZIP di backup.', false); return; }
+  if (!confirm('Ripristinare dal file ZIP?\n\nI file esistenti (cert.pem, privkey.pem, chiavi JWK, metadata) saranno sovrascritti con il contenuto del backup.')) return;
+  const fd = new FormData();
+  fd.append('backup_zip', fileEl.files[0]);
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ripristino…';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/backup/restore', { method: 'POST', body: fd });
+    const json = await res.json();
+    if (!json.success && !json.results) {
+      impToast(json.message || 'Ripristino fallito.', false);
+      return;
+    }
+    const results = json.results || {};
+    const parts = Object.entries(results).map(([k, v]) => (v.success ? '✓ ' : '✗ ') + v.message);
+    if (parts.length) {
+      impToast(json.message + '\n' + parts.join('\n'), Object.values(results).some(v => v.success));
+    } else {
+      impToast('Nessun elemento trovato nel ZIP.', false);
+    }
+    // Refresh cards
+    loadSpidCertInfo(null);
+    loadCieKeysInfo(null);
+    loadMetadataInfo('spid', null);
+    loadMetadataInfo('cie', null);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
 }
 </script>
