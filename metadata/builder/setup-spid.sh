@@ -28,6 +28,7 @@ echo "       Validità:     ${DAYS} giorni"
 echo ""
 
 mkdir -p "$CERTS_DIR"
+chmod 755 "$CERTS_DIR" 2>/dev/null || true
 cd "$CERTS_DIR"
 bash /builder/spid-gencert-public.sh
 
@@ -35,6 +36,7 @@ bash /builder/spid-gencert-public.sh
 cp crt.pem cert.pem
 cp key.pem privkey.pem
 chmod 644 ./*.pem
+chmod 755 "$CERTS_DIR" 2>/dev/null || true
 rm -f crt.pem key.pem csr.pem
 
 echo ""
