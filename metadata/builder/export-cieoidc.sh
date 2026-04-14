@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # export-cieoidc.sh — esporta artifact CIE OIDC per onboarding alla federazione
-# Curla SATOSA direttamente via rete Docker interna (service auth-proxy)
+# Curla auth-proxy-nginx via rete Docker interna con Host header corretto.
 set -euo pipefail
 
 OUTPUT_DIR="/output/cieoidc"
 FORCE="${FORCE:-0}"
 
-# URL interno Docker (diretta A SATOSA, not via nginx)
-SATOSA_HOSTNAME="${SATOSA_INTERNAL_HOSTNAME:-auth-proxy}"
-SATOSA_PORT="${SATOSA_INTERNAL_PORT:-10000}"
+# URL interno Docker (nginx interno)
+SATOSA_HOSTNAME="${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}"
+SATOSA_PORT="${SATOSA_INTERNAL_PORT:-80}"
 SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
 IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}"
-CURL_INSECURE="--connect-timeout 5 --max-time 10"
+CURL_INSECURE="-sSf --connect-timeout 5 --max-time 10"
 if [ "${SATOSA_SCHEME}" = "https" ]; then
   CURL_INSECURE="${CURL_INSECURE} -k"
 fi
@@ -19,6 +19,10 @@ fi
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
 CIE_OIDC_CLIENT_ID="${CIE_OIDC_CLIENT_ID:-}"
+SATOSA_HOST_HEADER="${SATOSA_INTERNAL_HOST_HEADER:-}"
+if [[ -z "$SATOSA_HOST_HEADER" ]] && [[ -n "$IAM_PROXY_PUBLIC_BASE_URL" ]]; then
+  SATOSA_HOST_HEADER="$(echo "$IAM_PROXY_PUBLIC_BASE_URL" | sed -E 's#^[a-zA-Z]+://([^/:]+).*$#\1#')"
+fi
 
 if [[ -z "$CIE_OIDC_CLIENT_ID" ]]; then
   if [[ -n "$IAM_PROXY_PUBLIC_BASE_URL" ]]; then
@@ -64,8 +68,22 @@ JWKS_RP_JSON_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.json"
 JWKS_RP_JOSE_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.jose"
 
 for i in $(seq 1 40); do
-  if curl -sf $CURL_INSECURE "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
-    break
+  if [[ -n "$SATOSA_HOST_HEADER" ]]; then
+    if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
+      break
+    fi
+  else
+    if curl $CURL_INSECURE "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
+      break
+    fi
+  fi
+  if [[ "$SATOSA_SCHEME" = "http" ]]; then
+    HTTPS_ENTITY_CONFIG_URL="https://${SATOSA_HOSTNAME}:${SATOSA_PORT}/CieOidcRp/.well-known/openid-federation"
+    if [[ -n "$SATOSA_HOST_HEADER" ]]; then
+      if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$HTTPS_ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
+        break
+      fi
+    fi
   fi
   echo "  Tentativo $i/40 (3s)..."
   sleep 3

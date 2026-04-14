@@ -6,7 +6,9 @@ set -euo pipefail
 trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO, exit $?)" >&2; exit 1' ERR
 
 SATOSA_NGINX_HOSTNAME="${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}"
-SATOSA_URL_INTERNAL="http://${SATOSA_NGINX_HOSTNAME}/spidSaml2/metadata"
+SATOSA_INTERNAL_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
+SATOSA_INTERNAL_PORT="${SATOSA_INTERNAL_PORT:-80}"
+SATOSA_URL_INTERNAL="${SATOSA_INTERNAL_SCHEME}://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
 OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
 LAST_ERR=""
 LAST_HTTP=""
@@ -32,8 +34,11 @@ fi
 
 # Costruisci CURL_OPTS in forma robusta
 CURL_OPTS="-sSf --connect-timeout 5 --max-time 10"
+if [ "$SATOSA_INTERNAL_SCHEME" = "https" ]; then
+  CURL_OPTS="$CURL_OPTS -k"
+fi
 
-echo "[DEBUG] Configurazione: SATOSA_NGINX_HOSTNAME=$SATOSA_NGINX_HOSTNAME OUTPUT=$OUTPUT CURL_OPTS='$CURL_OPTS'" >&2
+echo "[DEBUG] Configurazione: SATOSA_NGINX_HOSTNAME=$SATOSA_NGINX_HOSTNAME SATOSA_INTERNAL_SCHEME=$SATOSA_INTERNAL_SCHEME SATOSA_INTERNAL_PORT=$SATOSA_INTERNAL_PORT OUTPUT=$OUTPUT CURL_OPTS='$CURL_OPTS'" >&2
 echo "[DEBUG] Internal URL: $SATOSA_URL_INTERNAL (Host header: ${SATOSA_HOST_HEADER:-none})" >&2
 echo "[DEBUG] Public URL: ${SATOSA_PUBLIC_METADATA_URL:-none}" >&2
 mkdir -p /output/agid || {
@@ -57,6 +62,19 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
       | tail -c 3 \
     ) || HTTP_CODE="curl-fail"
     LAST_URL="$SATOSA_URL_INTERNAL"
+
+    # Se nginx segnala "plain HTTP request was sent to HTTPS port", ritenta in HTTPS stesso host:porta.
+    if [ "$SATOSA_INTERNAL_SCHEME" = "http" ] && grep -qi "plain HTTP request was sent to HTTPS port" "$TMP_ERR"; then
+      HTTPS_URL_INTERNAL="https://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
+      HTTP_CODE=$( \
+        curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" -w "%{http_code}" "$HTTPS_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
+        | tail -c 3 \
+      ) || HTTP_CODE="curl-fail"
+      LAST_URL="$HTTPS_URL_INTERNAL"
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "[DEBUG] Auto-upgrade interno a HTTPS riuscito su ${HTTPS_URL_INTERNAL}" >&2
+      fi
+    fi
   else
     echo "[DEBUG] Tentativo interno saltato: SATOSA_HOST_HEADER non configurato" >&2
   fi
