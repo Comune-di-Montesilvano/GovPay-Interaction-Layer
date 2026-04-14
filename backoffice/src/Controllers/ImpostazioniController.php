@@ -1233,10 +1233,12 @@ class ImpostazioniController
             return $this->jsonError('Export metadata pubblico SPID fallito: XML non valido restituito da auth-proxy-nginx.');
         }
 
-        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n") === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: impossibile scrivere il file di output.');
+        // Il file e gia stato scritto dal metadata-builder nel volume condiviso.
+        // Qui normalizziamo solo se il file risulta scrivibile dal backoffice.
+        if (is_writable(self::PUBLIC_SPID_METADATA_PATH)) {
+            @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n");
+            @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
         }
-        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
 
         // Dual-storage: salva copia in DB come base64 per ripristino senza volume
         $by = $this->currentUser();
