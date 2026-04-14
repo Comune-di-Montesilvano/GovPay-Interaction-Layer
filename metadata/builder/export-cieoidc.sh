@@ -8,9 +8,9 @@ FORCE="${FORCE:-0}"
 
 # URL interno Docker (service name) per i curl
 SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
-SATOSA_SCHEME="$( [ "${SSL:-off}" = "on" ] && echo "https" || echo "http" )"
+SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
 IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}"
-CURL_INSECURE="$( [ "${SSL:-off}" = "on" ] && echo "-k" ) --connect-timeout 5 --max-time 10"
+CURL_INSECURE="$( [ "${SATOSA_SCHEME}" = "https" ] && echo "-k" ) --connect-timeout 5 --max-time 10"
 
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
