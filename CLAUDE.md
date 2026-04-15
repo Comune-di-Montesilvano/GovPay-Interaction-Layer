@@ -20,7 +20,7 @@ Multi-container Docker. Container principali:
 | `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
 | `gil-metadata-builder` | `metadata-builder` | Bash + OpenSSL | Generazione certificati e metadata SPID/CIE (setup iniziale) |
 
-Backoffice → master via Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
+Le chiamate interne tra servizi usano Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
 
 ## Comandi principali
 
@@ -48,7 +48,6 @@ docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
 app/            Librerie PHP condivise (Config, Database, Security, Services)
 backoffice/     Applicazione backoffice (src/, templates/, public/)
 frontoffice/    Applicazione frontoffice (locales/, templates/, public/)
-master/         Servizio Python master (routers/, services/, auth.py)
 auth-proxy/     Proxy SATOSA per SPID/CIE
 docker/db/      Dockerfile MariaDB + schema iniziale
 migrations/     Migrazioni SQL
@@ -141,11 +140,7 @@ index.php → bootstrap/app.php → Slim App
   → Route → Controller → GovPay/pagoPA client (via vendor/)
 ```
 
-`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `master` e `auth-proxy`.
-
-## Master service (FastAPI)
-
-`master/` espone API interne consumate dal backoffice via `App\Services\PortainerClient`. Routers principali: `backup`, `config`, `containers`, `health`, `iam_proxy`. Autenticazione via `MASTER_TOKEN` in `auth.py`.
+`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `auth-proxy` e `metadata-builder`.
 
 ## Migrazioni DB
 

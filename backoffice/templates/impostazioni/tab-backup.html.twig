@@ -4,18 +4,85 @@
   {# ─── Backup completo di sistema ─────────────────────────────────────────── #}
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
-      <h2 class="h6 mb-0"><i class="fas fa-database me-2 text-primary"></i>Backup completo di sistema</h2>
+      <h2 class="h6 mb-0"><i class="fas fa-database me-2 text-primary"></i>Crea backup ZIP</h2>
     </div>
     <div class="card-body">
       <p class="text-muted small mb-3">
-        Crea un archivio ZIP contenente: impostazioni DB, dump del database, certificati GovPay, certificati SPID e metadata SP.
-        Adatto per disaster recovery e migrazione tra ambienti.
+        Crea un archivio ZIP per disaster recovery e migrazione. Il backup include sempre impostazioni DB e dump database.
       </p>
+
+      <div class="alert alert-info small py-2 mb-3">
+        <strong>Nota:</strong> i metadata SPID/CIE <strong>non</strong> vengono salvati in questo backup.
+        Per metadata e pacchetto IAM proxy usa la scheda
+        <a href="/impostazioni?tab=login-proxy" class="alert-link">Login Proxy</a>.
+      </div>
+
+      <form id="form-backup-sistema" onsubmit="return false;">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold mb-2">Dati di sistema (volumi)</label>
+          <div class="row g-2">
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="volumes[]" value="gil_certs" id="vol-gil-certs" checked>
+                <label class="form-check-label" for="vol-gil-certs">Certificati GovPay</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="volumes[]" value="spid_certs" id="vol-spid-certs" checked>
+                <label class="form-check-label" for="vol-spid-certs">Certificati SPID</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="volumes[]" value="gil_cieoidc_keys" id="vol-cie-keys" checked>
+                <label class="form-check-label" for="vol-cie-keys">Chiavi CIE OIDC</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold mb-2">Dati applicativi (GovPay)</label>
+          <div class="row g-2">
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="tipologie" id="gp-tipologie" checked>
+                <label class="form-check-label" for="gp-tipologie">Tipologie pagamento</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="tipologie_esterne" id="gp-tipologie-esterne" checked>
+                <label class="form-check-label" for="gp-tipologie-esterne">Tipologie esterne</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="templates" id="gp-templates" checked>
+                <label class="form-check-label" for="gp-templates">Template pendenze</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="io_services" id="gp-io" checked>
+                <label class="form-check-label" for="gp-io">Servizi App IO</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="utenti" id="gp-utenti">
+                <label class="form-check-label" for="gp-utenti">Utenti backoffice</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
 
       {% if is_superadmin %}
       <button class="btn btn-primary btn-sm me-2"
               onclick="backupCreateSistema(this)">
-        <i class="fas fa-plus me-1"></i>Crea backup ora
+        <i class="fas fa-plus me-1"></i>Crea backup
       </button>
       {% endif %}
 
@@ -36,8 +103,9 @@
     </div>
     <div class="card-body">
       <p class="text-muted small mb-3">
-        Carica un archivio ZIP di backup (prodotto da questo sistema o dallo script di migrazione).
-        Verranno ripristinati: impostazioni Login Proxy, certificati SPID, chiavi JWK CIE OIDC, metadata SP e artefatti CIE OIDC.
+        Carica un archivio ZIP prodotto da questa sezione backup.
+        Il ripristino reimposta sistema e configurazione applicativa in modo equivalente al setup iniziale,
+        limitatamente ai dati presenti nell'archivio.
         <strong class="text-danger">I dati esistenti saranno sovrascritti.</strong>
       </p>
       <div id="restore-result" class="mb-3" style="display:none;"></div>
@@ -47,123 +115,6 @@
           <i class="fas fa-upload me-1"></i>Ripristina
         </button>
       </div>
-    </div>
-  </div>
-  {% endif %}
-
-  {# ─── Export dati applicativi (selettivo) ────────────────────────────────── #}
-  <div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
-      <h2 class="h6 mb-0"><i class="fas fa-file-export me-2 text-success"></i>Export dati applicativi</h2>
-    </div>
-    <div class="card-body">
-      <p class="text-muted small mb-3">
-        Esporta in formato JSON le configurazioni applicative selezionate (tipologie, template, servizi App IO, utenti).
-        Il file può essere reimportato su qualsiasi istanza GIL.
-      </p>
-
-      <form id="form-export-json" onsubmit="return false;">
-        <div class="row g-2 mb-3">
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="tipologie" id="exp-tipologie" checked>
-              <label class="form-check-label" for="exp-tipologie">Tipologie pagamento</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="tipologie_esterne" id="exp-tipologie-esterne" checked>
-              <label class="form-check-label" for="exp-tipologie-esterne">Tipologie esterne</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="templates" id="exp-templates" checked>
-              <label class="form-check-label" for="exp-templates">Template pendenze</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="io_services" id="exp-io" checked>
-              <label class="form-check-label" for="exp-io">Servizi App IO</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="utenti" id="exp-utenti">
-              <label class="form-check-label" for="exp-utenti">Utenti backoffice</label>
-            </div>
-          </div>
-        </div>
-
-        {% if is_superadmin %}
-        <button type="button" class="btn btn-success btn-sm"
-                onclick="backupExportJson(this)">
-          <i class="fas fa-download me-1"></i>Esporta JSON
-        </button>
-        {% endif %}
-      </form>
-    </div>
-  </div>
-
-  {# ─── Importa da file JSON ────────────────────────────────────────────────── #}
-  {% if is_superadmin %}
-  <div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
-      <h2 class="h6 mb-0"><i class="fas fa-file-import me-2 text-warning"></i>Importa da JSON</h2>
-    </div>
-    <div class="card-body">
-      <p class="text-muted small mb-3">
-        Importa un file di backup JSON esportato in precedenza.
-        Seleziona le sezioni da ripristinare: i dati esistenti saranno sovrascritti.
-      </p>
-
-      <form id="form-import-json" action="/configurazione/backup/import" method="POST" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-        <div class="mb-3">
-          <label class="form-label small fw-semibold">File di backup (.json)</label>
-          <input type="file" class="form-control form-control-sm" name="backup_file" accept=".json" required>
-        </div>
-
-        <div class="row g-2 mb-3">
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="tipologie" id="imp-tipologie" checked>
-              <label class="form-check-label" for="imp-tipologie">Tipologie pagamento</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="tipologie_esterne" id="imp-tipologie-esterne" checked>
-              <label class="form-check-label" for="imp-tipologie-esterne">Tipologie esterne</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="templates" id="imp-templates" checked>
-              <label class="form-check-label" for="imp-templates">Template pendenze</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="io_services" id="imp-io" checked>
-              <label class="form-check-label" for="imp-io">Servizi App IO</label>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="sections[]" value="utenti" id="imp-utenti">
-              <label class="form-check-label" for="imp-utenti">Utenti backoffice</label>
-            </div>
-          </div>
-        </div>
-
-        <button type="submit" class="btn btn-warning btn-sm"
-                onclick="return confirm('Sicuro? I dati selezionati saranno sovrascritti.')">
-          <i class="fas fa-upload me-1"></i>Importa
-        </button>
-      </form>
     </div>
   </div>
   {% endif %}
@@ -206,11 +157,18 @@
     const orig = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creazione…';
     const csrf = document.querySelector('input[name="csrf_token"]')?.value || '';
+    const form = document.getElementById('form-backup-sistema');
+    const volumes = [...form.querySelectorAll('input[name="volumes[]"]:checked')].map(c => c.value);
+    const govpaySections = [...form.querySelectorAll('input[name="govpay_sections[]"]:checked')].map(c => c.value);
     try {
       const res = await fetch('/backup/sistema/crea', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csrf_token: csrf }),
+        body: JSON.stringify({
+          csrf_token: csrf,
+          volumes,
+          govpay_sections: govpaySections,
+        }),
       });
       const json = await res.json();
       impToast(json.message || (json.success ? 'Backup creato.' : 'Errore.'), !!json.success);
@@ -235,32 +193,6 @@
     } finally {
       if (btn) { btn.disabled = false; }
     }
-  };
-
-  window.backupExportJson = function (btn) {
-    const form = document.getElementById('form-export-json');
-    const sections = [...form.querySelectorAll('input[name="sections[]"]:checked')].map(c => c.value);
-    if (!sections.length) {
-      impToast('Seleziona almeno una sezione.', false);
-      return;
-    }
-    const csrf = document.querySelector('input[name="csrf_token"]')?.value || '';
-
-    const f = document.createElement('form');
-    f.method = 'POST';
-    f.action = '/configurazione/backup/export';
-    f.style.display = 'none';
-    const csrfInput = document.createElement('input');
-    csrfInput.type = 'hidden'; csrfInput.name = 'csrf_token'; csrfInput.value = csrf;
-    f.appendChild(csrfInput);
-    sections.forEach(s => {
-      const i = document.createElement('input');
-      i.type = 'hidden'; i.name = 'sections[]'; i.value = s;
-      f.appendChild(i);
-    });
-    document.body.appendChild(f);
-    f.submit();
-    document.body.removeChild(f);
   };
 
   function showRestoreResult(ok, msg, detail) {
@@ -300,7 +232,7 @@
       impToast('Seleziona un file ZIP.', false);
       return;
     }
-    if (!confirm('Ripristinare il backup? Le impostazioni Login Proxy, i certificati e i metadata esistenti saranno sovrascritti.')) return;
+    if (!confirm('Ripristinare il backup? I dati correnti verranno sovrascritti con quelli presenti nel file ZIP.')) return;
     const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
     const fd = new FormData();
     fd.append('backup_file', fileInput.files[0]);
@@ -310,7 +242,7 @@
   };
 
   window.backupRipristinaFile = async function (btn, filename) {
-    if (!confirm(`Ripristinare "${filename}"? Le impostazioni Login Proxy, i certificati e i metadata esistenti saranno sovrascritti.`)) return;
+    if (!confirm(`Ripristinare "${filename}"? I dati correnti verranno sovrascritti con quelli presenti nel file ZIP.`)) return;
     // Scarica il file dal server e lo ri-carica come upload
     btn.disabled = true;
     const origHtml = btn.innerHTML;
