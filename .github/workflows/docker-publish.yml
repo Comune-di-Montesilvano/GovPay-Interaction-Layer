@@ -109,10 +109,6 @@ jobs:
             context: .
             file: metadata/builder/Dockerfile
             scope: metadata-builder
-          - image: master
-            context: master
-            file: ""
-            scope: master
 
     steps:
       - uses: actions/checkout@v4
