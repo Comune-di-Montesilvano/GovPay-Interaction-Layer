@@ -156,19 +156,18 @@
     btn.disabled = true;
     const orig = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creazione…';
-    const csrf = document.querySelector('input[name="csrf_token"]')?.value || '';
+    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
     const form = document.getElementById('form-backup-sistema');
     const volumes = [...form.querySelectorAll('input[name="volumes[]"]:checked')].map(c => c.value);
     const govpaySections = [...form.querySelectorAll('input[name="govpay_sections[]"]:checked')].map(c => c.value);
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    for (const v of volumes) fd.append('volumes[]', v);
+    for (const s of govpaySections) fd.append('govpay_sections[]', s);
     try {
       const res = await fetch('/backup/sistema/crea', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          csrf_token: csrf,
-          volumes,
-          govpay_sections: govpaySections,
-        }),
+        body: fd,
       });
       const json = await res.json();
       impToast(json.message || (json.success ? 'Backup creato.' : 'Errore.'), !!json.success);
