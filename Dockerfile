@@ -175,9 +175,10 @@ RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 # Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
 # Docker inizializza i named volumes copiando il contenuto del path dell'immagine,
 # incluse le permission → il volume nasce con www-data:www-data, non root:root.
-RUN mkdir -p /var/www/html/public/img /var/www/certificate \
-    && chown www-data:www-data /var/www/html/public/img /var/www/certificate \
-    && chmod 755 /var/www/html/public/img /var/www/certificate
+RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
+    && chown www-data:www-data /var/www/html/public/img /var/www/certificate /backups \
+    && chmod 755 /var/www/html/public/img /var/www/certificate \
+    && chmod 775 /backups
 
 FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
