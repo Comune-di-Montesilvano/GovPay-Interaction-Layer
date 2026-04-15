@@ -19,274 +19,30 @@ use Slim\Psr7\Response as SlimResponse;
 use Slim\Views\Twig;
 
 /**
- * Gestisce backup e restore in due scenari:
- *
- * 1. Backup dati GovPay (dal tab /configurazione):
- *    - exportBackup() — scarica un JSON con tipologie/templates/io_services/utenti
- *    - importBackup() — carica e applica un JSON di backup dati
- *
- * 2. Backup di sistema (lettura/scrittura diretta sul volume gil_backups):
- *    - systemBackupCreate()      — crea un ZIP con settings DB + dati GovPay + volumi certificati + DB dump
- *    - systemBackupList()        — lista i .zip in /backups
- *    - systemBackupDownload()    — scarica un archivio .zip
- *    - systemBackupRestore()     — carica un .zip e ripristina (upload via form)
- *    - systemBackupUploadRestore() — carica un .zip e ripristina immediatamente (API JSON)
+ * Gestisce backup e restore di sistema tramite archivio ZIP.
  */
 class BackupController
 {
     private const BACKUP_DIR = '/backups';
 
-    /** Volumi montati sul container backoffice da includere nel backup. */
+    /** Volumi ripristinabili dal backup di sistema. */
     private const BACKUP_VOLUMES = [
         'gil_certs'                => '/var/www/certificate',
         'spid_certs'               => '/var/www/html/spid-certs',
-        'frontoffice_sp_metadata'  => '/var/www/html/metadata-sp',
-        'gil_metadata_cieoidc'     => '/var/www/html/metadata-cieoidc',
         'gil_cieoidc_keys'         => '/var/www/html/cieoidc-keys',
+    ];
+
+    /** Sezioni dati applicativi supportate nel govpay-config.json. */
+    private const GOVPAY_SECTIONS = [
+        'tipologie',
+        'tipologie_esterne',
+        'templates',
+        'io_services',
+        'utenti',
     ];
 
     public function __construct(private readonly Twig $twig)
     {
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // BACKUP DATI GOVPAY (esistente, spostato da ConfigurazioneController)
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function exportBackup(Request $request, Response $response): Response
-    {
-        if (!$this->isSuperadmin()) {
-            return $response->withStatus(403);
-        }
-
-        $data     = (array)($request->getParsedBody() ?? []);
-        $sections = isset($data['sections']) && is_array($data['sections']) ? $data['sections'] : [];
-
-        $idDominio = (string)(\App\Config\Config::get('ID_DOMINIO') ?: '');
-
-        $export = [
-            'version'     => '1.0',
-            'exported_at' => (new \DateTimeImmutable())->format('c'),
-            'exported_by' => $_SESSION['user']['email'] ?? 'unknown',
-            'id_dominio'  => $idDominio,
-            'sections'    => [],
-        ];
-
-        if (in_array('tipologie', $sections, true)) {
-            $repo = new EntrateRepository();
-            $export['sections']['tipologie'] = $repo->listLocalOverrides($idDominio);
-        }
-
-        if (in_array('tipologie_esterne', $sections, true)) {
-            $repo = new ExternalPaymentTypeRepository();
-            $export['sections']['tipologie_esterne'] = $repo->listAll();
-        }
-
-        if (in_array('templates', $sections, true)) {
-            $repo = new \App\Database\PendenzaTemplateRepository();
-            $export['sections']['templates'] = $repo->findAllByDominioWithUsers($idDominio);
-        }
-
-        if (in_array('io_services', $sections, true)) {
-            $ioRepo = new \App\Database\IoServiceRepository();
-            $services = $ioRepo->listAll();
-            $pdo = Connection::getPDO();
-            $stmt = $pdo->query('SELECT id_entrata, io_service_id FROM io_service_tipologie');
-            $links = $stmt->fetchAll();
-            $serviceLinks = [];
-            foreach ($links as $l) {
-                $serviceLinks[(int)$l['io_service_id']][] = $l['id_entrata'];
-            }
-            foreach ($services as &$s) {
-                $s['tipologie'] = $serviceLinks[(int)$s['id']] ?? [];
-                unset($s['id'], $s['created_at'], $s['updated_at']);
-            }
-            unset($s);
-            $export['sections']['io_services'] = $services;
-        }
-
-        if (in_array('utenti', $sections, true)) {
-            $pdo = Connection::getPDO();
-            $stmt = $pdo->query(
-                'SELECT email, role, first_name, last_name, is_disabled, password_hash
-                 FROM users ORDER BY email ASC'
-            );
-            $export['sections']['utenti'] = $stmt->fetchAll();
-        }
-
-        $json     = json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $filename = 'govpay-config-backup-' . date('Ymd_His') . '.json';
-
-        $response->getBody()->write($json);
-        return $response
-            ->withHeader('Content-Type', 'application/json; charset=utf-8')
-            ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
-            ->withHeader('Content-Length', (string)strlen($json));
-    }
-
-    public function importBackup(Request $request, Response $response): Response
-    {
-        if (!$this->isSuperadmin()) {
-            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
-            return $this->redirectToConfigTab($response, 'backup');
-        }
-
-        $uploadedFiles = $request->getUploadedFiles();
-        $file = $uploadedFiles['backup_file'] ?? null;
-        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
-            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Nessun file caricato o errore nel file'];
-            return $this->redirectToConfigTab($response, 'backup');
-        }
-
-        $json   = (string)$file->getStream();
-        $backup = json_decode($json, true);
-
-        if (!is_array($backup) || !isset($backup['sections']) || !is_array($backup['sections'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'File non valido: struttura JSON non riconosciuta'];
-            return $this->redirectToConfigTab($response, 'backup');
-        }
-
-        $postData         = (array)($request->getParsedBody() ?? []);
-        $selectedSections = isset($postData['sections']) && is_array($postData['sections'])
-            ? $postData['sections']
-            : [];
-
-        if (empty($selectedSections)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Seleziona almeno una sezione da importare'];
-            return $this->redirectToConfigTab($response, 'backup');
-        }
-
-        $idDominio = (string)(\App\Config\Config::get('ID_DOMINIO') ?: '');
-        $results   = [];
-        $pdo       = Connection::getPDO();
-
-        try {
-            $pdo->beginTransaction();
-
-            if (in_array('utenti', $selectedSections, true) && isset($backup['sections']['utenti'])) {
-                $count      = 0;
-                $upsertStmt = $pdo->prepare(
-                    'INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, created_at, updated_at)
-                     VALUES (:email, :role, :fn, :ln, :disabled, :hash, NOW(), NOW())
-                     ON DUPLICATE KEY UPDATE role = VALUES(role), first_name = VALUES(first_name),
-                         last_name = VALUES(last_name), is_disabled = VALUES(is_disabled),
-                         password_hash = COALESCE(VALUES(password_hash), password_hash), updated_at = NOW()'
-                );
-                foreach ($backup['sections']['utenti'] as $u) {
-                    if (empty($u['email'])) {
-                        continue;
-                    }
-                    $upsertStmt->execute([
-                        ':email'    => $u['email'],
-                        ':role'     => $u['role'] ?? 'user',
-                        ':fn'       => $u['first_name'] ?? '',
-                        ':ln'       => $u['last_name'] ?? '',
-                        ':disabled' => empty($u['is_disabled']) ? 0 : 1,
-                        ':hash'     => $u['password_hash'] ?? null,
-                    ]);
-                    $count++;
-                }
-                $results[] = $count . ' utenti aggiornati/creati';
-            }
-
-            if (in_array('io_services', $selectedSections, true) && isset($backup['sections']['io_services'])) {
-                $pdo->exec('DELETE FROM io_service_tipologie');
-                $pdo->exec('DELETE FROM io_services');
-                $ioRepo    = new \App\Database\IoServiceRepository();
-                $nomeToId  = [];
-                foreach ($backup['sections']['io_services'] as $s) {
-                    if (empty($s['nome']) || empty($s['id_service']) || empty($s['api_key_primaria'])) {
-                        continue;
-                    }
-                    $newId = $ioRepo->create(
-                        $s['nome'],
-                        $s['descrizione'] ?? null,
-                        $s['id_service'],
-                        $s['api_key_primaria'],
-                        $s['api_key_secondaria'] ?? null,
-                        $s['codice_catalogo'] ?? null,
-                        !empty($s['is_default'])
-                    );
-                    $nomeToId[$s['nome']] = $newId;
-                    foreach ($s['tipologie'] ?? [] as $idEntrata) {
-                        $ioRepo->setTipologiaService((string)$idEntrata, $newId);
-                    }
-                }
-                $results[] = count($nomeToId) . ' servizi IO importati';
-            }
-
-            if (in_array('tipologie_esterne', $selectedSections, true) && isset($backup['sections']['tipologie_esterne'])) {
-                $pdo->exec('DELETE FROM tipologie_pagamento_esterne');
-                $extRepo = new ExternalPaymentTypeRepository();
-                $count   = 0;
-                foreach ($backup['sections']['tipologie_esterne'] as $t) {
-                    if (empty($t['descrizione']) || empty($t['url'])) {
-                        continue;
-                    }
-                    $extRepo->create(
-                        $t['descrizione'],
-                        $t['descrizione_estesa'] ?? null,
-                        $t['url']
-                    );
-                    $count++;
-                }
-                $results[] = $count . ' tipologie esterne importate';
-            }
-
-            if (in_array('tipologie', $selectedSections, true) && isset($backup['sections']['tipologie'])) {
-                $entrateRepo = new EntrateRepository();
-                $updated     = $entrateRepo->replaceLocalOverrides($idDominio, $backup['sections']['tipologie']);
-                $results[]   = $updated . ' override tipologie applicati';
-            }
-
-            if (in_array('templates', $selectedSections, true) && isset($backup['sections']['templates'])) {
-                $tplRepo = new \App\Database\PendenzaTemplateRepository();
-                $tplRepo->deleteAllByDominio($idDominio);
-                $count      = 0;
-                $emailToId  = [];
-                $usersStmt  = $pdo->query('SELECT id, email FROM users');
-                foreach ($usersStmt->fetchAll() as $u) {
-                    $emailToId[strtolower($u['email'])] = (int)$u['id'];
-                }
-                foreach ($backup['sections']['templates'] as $t) {
-                    if (empty($t['titolo']) || empty($t['id_tipo_pendenza'])) {
-                        continue;
-                    }
-                    $newId = $tplRepo->create([
-                        'id_dominio'       => $idDominio,
-                        'titolo'           => $t['titolo'],
-                        'id_tipo_pendenza' => $t['id_tipo_pendenza'],
-                        'causale'          => $t['causale'] ?? '',
-                        'importo'          => (float)($t['importo'] ?? 0),
-                    ]);
-                    $userIds = [];
-                    foreach ($t['assigned_users'] ?? [] as $email) {
-                        $uid = $emailToId[strtolower((string)$email)] ?? null;
-                        if ($uid !== null) {
-                            $userIds[] = $uid;
-                        }
-                    }
-                    if (!empty($userIds)) {
-                        $tplRepo->assignUsers($newId, $userIds);
-                    }
-                    $count++;
-                }
-                $results[] = $count . ' template importati';
-            }
-
-            $pdo->commit();
-            $summary = implode(', ', $results);
-            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Backup importato con successo: ' . $summary];
-            Logger::getInstance()->info('Backup configurazione importato', ['sections' => $selectedSections, 'results' => $results]);
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore durante l\'importazione: ' . $e->getMessage()];
-            Logger::getInstance()->error('Errore importazione backup', ['error' => $e->getMessage()]);
-        }
-
-        return $this->redirectToConfigTab($response, 'backup');
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -295,15 +51,26 @@ class BackupController
 
     /**
      * POST /backup/sistema/crea — crea un archivio ZIP in /backups con:
-     *   - settings.json  (tutte le sezioni DB)
-     *   - govpay-config.json  (dati applicativi: tipologie, templates, utenti, IO)
-     *   - volumes/<nome>/<file>  (contenuto dei volumi certificati/metadata montati)
+     *   - settings.json (sempre)
+     *   - db_dump.sql.gz (sempre, se mysqldump disponibile)
+     *   - govpay-config.json (solo se richieste sezioni applicative)
+     *   - volumes/<nome>/<file> (solo volumi selezionati)
      */
     public function systemBackupCreate(Request $request, Response $response): Response
     {
         if (!$this->isSuperadmin()) {
             return $this->jsonError('Accesso riservato al superadmin.', 403);
         }
+
+        $payload = (array)($request->getParsedBody() ?? []);
+        $requestedVolumes = $this->filterAllowedSelections(
+            is_array($payload['volumes'] ?? null) ? $payload['volumes'] : [],
+            array_keys(self::BACKUP_VOLUMES)
+        );
+        $requestedGovpaySections = $this->filterAllowedSelections(
+            is_array($payload['govpay_sections'] ?? null) ? $payload['govpay_sections'] : [],
+            self::GOVPAY_SECTIONS
+        );
 
         $timestamp = date('Ymd_His');
         $zipPath   = self::BACKUP_DIR . "/backup-{$timestamp}.zip";
@@ -322,9 +89,11 @@ class BackupController
             }
             $zip->addFromString('settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
-            // 2. Export dati GovPay (stesso formato di exportBackup)
-            $govpayConfig = $this->buildFullGovpayExport();
-            $zip->addFromString('govpay-config.json', json_encode($govpayConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            // 2. Export dati applicativi opzionale
+            if (!empty($requestedGovpaySections)) {
+                $govpayConfig = $this->buildGovpayExport($requestedGovpaySections);
+                $zip->addFromString('govpay-config.json', json_encode($govpayConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            }
 
             // 3. DB dump via mysqldump
             $dbDumpFile = $this->runMysqldump();
@@ -332,8 +101,12 @@ class BackupController
                 $zip->addFile($dbDumpFile, 'db_dump.sql.gz');
             }
 
-            // 4. Volumi montati
-            foreach (self::BACKUP_VOLUMES as $name => $mountPath) {
+            // 4. Volumi selezionati
+            foreach ($requestedVolumes as $name) {
+                $mountPath = self::BACKUP_VOLUMES[$name] ?? null;
+                if ($mountPath === null) {
+                    continue;
+                }
                 if (is_dir($mountPath)) {
                     $this->addDirToZip($zip, $mountPath, "volumes/{$name}");
                 }
@@ -343,8 +116,19 @@ class BackupController
             if ($dbDumpFile !== null) {
                 @unlink($dbDumpFile);
             }
-            Logger::getInstance()->info('Backup di sistema creato', ['file' => "backup-{$timestamp}.zip"]);
-            return $this->jsonOk("Backup creato: backup-{$timestamp}.zip");
+            Logger::getInstance()->info('Backup di sistema creato', [
+                'file' => "backup-{$timestamp}.zip",
+                'volumes' => $requestedVolumes,
+                'govpay_sections' => $requestedGovpaySections,
+            ]);
+            return $this->jsonResponse([
+                'success' => true,
+                'message' => "Backup creato: backup-{$timestamp}.zip",
+                'detail' => [
+                    'volumes' => $requestedVolumes,
+                    'govpay_sections' => $requestedGovpaySections,
+                ],
+            ]);
         } catch (\Throwable $e) {
             if (isset($zip) && $zip instanceof \ZipArchive) {
                 @$zip->close();
@@ -595,49 +379,6 @@ class BackupController
         return $stats;
     }
 
-    /**
-     * POST /backup/sistema/carica-ripristina — carica un ZIP e ripristina immediatamente.
-     * Risposta JSON (non redirect), per uso da UI o API.
-     */
-    public function systemBackupUploadRestore(Request $request, Response $response): Response
-    {
-        if (!$this->isSuperadmin()) {
-            return $this->jsonError('Accesso riservato al superadmin.', 403);
-        }
-
-        $uploadedFiles = $request->getUploadedFiles();
-        $file = $uploadedFiles['backup_file'] ?? null;
-
-        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
-            return $this->jsonError('Nessun file caricato o errore nel trasferimento.');
-        }
-
-        $originalName = $file->getClientFilename() ?? 'backup.zip';
-        if (!str_ends_with(strtolower($originalName), '.zip')) {
-            return $this->jsonError('Il file deve essere un archivio .zip.');
-        }
-
-        $tmpPath = sys_get_temp_dir() . '/gil-upload-restore-' . bin2hex(random_bytes(8)) . '.zip';
-        try {
-            $stream = $file->getStream();
-            file_put_contents($tmpPath, (string) $stream);
-
-            $result = $this->doRestoreFromZip($tmpPath);
-
-            Logger::getInstance()->info('Upload e ripristino ZIP completato', array_merge(['file' => $originalName], $result));
-            return $this->jsonResponse([
-                'success' => true,
-                'message' => 'Ripristino completato.',
-                'detail'  => $result,
-            ]);
-        } catch (\Throwable $e) {
-            Logger::getInstance()->error('Errore upload-ripristino ZIP', ['error' => $e->getMessage()]);
-            return $this->jsonError('Errore durante il ripristino: ' . $e->getMessage());
-        } finally {
-            @unlink($tmpPath);
-        }
-    }
-
     // ──────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ──────────────────────────────────────────────────────────────────────
@@ -717,57 +458,77 @@ class BackupController
         return ($_SESSION['user']['role'] ?? '') === 'superadmin';
     }
 
-    private function redirectToConfigTab(Response $response, string $tab): Response
-    {
-        return $response->withHeader('Location', '/impostazioni?tab=' . $tab)->withStatus(302);
-    }
-
     /**
-     * Esporta tutti i dati applicativi GovPay nello stesso formato di exportBackup().
+     * Esporta i dati applicativi GovPay selezionati nello stesso formato usato per il restore.
+     *
+     * @param string[] $sections
      */
-    private function buildFullGovpayExport(): array
+    private function buildGovpayExport(array $sections): array
     {
         $idDominio = (string) (\App\Config\Config::get('ID_DOMINIO') ?: '');
         $pdo       = Connection::getPDO();
 
-        $entrateRepo = new EntrateRepository();
-        $tipologie   = $entrateRepo->listLocalOverrides($idDominio);
-
-        $extRepo   = new ExternalPaymentTypeRepository();
-        $tipEsterne = $extRepo->listAll();
-
-        $tplRepo   = new \App\Database\PendenzaTemplateRepository();
-        $templates = $tplRepo->findAllByDominioWithUsers($idDominio);
-
-        $ioRepo    = new \App\Database\IoServiceRepository();
-        $services  = $ioRepo->listAll();
-        $stmt      = $pdo->query('SELECT id_entrata, io_service_id FROM io_service_tipologie');
-        $links     = $stmt->fetchAll();
-        $svcLinks  = [];
-        foreach ($links as $l) {
-            $svcLinks[(int) $l['io_service_id']][] = $l['id_entrata'];
+        $resultSections = [];
+        if (in_array('tipologie', $sections, true)) {
+            $resultSections['tipologie'] = (new EntrateRepository())->listLocalOverrides($idDominio);
         }
-        foreach ($services as &$s) {
-            $s['tipologie'] = $svcLinks[(int) $s['id']] ?? [];
-            unset($s['id'], $s['created_at'], $s['updated_at']);
-        }
-        unset($s);
 
-        $utenti = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash FROM users ORDER BY email ASC')->fetchAll();
+        if (in_array('tipologie_esterne', $sections, true)) {
+            $resultSections['tipologie_esterne'] = (new ExternalPaymentTypeRepository())->listAll();
+        }
+
+        if (in_array('templates', $sections, true)) {
+            $tplRepo = new \App\Database\PendenzaTemplateRepository();
+            $resultSections['templates'] = $tplRepo->findAllByDominioWithUsers($idDominio);
+        }
+
+        if (in_array('io_services', $sections, true)) {
+            $ioRepo    = new \App\Database\IoServiceRepository();
+            $services  = $ioRepo->listAll();
+            $stmt      = $pdo->query('SELECT id_entrata, io_service_id FROM io_service_tipologie');
+            $links     = $stmt->fetchAll();
+            $svcLinks  = [];
+            foreach ($links as $l) {
+                $svcLinks[(int) $l['io_service_id']][] = $l['id_entrata'];
+            }
+            foreach ($services as &$s) {
+                $s['tipologie'] = $svcLinks[(int) $s['id']] ?? [];
+                unset($s['id'], $s['created_at'], $s['updated_at']);
+            }
+            unset($s);
+            $resultSections['io_services'] = $services;
+        }
+
+        if (in_array('utenti', $sections, true)) {
+            $resultSections['utenti'] = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash FROM users ORDER BY email ASC')->fetchAll();
+        }
 
         return [
             'version'     => '1.0',
             'exported_at' => (new \DateTimeImmutable())->format('c'),
             'exported_by' => $_SESSION['user']['email'] ?? 'system',
             'id_dominio'  => $idDominio,
-            'sections'    => [
-                'tipologie'         => $tipologie,
-                'tipologie_esterne' => $tipEsterne,
-                'templates'         => $templates,
-                'io_services'       => $services,
-                'utenti'            => $utenti,
-            ],
+            'sections'    => $resultSections,
         ];
+    }
+
+    /**
+     * @param array<int, mixed> $requested
+     * @param string[] $allowed
+     * @return string[]
+     */
+    private function filterAllowedSelections(array $requested, array $allowed): array
+    {
+        $normalized = [];
+        foreach ($requested as $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+            if (in_array($value, $allowed, true) && !in_array($value, $normalized, true)) {
+                $normalized[] = $value;
+            }
+        }
+        return $normalized;
     }
 
     /**

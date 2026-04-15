@@ -600,16 +600,7 @@ return function (App $app, Twig $twig): void {
         return $controller->bulkSetTipologieIoService($request, $response);
     });
 
-    // Backup / Import configurazione dati GovPay
-    $app->post('/configurazione/backup/export', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->exportBackup($request, $response);
-    });
-
-    $app->post('/configurazione/backup/import', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->importBackup($request, $response);
-    });
-
-    // Backup di sistema (via Master Container)
+    // Backup di sistema (logica locale nel backoffice)
     $app->post('/backup/sistema/crea', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupCreate($request, $response);
     });
@@ -1016,7 +1007,4 @@ return function (App $app, Twig $twig): void {
         return $controller->fetchBizEvent($request, $response);
     });
 
-    $app->post('/backup/sistema/carica-ripristina', function (Request $request, Response $response) use ($twig): Response {
-        return (new \App\Controllers\BackupController($twig))->systemBackupUploadRestore($request, $response);
-    });
 };

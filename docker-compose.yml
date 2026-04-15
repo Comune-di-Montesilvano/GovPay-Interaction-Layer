@@ -10,7 +10,7 @@ services:
       - gil_certs:/var/www/certificate
       - gil_images:/var/www/html/public/img
       - gil_backups:/backups
-      # Volumi per operazioni senza master container
+      # Volumi per operazioni locali di backup/ripristino
       - gil_ssl_certs:/var/www/html/ssl-certs
       - spid_certs:/var/www/html/spid-certs
       - gil_cieoidc_keys:/var/www/html/cieoidc-keys
