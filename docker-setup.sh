@@ -180,6 +180,9 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
     mkdir -p /var/www/html/public/img
     chown www-data:www-data /var/www/html/public/img 2>/dev/null || true
     chmod 755 /var/www/html/public/img 2>/dev/null || true
+  mkdir -p /backups
+  chown www-data:www-data /backups 2>/dev/null || true
+  chmod 775 /backups 2>/dev/null || true
     mkdir -p /var/www/certificate
     chown www-data:www-data /var/www/certificate 2>/dev/null || true
     chmod 755 /var/www/certificate 2>/dev/null || true
