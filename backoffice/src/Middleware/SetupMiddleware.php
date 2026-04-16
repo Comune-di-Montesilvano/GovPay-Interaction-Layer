@@ -24,6 +24,7 @@ class SetupMiddleware implements MiddlewareInterface
     private const BYPASS_PATHS = [
         '/setup',
         '/setup/*',
+        '/api/*',
         '/assets/*',
         '/health',
         '/login',

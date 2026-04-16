@@ -611,6 +611,8 @@ class ImpostazioniController
             $env['APP_ENTITY_URL'] = $sEntity['url'];
         }
 
+        $env['SETUP_COMPLETE'] = \App\Config\ConfigLoader::isSetupComplete() ? 'true' : 'false';
+
         $resp = new SlimResponse(200);
         $resp->getBody()->write(json_encode($env, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         return $resp->withHeader('Content-Type', 'application/json');
