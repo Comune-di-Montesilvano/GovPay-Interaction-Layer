@@ -152,6 +152,16 @@
     el.innerHTML = html;
   }
 
+  async function parseJsonOrThrow(res) {
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('application/json')) {
+      return await res.json();
+    }
+    const raw = await res.text();
+    const preview = raw.replace(/\s+/g, ' ').slice(0, 180);
+    throw new Error(`Risposta non JSON (HTTP ${res.status}). ${preview}`);
+  }
+
   window.backupCreateSistema = async function (btn) {
     btn.disabled = true;
     const orig = btn.innerHTML;
@@ -169,7 +179,10 @@
         method: 'POST',
         body: fd,
       });
-      const json = await res.json();
+      const json = await parseJsonOrThrow(res);
+      if (!res.ok) {
+        throw new Error(json.message || `Errore HTTP ${res.status}`);
+      }
       impToast(json.message || (json.success ? 'Backup creato.' : 'Errore.'), !!json.success);
       if (json.success) backupListSistema(null);
     } catch (e) {
@@ -184,7 +197,7 @@
     if (btn) { btn.disabled = true; }
     try {
       const res = await fetch('/backup/sistema/lista');
-      const json = await res.json();
+      const json = await parseJsonOrThrow(res);
       renderBackupList(json.files || []);
     } catch (e) {
       document.getElementById('backup-sistema-list').innerHTML =
@@ -214,7 +227,7 @@
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ripristino in corso…';
     try {
       const res = await fetch('/backup/sistema/ripristina', { method: 'POST', body: formData });
-      const json = await res.json();
+      const json = await parseJsonOrThrow(res);
       showRestoreResult(!!json.success, json.message || (json.success ? 'Ripristino completato.' : 'Errore.'), json.detail);
       impToast(json.message || (json.success ? 'Ripristino completato.' : 'Errore.'), !!json.success);
     } catch (e) {

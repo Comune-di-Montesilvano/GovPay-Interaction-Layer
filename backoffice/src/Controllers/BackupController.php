@@ -58,11 +58,19 @@ class BackupController
      */
     public function systemBackupCreate(Request $request, Response $response): Response
     {
+        $requestId = bin2hex(random_bytes(6));
+
         if (!$this->isSuperadmin()) {
+            Logger::getInstance()->warning('Backup create negato: utente non superadmin', ['request_id' => $requestId]);
             return $this->jsonError('Accesso riservato al superadmin.', 403);
         }
 
         $payload = (array)($request->getParsedBody() ?? []);
+        if (!$this->validateImpostazioniCsrf($payload)) {
+            Logger::getInstance()->warning('Backup create negato: CSRF non valido', ['request_id' => $requestId]);
+            return $this->jsonError('Token non valido.', 403);
+        }
+
         $requestedVolumes = $this->filterAllowedSelections(
             is_array($payload['volumes'] ?? null) ? $payload['volumes'] : [],
             array_keys(self::BACKUP_VOLUMES)
@@ -76,9 +84,32 @@ class BackupController
         $zipPath   = self::BACKUP_DIR . "/backup-{$timestamp}.zip";
 
         try {
+            if (!$this->ensureBackupDirWritable()) {
+                Logger::getInstance()->error('Backup create fallito: directory non scrivibile', [
+                    'request_id' => $requestId,
+                    'backup_dir' => self::BACKUP_DIR,
+                    'diag' => $this->pathDiagnostics(self::BACKUP_DIR),
+                ]);
+                return $this->jsonResponse([
+                    'success' => false,
+                    'message' => 'Directory backup non scrivibile.',
+                    'request_id' => $requestId,
+                ], 500);
+            }
+
             $zip = new \ZipArchive();
             if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-                return $this->jsonError('Impossibile creare il file di backup in ' . self::BACKUP_DIR);
+                Logger::getInstance()->error('Backup create fallito: ZipArchive::open non riuscito', [
+                    'request_id' => $requestId,
+                    'zip_path' => $zipPath,
+                    'backup_dir' => self::BACKUP_DIR,
+                    'diag' => $this->pathDiagnostics(self::BACKUP_DIR),
+                ]);
+                return $this->jsonResponse([
+                    'success' => false,
+                    'message' => 'Impossibile creare il file di backup.',
+                    'request_id' => $requestId,
+                ], 500);
             }
 
             // 1. Export impostazioni DB
@@ -117,6 +148,7 @@ class BackupController
                 @unlink($dbDumpFile);
             }
             Logger::getInstance()->info('Backup di sistema creato', [
+                'request_id' => $requestId,
                 'file' => "backup-{$timestamp}.zip",
                 'volumes' => $requestedVolumes,
                 'govpay_sections' => $requestedGovpaySections,
@@ -124,6 +156,7 @@ class BackupController
             return $this->jsonResponse([
                 'success' => true,
                 'message' => "Backup creato: backup-{$timestamp}.zip",
+                'request_id' => $requestId,
                 'detail' => [
                     'volumes' => $requestedVolumes,
                     'govpay_sections' => $requestedGovpaySections,
@@ -137,8 +170,18 @@ class BackupController
                 @unlink($dbDumpFile);
             }
             @unlink($zipPath);
-            Logger::getInstance()->error('Errore creazione backup sistema', ['error' => $e->getMessage()]);
-            return $this->jsonError('Errore creazione backup: ' . $e->getMessage());
+            Logger::getInstance()->error('Errore creazione backup sistema', [
+                'request_id' => $requestId,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            return $this->jsonResponse([
+                'success' => false,
+                'message' => 'Errore interno durante la creazione del backup.',
+                'request_id' => $requestId,
+            ], 500);
         }
     }
 
@@ -529,6 +572,34 @@ class BackupController
             }
         }
         return $normalized;
+    }
+
+    private function validateImpostazioniCsrf(array $payload): bool
+    {
+        $expected = (string)($_SESSION['impostazioni_csrf'] ?? '');
+        $provided = (string)($payload['csrf_token'] ?? '');
+        return $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
+    }
+
+    private function ensureBackupDirWritable(): bool
+    {
+        if (!is_dir(self::BACKUP_DIR) && !@mkdir(self::BACKUP_DIR, 0775, true) && !is_dir(self::BACKUP_DIR)) {
+            return false;
+        }
+        return is_writable(self::BACKUP_DIR);
+    }
+
+    private function pathDiagnostics(string $path): array
+    {
+        $perms = @fileperms($path);
+        return [
+            'exists' => file_exists($path),
+            'is_dir' => is_dir($path),
+            'is_writable' => is_writable($path),
+            'owner' => @fileowner($path),
+            'group' => @filegroup($path),
+            'perms' => $perms === false ? null : substr(sprintf('%o', $perms), -4),
+        ];
     }
 
     /**
