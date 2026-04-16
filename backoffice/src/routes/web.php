@@ -830,6 +830,7 @@ return function (App $app, Twig $twig): void {
     }
 
     // Error handling personalizzato per 404
+    $appDebugRaw = getenv('APP_DEBUG');
     $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true'
         || ($appDebugRaw !== false && in_array(strtolower((string)$appDebugRaw), ['1','true','yes','on'], true));
     $errorMiddleware = $app->addErrorMiddleware($displayErrorDetails, true, true);
