@@ -444,9 +444,26 @@ class BackupController
 
             $tables = $pdo->query("SHOW TABLES")->fetchAll(\PDO::FETCH_COLUMN);
 
+            // Raccoglie DDL per tutte le tabelle prima di generare il dump
+            $ddls = [];
             foreach ($tables as $table) {
                 $row = $pdo->query("SHOW CREATE TABLE `{$table}`")->fetch(\PDO::FETCH_ASSOC);
-                $ddl = $row['Create Table'] ?? $row[array_keys($row)[1]] ?? '';
+                $ddls[$table] = $row['Create Table'] ?? $row[array_keys($row)[1]] ?? '';
+            }
+
+            // Ordina: tabelle senza FK prima, con FK dopo — così durante il ripristino
+            // le tabelle referenziate esistono già quando si creano i vincoli.
+            usort($tables, function (string $a, string $b) use ($ddls): int {
+                $aFk = str_contains($ddls[$a], 'FOREIGN KEY');
+                $bFk = str_contains($ddls[$b], 'FOREIGN KEY');
+                if ($aFk === $bFk) {
+                    return 0;
+                }
+                return $aFk ? 1 : -1;
+            });
+
+            foreach ($tables as $table) {
+                $ddl = $ddls[$table];
                 $sql .= "DROP TABLE IF EXISTS `{$table}`;\n";
                 $sql .= $ddl . ";\n\n";
 
