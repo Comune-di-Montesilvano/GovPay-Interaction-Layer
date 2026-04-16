@@ -13,6 +13,7 @@ permissions:
 env:
   REGISTRY: ghcr.io
   ORG: comune-di-montesilvano
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── PHP apps: backoffice + frontoffice ────────────────────────────────────
@@ -21,22 +22,22 @@ jobs:
   build-php:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # ── backoffice ──────────────────────────────────────────────────────
       - name: Meta · backoffice
         id: meta-bo
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice
           tags: |
@@ -46,7 +47,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · backoffice
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: runtime-backoffice
@@ -62,7 +63,7 @@ jobs:
       # ── frontoffice ─────────────────────────────────────────────────────
       - name: Meta · frontoffice
         id: meta-fo
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice
           tags: |
@@ -72,7 +73,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · frontoffice
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: runtime-frontoffice
@@ -111,21 +112,21 @@ jobs:
             scope: metadata-builder
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Meta · ${{ matrix.image }}
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
           tags: |
@@ -135,7 +136,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · ${{ matrix.image }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file || format('{0}/Dockerfile', matrix.context) }}
