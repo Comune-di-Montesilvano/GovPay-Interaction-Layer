@@ -12,8 +12,8 @@
       </p>
 
       <div class="alert alert-info small py-2 mb-3">
-        <strong>Nota:</strong> i metadata SPID/CIE <strong>non</strong> vengono salvati in questo backup.
-        Per metadata e pacchetto IAM proxy usa la scheda
+        <strong>Nota:</strong> logo e favicon vengono salvati in questo backup.
+        Certificati e metadata SPID/CIE restano separati nella scheda
         <a href="/impostazioni?tab=login-proxy" class="alert-link">Login Proxy</a>.
       </div>
 
@@ -29,14 +29,8 @@
             </div>
             <div class="col-sm-6 col-md-4">
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="volumes[]" value="spid_certs" id="vol-spid-certs" checked>
-                <label class="form-check-label" for="vol-spid-certs">Certificati SPID</label>
-              </div>
-            </div>
-            <div class="col-sm-6 col-md-4">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="volumes[]" value="gil_cieoidc_keys" id="vol-cie-keys" checked>
-                <label class="form-check-label" for="vol-cie-keys">Chiavi CIE OIDC</label>
+                <input class="form-check-input" type="checkbox" name="volumes[]" value="gil_images" id="vol-gil-images" checked>
+                <label class="form-check-label" for="vol-gil-images">Immagini branding (logo e favicon)</label>
               </div>
             </div>
           </div>
@@ -144,8 +138,10 @@
         <td class="text-nowrap">
           <a href="/backup/sistema/download?file=${encodeURIComponent(f.name)}" class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2 me-1">
             <i class="fas fa-download me-1"></i>Scarica</a>
-          <button class="btn btn-xs btn-outline-danger btn-sm py-0 px-2" onclick="backupRipristinaFile(this, '${f.name.replace(/'/g,"\\'")}')">
+          <button class="btn btn-xs btn-outline-primary btn-sm py-0 px-2 me-1" onclick="backupRipristinaFile(this, '${f.name.replace(/'/g,"\\'")}')">
             <i class="fas fa-undo me-1"></i>Ripristina</button>
+          <button class="btn btn-xs btn-outline-danger btn-sm py-0 px-2" onclick="backupEliminaFile(this, '${f.name.replace(/'/g,"\\'")}')">
+            <i class="fas fa-trash-alt me-1"></i>Elimina</button>
         </td></tr>`;
     }
     html += '</tbody></table></div>';
@@ -270,6 +266,31 @@
       await doRestore(fd, btn);
     } catch (e) {
       impToast('Errore: ' + e.message, false);
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  };
+
+  window.backupEliminaFile = async function (btn, filename) {
+    if (!confirm(`Eliminare definitivamente "${filename}"?`)) return;
+    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+    try {
+      const fd = new FormData();
+      fd.append('csrf_token', csrf);
+      fd.append('file', filename);
+      const res = await fetch('/backup/sistema/elimina', { method: 'POST', body: fd });
+      const json = await parseJsonOrThrow(res);
+      if (!res.ok) {
+        throw new Error(json.message || `Errore HTTP ${res.status}`);
+      }
+      impToast(json.message || 'Backup eliminato.', true);
+      await backupListSistema(null);
+    } catch (e) {
+      impToast('Errore: ' + e.message, false);
+    } finally {
       btn.disabled = false;
       btn.innerHTML = origHtml;
     }

@@ -630,11 +630,7 @@ class SetupController
         // 2. Ripristina file dei volumi (struttura: volumes/<nome_volume>/<percorso_relativo>)
         $volumeMap = [
             'volumes/gil_certs'               => '/var/www/certificate',
-            'volumes/spid_certs'              => '/var/www/html/spid-certs',
-            'volumes/gil_cieoidc_keys'        => '/var/www/html/cieoidc-keys',
-            // Compatibilita con backup legacy/migrazione precedenti
-            'volumes/frontoffice_sp_metadata' => '/var/www/html/metadata-sp',
-            'volumes/gil_metadata_cieoidc'    => '/var/www/html/metadata-cieoidc',
+            'volumes/gil_images'              => '/var/www/html/public/img',
         ];
 
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -686,10 +682,7 @@ class SetupController
         }
         $knownVolumePrefixes = [
             'volumes/gil_certs/',
-            'volumes/spid_certs/',
-            'volumes/gil_cieoidc_keys/',
-            'volumes/frontoffice_sp_metadata/',
-            'volumes/gil_metadata_cieoidc/',
+            'volumes/gil_images/',
         ];
         $hasVolumeData = false;
         for ($i = 0; $i < $zip->numFiles; $i++) {
