@@ -38,7 +38,7 @@ if [ -z "${MASTER_TOKEN:-}" ]; then
 fi
 
 echo "[startup] Fetch configurazione da ${_BO_URL}/api/auth-proxy/env ..."
-_MAX_ATTEMPTS=10
+_MAX_ATTEMPTS=60
 _ATTEMPT=0
 _CONF=""
 while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
@@ -63,6 +63,22 @@ for k, v in d.items():
     if isinstance(v, str) and v:
         print('export {}={}'.format(k, shlex.quote(v)))
 ")"
+
+# Rileva wizard mode: se backoffice non è ancora configurato, non avviare SATOSA.
+# Il watchdog riproverà ogni _WATCHDOG_INTERVAL finché setup non sarà completo.
+_setup_complete=$(echo "$_CONF" | python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    print('true' if str(d.get('SETUP_COMPLETE','false')).lower() in ('1','true','yes','on') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+
+if [ "$_setup_complete" != "true" ]; then
+  echo "[startup] Backoffice in fase di wizard (setup non completato). SATOSA non avviato."
+  echo "[startup] Il watchdog si occuperà dell'avvio quando la configurazione sarà completata."
+fi
 
 # Hardening: evita crash SATOSA su !ENV quando redirect errore non e valorizzato.
 if [ -z "${SATOSA_UNKNOW_ERROR_REDIRECT_PAGE:-}" ]; then
@@ -601,9 +617,11 @@ print('true' if v in ('1','true','yes','on') else 'false')
 }
 
 # ── Avvio iniziale ────────────────────────────────────────────────────────────
-if [ "$_enable_spid" = "true" ] || [ "$_enable_cie" = "true" ]; then
+if [ "$_setup_complete" = "true" ] && { [ "$_enable_spid" = "true" ] || [ "$_enable_cie" = "true" ]; }; then
   echo "[startup] Auth abilitato al boot — avvio SATOSA iniziale..."
   start_satosa || true
+elif [ "$_setup_complete" != "true" ]; then
+  : # già loggato sopra — il watchdog si occupa dell'avvio
 else
   echo "[startup] IAM Proxy non abilitato al boot. In standby (poll ogni ${_WATCHDOG_INTERVAL}s)."
 fi
