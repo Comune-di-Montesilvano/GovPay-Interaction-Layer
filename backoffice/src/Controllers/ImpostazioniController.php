@@ -1211,6 +1211,12 @@ class ImpostazioniController
                 '. Verifica i permessi del volume Docker (chown www-data:www-data).'
             );
         }
+        if (is_file(self::PUBLIC_SPID_METADATA_PATH) && !is_writable(self::PUBLIC_SPID_METADATA_PATH)) {
+            return $this->jsonError(
+                'File metadata non sovrascrivibile: ' . self::PUBLIC_SPID_METADATA_PATH .
+                '. Verifica i permessi del file nel volume Docker (chown www-data:www-data).'
+            );
+        }
 
         $iamProxy = SettingsRepository::getSection('iam_proxy');
         $publicBaseUrl = rtrim(trim((string)($iamProxy['public_base_url'] ?? '')), '/');
