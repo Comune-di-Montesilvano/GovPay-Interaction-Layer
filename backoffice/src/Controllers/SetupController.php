@@ -812,34 +812,41 @@ class SetupController
     }
 
     /**
-     * Ripristina il DB da un file .sql.gz via mysql CLI.
+     * Ripristina il DB da un file .sql.gz via PDO (senza mysql CLI).
      */
     private function runMysqlRestore(string $gzFile): void
     {
-        $dbHost = (string)(getenv('DB_HOST') ?: '127.0.0.1');
-        $dbPort = (string)(getenv('DB_PORT') ?: '3306');
-        $dbName = (string)(getenv('DB_NAME') ?: '');
-        $dbUser = (string)(getenv('DB_USER') ?: '');
-        $dbPass = (string)(getenv('DB_PASSWORD') ?: '');
-
-        if ($dbName === '' || $dbUser === '') {
-            throw new \RuntimeException('DB_NAME o DB_USER non configurati: impossibile ripristinare il database.');
+        $gz = gzopen($gzFile, 'rb');
+        if ($gz === false) {
+            throw new \RuntimeException("Impossibile aprire il dump compresso per il ripristino.");
         }
 
-        $cmd = sprintf(
-            'zcat %s | mysql -h %s -P %s -u %s -p%s %s 2>&1',
-            escapeshellarg($gzFile),
-            escapeshellarg($dbHost),
-            escapeshellarg($dbPort),
-            escapeshellarg($dbUser),
-            escapeshellarg($dbPass),
-            escapeshellarg($dbName)
-        );
-        exec($cmd, $output, $exitCode);
+        $sql = '';
+        while (!gzeof($gz)) {
+            $sql .= gzread($gz, 65536);
+        }
+        gzclose($gz);
 
-        if ($exitCode !== 0) {
-            $errMsg = implode("\n", $output);
-            throw new \RuntimeException("Ripristino DB fallito (exit {$exitCode}): {$errMsg}");
+        if (trim($sql) === '') {
+            throw new \RuntimeException("Il dump del database è vuoto: ripristino annullato.");
+        }
+
+        try {
+            $pdo = Connection::getPDO();
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+
+            $statements = array_filter(
+                array_map('trim', explode(";\n", $sql)),
+                fn($s) => $s !== ''
+            );
+
+            foreach ($statements as $stmt) {
+                $pdo->exec($stmt);
+            }
+
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Ripristino DB fallito: " . $e->getMessage(), 0, $e);
         }
     }
 
