@@ -188,8 +188,9 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
+        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
         SettingsRepository::setSection('backoffice', [
-            'public_base_url'      => $body['public_base_url'] ?? '',
+            'public_base_url'      => $publicBaseUrl,
             'apache_server_name'   => $body['apache_server_name'] ?? '',
             'mailer_dsn'           => ['value' => $body['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
             'mailer_from_address'  => $body['mailer_from_address'] ?? '',
@@ -209,8 +210,9 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
+        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
         SettingsRepository::setSection('frontoffice', [
-            'public_base_url'   => $body['public_base_url'] ?? '',
+            'public_base_url'   => $publicBaseUrl,
             'auth_proxy_type'   => $body['auth_proxy_type'] ?? 'none',
         ], $by);
 
@@ -226,10 +228,11 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
+        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
 
         // Campi ordinari (non cifrati)
         $plain = [
-            'public_base_url'                  => $body['public_base_url'] ?? '',
+            'public_base_url'                  => $publicBaseUrl,
             'saml2_idp_metadata_url'           => $body['saml2_idp_metadata_url'] ?? '',
             'saml2_idp_metadata_url_internal'  => $body['saml2_idp_metadata_url_internal'] ?? '',
             'http_port'                        => $body['http_port'] ?? '',
@@ -388,6 +391,25 @@ class ImpostazioniController
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
 
         return $this->jsonOk('Impostazioni Login Proxy salvate. Riavvia i container IAM proxy per applicarle.');
+    }
+
+    /**
+     * Normalizza un URL base rimuovendo lo slash finale per evitare doppi slash
+     * nella composizione degli endpoint derivati.
+     */
+    private function normalizePublicBaseUrl(string $url): string
+    {
+        $trimmed = trim($url);
+        if ($trimmed === '') {
+            return '';
+        }
+
+        $parsed = parse_url($trimmed);
+        if ($parsed !== false && isset($parsed['scheme'], $parsed['host'])) {
+            return rtrim($trimmed, '/');
+        }
+
+        return $trimmed;
     }
 
     // ──────────────────────────────────────────────────────────────────────
