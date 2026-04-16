@@ -2114,6 +2114,12 @@ class ImpostazioniController
 
     private function parseBody(Request $request): array
     {
+        $contentType = $request->getHeaderLine('Content-Type');
+        if (str_contains($contentType, 'application/json')) {
+            $raw     = (string) $request->getBody();
+            $decoded = json_decode($raw, true);
+            return is_array($decoded) ? $decoded : [];
+        }
         return (array)($request->getParsedBody() ?? []);
     }
 
