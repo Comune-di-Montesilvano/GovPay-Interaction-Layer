@@ -427,72 +427,94 @@ class BackupController
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Esegue mysqldump e restituisce il path del file .sql.gz temporaneo,
-     * oppure null se mysqldump non è disponibile o fallisce.
+     * Esegue il dump del DB via PDO e restituisce il path del file .sql.gz temporaneo,
+     * oppure null se non è possibile connettersi o estrarre i dati.
      */
     private function runMysqldump(): ?string
     {
-        $dbHost = (string)(getenv('DB_HOST') ?: '127.0.0.1');
-        $dbPort = (string)(getenv('DB_PORT') ?: '3306');
         $dbName = (string)(getenv('DB_NAME') ?: '');
-        $dbUser = (string)(getenv('DB_USER') ?: '');
-        $dbPass = (string)(getenv('DB_PASSWORD') ?: '');
-
-        if ($dbName === '' || $dbUser === '') {
-            Logger::getInstance()->warning('mysqldump saltato: DB_NAME o DB_USER non configurati');
+        if ($dbName === '') {
+            Logger::getInstance()->warning('mysqldump saltato: DB_NAME non configurato');
             return null;
         }
 
-        $outFile = sys_get_temp_dir() . '/gil-dbdump-' . bin2hex(random_bytes(6)) . '.sql.gz';
-        $cmd = sprintf(
-            'mysqldump --single-transaction --routines --triggers -h %s -P %s -u %s -p%s %s 2>/dev/null | gzip > %s',
-            escapeshellarg($dbHost),
-            escapeshellarg($dbPort),
-            escapeshellarg($dbUser),
-            escapeshellarg($dbPass),
-            escapeshellarg($dbName),
-            escapeshellarg($outFile)
-        );
-        exec($cmd, $output, $exitCode);
+        try {
+            $pdo = Connection::getPDO();
+            $sql = "SET FOREIGN_KEY_CHECKS=0;\n\n";
 
-        if ($exitCode !== 0 || !is_file($outFile) || filesize($outFile) === 0) {
-            Logger::getInstance()->warning('mysqldump fallito o output vuoto', ['exit_code' => $exitCode]);
-            @unlink($outFile);
+            $tables = $pdo->query("SHOW TABLES")->fetchAll(\PDO::FETCH_COLUMN);
+
+            foreach ($tables as $table) {
+                $row = $pdo->query("SHOW CREATE TABLE `{$table}`")->fetch(\PDO::FETCH_ASSOC);
+                $ddl = $row['Create Table'] ?? $row[array_keys($row)[1]] ?? '';
+                $sql .= "DROP TABLE IF EXISTS `{$table}`;\n";
+                $sql .= $ddl . ";\n\n";
+
+                $rows = $pdo->query("SELECT * FROM `{$table}`")->fetchAll(\PDO::FETCH_ASSOC);
+                if (!empty($rows)) {
+                    $cols = '`' . implode('`, `', array_keys($rows[0])) . '`';
+                    foreach ($rows as $r) {
+                        $vals = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $r);
+                        $sql .= "INSERT INTO `{$table}` ({$cols}) VALUES (" . implode(', ', $vals) . ");\n";
+                    }
+                    $sql .= "\n";
+                }
+            }
+
+            $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
+
+            $outFile = sys_get_temp_dir() . '/gil-dbdump-' . bin2hex(random_bytes(6)) . '.sql.gz';
+            $gz = gzopen($outFile, 'wb9');
+            if ($gz === false) {
+                Logger::getInstance()->warning('mysqldump: impossibile aprire file gz di output');
+                return null;
+            }
+            gzwrite($gz, $sql);
+            gzclose($gz);
+
+            return $outFile;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('mysqldump PDO fallito', ['error' => $e->getMessage()]);
             return null;
         }
-
-        return $outFile;
     }
 
     /**
-     * Ripristina il DB da un file .sql.gz via mysql CLI.
+     * Ripristina il DB da un file .sql.gz via PDO (senza mysql CLI).
      */
     private function runMysqlRestore(string $gzFile): void
     {
-        $dbHost = (string)(getenv('DB_HOST') ?: '127.0.0.1');
-        $dbPort = (string)(getenv('DB_PORT') ?: '3306');
-        $dbName = (string)(getenv('DB_NAME') ?: '');
-        $dbUser = (string)(getenv('DB_USER') ?: '');
-        $dbPass = (string)(getenv('DB_PASSWORD') ?: '');
-
-        if ($dbName === '' || $dbUser === '') {
-            throw new \RuntimeException('DB_NAME o DB_USER non configurati: impossibile ripristinare il database.');
+        $gz = gzopen($gzFile, 'rb');
+        if ($gz === false) {
+            throw new \RuntimeException("Impossibile aprire il dump compresso per il ripristino.");
         }
 
-        $cmd = sprintf(
-            'zcat %s | mysql -h %s -P %s -u %s -p%s %s 2>&1',
-            escapeshellarg($gzFile),
-            escapeshellarg($dbHost),
-            escapeshellarg($dbPort),
-            escapeshellarg($dbUser),
-            escapeshellarg($dbPass),
-            escapeshellarg($dbName)
-        );
-        exec($cmd, $output, $exitCode);
+        $sql = '';
+        while (!gzeof($gz)) {
+            $sql .= gzread($gz, 65536);
+        }
+        gzclose($gz);
 
-        if ($exitCode !== 0) {
-            $errMsg = implode("\n", $output);
-            throw new \RuntimeException("Ripristino DB fallito (exit {$exitCode}): {$errMsg}");
+        if (trim($sql) === '') {
+            throw new \RuntimeException("Il dump del database è vuoto: ripristino annullato.");
+        }
+
+        try {
+            $pdo = Connection::getPDO();
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+
+            $statements = array_filter(
+                array_map('trim', explode(";\n", $sql)),
+                fn($s) => $s !== ''
+            );
+
+            foreach ($statements as $stmt) {
+                $pdo->exec($stmt);
+            }
+
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Ripristino DB fallito: " . $e->getMessage(), 0, $e);
         }
     }
 
