@@ -82,8 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libicu-dev libzip-dev libonig-dev \
     ca-certificates curl unzip openssl \
     && docker-php-ext-install intl mbstring pdo_mysql zip \
-    && apt-get purge -y --auto-remove libicu-dev libonig-dev \
-    && apt-get purge -y libzip-dev \
+    && apt-get purge -y libicu-dev libzip-dev libonig-dev \
     && a2enmod ssl rewrite headers \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
