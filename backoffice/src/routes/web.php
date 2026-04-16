@@ -613,6 +613,10 @@ return function (App $app, Twig $twig): void {
         return (new BackupController($twig))->systemBackupDownload($request, $response);
     });
 
+    $app->post('/backup/sistema/elimina', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupDelete($request, $response);
+    });
+
     $app->post('/backup/sistema/ripristina', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupRestore($request, $response);
     });

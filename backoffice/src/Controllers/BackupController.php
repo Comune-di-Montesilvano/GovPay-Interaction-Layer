@@ -25,11 +25,10 @@ class BackupController
 {
     private const BACKUP_DIR = '/backups';
 
-    /** Volumi ripristinabili dal backup di sistema. */
+    /** Volumi inclusi nel backup di sistema. */
     private const BACKUP_VOLUMES = [
         'gil_certs'                => '/var/www/certificate',
-        'spid_certs'               => '/var/www/html/spid-certs',
-        'gil_cieoidc_keys'         => '/var/www/html/cieoidc-keys',
+        'gil_images'               => '/var/www/html/public/img',
     ];
 
     /** Sezioni dati applicativi supportate nel govpay-config.json. */
@@ -80,8 +79,18 @@ class BackupController
             self::GOVPAY_SECTIONS
         );
 
-        $timestamp = date('Ymd_His');
-        $zipPath   = self::BACKUP_DIR . "/backup-{$timestamp}.zip";
+        $appVersion   = (string)(getenv('GIL_IMAGE_TAG') ?: 'dev');
+        $appCommit    = (string)(getenv('GIT_COMMIT_SHA') ?: 'unknown');
+        if (str_starts_with($appVersion, 'v')) {
+            $rawLabel = $appVersion;
+        } else {
+            $rawLabel = $appVersion . '@' . substr($appCommit, 0, 7);
+        }
+        $versionLabel = preg_replace('/[^a-zA-Z0-9.\-_]/', '-', $rawLabel);
+
+        $timestamp   = date('Ymd_His');
+        $zipFilename = "backup-{$versionLabel}-{$timestamp}.zip";
+        $zipPath     = self::BACKUP_DIR . '/' . $zipFilename;
 
         try {
             if (!$this->ensureBackupDirWritable()) {
@@ -149,13 +158,13 @@ class BackupController
             }
             Logger::getInstance()->info('Backup di sistema creato', [
                 'request_id' => $requestId,
-                'file' => "backup-{$timestamp}.zip",
+                'file' => $zipFilename,
                 'volumes' => $requestedVolumes,
                 'govpay_sections' => $requestedGovpaySections,
             ]);
             return $this->jsonResponse([
                 'success' => true,
-                'message' => "Backup creato: backup-{$timestamp}.zip",
+                'message' => "Backup creato: {$zipFilename}",
                 'request_id' => $requestId,
                 'detail' => [
                     'volumes' => $requestedVolumes,
@@ -218,7 +227,7 @@ class BackupController
         }
 
         $filename = $request->getQueryParams()['file'] ?? '';
-        if ($filename === '' || str_contains($filename, '/') || str_contains($filename, '..') || !str_ends_with($filename, '.zip')) {
+        if (!$this->isValidBackupFilename($filename)) {
             return $response->withStatus(400);
         }
 
@@ -235,6 +244,42 @@ class BackupController
             ->withHeader('Content-Length', (string) filesize($path));
     }
 
+    /**
+     * POST /backup/sistema/elimina — cancella un archivio ZIP dal volume backup.
+     */
+    public function systemBackupDelete(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $payload = (array)($request->getParsedBody() ?? []);
+        if (!$this->validateImpostazioniCsrf($payload)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        $filename = (string)($payload['file'] ?? '');
+        if (!$this->isValidBackupFilename($filename)) {
+            return $this->jsonError('Nome file non valido.', 400);
+        }
+
+        $path = self::BACKUP_DIR . '/' . $filename;
+        if (!is_file($path)) {
+            return $this->jsonError('Backup non trovato.', 404);
+        }
+
+        if (!@unlink($path)) {
+            return $this->jsonError('Impossibile eliminare il backup.', 500);
+        }
+
+        Logger::getInstance()->info('Backup di sistema eliminato', ['file' => $filename]);
+
+        return $this->jsonResponse([
+            'success' => true,
+            'message' => 'Backup eliminato: ' . $filename,
+        ]);
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // RIPRISTINO DA ZIP
     // ──────────────────────────────────────────────────────────────────────
@@ -242,7 +287,7 @@ class BackupController
     /**
      * POST /backup/sistema/ripristina — carica un archivio ZIP e ripristina:
      *   - settings.json  → tutte le sezioni DB (incluse chiavi SATOSA, cifrate al primo salvataggio UI)
-     *   - volumes/<nome> → file sui volumi montati (spid_certs, cieoidc_keys, metadata…)
+    *   - volumes/<nome> → file sui volumi montati (branding, certificati, backup legacy)
      *   - govpay-config.json → dati applicativi (tipologie, templates, IO, utenti) se presenti
      */
     public function systemBackupRestore(Request $request, Response $response): Response
@@ -626,6 +671,14 @@ class BackupController
             return false;
         }
         return is_writable(self::BACKUP_DIR);
+    }
+
+    private function isValidBackupFilename(string $filename): bool
+    {
+        return $filename !== ''
+            && !str_contains($filename, '/')
+            && !str_contains($filename, '..')
+            && str_ends_with($filename, '.zip');
     }
 
     private function pathDiagnostics(string $path): array
