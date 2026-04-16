@@ -1205,6 +1205,12 @@ class ImpostazioniController
         $this->requireSuperadmin();
 
         @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+        if (!is_writable(self::SPID_PUBLIC_META_DIR)) {
+            return $this->jsonError(
+                'Directory metadata non scrivibile: ' . self::SPID_PUBLIC_META_DIR .
+                '. Verifica i permessi del volume Docker (chown www-data:www-data).'
+            );
+        }
 
         $iamProxy = SettingsRepository::getSection('iam_proxy');
         $publicBaseUrl = rtrim(trim((string)($iamProxy['public_base_url'] ?? '')), '/');
