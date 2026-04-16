@@ -1542,6 +1542,7 @@ async function generaCieKeys(btn) {
     }
 
     impToast(json.message || (json.success ? 'Chiavi JWK generate.' : 'Generazione fallita.'), !!json.success);
+    if (json.success) loadCieKeysInfo(null);
   } catch (e) {
     impToast('Errore: ' + e.message, false);
   } finally {
