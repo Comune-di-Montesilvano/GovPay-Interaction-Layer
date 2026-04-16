@@ -1184,62 +1184,72 @@ class ImpostazioniController
 
         @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
 
-        $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
-        $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
         $iamProxy = SettingsRepository::getSection('iam_proxy');
-        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
-        $query = [];
-        if ($publicBaseUrl !== '') {
-            $query['public_base_url'] = $publicBaseUrl;
-        }
-        $endpoint = "{$builderUrl}/run/export-agid";
-        if (!empty($query)) {
-            $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
-        }
-        $builderTimeout = (int) (getenv('METADATA_BUILDER_HTTP_TIMEOUT') ?: 180);
-        if ($builderTimeout < 30) {
-            $builderTimeout = 30;
+        $publicBaseUrl = rtrim(trim((string)($iamProxy['public_base_url'] ?? '')), '/');
+        $hostname = trim((string)($iamProxy['hostname'] ?? ''));
+
+        if ($publicBaseUrl === '') {
+            return $this->jsonError('URL pubblico del proxy non configurato.');
         }
 
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => $builderTimeout,
-                'ignore_errors' => true,
-            ],
-        ]);
-        $raw    = @file_get_contents($endpoint, false, $ctx);
-        if ($raw === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: metadata-builder non raggiungibile o timeout scaduto. Verifica che auth-proxy sia avviato e che /spidSaml2/metadata risponda 200.');
-        }
-        $result = json_decode($raw, true);
+        $metadataPublicUrl = $publicBaseUrl . '/spidSaml2/metadata';
+        
+        $metadataInternalUrls = [
+            ['url' => $metadataPublicUrl, 'headers' => []],
+            ['url' => 'http://auth-proxy-nginx:80/spidSaml2/metadata', 'headers' => ["Host: $hostname"]],
+            // Fallback HTTPS sulla porta 80 (in caso Nginx risponda in SSL su quella porta)
+            ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'headers' => ["Host: $hostname"]],
+            // Fallback generico
+            ['url' => 'https://auth-proxy-nginx/spidSaml2/metadata', 'headers' => ["Host: $hostname"]]
+        ];
 
-        if (!($result['success'] ?? false)) {
-            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
-            return $this->jsonError("Export metadata pubblico SPID fallito: {$err}");
+        $xml = false;
+        $errorContext = [];
+        $parsed = false;
+
+        foreach ($metadataInternalUrls as $attempt) {
+            $ctxOpts = [
+                'http' => [
+                    'method' => 'GET',
+                    'timeout' => 8,
+                    'ignore_errors' => true,
+                ],
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                ]
+            ];
+            if (!empty($attempt['headers'])) {
+                $ctxOpts['http']['header'] = implode("\r\n", $attempt['headers']) . "\r\n";
+            }
+            $ctx = stream_context_create($ctxOpts);
+            $raw = @file_get_contents($attempt['url'], false, $ctx);
+            
+            if ($raw !== false && trim($raw) !== '') {
+                libxml_use_internal_errors(true);
+                libxml_clear_errors();
+                $parsed = simplexml_load_string(trim($raw));
+                if ($parsed !== false && isset($parsed['entityID'])) {
+                    $xml = trim($raw);
+                    break;
+                } else {
+                    $errorContext[] = "{$attempt['url']}: " . (empty($raw) ? "risposta vuota" : "XML non valido");
+                }
+            } else {
+                $errorContext[] = "{$attempt['url']}: timeout o irraggiungibile";
+            }
         }
 
-        if (!is_file(self::PUBLIC_SPID_METADATA_PATH)) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: file output non trovato dopo export-agid.');
+        if ($xml === false) {
+            return $this->jsonError('Esportazione fallita. Tentativi eseguiti: ' . implode(' | ', $errorContext));
         }
 
-        $xml = trim((string) file_get_contents(self::PUBLIC_SPID_METADATA_PATH));
-        if ($xml === '') {
-            return $this->jsonError('Export metadata pubblico SPID fallito: file output vuoto dopo export-agid.');
-        }
-
-        libxml_use_internal_errors(true);
-        $parsed = simplexml_load_string($xml);
-        if ($parsed === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: XML non valido restituito da auth-proxy-nginx.');
-        }
-
-        // Il file e gia stato scritto dal metadata-builder nel volume condiviso.
-        // Qui normalizziamo solo se il file risulta scrivibile dal backoffice.
-        if (is_writable(self::PUBLIC_SPID_METADATA_PATH)) {
-            @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n");
+        // Salviamo il file XML appena scaricato sul volume condiviso
+        $written = @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n");
+        if ($written !== false) {
             @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+        } else {
+            return $this->jsonError("Impossibile salvare il file XML in " . self::PUBLIC_SPID_METADATA_PATH . ". Verifica i permessi del volume.");
         }
 
         // Dual-storage: salva copia in DB come base64 per ripristino senza volume
