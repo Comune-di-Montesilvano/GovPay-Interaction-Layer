@@ -61,7 +61,7 @@ class Logger
         }
         $entry .= PHP_EOL;
 
-        // Write atomically
+        // Write atomically to file
         $fp = @fopen($this->filePath, 'a');
         if ($fp) {
             @flock($fp, LOCK_EX);
@@ -69,6 +69,9 @@ class Logger
             @flock($fp, LOCK_UN);
             @fclose($fp);
         }
+
+        // Always write to stderr → visible in docker logs / Portainer
+        @fwrite(STDERR, $entry);
     }
 
     public function info(string $message, array $context = []): void

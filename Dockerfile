@@ -169,7 +169,8 @@ COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
     && ln -s /var/www/html/backoffice/templates /var/www/html/templates \
-    && mkdir -p /var/www/html/backoffice/storage/logs
+    && mkdir -p /var/www/html/backoffice/storage/logs \
+    && chown www-data:www-data /var/www/html/backoffice/storage/logs
 COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 # Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
@@ -182,7 +183,8 @@ RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
 
 FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
-RUN mkdir -p /var/www/html/frontoffice/storage/logs
+RUN mkdir -p /var/www/html/frontoffice/storage/logs \
+    && chown www-data:www-data /var/www/html/frontoffice/storage/logs
 
 # Script per generazione/rinnovo metadata SP SAML (usato da init/refresh-frontoffice-sp-metadata)
 RUN mkdir -p /scripts
