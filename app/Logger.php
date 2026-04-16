@@ -71,7 +71,7 @@ class Logger
         }
 
         // Always write to stderr → visible in docker logs / Portainer
-        @fwrite(STDERR, $entry);
+        @fwrite(\STDERR, $entry);
     }
 
     public function info(string $message, array $context = []): void
