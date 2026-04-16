@@ -2482,9 +2482,9 @@ if (!function_exists('frontoffice_generate_checkout_link')) {
     }
 }
 
-$entityName = trim($env('APP_ENTITY_NAME', 'Comune di Montesilvano'));
-$entitySuffix = trim($env('APP_ENTITY_SUFFIX', 'Provincia di Pescara'));
-$entityGovernment = trim($env('APP_ENTITY_GOVERNMENT', 'Regione Abruzzo'));
+$entityName = trim($env('APP_ENTITY_NAME', 'Ente'));
+$entitySuffix = trim($env('APP_ENTITY_SUFFIX', 'Servizi ai cittadini'));
+$entityGovernment = trim($env('APP_ENTITY_GOVERNMENT', ''));
 $entityFull = trim($entityName . ($entitySuffix !== '' ? ' - ' . $entitySuffix : '')) ?: $entityGovernment;
 
 $documentRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? __DIR__), '/\\');
@@ -5070,7 +5070,7 @@ $baseContext = [
     'support_email' => $supportEmail,
     'support_phone' => $env('APP_SUPPORT_PHONE', '800.000.000'),
     'support_hours' => $env('APP_SUPPORT_HOURS', 'Lun-Ven 9:00-18:00'),
-    'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Montesilvano (PE)'),
+    'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Roma (RM)'),
     'cart_count' => frontoffice_cart_count(),
     'cart_items_ids' => array_keys(frontoffice_cart_items()),
     'current_locale' => $currentLocale,
