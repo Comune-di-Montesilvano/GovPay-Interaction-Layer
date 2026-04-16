@@ -14,13 +14,12 @@
   <form id="form-login-proxy" onsubmit="return false;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-    {# ─── Fase 1: Configurazione ──────────────────────────────────────────── #}
-    <div class="d-flex align-items-center gap-2 mb-2">
-      <span class="badge rounded-pill bg-primary fs-6 fw-bold px-3 py-2">1</span>
-      <h5 class="mb-0">Configurazione</h5>
-    </div>
+    {# ─── Configurazione e Gestione Identity Provider ─────────────────────── #}
     {% if is_superadmin %}
-    <p class="text-muted small mb-3">Imposta i parametri del proxy. <strong>Salva</strong> prima di procedere con la generazione di chiavi e metadata (passi 2 e 3).</p>
+    <div class="alert alert-info py-2 small mb-3">
+      <i class="fas fa-info-circle me-1"></i>
+      <strong>Attenzione:</strong> Salva sempre la configurazione prima di gestire certificati ed esportare metadata.
+    </div>
     {% endif %}
 
     {# ─── Accordion ───────────────────────────────────────────────────────── #}
@@ -241,9 +240,80 @@
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
             </div>
+          
+            {# Cards Gestione SPID #}
+            <div class="row g-3 mt-4">
+              <div class="col-md-6" id="lp-cert-spid-card"
+      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-certificate me-2 text-success"></i>Certificato SPID</h6>
+          <span class="badge bg-success-subtle text-success border border-success-subtle">SPID</span>
+        </div>
+        <div class="card-body" id="spid-cert-info-body">
+          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare il certificato attuale.</p>
+        </div>
+        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadSpidCertInfo(this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt me-1"></i>Stato
+          </button>
+          {% if is_superadmin %}
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-warning" type="button"
+              data-bs-toggle="modal" data-bs-target="#spidCertRestoreModal">
+              <i class="fas fa-upload me-1"></i>Ripristina
+            </button>
+            <button class="btn btn-sm btn-outline-success" type="button"
+              data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
+              <i class="fas fa-certificate me-1"></i>Genera
+            </button>
           </div>
+          {% endif %}
         </div>
       </div>
+    </div>
+              <div class="col-md-6" id="lp-meta-spid-card"
+      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+        <div class="card-body" id="spid-metadata-body">
+          <p class="text-muted small mb-0">Esporta il file da inviare ad AgID e usa <i class="fas fa-sync-alt"></i> per verificarne lo stato.</p>
+        </div>
+        {% if is_superadmin %}
+        <div id="spid-metadata-db-backup-row" class="px-3 pb-2" style="display:none;">
+          <div class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+            <span><i class="fas fa-database me-1"></i>Backup DB disponibile — <span id="spid-metadata-db-backup-at" class="text-muted"></span></span>
+            <button class="btn btn-sm btn-outline-info" onclick="restoreSpidMetadataFromDb(this)">
+              <i class="fas fa-undo me-1"></i>Ripristina da DB → Volume
+            </button>
+          </div>
+        </div>
+        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
+            <i class="fas fa-download me-1"></i>Scarica XML
+          </button>
+          <button class="btn btn-sm btn-outline-warning" type="button"
+            data-bs-toggle="modal" data-bs-target="#spidMetaRestoreModal">
+            <i class="fas fa-upload me-1"></i>Ripristina XML
+          </button>
+          <button class="btn btn-sm btn-outline-success" type="button"
+                  data-bs-toggle="modal" data-bs-target="#spidMetaExportModal">
+            <i class="fas fa-file-export me-1"></i>Esporta da proxy SATOSA
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+            </div>
+          </div>
+        </div>
 
       {# ─── CIE OIDC ──────────────────────────────────────────────────────── #}
       <div class="accordion-item border shadow-sm mb-2">
@@ -394,9 +464,62 @@
             <input type="hidden" name="cie_oidc_logo_uri" value="{{ iam_proxy.cie_oidc_logo_uri|default('') }}">
             {% endif %}
 
+          
+            {# Cards Gestione CIE OIDC #}
+            <div class="row g-3 mt-4">
+              <div class="col-md-6" id="lp-cert-cie-card"
+      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-key me-2 text-info"></i>Chiavi JWK CIE OIDC</h6>
+          <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
+        </div>
+        <div class="card-body" id="cie-keys-info-body">
+          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
+        </div>
+        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt me-1"></i>Stato
+          </button>
+          {% if is_superadmin %}
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-warning" type="button"
+              data-bs-toggle="modal" data-bs-target="#cieKeysRestoreModal">
+              <i class="fas fa-upload me-1"></i>Ripristina
+            </button>
+            <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
+              <i class="fas fa-key me-1"></i>Genera
+            </button>
           </div>
+          {% endif %}
         </div>
       </div>
+    </div>
+              <div class="col-md-6" id="lp-meta-cie-card"
+      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Metadata SP CIE OIDC</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+        <div class="card-body" id="cie-metadata-body">
+          <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+        </div>
+        {% if is_superadmin %}
+        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
+            <i class="fas fa-file-export me-1"></i>Esporta artefatti CIE
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+            </div>
+          </div>
+        </div>
 
       {# ─── Organizzazione SATOSA ─────────────────────────────────────────── #}
       <div class="accordion-item border shadow-sm mb-2">
@@ -694,164 +817,11 @@
     {% endif %}
   </form>
 
-  {# ─── Fase 2: Chiavi e Certificati ────────────────────────────────────────── #}
-  <div class="d-flex align-items-center gap-2 mt-4 mb-2">
-    <span class="badge rounded-pill bg-success fs-6 fw-bold px-3 py-2">2</span>
-    <h5 class="mb-0">Chiavi e Certificati</h5>
-  </div>
-  <p class="text-muted small mb-3">
-    Genera il certificato SPID e/o le chiavi JWK CIE OIDC.
-    {% if is_superadmin %}Completa questo passo prima di rigenerare i metadata (passo 3).{% endif %}
-  </p>
-  <div class="row g-3 mb-2">
-    {# Card SPID certs #}
-    <div class="col-md-6" id="lp-cert-spid-card"
-      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-certificate me-2 text-success"></i>Certificato SPID</h6>
-          <span class="badge bg-success-subtle text-success border border-success-subtle">SPID</span>
-        </div>
-        <div class="card-body" id="spid-cert-info-body">
-          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare il certificato attuale.</p>
-        </div>
-        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadSpidCertInfo(this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt me-1"></i>Stato
-          </button>
-          {% if is_superadmin %}
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm btn-outline-warning" type="button"
-              data-bs-toggle="modal" data-bs-target="#spidCertRestoreModal">
-              <i class="fas fa-upload me-1"></i>Ripristina
-            </button>
-            <button class="btn btn-sm btn-outline-success" type="button"
-              data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
-              <i class="fas fa-certificate me-1"></i>Genera
-            </button>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {# Card CIE OIDC keys #}
-    <div class="col-md-6" id="lp-cert-cie-card"
-      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-key me-2 text-info"></i>Chiavi JWK CIE OIDC</h6>
-          <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
-        </div>
-        <div class="card-body" id="cie-keys-info-body">
-          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
-        </div>
-        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt me-1"></i>Stato
-          </button>
-          {% if is_superadmin %}
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm btn-outline-warning" type="button"
-              data-bs-toggle="modal" data-bs-target="#cieKeysRestoreModal">
-              <i class="fas fa-upload me-1"></i>Ripristina
-            </button>
-            <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
-              <i class="fas fa-key me-1"></i>Genera
-            </button>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {# Placeholder: nessun metodo abilitato #}
-    <div class="col-12" id="lp-fase2-empty" style="display:none;">
-      <div class="alert alert-secondary mb-0">
-        <i class="fas fa-info-circle me-1"></i>
-        Abilita SPID e/o CIE OIDC nella <strong>Fase 1 → Generale</strong> per accedere alla generazione di chiavi e certificati.
-      </div>
-    </div>
-  </div>
-
-  {# ─── Fase 3: Metadata ────────────────────────────────────────────────────── #}
-  <div class="d-flex align-items-center gap-2 mt-4 mb-2">
-    <span class="badge rounded-pill bg-warning text-dark fs-6 fw-bold px-3 py-2">3</span>
-    <h5 class="mb-0">Metadata</h5>
-  </div>
-  <p class="text-muted small mb-3">
-    La UI gestisce solo gli artifact pubblici federabili. Il metadata interno frontoffice↔iam-proxy si autogenera e si riallinea da solo.
-  </p>
-  <div class="row g-3 mb-2">
-    <div class="col-md-6" id="lp-meta-spid-card"
-      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-        </div>
-        <div class="card-body" id="spid-metadata-body">
-          <p class="text-muted small mb-0">Esporta il file da inviare ad AgID e usa <i class="fas fa-sync-alt"></i> per verificarne lo stato.</p>
-        </div>
-        {% if is_superadmin %}
-        <div id="spid-metadata-db-backup-row" class="px-3 pb-2" style="display:none;">
-          <div class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-between gap-2 flex-wrap">
-            <span><i class="fas fa-database me-1"></i>Backup DB disponibile — <span id="spid-metadata-db-backup-at" class="text-muted"></span></span>
-            <button class="btn btn-sm btn-outline-info" onclick="restoreSpidMetadataFromDb(this)">
-              <i class="fas fa-undo me-1"></i>Ripristina da DB → Volume
-            </button>
-          </div>
-        </div>
-        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
-            <i class="fas fa-download me-1"></i>Scarica XML
-          </button>
-          <button class="btn btn-sm btn-outline-warning" type="button"
-            data-bs-toggle="modal" data-bs-target="#spidMetaRestoreModal">
-            <i class="fas fa-upload me-1"></i>Ripristina XML
-          </button>
-          <button class="btn btn-sm btn-outline-success" type="button"
-                  data-bs-toggle="modal" data-bs-target="#spidMetaGeneraModal">
-            <i class="fas fa-file-export me-1"></i>Genera da SATOSA
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="col-md-6" id="lp-meta-cie-card"
-      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Metadata SP CIE OIDC</h6>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-        </div>
-        <div class="card-body" id="cie-metadata-body">
-          <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
-        </div>
-        {% if is_superadmin %}
-        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
-            <i class="fas fa-file-export me-1"></i>Esporta artefatti CIE
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="col-12" id="lp-fase3-empty" style="display:none;">
-      <div class="alert alert-secondary mb-0">
-        <i class="fas fa-info-circle me-1"></i>
-        Abilita SPID e/o CIE OIDC nella <strong>Fase 1 → Generale</strong> per accedere alla gestione dei metadata.
-      </div>
-    </div>
-  </div>
-
-  {# ─── Fase 4: Backup e Ripristino ─────────────────────────────────────────── #}
+  
+  {# ─── Backup e Ripristino ─────────────────────────────────────────── #}
   {% if is_superadmin %}
   <div class="d-flex align-items-center gap-2 mt-4 mb-2">
-    <span class="badge rounded-pill bg-secondary fs-6 fw-bold px-3 py-2">4</span>
-    <h5 class="mb-0">Backup e Ripristino</h5>
+    <h5 class="mb-0"><i class="fas fa-toolbox me-2 text-secondary"></i>Strumenti: Backup e Ripristino</h5>
   </div>
   <p class="text-muted small mb-3">
     Esporta in un unico archivio ZIP la configurazione e/o i file di chiavi e metadata.
@@ -1021,19 +991,19 @@
 </div>
 
 {# ─── Modale anteprima Rigenera SP Metadata ──────────────────────────────────── #}
-<div class="modal fade" id="spidMetaGeneraModal" tabindex="-1" aria-labelledby="spidMetaGeneraModalLabel" aria-hidden="true">
+<div class="modal fade" id="spidMetaExportModal" tabindex="-1" aria-labelledby="spidMetaExportModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="spidMetaGeneraModalLabel">
-          <i class="fas fa-id-card me-2 text-success"></i>Genera metadata pubblico SPID
+        <h5 class="modal-title" id="spidMetaExportModalLabel">
+          <i class="fas fa-id-card me-2 text-success"></i>Esporta metadata pubblico SPID
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-warning small mb-3">
           <i class="fas fa-exclamation-triangle me-1"></i>
-          Questa operazione recupera il metadata live da SATOSA e sovrascrive
+          Questa operazione esporta il metadata generato dal proxy SATOSA e sovrascrive
           <code>satosa_spid_public_metadata.xml</code> sul volume.
           Esegui questo passo dopo ogni rigenerazione del certificato SPID (Fase 2).
         </div>
@@ -1045,13 +1015,13 @@
           <dt class="col-sm-4">Endpoint SATOSA</dt>
           <dd class="col-sm-8 text-muted"><code>/spidSaml2/metadata</code></dd>
         </dl>
-        <div id="spid-meta-genera-result" class="mt-3" style="display:none;"></div>
+        <div id="spid-meta-export-result" class="mt-3" style="display:none;"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn btn-success" id="spid-meta-genera-btn"
-                onclick="doGeneraSpidMetadata(this)">
-          <i class="fas fa-file-export me-1"></i>Genera metadata
+        <button type="button" class="btn btn-success" id="spid-meta-export-btn"
+                onclick="doExportSpidMetadata(this)">
+          <i class="fas fa-file-export me-1"></i>Esporta metadata
         </button>
       </div>
     </div>
@@ -1729,9 +1699,9 @@ async function exportSpidMetadata(btn) {
   }
 }
 
-async function doGeneraSpidMetadata(btn) {
+async function doExportSpidMetadata(btn) {
   const orig = btn.innerHTML;
-  const resultEl = document.getElementById('spid-meta-genera-result');
+  const resultEl = document.getElementById('spid-meta-export-result');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
   resultEl.style.display = 'none';

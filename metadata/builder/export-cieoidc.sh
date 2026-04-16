@@ -32,11 +32,19 @@ fetch_internal() {
     return 0
   fi
 
-  # Fallback: nginx interno può parlare HTTPS su porta 80
-  if [[ "$SATOSA_SCHEME" = "http" ]] && grep -qi "plain HTTP request was sent to HTTPS port" "$tmp_err"; then
-    local https_url
-    https_url="${url/http:\/\//https://}"
-    if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$https_url" -o "$out_file" 2>"$tmp_err"; then
+  # Fallback 1: HTTPS interno su porta 80 (curl -f ignora il body html 400, si tenta ciechi)
+  local https_url
+  https_url="${url/http:\/\//https://}"
+  if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$https_url" -o "$out_file" 2>"$tmp_err"; then
+    rm -f "$tmp_err"
+    return 0
+  fi
+
+  # Fallback 2: URL pubblico tramite rete esterna (bypass hairpin NAT interni)
+  if [[ -n "$IAM_PROXY_PUBLIC_BASE_URL" ]]; then
+    local public_url="${url/$IAM_PROXY_INTERNAL_BASE/$IAM_PROXY_PUBLIC_BASE_URL}"
+    local pub_host="$(echo "$IAM_PROXY_PUBLIC_BASE_URL" | sed -E 's#^[a-zA-Z]+://([^/:]+).*$#\1#')"
+    if curl -sSfL --connect-timeout 5 --max-time 15 -H "Host: $pub_host" "$public_url" -o "$out_file" 2>"$tmp_err"; then
       rm -f "$tmp_err"
       return 0
     fi

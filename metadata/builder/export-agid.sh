@@ -63,15 +63,17 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
     ) || HTTP_CODE="curl-fail"
     LAST_URL="$SATOSA_URL_INTERNAL"
 
-    # Se nginx segnala "plain HTTP request was sent to HTTPS port", ritenta in HTTPS stesso host:porta.
-    if [ "$SATOSA_INTERNAL_SCHEME" = "http" ] && grep -qi "plain HTTP request was sent to HTTPS port" "$TMP_ERR"; then
+    # Se fallisce in curl-fail o HTTPS mismatch silente (400 scartato da -f), tenta forzatamente in HTTPS
+    if [ "$HTTP_CODE" = "curl-fail" ] || [ "$HTTP_CODE" = "400" ]; then
       HTTPS_URL_INTERNAL="https://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
-      HTTP_CODE=$( \
+      HTTP_CODE_HTTPS=$( \
         curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" -w "%{http_code}" "$HTTPS_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
         | tail -c 3 \
-      ) || HTTP_CODE="curl-fail"
-      LAST_URL="$HTTPS_URL_INTERNAL"
-      if [ "$HTTP_CODE" = "200" ]; then
+      ) || HTTP_CODE_HTTPS="curl-fail"
+      
+      if [ "$HTTP_CODE_HTTPS" = "200" ]; then
+        HTTP_CODE="200"
+        LAST_URL="$HTTPS_URL_INTERNAL"
         echo "[DEBUG] Auto-upgrade interno a HTTPS riuscito su ${HTTPS_URL_INTERNAL}" >&2
       fi
     fi
