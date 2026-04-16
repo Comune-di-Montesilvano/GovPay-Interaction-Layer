@@ -642,6 +642,20 @@ while true; do
     continue
   }
 
+  # Non avviare SATOSA finché il wizard non è completato
+  _new_setup=$(printf '%s' "$_NEW" | python3 -c "
+import json,sys
+try:
+    d=json.loads(sys.stdin.read())
+    print('true' if str(d.get('SETUP_COMPLETE','false')).lower() in ('1','true','yes','on') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+  if [ "$_new_setup" != "true" ]; then
+    echo "[watchdog] Setup non completato — standby"
+    continue
+  fi
+
   if auth_on "$_NEW"; then
     if ! satosa_running; then
       echo "[watchdog] Auth abilitato, SATOSA non in esecuzione — avvio..."
