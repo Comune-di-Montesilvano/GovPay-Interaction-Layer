@@ -44,7 +44,7 @@ class SetupController
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // STEP 0 – Welcome (scelta modalità)
+    // STEP 0 – Welcome
     // ──────────────────────────────────────────────────────────────────────
 
     public function welcome(Request $request, Response $response): Response
@@ -54,12 +54,10 @@ class SetupController
             return $this->redirect('/');
         }
 
-        $mode = $request->getQueryParams()['mode'] ?? 'fresh';
-        $this->initWizardSession($mode);
+        $this->initWizardSession();
         $this->generateCsrf();
 
         return $this->twig->render($response, 'setup/welcome.html.twig', [
-            'mode' => $mode,
             'csrf_token' => $_SESSION['wizard']['csrf_token'],
             'total_steps' => self::TOTAL_STEPS,
         ]);
@@ -88,18 +86,11 @@ class SetupController
             return $this->redirect('/setup/step/' . ($maxReached + 1));
         }
 
-        $mode = $_SESSION['wizard']['mode'] ?? 'fresh';
         $stepData = $_SESSION['wizard']['data']['step' . $step] ?? [];
-
-        // In modalità upgrade, pre-popola i dati dallo step corrente se vuoti
-        if ($mode === 'upgrade' && empty($stepData)) {
-            $stepData = $this->prefillFromEnv($step);
-        }
 
         return $this->twig->render($response, 'setup/step' . $step . '.html.twig', [
             'step'        => $step,
             'total_steps' => self::TOTAL_STEPS,
-            'mode'        => $mode,
             'data'        => $stepData,
             'csrf_token'  => $_SESSION['wizard']['csrf_token'] ?? '',
             'all_data'    => $_SESSION['wizard']['data'] ?? [],
@@ -300,11 +291,10 @@ class SetupController
     // HELPERS PRIVATI
     // ──────────────────────────────────────────────────────────────────────
 
-    private function initWizardSession(string $mode = 'fresh'): void
+    private function initWizardSession(): void
     {
         if (!isset($_SESSION['wizard'])) {
             $_SESSION['wizard'] = [
-                'mode'        => $mode,
                 'max_reached' => 0,
                 'data'        => [],
                 'errors'      => [],
@@ -392,7 +382,7 @@ class SetupController
     /**
      * Gestisce gli upload file per gli step che li prevedono.
      * - Step 1: logo ente (opzionale)
-     * - Step 5: certificato + chiave GovPay (opzionali, solo se sslheader)
+      * - Step 3: certificato + chiave GovPay (opzionali, solo se sslheader)
      *
      * Ritorna array di errori (vuoto = ok).
      */
@@ -419,7 +409,7 @@ class SetupController
             // UPLOAD_ERR_NO_FILE = nessun file selezionato → opzionale, nessun errore
         }
 
-        if ($step === 5) {
+        if ($step === 3) {
             $cert = $uploadedFiles['govpay_cert'] ?? null;
             $key  = $uploadedFiles['govpay_key']  ?? null;
 
@@ -443,57 +433,6 @@ class SetupController
         }
 
         return $errors;
-    }
-
-    /**
-     * Pre-popola i dati di uno step dai valori getenv() (modalità upgrade).
-     */
-    private function prefillFromEnv(int $step): array
-    {
-        $map = [
-            1 => [
-                'entity_ipa_code'  => 'APP_ENTITY_IPA_CODE',
-                'entity_name'      => 'APP_ENTITY_NAME',
-                'entity_suffix'    => 'APP_ENTITY_SUFFIX',
-                'entity_government'=> 'APP_ENTITY_GOVERNMENT',
-                'entity_url'       => 'APP_ENTITY_URL',
-                'id_dominio'       => 'ID_DOMINIO',
-                'id_a2a'           => 'ID_A2A',
-            ],
-            2 => [
-                'admin_email'      => 'ADMIN_EMAIL',
-                'backoffice_url'   => 'BACKOFFICE_PUBLIC_BASE_URL',
-                'frontoffice_url'  => 'FRONTOFFICE_PUBLIC_BASE_URL',
-                'apache_server_name' => 'APACHE_SERVER_NAME',
-            ],
-            3 => [
-                'govpay_pendenze_url'     => 'GOVPAY_PENDENZE_URL',
-                'govpay_pagamenti_url'    => 'GOVPAY_PAGAMENTI_URL',
-                'govpay_ragioneria_url'   => 'GOVPAY_RAGIONERIA_URL',
-                'govpay_backoffice_url'   => 'GOVPAY_BACKOFFICE_URL',
-                'govpay_patch_url'        => 'GOVPAY_PENDENZE_PATCH_URL',
-                'authentication_govpay'   => 'AUTHENTICATION_GOVPAY',
-                'govpay_user'             => 'GOVPAY_USER',
-            ],
-            4 => [
-                'mailer_dsn'             => 'BACKOFFICE_MAILER_DSN',
-                'mailer_from_address'    => 'BACKOFFICE_MAILER_FROM_ADDRESS',
-                'mailer_from_name'       => 'BACKOFFICE_MAILER_FROM_NAME',
-                'pagopa_checkout_url'    => 'PAGOPA_CHECKOUT_EC_BASE_URL',
-                'pagopa_checkout_key'    => 'PAGOPA_CHECKOUT_SUBSCRIPTION_KEY',
-                'biz_events_host'        => 'BIZ_EVENTS_HOST',
-                'biz_events_key'         => 'BIZ_EVENTS_API_KEY',
-            ],
-        ];
-
-        $result = [];
-        foreach (($map[$step] ?? []) as $field => $envKey) {
-            $val = getenv($envKey);
-            if ($val !== false && $val !== '') {
-                $result[$field] = $val;
-            }
-        }
-        return $result;
     }
 
     /**
