@@ -1341,9 +1341,18 @@ function metaRow(label, value) {
 }
 function expiryBadge(date, expired) {
   if (!date) return '<span class="text-muted">—</span>';
-  const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle' : 'bg-success-subtle text-success border-success-subtle';
-  const icon = expired ? 'fa-times-circle' : 'fa-check-circle';
-  return '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(date) + '</span>';
+  let daysLeft = null;
+  const ts = new Date(date).getTime();
+  if (!isNaN(ts)) daysLeft = Math.floor((ts - Date.now()) / 86400000);
+  const warn = daysLeft !== null && !expired && daysLeft < 30;
+  const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle'
+             : (warn   ? 'bg-warning-subtle text-warning border-warning-subtle'
+                       : 'bg-success-subtle text-success border-success-subtle');
+  const icon = expired ? 'fa-times-circle' : (warn ? 'fa-exclamation-circle' : 'fa-check-circle');
+  const label = expired ? ' (SCADUTO)'
+              : (daysLeft !== null ? ' (' + Math.max(0, daysLeft) + ' giorni)' : '');
+  return '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>'
+       + escHtml(date) + label + '</span>';
 }
 async function restoreMetadata(type, fileInputId, btn) {
   const fileEl = document.getElementById(fileInputId);
@@ -1410,6 +1419,20 @@ async function restoreMetadata(type, fileInputId, btn) {
   lpUpdatePhaseVisibility();
   document.getElementById('en-spid')?.addEventListener('change', lpUpdatePhaseVisibility);
   document.getElementById('en-cie')?.addEventListener('change', lpUpdatePhaseVisibility);
+
+  // Auto-carica info card alla prima apertura degli accordion SPID/CIE
+  document.getElementById('lp-spid')?.addEventListener('shown.bs.collapse', () => {
+    if (!document.getElementById('spid-cert-info-body')?.querySelector('dl'))
+      loadSpidCertInfo(null);
+    if (!document.getElementById('spid-metadata-body')?.querySelector('dl'))
+      loadMetadataInfo('spid', null);
+  });
+  document.getElementById('lp-cie')?.addEventListener('shown.bs.collapse', () => {
+    if (!document.getElementById('cie-keys-info-body')?.querySelector('dl'))
+      loadCieKeysInfo(null);
+    if (!document.getElementById('cie-metadata-body')?.querySelector('dl'))
+      loadMetadataInfo('cie', null);
+  });
 
   // Stato backup: disabilita checkbox se file non disponibile
   try {
@@ -1519,6 +1542,7 @@ async function generaCieKeys(btn) {
     }
 
     impToast(json.message || (json.success ? 'Chiavi JWK generate.' : 'Generazione fallita.'), !!json.success);
+    if (json.success) loadCieKeysInfo(null);
   } catch (e) {
     impToast('Errore: ' + e.message, false);
   } finally {
