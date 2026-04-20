@@ -282,28 +282,16 @@
           </button>
         </div>
         <div class="card-body" id="spid-metadata-body">
-          <p class="text-muted small mb-0">Esporta il file da inviare ad AgID e usa <i class="fas fa-sync-alt"></i> per verificarne lo stato.</p>
+          <p class="text-muted small mb-0">Usa <i class="fas fa-sync-alt"></i> per verificare lo stato. Il metadata viene generato automaticamente all&apos;avvio del proxy e salvato nel volume.</p>
         </div>
         {% if is_superadmin %}
-        <div id="spid-metadata-db-backup-row" class="px-3 pb-2" style="display:none;">
-          <div class="alert alert-info py-2 small mb-0 d-flex align-items-center justify-content-between gap-2 flex-wrap">
-            <span><i class="fas fa-database me-1"></i>Backup DB disponibile — <span id="spid-metadata-db-backup-at" class="text-muted"></span></span>
-            <button class="btn btn-sm btn-outline-info" onclick="restoreSpidMetadataFromDb(this)">
-              <i class="fas fa-undo me-1"></i>Ripristina da DB → Volume
-            </button>
-          </div>
-        </div>
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
             <i class="fas fa-download me-1"></i>Scarica XML
           </button>
-          <button class="btn btn-sm btn-outline-warning" type="button"
-            data-bs-toggle="modal" data-bs-target="#spidMetaRestoreModal">
-            <i class="fas fa-upload me-1"></i>Ripristina XML
-          </button>
           <button class="btn btn-sm btn-outline-success" type="button"
                   data-bs-toggle="modal" data-bs-target="#spidMetaExportModal">
-            <i class="fas fa-file-export me-1"></i>Esporta da proxy SATOSA
+            <i class="fas fa-sync-alt me-1"></i>Rigenera
           </button>
         </div>
         {% endif %}
@@ -510,7 +498,7 @@
         {% if is_superadmin %}
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
-            <i class="fas fa-file-export me-1"></i>Esporta artefatti CIE
+            <i class="fas fa-sync-alt me-1"></i>Rigenera artefatti CIE
           </button>
         </div>
         {% endif %}
@@ -826,7 +814,7 @@
   <p class="text-muted small mb-3">
     Esporta in un unico archivio ZIP la configurazione e/o i file di chiavi e metadata.
     Il ripristino sostituisce i file esistenti sul volume.
-    Il metadata SPID viene salvato automaticamente in DB ad ogni esportazione o ripristino: è possibile ripristinarlo direttamente dalla card Fase 3 senza necessità di file ZIP.
+      Il metadata SPID e CIE nei volumi vengono inclusi nel backup: il ripristino da ZIP ricrea l&apos;ambiente di login completo senza bisogno di rifederare.
   </p>
   <div class="row g-3 mb-2">
     {# Export ZIP #}
@@ -884,7 +872,7 @@
           <h6 class="mb-0"><i class="fas fa-upload me-2 text-warning"></i>Ripristino</h6>
         </div>
         <div class="card-body">
-          <p class="small text-muted mb-3">Ripristina da archivio ZIP completo o singoli file.</p>
+          <p class="small text-muted mb-3">Ripristina da archivio ZIP completo.</p>
 
           <div class="mb-3">
             <label class="form-label small fw-semibold"><i class="fas fa-file-archive me-1 text-secondary"></i>Ripristino da backup ZIP</label>
@@ -895,29 +883,6 @@
               </button>
             </div>
             <div class="form-text">ZIP esportato da questo pannello. Ripristina automaticamente cert, chiavi JWK e metadata trovati nel file.</div>
-          </div>
-
-          <hr class="my-2">
-
-          <div class="mb-3">
-            <label class="form-label small fw-semibold"><i class="fas fa-id-card me-1 text-success"></i>Metadata pubblico SPID (XML)</label>
-            <div class="input-group input-group-sm">
-              <input type="file" class="form-control" id="spid-restore-file" accept=".xml">
-              <button class="btn btn-outline-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
-                <i class="fas fa-upload me-1"></i>Ripristina
-              </button>
-            </div>
-            <div class="form-text">File XML metadata pubblico SPID (satosa_spid_public_metadata.xml).</div>
-          </div>
-          <div>
-            <label class="form-label small fw-semibold"><i class="fas fa-address-card me-1 text-info"></i>Entity configuration CIE OIDC (JSON)</label>
-            <div class="input-group input-group-sm">
-              <input type="file" class="form-control" id="cie-restore-file" accept=".json">
-              <button class="btn btn-outline-warning" type="button" onclick="restoreMetadata('cie', 'cie-restore-file', this)">
-                <i class="fas fa-upload me-1"></i>Ripristina
-              </button>
-            </div>
-            <div class="form-text">File JSON entity configuration CIE OIDC.</div>
           </div>
         </div>
       </div>
@@ -996,16 +961,16 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="spidMetaExportModalLabel">
-          <i class="fas fa-id-card me-2 text-success"></i>Esporta metadata pubblico SPID
+          <i class="fas fa-id-card me-2 text-success"></i>Rigenera metadata pubblico SPID
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-warning small mb-3">
           <i class="fas fa-exclamation-triangle me-1"></i>
-          Questa operazione esporta il metadata generato dal proxy SATOSA e sovrascrive
+          Questa operazione chiede al proxy SATOSA di rigenerare il metadata e sovrascrive
           <code>satosa_spid_public_metadata.xml</code> sul volume.
-          Esegui questo passo dopo ogni rigenerazione del certificato SPID (Fase 2).
+          Esegui dopo ogni rigenerazione del certificato SPID.
         </div>
         <dl class="row small mb-0">
           <dt class="col-sm-4">Entity ID</dt>
@@ -1021,40 +986,7 @@
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
         <button type="button" class="btn btn-success" id="spid-meta-export-btn"
                 onclick="doExportSpidMetadata(this)">
-          <i class="fas fa-file-export me-1"></i>Esporta metadata
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ─── Modale ripristino metadata pubblico SPID ───────────────────────────────── #}
-<div class="modal fade" id="spidMetaRestoreModal" tabindex="-1" aria-labelledby="spidMetaRestoreModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="spidMetaRestoreModalLabel">
-          <i class="fas fa-upload me-2 text-warning"></i>Ripristina metadata pubblico SPID
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="alert alert-info small mb-3">
-          <i class="fas fa-info-circle me-1"></i>
-          Usato per ripristinare un metadata SPID AgID precedentemente esportato (es. da backup o da un'altra installazione).
-          Per riesportarlo dal proxy SATOSA usa <strong>Genera da SATOSA</strong>.
-        </div>
-        <div class="mb-3">
-          <label class="form-label small fw-semibold">File XML metadata pubblico SPID <span class="text-danger">*</span></label>
-          <input type="file" class="form-control form-control-sm" id="spid-meta-restore-file" accept=".xml">
-          <div class="form-text">Deve contenere un <code>EntityDescriptor</code> SAML2.</div>
-        </div>
-        <div id="spid-meta-restore-result" class="mt-2" style="display:none;"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn btn-warning" onclick="doRestoreSpidMetadata(this)">
-          <i class="fas fa-upload me-1"></i>Ripristina metadata
+          <i class="fas fa-sync-alt me-1"></i>Rigenera metadata
         </button>
       </div>
     </div>
@@ -1299,18 +1231,13 @@ async function loadMetadataInfo(type, btn) {
       if (d.acs_urls && d.acs_urls.length) {
         html += metaRow('ACS URL', d.acs_urls.map(u => '<code class="small">' + escHtml(u) + '</code>').join('<br>'));
       }
-      html += metaRow('Scadenza metadata', expiryBadge(d.valid_until, d.valid_until_expired));
-      html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
-      // Mostra info backup DB
-      const dbRow = document.getElementById('spid-metadata-db-backup-row');
-      if (dbRow) {
-        if (d.db_backup_available) {
-          document.getElementById('spid-metadata-db-backup-at').textContent = d.db_backup_at || '';
-          dbRow.style.display = '';
-        } else {
-          dbRow.style.display = 'none';
-        }
-      }
+      html += metaRow('Scadenza metadata (validUntil)', d.valid_until
+        ? expiryBadge(d.valid_until, d.valid_until_expired)
+        : '<span class="text-muted">Assente nel metadata</span>');
+      html += metaRow('Scadenza certificato SPID', d.cert_expiry
+        ? expiryBadge(d.cert_expiry, d.cert_expired)
+        : '<span class="text-muted">Non rilevata dal certificato nel metadata</span>');
+      
     } else {
       html += metaRow('Issuer', '<code class="small">' + escHtml(d.iss || '—') + '</code>');
       html += metaRow('Subject', '<code class="small">' + escHtml(d.sub || '—') + '</code>');
@@ -1555,7 +1482,7 @@ async function generaCieKeys(btn) {
 async function exportCieOidc(btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Rigenerazione…';
   try {
     let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
       method: 'POST',
@@ -1565,7 +1492,7 @@ async function exportCieOidc(btn) {
     let json = await res.json();
 
     if (!json.success && (json.message || '').includes('già presente e non scaduto')) {
-      const doForce = confirm('L\'export CIE è già presente e non scaduto.\n\nForzare l\'export ora?');
+      const doForce = confirm('Gli artefatti CIE sono già presenti e non scaduti.\n\nForzare la rigenerazione ora?');
       if (doForce) {
         res = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
           method: 'POST',
@@ -1578,10 +1505,10 @@ async function exportCieOidc(btn) {
 
     if (json.success) {
       const info = json.exp ? ` (scade ${escHtml(json.exp)}, giorni rimasti: ${json.days_left})` : '';
-      impToast('Export CIE OIDC completato.' + info, true);
+      impToast('Rigenerazione CIE OIDC completata.' + info, true);
       loadMetadataInfo('cie', null);
     } else {
-      impToast(json.message || 'Export fallito.', false);
+      impToast(json.message || 'Rigenerazione fallita.', false);
     }
   } catch (e) {
     impToast('Errore: ' + e.message, false);
@@ -1697,32 +1624,6 @@ async function lpExportBackupZip(btn) {
   }
 }
 
-async function exportSpidMetadata(btn) {
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
-  try {
-    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const json = await res.json();
-    if (json.success) {
-      const exp = json.valid_until ? ' (validUntil ' + escHtml(json.valid_until) + ')' : '';
-      impToast('Export metadata pubblico SPID completato.' + exp, true);
-      loadMetadataInfo('spid', null);
-    } else {
-      impToast(json.message || 'Export metadata pubblico SPID fallito.', false);
-    }
-  } catch (e) {
-    impToast('Errore: ' + e.message, false);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
-  }
-}
-
 async function doExportSpidMetadata(btn) {
   const orig = btn.innerHTML;
   const resultEl = document.getElementById('spid-meta-export-result');
@@ -1733,19 +1634,19 @@ async function doExportSpidMetadata(btn) {
     const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ force: true }),
     });
     const json = await res.json();
     if (json.success) {
       const exp = json.valid_until ? '<br><strong>validUntil:</strong> ' + escHtml(json.valid_until) : '';
       const eid = json.entity_id ? '<br><strong>Entity ID:</strong> ' + escHtml(json.entity_id) : '';
       resultEl.className = 'mt-3 alert alert-success small';
-      resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Metadata generato con successo.' + eid + exp;
+      resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Metadata rigenerato con successo.' + eid + exp;
       resultEl.style.display = '';
       loadMetadataInfo('spid', null);
     } else {
       resultEl.className = 'mt-3 alert alert-danger small';
-      resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>' + escHtml(json.message || 'Generazione metadata SPID fallita.');
+      resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>' + escHtml(json.message || 'Rigenerazione metadata SPID fallita.');
       resultEl.style.display = '';
     }
   } catch (e) {
@@ -1757,7 +1658,6 @@ async function doExportSpidMetadata(btn) {
     btn.innerHTML = orig;
   }
 }
-
 function downloadSpidMetadata(btn) {
   const a = document.createElement('a');
   a.href = '/impostazioni/login-proxy/spid-metadata/download';
@@ -1765,59 +1665,6 @@ function downloadSpidMetadata(btn) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-}
-
-// ── Ripristino metadata pubblico SPID da file ────────────────────────────────
-async function doRestoreSpidMetadata(btn) {
-  const fileEl = document.getElementById('spid-meta-restore-file');
-  if (!fileEl || !fileEl.files[0]) { impToast('Seleziona un file XML.', false); return; }
-  const fd = new FormData();
-  fd.append('metadata_file', fileEl.files[0]);
-  const resultEl = document.getElementById('spid-meta-restore-result');
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
-  resultEl.style.display = 'none';
-  try {
-    const res  = await fetch('/impostazioni/login-proxy/spid-metadata/restore', { method: 'POST', body: fd });
-    const json = await res.json();
-    resultEl.className = 'mt-2 alert ' + (json.success ? 'alert-success' : 'alert-danger') + ' small';
-    resultEl.innerHTML = (json.success ? '<i class="fas fa-check-circle me-1"></i>' : '<i class="fas fa-times-circle me-1"></i>') + escHtml(json.message || '');
-    if (json.entity_id) resultEl.innerHTML += '<br><strong>Entity ID:</strong> ' + escHtml(json.entity_id);
-    if (json.valid_until) resultEl.innerHTML += '<br><strong>validUntil:</strong> ' + escHtml(json.valid_until);
-    resultEl.style.display = '';
-    if (json.success) { impToast('Metadata SPID ripristinato.', true); loadMetadataInfo('spid', null); }
-  } catch (e) {
-    resultEl.className = 'mt-2 alert alert-danger small';
-    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
-    resultEl.style.display = '';
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
-  }
-}
-
-// ── Ripristino metadata SPID da backup DB ─────────────────────────────────────
-async function restoreSpidMetadataFromDb(btn) {
-  if (!confirm('Ripristina il metadata SPID dal backup nel database?\n\nIl file sul volume verrà sovrascritto con la copia salvata in DB.')) return;
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ripristino…';
-  try {
-    const res  = await fetch('/impostazioni/login-proxy/spid-metadata/restore-from-db', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const json = await res.json();
-    impToast(json.message || (json.success ? 'Metadata ripristinato dal DB.' : 'Ripristino fallito.'), !!json.success);
-    if (json.success) loadMetadataInfo('spid', null);
-  } catch (e) {
-    impToast('Errore: ' + e.message, false);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
-  }
 }
 
 // ── Ripristino certificato SPID da file ───────────────────────────────────────

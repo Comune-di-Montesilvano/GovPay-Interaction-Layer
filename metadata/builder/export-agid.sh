@@ -47,6 +47,12 @@ mkdir -p /output/agid || {
 }
 echo "[DEBUG] Directory /output/agid pronta" >&2
 
+  # Idempotenza: non rigenerare se il file è già presente (usa FORCE=1 per forzare)
+  if [ -f "$OUTPUT" ] && [ "${FORCE:-0}" != "1" ]; then
+    echo "[INFO] Metadata SPID già presente: $OUTPUT (passa FORCE=1 per rigenerare)."
+    exit 0
+  fi
+
 echo "[INFO] Attendo che SATOSA sia disponibile..."
 for i in $(seq 1 "$MAX_ATTEMPTS"); do
   TMP_ERR="/tmp/export-agid-curl.err.$$"
@@ -55,7 +61,8 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
   HTTP_CODE="curl-fail"
   LAST_ERR=""
 
-  # Tentativo interno principale: auth-proxy-nginx con Host header (obbligatorio)
+  # Tentativo interno principale: auth-proxy-nginx. Usa Host header se disponibile,
+  # altrimenti prova comunque senza header: in locale nginx spesso risponde lo stesso.
   if [ -n "$SATOSA_HOST_HEADER" ]; then
     HTTP_CODE=$( \
       curl $CURL_OPTS -H "Host: $SATOSA_HOST_HEADER" -w "%{http_code}" "$SATOSA_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
@@ -78,7 +85,26 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
       fi
     fi
   else
-    echo "[DEBUG] Tentativo interno saltato: SATOSA_HOST_HEADER non configurato" >&2
+    echo "[DEBUG] SATOSA_HOST_HEADER non configurato: tento richiesta interna senza Host header" >&2
+    HTTP_CODE=$( \
+      curl $CURL_OPTS -w "%{http_code}" "$SATOSA_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
+      | tail -c 3 \
+    ) || HTTP_CODE="curl-fail"
+    LAST_URL="$SATOSA_URL_INTERNAL"
+
+    if [ "$HTTP_CODE" = "curl-fail" ] || [ "$HTTP_CODE" = "400" ]; then
+      HTTPS_URL_INTERNAL="https://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
+      HTTP_CODE_HTTPS=$( \
+        curl -sSfk --connect-timeout 5 --max-time 10 -w "%{http_code}" "$HTTPS_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
+        | tail -c 3 \
+      ) || HTTP_CODE_HTTPS="curl-fail"
+
+      if [ "$HTTP_CODE_HTTPS" = "200" ]; then
+        HTTP_CODE="200"
+        LAST_URL="$HTTPS_URL_INTERNAL"
+        echo "[DEBUG] Auto-upgrade interno a HTTPS riuscito su ${HTTPS_URL_INTERNAL} (senza Host header)" >&2
+      fi
+    fi
   fi
 
   # Fallback finale: endpoint pubblico reverse proxy (se configurato)
