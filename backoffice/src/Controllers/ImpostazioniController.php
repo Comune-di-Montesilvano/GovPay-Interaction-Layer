@@ -1020,6 +1020,7 @@ class ImpostazioniController
                 $content = $zip->getFromName($name);
                 if (is_array(json_decode($content, true))) {
                     @mkdir(self::CIEOIDC_KEYS_DIR, 0755, true);
+                    @unlink(self::CIEOIDC_KEYS_DIR . '/' . $basename);
                     file_put_contents(self::CIEOIDC_KEYS_DIR . '/' . $basename, $content);
                     $cieRestored[] = $basename;
                 }
@@ -1052,6 +1053,7 @@ class ImpostazioniController
                 $decoded = json_decode($content, true);
                 if (is_array($decoded) && isset($decoded['sub'])) {
                     @mkdir(self::CIEOIDC_META_DIR, 0775, true);
+                    @unlink(self::CIE_METADATA_PATH);
                     file_put_contents(self::CIE_METADATA_PATH, $content);
                     $results['cie_metadata'] = ['success' => true, 'message' => 'Entity configuration CIE OIDC ripristinata.'];
                     break;
