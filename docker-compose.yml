@@ -102,8 +102,8 @@ services:
       - SSL=${SSL:-off}
       - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-}
       - MASTER_TOKEN=${MASTER_TOKEN}
-      # Watchdog: intervallo polling config backoffice (secondi, default 300)
-      - IAM_WATCHDOG_INTERVAL=${IAM_WATCHDOG_INTERVAL:-300}
+      # Watchdog: intervallo polling config backoffice (secondi, default 60)
+      - IAM_WATCHDOG_INTERVAL=${IAM_WATCHDOG_INTERVAL:-60}
     restart: always
     healthcheck:
       test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]

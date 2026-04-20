@@ -1247,6 +1247,7 @@ class ImpostazioniController
             if ($hostHeader !== '') {
                 $query['host_header'] = $hostHeader;
             }
+            $query['public_base_url'] = $publicBaseUrl;
         }
         $endpoint = "{$builderUrl}/run/export-agid";
         if (!empty($query)) {
