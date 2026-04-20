@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # export-agid.sh — esporta metadata pubblico SATOSA SPID per AgID
-# Curla auth-proxy-nginx via rete Docker interna con Host header corretto.
+# Usa sempre auth-proxy-nginx sulla rete interna; l'URL pubblico serve solo per verifica finale.
 set -euo pipefail
 
 trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO, exit $?)" >&2; exit 1' ERR
@@ -117,17 +117,6 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
     fi
   fi
 
-  # Fallback finale: endpoint pubblico reverse proxy (se configurato)
-  if [ "$HTTP_CODE" = "curl-fail" ] || [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "503" ]; then
-    if [ -n "$SATOSA_PUBLIC_METADATA_URL" ]; then
-      HTTP_CODE=$( \
-        curl -sSfL --connect-timeout 5 --max-time 15 -w "%{http_code}" "$SATOSA_PUBLIC_METADATA_URL" -o "$TMP_OUT" 2>"$TMP_ERR" \
-        | tail -c 3 \
-      ) || HTTP_CODE="curl-fail"
-      LAST_URL="$SATOSA_PUBLIC_METADATA_URL"
-    fi
-  fi
-  
   LAST_HTTP="${HTTP_CODE:-unknown}"
   LAST_ERR="$(cat "$TMP_ERR" 2>/dev/null | tr '\n' '|' | sed 's/|$//' || echo 'N/A')"
   
@@ -175,5 +164,5 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
   sleep "$SLEEP_SECONDS"
 done
 
-echo "[ERROR] SATOSA non risponde. Ultimo URL=${LAST_URL}. Ultimo HTTP code=${LAST_HTTP}. Ultimo errore curl: ${LAST_ERR}. Verifica public_base_url in impostazioni Login Proxy." >&2
+echo "[ERROR] SATOSA non risponde sulla rete interna. Ultimo URL=${LAST_URL}. Ultimo HTTP code=${LAST_HTTP}. Ultimo errore curl: ${LAST_ERR}." >&2
 exit 1
