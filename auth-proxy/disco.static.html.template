@@ -3,6 +3,8 @@
 <head>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/static/img/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/static/img/favicon.png" type="image/png">
   <title>Accedi | ${APP_ENTITY_NAME}</title>
   <meta name="description" content="Accedi ai servizi di ${APP_ENTITY_NAME} con SPID o CIE.">
 
@@ -140,10 +142,8 @@
         <script>
           (function(){
             var src = "${APP_LOGO_SRC}";
-            var base = "${FRONTOFFICE_PUBLIC_BASE_URL}";
             if(src && src !== "") {
-              var fullSrc = src.startsWith('/') && base !== "" ? base + src : src;
-              document.write('<img src="' + fullSrc + '" alt="${APP_ENTITY_NAME}" style="height:48px; margin-right:12px;" onerror="this.style.display=\'none\'">');
+              document.write('<img src="' + src + '" alt="${APP_ENTITY_NAME}" style="height:48px; margin-right:12px;" onerror="this.style.display=\'none\'">');
             } else {
               document.write('<img src="/static/svg/it-pa.svg" alt="Logo PA" style="height:48px; margin-right:12px;">');
             }

@@ -78,6 +78,8 @@ services:
       - frontoffice_sp_metadata:/frontoffice-sp
       # Certificati SPID (per-deployment)
       - spid_certs:/satosa_proxy/pki
+      # Immagini pubbliche ente (logo, favicon) — RO: copiate in static/ da startup.sh
+      - gil_images:/gil-images:ro
       # File statici condivisi con auth-proxy-nginx (popolati da startup.sh)
       - iam_proxy_static:/satosa-static
     environment:
