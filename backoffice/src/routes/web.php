@@ -142,6 +142,9 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
+    });
     $app->get('/impostazioni/login-proxy/spid-metadata/download', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->downloadSpidMetadata($request, $response);
     });
@@ -165,7 +168,13 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
+    });
     $app->post('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
+    });
+    $app->get('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
     });
     // Backup globale IAM proxy
