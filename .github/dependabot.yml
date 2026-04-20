@@ -19,3 +19,5 @@ updates:
 			- dependency-name: "pagopa/gpd-client"
 			- dependency-name: "pagopa/checkout-ec-client"
 			- dependency-name: "pagopa/biz-events-client"
+			# phpunit è dipendenza dev nei client generati (path-type): file non supportati da Dependabot
+			- dependency-name: "phpunit/phpunit"
