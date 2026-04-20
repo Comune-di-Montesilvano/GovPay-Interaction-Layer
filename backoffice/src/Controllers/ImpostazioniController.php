@@ -1806,6 +1806,10 @@ class ImpostazioniController
             $query['force'] = '1';
         }
         if ($publicBaseUrl !== '') {
+            $hostHeader = (string)(parse_url($publicBaseUrl, PHP_URL_HOST) ?: '');
+            if ($hostHeader !== '') {
+                $query['host_header'] = $hostHeader;
+            }
             $query['public_base_url'] = $publicBaseUrl;
         }
         $endpoint = "{$builderUrl}/run/export-cieoidc";
