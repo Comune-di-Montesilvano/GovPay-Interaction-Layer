@@ -1014,20 +1014,50 @@ class ImpostazioniController
 
         // CIE OIDC keys
         $cieRestored = [];
-        foreach ($contents as $name) {
-            $basename = basename($name);
-            if (str_starts_with($basename, 'jwk-') && str_ends_with($basename, '.json')) {
-                $content = $zip->getFromName($name);
-                if (is_array(json_decode($content, true))) {
-                    @mkdir(self::CIEOIDC_KEYS_DIR, 0755, true);
-                    @unlink(self::CIEOIDC_KEYS_DIR . '/' . $basename);
-                    file_put_contents(self::CIEOIDC_KEYS_DIR . '/' . $basename, $content);
-                    $cieRestored[] = $basename;
+        $cieErrors = [];
+        if (!is_dir(self::CIEOIDC_KEYS_DIR) && !@mkdir(self::CIEOIDC_KEYS_DIR, 0755, true) && !is_dir(self::CIEOIDC_KEYS_DIR)) {
+            $results['cieoidc_keys'] = ['success' => false, 'message' => 'Impossibile creare la directory delle chiavi CIE OIDC nel volume.'];
+        } else {
+            foreach ($contents as $name) {
+                $basename = basename($name);
+                if ($basename === '' || !str_ends_with($basename, '.json') || $basename === 'auth-proxy-settings.json') {
+                    continue;
                 }
+                // Accetta sia i file backup nativi (jwk-*.json) sia JSON di chiavi con nome personalizzato.
+                if (!str_starts_with($basename, 'jwk-') && !str_contains($basename, 'jwk')) {
+                    continue;
+                }
+
+                $content = $zip->getFromName($name);
+                $decoded = is_string($content) ? json_decode($content, true) : null;
+                $keyData = is_array($decoded) ? (isset($decoded['keys']) ? ($decoded['keys'][0] ?? null) : $decoded) : null;
+                if (!is_array($keyData) || !isset($keyData['kty']) || !isset($keyData['kid'])) {
+                    $cieErrors[] = $basename . ' (JSON chiave non valido)';
+                    continue;
+                }
+
+                $target = self::CIEOIDC_KEYS_DIR . '/' . $basename;
+                @unlink($target);
+                $written = @file_put_contents($target, $content, LOCK_EX);
+                if ($written === false) {
+                    $cieErrors[] = $basename . ' (scrittura fallita)';
+                    continue;
+                }
+                @chmod($target, 0600);
+                $cieRestored[] = $basename;
             }
-        }
-        if (!empty($cieRestored)) {
-            $results['cieoidc_keys'] = ['success' => true, 'message' => 'Chiavi CIE OIDC ripristinate: ' . implode(', ', $cieRestored)];
+
+            if (!empty($cieRestored)) {
+                @file_put_contents(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', (string)time(), LOCK_EX);
+                @chmod(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', 0644);
+                $msg = 'Chiavi CIE OIDC ripristinate: ' . implode(', ', $cieRestored);
+                if (!empty($cieErrors)) {
+                    $msg .= '. File ignorati: ' . implode(', ', $cieErrors);
+                }
+                $results['cieoidc_keys'] = ['success' => true, 'message' => $msg];
+            } elseif (!isset($results['cieoidc_keys'])) {
+                $results['cieoidc_keys'] = ['success' => false, 'message' => 'Nessuna chiave JWK CIE OIDC valida trovata nel file ZIP.'];
+            }
         }
 
         // SPID public metadata
