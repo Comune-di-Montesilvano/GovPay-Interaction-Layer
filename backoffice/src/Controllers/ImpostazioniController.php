@@ -1001,12 +1001,15 @@ class ImpostazioniController
             $cert = openssl_x509_read($certContent);
             $key  = openssl_pkey_get_private($keyContent);
             if ($cert && $key && openssl_x509_check_private_key($cert, $key)) {
-                @mkdir(self::SPID_CERTS_DIR, 0755, true);
+                if (!is_dir(self::SPID_CERTS_DIR) && !@mkdir(self::SPID_CERTS_DIR, 0755, true) && !is_dir(self::SPID_CERTS_DIR)) {
+                    $results['spid_certs'] = ['success' => false, 'message' => 'Impossibile creare la directory certificati SPID nel volume.'];
+                } else {
                 file_put_contents(self::SPID_CERTS_DIR . '/cert.pem', $certContent);
                 file_put_contents(self::SPID_CERTS_DIR . '/privkey.pem', $keyContent);
                 @chmod(self::SPID_CERTS_DIR . '/cert.pem', 0644);
                 @chmod(self::SPID_CERTS_DIR . '/privkey.pem', 0600);
                 $results['spid_certs'] = ['success' => true, 'message' => 'Certificati SPID ripristinati.'];
+                }
             } else {
                 $results['spid_certs'] = ['success' => false, 'message' => 'Certificati SPID nel ZIP non validi o non corrispondenti.'];
             }
@@ -1021,10 +1024,6 @@ class ImpostazioniController
             foreach ($contents as $name) {
                 $basename = basename($name);
                 if ($basename === '' || !str_ends_with($basename, '.json') || $basename === 'auth-proxy-settings.json') {
-                    continue;
-                }
-                // Accetta sia i file backup nativi (jwk-*.json) sia JSON di chiavi con nome personalizzato.
-                if (!str_starts_with($basename, 'jwk-') && !str_contains($basename, 'jwk')) {
                     continue;
                 }
 
@@ -1065,11 +1064,14 @@ class ImpostazioniController
             if (str_ends_with($name, '.xml')) {
                 $content = $zip->getFromName($name);
                 if ($content !== false && str_contains($content, 'EntityDescriptor')) {
-                    @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
-                    @unlink(self::PUBLIC_SPID_METADATA_PATH);
-                    file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content);
-                    @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
-                    $results['spid_metadata'] = ['success' => true, 'message' => 'Metadata pubblico SPID ripristinato.'];
+                    if (!is_dir(self::SPID_PUBLIC_META_DIR) && !@mkdir(self::SPID_PUBLIC_META_DIR, 0775, true) && !is_dir(self::SPID_PUBLIC_META_DIR)) {
+                        $results['spid_metadata'] = ['success' => false, 'message' => 'Impossibile creare la directory metadata SPID nel volume.'];
+                    } else {
+                        @unlink(self::PUBLIC_SPID_METADATA_PATH);
+                        file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content);
+                        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+                        $results['spid_metadata'] = ['success' => true, 'message' => 'Metadata pubblico SPID ripristinato.'];
+                    }
                     break;
                 }
             }
@@ -1082,10 +1084,13 @@ class ImpostazioniController
                 $content = $zip->getFromName($name);
                 $decoded = json_decode($content, true);
                 if (is_array($decoded) && isset($decoded['sub'])) {
-                    @mkdir(self::CIEOIDC_META_DIR, 0775, true);
-                    @unlink(self::CIE_METADATA_PATH);
-                    file_put_contents(self::CIE_METADATA_PATH, $content);
-                    $results['cie_metadata'] = ['success' => true, 'message' => 'Entity configuration CIE OIDC ripristinata.'];
+                    if (!is_dir(self::CIEOIDC_META_DIR) && !@mkdir(self::CIEOIDC_META_DIR, 0775, true) && !is_dir(self::CIEOIDC_META_DIR)) {
+                        $results['cie_metadata'] = ['success' => false, 'message' => 'Impossibile creare la directory metadata CIE OIDC nel volume.'];
+                    } else {
+                        @unlink(self::CIE_METADATA_PATH);
+                        file_put_contents(self::CIE_METADATA_PATH, $content);
+                        $results['cie_metadata'] = ['success' => true, 'message' => 'Entity configuration CIE OIDC ripristinata.'];
+                    }
                     break;
                 }
             }
@@ -1374,7 +1379,9 @@ class ImpostazioniController
         if ($xml === false || !str_contains($content, 'EntityDescriptor')) {
             return $this->jsonError('File non valido: deve essere un XML metadata SAML2 con EntityDescriptor.');
         }
-        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+        if (!is_dir(self::SPID_PUBLIC_META_DIR) && !@mkdir(self::SPID_PUBLIC_META_DIR, 0775, true) && !is_dir(self::SPID_PUBLIC_META_DIR)) {
+            return $this->jsonError('Impossibile creare la directory metadata SPID nel volume.');
+        }
         @unlink(self::PUBLIC_SPID_METADATA_PATH);
         if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content) === false) {
             return $this->jsonError('Impossibile scrivere il file nel volume.');
@@ -1655,7 +1662,9 @@ class ImpostazioniController
             }
         }
 
-        @mkdir($keysDir, 0700, true);
+        if (!is_dir($keysDir) && !@mkdir($keysDir, 0700, true) && !is_dir($keysDir)) {
+            return $this->jsonError('Impossibile creare la directory delle chiavi CIE OIDC nel volume.');
+        }
 
         $b64url = static fn(string $bin): string =>
             rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
@@ -1691,7 +1700,6 @@ class ImpostazioniController
                 'dq'  => $b64url($rsa['dmq1']),
                 'qi'  => $b64url($rsa['iqmp']),
             ]);
-            openssl_pkey_free($key);
             return $jwk;
         };
 
@@ -1918,7 +1926,6 @@ class ImpostazioniController
                 curl_exec($ch);
                 $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $curlErr  = (string) curl_error($ch);
-                curl_close($ch);
 
                 if ($curlErr === '' && $httpCode > 0) {
                     $running = true;
