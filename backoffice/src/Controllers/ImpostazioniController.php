@@ -1681,6 +1681,11 @@ class ImpostazioniController
         $force   = !empty($body['force']);
         $metaDir = self::CIEOIDC_META_DIR;
 
+        // Evita lock di sessione durante una chiamata potenzialmente lunga al metadata-builder.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
+        }
+
         $compValues = $metaDir . '/component-values.env';
         if (!$force && is_file($compValues)) {
             $expEpoch = null;
@@ -1717,19 +1722,39 @@ class ImpostazioniController
             $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         }
 
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => 180,
-                'ignore_errors' => true,
-            ],
+        if (!function_exists('curl_init')) {
+            return $this->jsonError('Export CIE OIDC fallito: estensione PHP cURL non disponibile.');
+        }
+
+        $raw = false;
+        $httpCode = 0;
+        $curlErr = '';
+        $ch = curl_init($endpoint);
+        if ($ch === false) {
+            return $this->jsonError('Export CIE OIDC fallito: impossibile inizializzare la connessione HTTP.');
+        }
+
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$masterToken}",
+            'Content-Length: 0',
         ]);
-        $raw    = @file_get_contents($endpoint, false, $ctx);
-        $result = $raw !== false ? json_decode($raw, true) : null;
+        $raw = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = (string)curl_error($ch);
+        curl_close($ch);
+
+        if (!is_string($raw) || $raw === '') {
+            $netErr = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+            return $this->jsonError("Export CIE OIDC fallito: metadata-builder non raggiungibile ({$netErr}).");
+        }
+        $result = json_decode($raw, true);
 
         if (!($result['success'] ?? false)) {
-            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
+            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida dal metadata-builder';
             return $this->jsonError("Export CIE OIDC fallito: {$err}");
         }
 

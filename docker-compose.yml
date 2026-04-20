@@ -127,6 +127,7 @@ services:
       - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-auth-proxy-nginx}
       - IAM_PROXY_HTTP_PORT=${IAM_PROXY_HTTP_PORT:-9445}
       - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
+      - NGINX_DNS_RESOLVER=${NGINX_DNS_RESOLVER:-127.0.0.11}
       # I flag ENABLE_* non sono usati in nginx.conf: il disco.html viene già generato
       # con il contenuto corretto da auth-proxy/startup.sh (che li legge dal DB).
     volumes:
