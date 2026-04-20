@@ -172,6 +172,9 @@ return function (App $app, Twig $twig): void {
         return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
     });
     // Backup globale IAM proxy
+    $app->get('/impostazioni/login-proxy/status', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getAuthProxyStatus($request, $response);
+    });
     $app->get('/impostazioni/login-proxy/backup/status', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getBackupStatus($request, $response);
     });
