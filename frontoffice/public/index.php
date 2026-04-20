@@ -607,73 +607,67 @@ if (!function_exists('frontoffice_http_get_raw')) {
     {
         $hostHeader = '';
         $urlHost = (string)(parse_url($url, PHP_URL_HOST) ?: '');
+        $sslOn = strtolower((string)frontoffice_env_value('SSL', 'off')) === 'on';
+        $desiredScheme = $sslOn ? 'https' : 'http';
         if (in_array(strtolower($urlHost), ['auth-proxy-nginx', 'localhost', '127.0.0.1'], true)) {
             $proxyBase = rtrim(frontoffice_env_value('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
             if ($proxyBase === '') {
                 $proxyBase = rtrim(frontoffice_env_value('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
             }
             $hostHeader = (string)(parse_url($proxyBase, PHP_URL_HOST) ?: '');
-        }
 
-        $attempts = [
-            ['url' => $url, 'host' => $hostHeader],
-        ];
-
-        if ($hostHeader !== '') {
-            $attempts[] = ['url' => $url, 'host' => ''];
-        }
-
-        if (str_starts_with($url, 'http://') && in_array(strtolower($urlHost), ['auth-proxy-nginx', 'localhost', '127.0.0.1'], true)) {
-            $httpsUrl = 'https://' . substr($url, 7);
-            $attempts[] = ['url' => $httpsUrl, 'host' => $hostHeader];
-            if ($hostHeader !== '') {
-                $attempts[] = ['url' => $httpsUrl, 'host' => ''];
+            if (str_starts_with($url, 'http://') && $desiredScheme === 'https') {
+                $url = 'https://' . substr($url, 7);
+            } elseif (str_starts_with($url, 'https://') && $desiredScheme === 'http') {
+                $url = 'http://' . substr($url, 8);
             }
         }
 
+        $attempt = ['url' => $url, 'host' => $hostHeader];
+
         if (function_exists('curl_init')) {
-            foreach ($attempts as $attempt) {
-                $ch = curl_init($attempt['url']);
-                if ($ch === false) {
-                    Logger::getInstance()->warning('CURL init failed', ['url' => $attempt['url']]);
-                    continue;
-                }
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 20);
-                if ($attempt['host'] !== '') {
-                    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Host: ' . $attempt['host']]);
-                }
-                if ($insecureSsl || str_starts_with($attempt['url'], 'https://')) {
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                }
+            $ch = curl_init($attempt['url']);
+            if ($ch === false) {
+                Logger::getInstance()->warning('CURL init failed', ['url' => $attempt['url']]);
+                return null;
+            }
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+            if ($attempt['host'] !== '') {
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Host: ' . $attempt['host']]);
+            }
+            if ($insecureSsl || str_starts_with($attempt['url'], 'https://')) {
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            }
 
-                $body = curl_exec($ch);
-                $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $err = curl_error($ch);
+            $body = curl_exec($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $err = curl_error($ch);
 
-                Logger::getInstance()->info('HTTP GET request', [
+            Logger::getInstance()->info('HTTP GET request', [
+                'url' => $attempt['url'],
+                'status' => $status,
+                'error' => $err,
+                'insecureSSL' => $insecureSsl,
+                'hostHeader' => $attempt['host'],
+                'mode' => $desiredScheme,
+            ]);
+
+            if (is_string($body) && $body !== '' && $status >= 200 && $status < 300) {
+                return $body;
+            }
+
+            if ($err !== '') {
+                Logger::getInstance()->warning('HTTP GET (raw) fallita', [
                     'url' => $attempt['url'],
-                    'status' => $status,
                     'error' => $err,
-                    'insecureSSL' => $insecureSsl,
+                    'status' => $status,
                     'hostHeader' => $attempt['host'],
+                    'mode' => $desiredScheme,
                 ]);
-
-                if (is_string($body) && $body !== '' && $status >= 200 && $status < 300) {
-                    return $body;
-                }
-
-                if ($err !== '') {
-                    Logger::getInstance()->warning('HTTP GET (raw) fallita', [
-                        'url' => $attempt['url'],
-                        'error' => $err,
-                        'status' => $status,
-                        'hostHeader' => $attempt['host'],
-                    ]);
-                }
             }
             return null;
         }
@@ -685,22 +679,20 @@ if (!function_exists('frontoffice_http_get_raw')) {
                 'ignore_errors' => true,
             ],
         ];
-        foreach ($attempts as $attempt) {
-            $attemptOpts = $opts;
-            if ($attempt['host'] !== '') {
-                $attemptOpts['http']['header'] = "Host: {$attempt['host']}\r\n";
-            }
-            if (stripos($attempt['url'], 'https://') === 0) {
-                $attemptOpts['ssl' ] = [
-                    'verify_peer' => false,
-                    'verify_peer_name' => false,
-                ];
-            }
-            $ctx = stream_context_create($attemptOpts);
-            $body = @file_get_contents($attempt['url'], false, $ctx);
-            if (is_string($body) && $body !== '') {
-                return $body;
-            }
+        $attemptOpts = $opts;
+        if ($attempt['host'] !== '') {
+            $attemptOpts['http']['header'] = "Host: {$attempt['host']}\r\n";
+        }
+        if (stripos($attempt['url'], 'https://') === 0) {
+            $attemptOpts['ssl' ] = [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+            ];
+        }
+        $ctx = stream_context_create($attemptOpts);
+        $body = @file_get_contents($attempt['url'], false, $ctx);
+        if (is_string($body) && $body !== '') {
+            return $body;
         }
         return null;
     }

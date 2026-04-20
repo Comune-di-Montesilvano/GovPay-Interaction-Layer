@@ -9,7 +9,12 @@ FORCE="${FORCE:-0}"
 # URL interno Docker (nginx interno)
 SATOSA_HOSTNAME="${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}"
 SATOSA_PORT="${SATOSA_INTERNAL_PORT:-80}"
-SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
+SSL_MODE="$(printf '%s' "${SSL:-off}" | tr '[:upper:]' '[:lower:]')"
+DEFAULT_SATOSA_SCHEME="http"
+if [ "$SSL_MODE" = "on" ]; then
+  DEFAULT_SATOSA_SCHEME="https"
+fi
+SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-$DEFAULT_SATOSA_SCHEME}"
 IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}"
 CURL_INSECURE="-sSf --connect-timeout 5 --max-time 10"
 if [ "${SATOSA_SCHEME}" = "https" ]; then
@@ -21,7 +26,7 @@ fetch_internal() {
   local out_file="$2"
   local tmp_err="/tmp/export-cieoidc-curl.err.$$"
 
-  # Primo tentativo: schema configurato (default http)
+  # Tentativo unico: schema deciso da SSL (on=https, off=http).
   if [[ -n "$SATOSA_HOST_HEADER" ]]; then
     if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$url" -o "$out_file" 2>"$tmp_err"; then
       rm -f "$tmp_err"
@@ -30,21 +35,6 @@ fetch_internal() {
   else
     echo "[WARN] SATOSA_HOST_HEADER non configurato: tento richiesta interna senza Host header" >&2
     if curl $CURL_INSECURE "$url" -o "$out_file" 2>"$tmp_err"; then
-      rm -f "$tmp_err"
-      return 0
-    fi
-  fi
-
-  # Fallback 1: HTTPS interno su porta 80 (curl -f ignora il body html 400, si tenta ciechi)
-  local https_url
-  https_url="${url/http:\/\//https://}"
-  if [[ -n "$SATOSA_HOST_HEADER" ]]; then
-    if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$https_url" -o "$out_file" 2>"$tmp_err"; then
-      rm -f "$tmp_err"
-      return 0
-    fi
-  else
-    if curl -sSfk --connect-timeout 5 --max-time 10 "$https_url" -o "$out_file" 2>"$tmp_err"; then
       rm -f "$tmp_err"
       return 0
     fi

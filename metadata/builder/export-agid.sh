@@ -6,7 +6,12 @@ set -euo pipefail
 trap 'echo "[FATAL] Errore di sistema nello script export-agid.sh (riga $LINENO, exit $?)" >&2; exit 1' ERR
 
 SATOSA_NGINX_HOSTNAME="${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}"
-SATOSA_INTERNAL_SCHEME="${SATOSA_INTERNAL_SCHEME:-http}"
+SSL_MODE="$(printf '%s' "${SSL:-off}" | tr '[:upper:]' '[:lower:]')"
+DEFAULT_SATOSA_SCHEME="http"
+if [ "$SSL_MODE" = "on" ]; then
+  DEFAULT_SATOSA_SCHEME="https"
+fi
+SATOSA_INTERNAL_SCHEME="${SATOSA_INTERNAL_SCHEME:-$DEFAULT_SATOSA_SCHEME}"
 SATOSA_INTERNAL_PORT="${SATOSA_INTERNAL_PORT:-80}"
 SATOSA_URL_INTERNAL="${SATOSA_INTERNAL_SCHEME}://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
 OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
@@ -71,50 +76,20 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
   HTTP_CODE="curl-fail"
   LAST_ERR=""
 
-  # Tentativo interno principale: auth-proxy-nginx. Usa Host header se disponibile,
-  # altrimenti prova comunque senza header: in locale nginx spesso risponde lo stesso.
+  # Tentativo interno unico: schema deciso da SSL (on=https, off=http).
   if [ -n "$SATOSA_HOST_HEADER" ]; then
     HTTP_CODE=$( \
       curl $CURL_OPTS -H "Host: $SATOSA_HOST_HEADER" -w "%{http_code}" "$SATOSA_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
       | tail -c 3 \
     ) || HTTP_CODE="curl-fail"
     LAST_URL="$SATOSA_URL_INTERNAL"
-
-    # Se fallisce in curl-fail o HTTPS mismatch silente (400 scartato da -f), tenta forzatamente in HTTPS
-    if [ "$HTTP_CODE" = "curl-fail" ] || [ "$HTTP_CODE" = "400" ]; then
-      HTTPS_URL_INTERNAL="https://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
-      HTTP_CODE_HTTPS=$( \
-        curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" -w "%{http_code}" "$HTTPS_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
-        | tail -c 3 \
-      ) || HTTP_CODE_HTTPS="curl-fail"
-      
-      if [ "$HTTP_CODE_HTTPS" = "200" ]; then
-        HTTP_CODE="200"
-        LAST_URL="$HTTPS_URL_INTERNAL"
-        echo "[DEBUG] Auto-upgrade interno a HTTPS riuscito su ${HTTPS_URL_INTERNAL}" >&2
-      fi
-    fi
   else
-    echo "[DEBUG] SATOSA_HOST_HEADER non configurato: tento richiesta interna senza Host header" >&2
+    echo "[DEBUG] SATOSA_HOST_HEADER non configurato: richiesta interna senza Host header" >&2
     HTTP_CODE=$( \
       curl $CURL_OPTS -w "%{http_code}" "$SATOSA_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
       | tail -c 3 \
     ) || HTTP_CODE="curl-fail"
     LAST_URL="$SATOSA_URL_INTERNAL"
-
-    if [ "$HTTP_CODE" = "curl-fail" ] || [ "$HTTP_CODE" = "400" ]; then
-      HTTPS_URL_INTERNAL="https://${SATOSA_NGINX_HOSTNAME}:${SATOSA_INTERNAL_PORT}/spidSaml2/metadata"
-      HTTP_CODE_HTTPS=$( \
-        curl -sSfk --connect-timeout 5 --max-time 10 -w "%{http_code}" "$HTTPS_URL_INTERNAL" -o "$TMP_OUT" 2>"$TMP_ERR" \
-        | tail -c 3 \
-      ) || HTTP_CODE_HTTPS="curl-fail"
-
-      if [ "$HTTP_CODE_HTTPS" = "200" ]; then
-        HTTP_CODE="200"
-        LAST_URL="$HTTPS_URL_INTERNAL"
-        echo "[DEBUG] Auto-upgrade interno a HTTPS riuscito su ${HTTPS_URL_INTERNAL} (senza Host header)" >&2
-      fi
-    fi
   fi
 
   LAST_HTTP="${HTTP_CODE:-unknown}"
