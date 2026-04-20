@@ -21,23 +21,33 @@ fetch_internal() {
   local out_file="$2"
   local tmp_err="/tmp/export-cieoidc-curl.err.$$"
 
-  if [[ -z "$SATOSA_HOST_HEADER" ]]; then
-    echo "[ERROR] SATOSA_HOST_HEADER non configurato" >&2
-    return 1
-  fi
-
   # Primo tentativo: schema configurato (default http)
-  if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$url" -o "$out_file" 2>"$tmp_err"; then
-    rm -f "$tmp_err"
-    return 0
+  if [[ -n "$SATOSA_HOST_HEADER" ]]; then
+    if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
+  else
+    echo "[WARN] SATOSA_HOST_HEADER non configurato: tento richiesta interna senza Host header" >&2
+    if curl $CURL_INSECURE "$url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
   fi
 
   # Fallback 1: HTTPS interno su porta 80 (curl -f ignora il body html 400, si tenta ciechi)
   local https_url
   https_url="${url/http:\/\//https://}"
-  if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$https_url" -o "$out_file" 2>"$tmp_err"; then
-    rm -f "$tmp_err"
-    return 0
+  if [[ -n "$SATOSA_HOST_HEADER" ]]; then
+    if curl -sSfk --connect-timeout 5 --max-time 10 -H "Host: $SATOSA_HOST_HEADER" "$https_url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
+  else
+    if curl -sSfk --connect-timeout 5 --max-time 10 "$https_url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
   fi
 
   # Fallback 2: URL pubblico tramite rete esterna (bypass hairpin NAT interni)

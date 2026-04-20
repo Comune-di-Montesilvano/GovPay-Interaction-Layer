@@ -1153,11 +1153,6 @@ class ImpostazioniController
             return $this->jsonResponse(['exists' => false, 'message' => 'Metadata pubblico SPID non ancora esportato.']);
         }
         $info = ['exists' => true, 'size' => filesize($path), 'file_mtime' => date('c', filemtime($path))];
-        // Aggiunge info backup DB
-        $sIam = SettingsRepository::getSection('iam_proxy');
-        $dbBackupAt = $sIam['spid_public_metadata_xml_at'] ?? '';
-        $info['db_backup_available'] = !empty($sIam['spid_public_metadata_xml']);
-        $info['db_backup_at'] = $dbBackupAt;
         try {
             $xml = simplexml_load_file($path);
             if ($xml !== false) {
@@ -1170,10 +1165,16 @@ class ImpostazioniController
                     $info['valid_until_expired'] = $validTs !== false ? $validTs <= time() : null;
                 }
 
-                $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
-                if ($spSso) {
+                $namespaces = $xml->getNamespaces(true);
+                $mdNs = $namespaces['md'] ?? 'urn:oasis:names:tc:SAML:2.0:metadata';
+                $dsNs = $namespaces['ds'] ?? 'http://www.w3.org/2000/09/xmldsig#';
+                $xml->registerXPathNamespace('md', $mdNs);
+                $xml->registerXPathNamespace('ds', $dsNs);
+
+                $spSsoNodes = $xml->xpath('//md:SPSSODescriptor');
+                if (!empty($spSsoNodes)) {
                     $acsUrls = [];
-                    foreach ($spSso->AssertionConsumerService ?? [] as $acs) {
+                    foreach ($xml->xpath('//md:SPSSODescriptor/md:AssertionConsumerService') ?: [] as $acs) {
                         $location = (string) ($acs['Location'] ?? '');
                         if ($location !== '') {
                             $acsUrls[] = $location;
@@ -1181,7 +1182,11 @@ class ImpostazioniController
                     }
                     $info['acs_urls'] = $acsUrls;
 
-                    $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
+                    $certNodes = $xml->xpath('//md:SPSSODescriptor/md:KeyDescriptor[@use="signing"]/ds:KeyInfo/ds:X509Data/ds:X509Certificate');
+                    if (!$certNodes) {
+                        $certNodes = $xml->xpath('//md:SPSSODescriptor/md:KeyDescriptor/ds:KeyInfo/ds:X509Data/ds:X509Certificate');
+                    }
+                    $keyCert = $certNodes[0] ?? null;
                     if ($keyCert) {
                         $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
                         if ($cert) {
@@ -1203,101 +1208,57 @@ class ImpostazioniController
     public function exportSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
+        $body  = $this->parseBody($request);
+        $force = !empty($body['force']);
 
-        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
-        if (!is_writable(self::SPID_PUBLIC_META_DIR)) {
-            return $this->jsonError(
-                'Directory metadata non scrivibile: ' . self::SPID_PUBLIC_META_DIR .
-                '. Verifica i permessi del volume Docker (chown www-data:www-data).'
-            );
+        $builderUrl    = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
+        $masterToken   = (string)(getenv('MASTER_TOKEN') ?: '');
+        $iamProxy      = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $query = [];
+        if ($force) {
+            $query['force'] = '1';
         }
-        if (is_file(self::PUBLIC_SPID_METADATA_PATH) && !is_writable(self::PUBLIC_SPID_METADATA_PATH)) {
-            return $this->jsonError(
-                'File metadata non sovrascrivibile: ' . self::PUBLIC_SPID_METADATA_PATH .
-                '. Verifica i permessi del file nel volume Docker (chown www-data:www-data).'
-            );
+        if ($publicBaseUrl !== '') {
+            $query['public_base_url'] = $publicBaseUrl;
         }
-
-        $iamProxy = SettingsRepository::getSection('iam_proxy');
-        $publicBaseUrl = rtrim(trim((string)($iamProxy['public_base_url'] ?? '')), '/');
-        $hostname = trim((string)($iamProxy['hostname'] ?? ''));
-
-        if ($publicBaseUrl === '') {
-            return $this->jsonError('URL pubblico del proxy non configurato.');
+        $endpoint = "{$builderUrl}/run/export-agid";
+        if (!empty($query)) {
+            $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         }
 
-        $metadataPublicUrl = $publicBaseUrl . '/spidSaml2/metadata';
-        
-        $metadataInternalUrls = [
-            ['url' => $metadataPublicUrl, 'headers' => []],
-            ['url' => 'http://auth-proxy-nginx:80/spidSaml2/metadata', 'headers' => ["Host: $hostname"]],
-            // Fallback HTTPS sulla porta 80 (in caso Nginx risponda in SSL su quella porta)
-            ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'headers' => ["Host: $hostname"]],
-            // Fallback generico
-            ['url' => 'https://auth-proxy-nginx/spidSaml2/metadata', 'headers' => ["Host: $hostname"]]
-        ];
+        $ctx = stream_context_create([
+            'http' => [
+                'method'        => 'POST',
+                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
+                'timeout'       => 180,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $raw    = @file_get_contents($endpoint, false, $ctx);
+        $result = $raw !== false ? json_decode($raw, true) : null;
 
-        $xml = false;
-        $errorContext = [];
-        $parsed = false;
+        if (!($result['success'] ?? false)) {
+            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida dal metadata-builder';
+            return $this->jsonError("Generazione metadata SPID fallita: {$err}");
+        }
 
-        foreach ($metadataInternalUrls as $attempt) {
-            $ctxOpts = [
-                'http' => [
-                    'method' => 'GET',
-                    'timeout' => 8,
-                    'ignore_errors' => true,
-                ],
-                'ssl' => [
-                    'verify_peer' => false,
-                    'verify_peer_name' => false,
-                ]
-            ];
-            if (!empty($attempt['headers'])) {
-                $ctxOpts['http']['header'] = implode("\r\n", $attempt['headers']) . "\r\n";
-            }
-            $ctx = stream_context_create($ctxOpts);
-            $raw = @file_get_contents($attempt['url'], false, $ctx);
-            
-            if ($raw !== false && trim($raw) !== '') {
-                libxml_use_internal_errors(true);
-                libxml_clear_errors();
-                $parsed = simplexml_load_string(trim($raw));
-                if ($parsed !== false && isset($parsed['entityID'])) {
-                    $xml = trim($raw);
-                    break;
-                } else {
-                    $errorContext[] = "{$attempt['url']}: " . (empty($raw) ? "risposta vuota" : "XML non valido");
-                }
-            } else {
-                $errorContext[] = "{$attempt['url']}: timeout o irraggiungibile";
+        // Leggi entityID e validUntil dal file scritto da metadata-builder sul volume
+        $info = [];
+        $path = self::PUBLIC_SPID_METADATA_PATH;
+        if (is_file($path)) {
+            libxml_use_internal_errors(true);
+            $xml = simplexml_load_string((string)file_get_contents($path));
+            if ($xml !== false) {
+                $info['entity_id']   = (string)($xml['entityID'] ?? '');
+                $info['valid_until'] = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
             }
         }
-
-        if ($xml === false) {
-            return $this->jsonError('Esportazione fallita. Tentativi eseguiti: ' . implode(' | ', $errorContext));
-        }
-
-        // Salviamo il file XML appena scaricato sul volume condiviso
-        $written = @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n");
-        if ($written !== false) {
-            @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
-        } else {
-            return $this->jsonError("Impossibile salvare il file XML in " . self::PUBLIC_SPID_METADATA_PATH . ". Verifica i permessi del volume.");
-        }
-
-        // Dual-storage: salva copia in DB come base64 per ripristino senza volume
-        $by = $this->currentUser();
-        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml', base64_encode($xml . "\n"), false, $by);
-        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml_at', date('c'), false, $by);
-
-        $validUntil = isset($parsed['validUntil']) ? (string) $parsed['validUntil'] : '';
 
         return $this->jsonResponse([
             'success' => true,
-            'message' => 'Metadata pubblico SPID esportato correttamente.',
-            'entity_id' => (string) ($parsed['entityID'] ?? ''),
-            'valid_until' => $validUntil,
+            'message' => 'Metadata pubblico SPID rigenerato correttamente.',
+            ...$info,
         ]);
     }
 
@@ -1336,12 +1297,6 @@ class ImpostazioniController
             return $this->jsonError('Impossibile scrivere il file nel volume.');
         }
         @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
-
-        // Dual-storage: salva copia in DB come base64 per ripristino senza volume
-        $by = $this->currentUser();
-        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml', base64_encode($content), false, $by);
-        SettingsRepository::set('iam_proxy', 'spid_public_metadata_xml_at', date('c'), false, $by);
-
         $entityId   = (string)($xml['entityID'] ?? '');
         $validUntil = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
         return $this->jsonResponse([
@@ -1349,42 +1304,6 @@ class ImpostazioniController
             'message'     => 'Metadata pubblico SPID ripristinato correttamente.',
             'entity_id'   => $entityId,
             'valid_until' => $validUntil,
-        ]);
-    }
-
-    /**
-     * POST /impostazioni/login-proxy/spid-metadata/restore-from-db
-     *
-     * Ripristina il metadata SPID pubblico dal backup in DB (base64) al volume Docker.
-     * Utile quando il volume viene ricreato e si vuole ripristinare senza file zip.
-     */
-    public function restoreSpidMetadataFromDb(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        $sIam = SettingsRepository::getSection('iam_proxy');
-        $b64 = $sIam['spid_public_metadata_xml'] ?? '';
-        if (empty($b64)) {
-            return $this->jsonError('Nessun backup metadata SPID disponibile nel database.');
-        }
-        $content = base64_decode($b64, true);
-        if ($content === false || $content === '') {
-            return $this->jsonError('Backup in DB corrotto o vuoto. Ripristina da file XML manuale.');
-        }
-        libxml_use_internal_errors(true);
-        $xml = simplexml_load_string($content);
-        if ($xml === false || !str_contains($content, 'EntityDescriptor')) {
-            return $this->jsonError('Backup in DB non valido: deve essere un XML metadata SAML2 con EntityDescriptor.');
-        }
-        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
-        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content) === false) {
-            return $this->jsonError('Impossibile scrivere il file nel volume.');
-        }
-        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
-        return $this->jsonResponse([
-            'success'    => true,
-            'message'    => 'Metadata SPID ripristinato dal backup DB al volume.',
-            'entity_id'  => (string)($xml['entityID'] ?? ''),
-            'backed_up'  => $sIam['spid_public_metadata_xml_at'] ?? '',
         ]);
     }
 

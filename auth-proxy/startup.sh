@@ -591,8 +591,45 @@ start_satosa() {
   /bin/bash "$SATOSA_PROXY/entrypoint.sh" &
   _SATOSA_PID=$!
   echo "[watchdog] SATOSA avviato (PID=$_SATOSA_PID)"
+  generate_metadata_if_missing &
 }
 
+# Chiede a metadata-builder di generare i metadata SPID/CIE se non già presenti.
+# Eseguita in background dopo start_satosa(): export-agid.sh ha retry interno
+# e aspetta che SATOSA sia pronto. Se i file esistono già (idempotenza),
+# metadata-builder esce subito senza sovrascriverli.
+generate_metadata_if_missing() {
+  local _builder="${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}"
+  local _q=""
+  if [ -n "${IAM_PROXY_PUBLIC_BASE_URL:-}" ]; then
+    _q="?public_base_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${IAM_PROXY_PUBLIC_BASE_URL}" 2>/dev/null || true)"
+  fi
+  if is_true "${ENABLE_SPID:-false}"; then
+    echo "[startup] Genero metadata SPID se assente..."
+    curl -sf --max-time 120 -X POST \
+      -H "Authorization: Bearer ${MASTER_TOKEN:-}" \
+      "${_builder}/run/export-agid${_q}" -o /dev/null 2>&1 \
+      && echo "[startup] Metadata SPID pronto." \
+      || echo "[startup] Avviso: generazione metadata SPID fallita. Usa 'Rigenera' dal backoffice." >&2
+  fi
+  if is_true "${ENABLE_CIE_OIDC:-false}"; then
+    echo "[startup] Genero artefatti CIE se assenti..."
+    local _cie_tmp _cie_status
+    _cie_tmp="$(mktemp)"
+    _cie_status="$(curl -sS --max-time 120 -X POST \
+      -H "Authorization: Bearer ${MASTER_TOKEN:-}" \
+      -o "${_cie_tmp}" -w "%{http_code}" \
+      "${_builder}/run/export-cieoidc${_q}" 2>/dev/null || echo "curl-fail")"
+    if [ "${_cie_status}" = "200" ]; then
+      echo "[startup] Artefatti CIE pronti."
+    elif grep -qi "già presente e non scaduto" "${_cie_tmp}" 2>/dev/null; then
+      echo "[startup] Artefatti CIE già presenti e validi. Nessuna rigenerazione necessaria."
+    else
+      echo "[startup] Avviso: generazione artefatti CIE fallita. Usa 'Rigenera artefatti CIE' dal backoffice." >&2
+    fi
+    rm -f "${_cie_tmp}"
+  fi
+}
 fetch_conf() {
   curl -sf -k --max-time 10 \
     -H "Authorization: Bearer ${MASTER_TOKEN}" \
