@@ -5,7 +5,7 @@
 set -e
 
 NGINX_HOST="${NGINX_HOST:-auth-proxy-nginx}"
-SSL_ENABLED="${SSL:-on}"
+SSL_ENABLED="${SSL:-off}"
 DNS_RESOLVER="${NGINX_DNS_RESOLVER:-127.0.0.11}"
 
 echo "[nginx-setup] Initializing configuration from templates..."
