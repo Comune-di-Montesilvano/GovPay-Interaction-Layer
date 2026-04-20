@@ -1234,34 +1234,34 @@ class ImpostazioniController
             $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         }
 
-        $raw = false;
-        if (function_exists('curl_init')) {
-            $ch = curl_init($endpoint);
-            if ($ch !== false) {
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 45);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    "Authorization: Bearer {$masterToken}",
-                    "Content-Length: 0",
-                ]);
-                $raw = curl_exec($ch);
-                if (!is_string($raw)) {
-                    $raw = false;
-                }
-            }
+        if (!function_exists('curl_init')) {
+            return $this->jsonError('Generazione metadata SPID fallita: estensione PHP cURL non disponibile.');
         }
-        if ($raw === false) {
-            $ctx = stream_context_create([
-                'http' => [
-                    'method'        => 'POST',
-                    'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                    'timeout'       => 45,
-                    'ignore_errors' => true,
-                ],
-            ]);
-            $raw = @file_get_contents($endpoint, false, $ctx);
+
+        $raw = false;
+        $httpCode = 0;
+        $curlErr = '';
+        $ch = curl_init($endpoint);
+        if ($ch === false) {
+            return $this->jsonError('Generazione metadata SPID fallita: impossibile inizializzare la connessione HTTP.');
+        }
+
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$masterToken}",
+            "Content-Length: 0",
+        ]);
+        $raw = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = (string)curl_error($ch);
+        curl_close($ch);
+
+        if (!is_string($raw) || $raw === '') {
+            $netErr = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+            return $this->jsonError("Generazione metadata SPID fallita: metadata-builder non raggiungibile ({$netErr}).");
         }
         $result = $raw !== false ? json_decode($raw, true) : null;
 
