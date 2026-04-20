@@ -2566,7 +2566,9 @@ $faviconCandidates = [
     ['href' => '/img/favicon.ico', 'path' => $imgDir . '/favicon.ico', 'type' => 'image/x-icon'],
     ['href' => '/img/favicon.png', 'path' => $imgDir . '/favicon.png', 'type' => 'image/png'],
 ];
-$appFavicon = ['href' => '/img/favicon_default.png', 'type' => 'image/png'];
+$appFavicon = (($appLogo['type'] ?? '') === 'img' && !empty($appLogo['src']))
+    ? ['href' => $appLogo['src'], 'type' => 'image/png']
+    : ['href' => '/img/favicon_default.png', 'type' => 'image/png'];
 foreach ($faviconCandidates as $candidate) {
     if (file_exists($candidate['path'])) {
         $appFavicon = ['href' => $candidate['href'], 'type' => $candidate['type']];

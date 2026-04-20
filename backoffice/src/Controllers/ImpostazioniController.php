@@ -439,6 +439,7 @@ class ImpostazioniController
         $s            = SettingsRepository::getSection('iam_proxy');
         $sFrontoffice = SettingsRepository::getSection('frontoffice');
         $sEntity      = SettingsRepository::getSection('entity');
+        $sUi          = SettingsRepository::getSection('ui');
 
         // Auto-genera e persiste le chiavi crittografiche SATOSA obbligatorie se mancanti.
         // Queste chiavi devono esistere per far partire SATOSA; se l'operatore non le ha
@@ -617,6 +618,11 @@ class ImpostazioniController
         }
         if (empty($env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'])) {
             $env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'] = (string)($sEntity['name'] ?? '');
+        }
+        $globalLogoSrc = trim((string)($sUi['logo_src'] ?? ''));
+        if ($globalLogoSrc !== '') {
+            $env['SATOSA_UI_LOGO_URL'] = $globalLogoSrc;
+            $env['CIE_OIDC_LOGO_URI'] = $globalLogoSrc;
         }
         if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
             $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
@@ -842,79 +848,6 @@ class ImpostazioniController
         return $this->jsonResponse($info);
     }
 
-    public function restoreSpidCerts(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        $uploadedFiles = $request->getUploadedFiles();
-        $certsDir = self::SPID_CERTS_DIR;
-        if (!is_dir($certsDir) && !mkdir($certsDir, 0755, true) && !is_dir($certsDir)) {
-            return $this->jsonError("Impossibile creare la directory certificati SPID: {$certsDir}");
-        }
-
-        // ZIP mode
-        if (isset($uploadedFiles['backup_zip']) && $uploadedFiles['backup_zip']->getError() === UPLOAD_ERR_OK) {
-            $tmpZip = tempnam(sys_get_temp_dir(), 'spid_zip_');
-            $uploadedFiles['backup_zip']->moveTo($tmpZip);
-            $zip = new \ZipArchive();
-            if ($zip->open($tmpZip) !== true) {
-                @unlink($tmpZip);
-                return $this->jsonError('File ZIP non valido.');
-            }
-            $certContent = null;
-            $keyContent  = null;
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $name = $zip->getNameIndex($i);
-                if (str_ends_with($name, 'cert.pem')) {
-                    $certContent = $zip->getFromIndex($i);
-                } elseif (str_ends_with($name, 'privkey.pem')) {
-                    $keyContent = $zip->getFromIndex($i);
-                }
-            }
-            $zip->close();
-            @unlink($tmpZip);
-            if ($certContent === null || $keyContent === null) {
-                return $this->jsonError('ZIP non contiene cert.pem e/o privkey.pem.');
-            }
-        } else {
-            // Dual file upload
-            $certFile = $uploadedFiles['cert_file'] ?? null;
-            $keyFile  = $uploadedFiles['key_file'] ?? null;
-            if (!$certFile || $certFile->getError() !== UPLOAD_ERR_OK) {
-                return $this->jsonError('File certificato (cert_file) mancante o errore upload.');
-            }
-            if (!$keyFile || $keyFile->getError() !== UPLOAD_ERR_OK) {
-                return $this->jsonError('File chiave privata (key_file) mancante o errore upload.');
-            }
-            $certContent = (string)$certFile->getStream();
-            $keyContent  = (string)$keyFile->getStream();
-        }
-
-        $cert = openssl_x509_read($certContent);
-        if ($cert === false) {
-            return $this->jsonError('File certificato non valido (non è un PEM X.509 valido).');
-        }
-        $key = openssl_pkey_get_private($keyContent);
-        if ($key === false) {
-            return $this->jsonError('File chiave privata non valido (non è un PEM RSA valido).');
-        }
-        if (!openssl_x509_check_private_key($cert, $key)) {
-            return $this->jsonError('Certificato e chiave privata non corrispondono.');
-        }
-
-        file_put_contents($certsDir . '/cert.pem', $certContent);
-        file_put_contents($certsDir . '/privkey.pem', $keyContent);
-        @chmod($certsDir . '/cert.pem', 0644);
-        @chmod($certsDir . '/privkey.pem', 0600);
-
-        $parsed = openssl_x509_parse($cert);
-        return $this->jsonResponse([
-            'success'    => true,
-            'message'    => 'Certificato SPID ripristinato correttamente.',
-            'subject_cn' => $parsed['subject']['CN'] ?? '',
-            'valid_to'   => isset($parsed['validTo_time_t']) ? date('c', $parsed['validTo_time_t']) : '',
-        ]);
-    }
-
     public function getCieKeyDetails(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
@@ -966,71 +899,6 @@ class ImpostazioniController
             'key_count'    => count($keys),
             'generated_at' => $generatedTs ? date('c', $generatedTs) : null,
         ]);
-    }
-
-    public function restoreCieKeys(Request $request, Response $response): Response
-    {
-        $this->requireSuperadmin();
-        $uploadedFiles = $request->getUploadedFiles();
-        $keysDir = self::CIEOIDC_KEYS_DIR;
-        @mkdir($keysDir, 0755, true);
-
-        // ZIP mode
-        if (isset($uploadedFiles['backup_zip']) && $uploadedFiles['backup_zip']->getError() === UPLOAD_ERR_OK) {
-            $tmpZip = tempnam(sys_get_temp_dir(), 'cie_zip_');
-            $uploadedFiles['backup_zip']->moveTo($tmpZip);
-            $zip = new \ZipArchive();
-            if ($zip->open($tmpZip) !== true) {
-                @unlink($tmpZip);
-                return $this->jsonError('File ZIP non valido.');
-            }
-            $restored = [];
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $name     = $zip->getNameIndex($i);
-                $basename = basename($name);
-                if (str_starts_with($basename, 'jwk-') && str_ends_with($basename, '.json')) {
-                    $content = $zip->getFromIndex($i);
-                    if (is_array(json_decode($content, true))) {
-                        file_put_contents($keysDir . '/' . $basename, $content);
-                        $restored[] = $basename;
-                    }
-                }
-            }
-            $zip->close();
-            @unlink($tmpZip);
-            if (empty($restored)) {
-                return $this->jsonError('ZIP non contiene file JWK CIE OIDC validi (jwk-*.json).');
-            }
-            return $this->jsonResponse(['success' => true, 'message' => 'Chiavi JWK CIE OIDC ripristinate.', 'restored' => $restored]);
-        }
-
-        // Individual file upload
-        $allowedFiles = ['jwk-federation.json', 'jwk-core-sig.json', 'jwk-core-enc.json'];
-        $restored = [];
-        foreach ($allowedFiles as $fname) {
-            $inputKey = str_replace(['-', '.'], '_', $fname);
-            $file     = $uploadedFiles[$fname] ?? $uploadedFiles[$inputKey] ?? null;
-            if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
-                continue;
-            }
-            $content = (string)$file->getStream();
-            $decoded = json_decode($content, true);
-            if (!is_array($decoded)) {
-                return $this->jsonError("File {$fname} non è un JSON valido.");
-            }
-            $keyObj = isset($decoded['keys']) ? ($decoded['keys'][0] ?? null) : $decoded;
-            if (!isset($keyObj['kty'])) {
-                return $this->jsonError("File {$fname} non è un JWK valido (campo 'kty' mancante).");
-            }
-            file_put_contents($keysDir . '/' . $fname, $content);
-            $restored[] = $fname;
-        }
-
-        if (empty($restored)) {
-            return $this->jsonError('Nessun file JWK valido caricato. Usa i campi jwk-federation.json, jwk-core-sig.json, jwk-core-enc.json.');
-        }
-
-        return $this->jsonResponse(['success' => true, 'message' => 'Chiavi JWK CIE OIDC ripristinate.', 'restored' => $restored]);
     }
 
     public function restoreBackupZip(Request $request, Response $response): Response

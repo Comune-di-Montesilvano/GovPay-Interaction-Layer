@@ -66,7 +66,9 @@ return (function (): array {
         ? ['href' => '/img/favicon.ico', 'type' => 'image/x-icon']
         : (file_exists($customFaviconPng)
             ? ['href' => '/img/favicon.png', 'type' => 'image/png']
-            : ['href' => '/img/favicon_default.png', 'type' => 'image/png']);
+            : ((($appLogo['type'] ?? '') === 'img' && !empty($appLogo['src']))
+                ? ['href' => $appLogo['src'], 'type' => 'image/png']
+                : ['href' => '/img/favicon_default.png', 'type' => 'image/png']));
 
     $twig->getEnvironment()->addGlobal('app_entity', [
         'name' => $entityName,
