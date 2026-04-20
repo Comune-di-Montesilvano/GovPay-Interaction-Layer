@@ -1453,22 +1453,25 @@ async function generaCieKeys(btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
   try {
-    let res  = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    let json = await res.json();
+    let res = await fetch('/impostazioni/login-proxy/cie-keys/genera', { method: 'POST' });
+    let raw = await res.text();
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new Error('HTTP ' + res.status + ' risposta non JSON');
+    }
 
     if (!json.success && (json.message || '').includes('già presenti')) {
       const doForce = confirm('Le chiavi sono già state generate di recente.\n\nForza la rigenerazione solo se hai revocato la federazione CIE.\n\nProcedere?');
       if (doForce) {
-        res = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force: true }),
-        });
-        json = await res.json();
+        res = await fetch('/impostazioni/login-proxy/cie-keys/genera?force=1', { method: 'POST' });
+        raw = await res.text();
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error('HTTP ' + res.status + ' risposta non JSON');
+        }
       }
     }
 
@@ -1488,22 +1491,25 @@ async function exportCieOidc(btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Rigenerazione…';
   try {
-    let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    let json = await res.json();
+    let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', { method: 'POST' });
+    let raw = await res.text();
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new Error('HTTP ' + res.status + ' risposta non JSON');
+    }
 
     if (!json.success && (json.message || '').includes('già presente e non scaduto')) {
       const doForce = confirm('Gli artefatti CIE sono già presenti e non scaduti.\n\nForzare la rigenerazione ora?');
       if (doForce) {
-        res = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force: true }),
-        });
-        json = await res.json();
+        res = await fetch('/impostazioni/login-proxy/cie-metadata/export?force=1', { method: 'POST' });
+        raw = await res.text();
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error('HTTP ' + res.status + ' risposta non JSON');
+        }
       }
     }
 
@@ -1635,11 +1641,7 @@ async function doExportSpidMetadata(btn) {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
   resultEl.style.display = 'none';
   try {
-    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force: true }),
-    });
+    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export?force=1', { method: 'POST' });
     const raw = await res.text();
     let json = null;
     try {

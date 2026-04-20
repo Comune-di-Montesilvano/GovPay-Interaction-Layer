@@ -1227,7 +1227,7 @@ class ImpostazioniController
     {
         $this->requireSuperadmin();
         $body  = $this->parseBody($request);
-        $force = !empty($body['force']);
+        $force = $this->requestForce($request, $body);
 
         // Evita lock di sessione durante una chiamata potenzialmente lunga al metadata-builder.
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -1676,7 +1676,7 @@ class ImpostazioniController
     {
         $this->requireSuperadmin();
         $body    = $this->parseBody($request);
-        $force   = !empty($body['force']);
+        $force   = $this->requestForce($request, $body);
         $keysDir = self::CIEOIDC_KEYS_DIR;
 
         $generatedAt = $keysDir . '/GENERATED_AT';
@@ -1769,7 +1769,7 @@ class ImpostazioniController
     {
         $this->requireSuperadmin();
         $body    = $this->parseBody($request);
-        $force   = !empty($body['force']);
+        $force   = $this->requestForce($request, $body);
         $metaDir = self::CIEOIDC_META_DIR;
 
         // Evita lock di sessione durante una chiamata potenzialmente lunga al metadata-builder.
@@ -2199,6 +2199,20 @@ class ImpostazioniController
             return is_array($decoded) ? $decoded : [];
         }
         return (array)($request->getParsedBody() ?? []);
+    }
+
+    private function requestForce(Request $request, array $body): bool
+    {
+        if (!empty($body['force'])) {
+            return true;
+        }
+
+        $q = $request->getQueryParams()['force'] ?? '';
+        if (!is_string($q)) {
+            return false;
+        }
+
+        return in_array(strtolower(trim($q)), ['1', 'true', 'yes', 'on'], true);
     }
 
     private function jsonOk(string $message): Response
