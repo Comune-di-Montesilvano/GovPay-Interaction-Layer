@@ -914,34 +914,47 @@ class ImpostazioniController
     {
         $this->requireAdminOrAbove();
         $keysDir = self::CIEOIDC_KEYS_DIR;
-        $files   = glob($keysDir . '/*.json') ?: [];
+        $federationKeyPath = $keysDir . '/jwk-federation.json';
 
-        $aggregatedKeys = [];
-        foreach ($files as $filePath) {
-            $content = @file_get_contents($filePath);
-            if ($content === false) {
-                continue;
-            }
-            $jwk = json_decode($content, true);
-            if (!is_array($jwk)) {
-                continue;
-            }
-            // Se il file contiene un array "keys", estrai i dati da lì
-            if (isset($jwk['keys']) && is_array($jwk['keys'])) {
-                foreach ($jwk['keys'] as $keyItem) {
-                    if (is_array($keyItem)) {
-                        $aggregatedKeys[] = $keyItem;
-                    }
-                }
-            } else {
-                // Altrimenti il file è una singola chiave JWK
-                $aggregatedKeys[] = $jwk;
+        // Priorità: usa jwk-federation.json, altrimenti prendi il primo file disponibile
+        $keyFile = is_file($federationKeyPath) ? $federationKeyPath : null;
+        if (!$keyFile) {
+            $files = glob($keysDir . '/*.json') ?: [];
+            $keyFile = $files[0] ?? null;
+        }
+
+        if (!$keyFile || !is_file($keyFile)) {
+            return $this->jsonResponse([
+                'data' => ['keys' => []],
+            ]);
+        }
+
+        $content = @file_get_contents($keyFile);
+        if ($content === false) {
+            return $this->jsonResponse(['data' => ['keys' => []]]);
+        }
+
+        $jwk = json_decode($content, true);
+        if (!is_array($jwk)) {
+            return $this->jsonResponse(['data' => ['keys' => []]]);
+        }
+
+        // Estrai la chiave (da array "keys" o come oggetto singolo)
+        $keyData = isset($jwk['keys']) ? ($jwk['keys'][0] ?? null) : $jwk;
+        if (!is_array($keyData)) {
+            return $this->jsonResponse(['data' => ['keys' => []]]);
+        }
+
+        // Costruisci la chiave pubblica: includi solo componenti pubblici
+        $publicKey = [];
+        foreach (['kty', 'kid', 'use', 'alg', 'e', 'n', 'crv', 'x', 'y'] as $field) {
+            if (isset($keyData[$field])) {
+                $publicKey[$field] = $keyData[$field];
             }
         }
 
         return $this->jsonResponse([
-            'content_type' => 'application/json',
-            'data'         => ['keys' => $aggregatedKeys],
+            'data' => ['keys' => [$publicKey]],
         ]);
     }
 
@@ -1022,6 +1035,7 @@ class ImpostazioniController
                 $content = $zip->getFromName($name);
                 if ($content !== false && str_contains($content, 'EntityDescriptor')) {
                     @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+                    @unlink(self::PUBLIC_SPID_METADATA_PATH);
                     file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content);
                     @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
                     $results['spid_metadata'] = ['success' => true, 'message' => 'Metadata pubblico SPID ripristinato.'];
@@ -1202,7 +1216,9 @@ class ImpostazioniController
         }
 
         // Riallinea il file locale dal metadata live per evitare drift di permessi sul volume condiviso.
-        $this->refreshSpidMetadataFromLiveEndpoint();
+        if (!$this->refreshSpidMetadataFromLiveEndpoint()) {
+            return $this->jsonError('Metadata SPID rigenerato dal metadata-builder, ma il salvataggio locale è fallito (permessi volume). Controlla i log del container backoffice.');
+        }
 
         // Leggi entityID e validUntil dal file scritto sul volume condiviso oppure risincronizzato localmente.
         $info = [];
@@ -1238,6 +1254,9 @@ class ImpostazioniController
             return false;
         }
 
+        // Rimuove il file prima di scrivere: se creato da metadata-builder (root), non è sovrascrivibile
+        // da www-data; unlink funziona perché www-data ha write sulla directory (775).
+        @unlink(self::PUBLIC_SPID_METADATA_PATH);
         $written = @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml, LOCK_EX);
         if ($written === false) {
             return false;
@@ -1324,6 +1343,7 @@ class ImpostazioniController
             return $this->jsonError('File non valido: deve essere un XML metadata SAML2 con EntityDescriptor.');
         }
         @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+        @unlink(self::PUBLIC_SPID_METADATA_PATH);
         if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content) === false) {
             return $this->jsonError('Impossibile scrivere il file nel volume.');
         }
