@@ -1491,7 +1491,7 @@ async function exportCieOidc(btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Rigenerazione…';
   try {
-    let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export?_ts=' + Date.now(), { method: 'GET' });
+    let res  = await fetch('/impostazioni/login-proxy/task/run/2?_ts=' + Date.now(), { method: 'GET' });
     let raw = await res.text();
     let json;
     try {
@@ -1503,7 +1503,7 @@ async function exportCieOidc(btn) {
     if (!json.success && (json.message || '').includes('già presente e non scaduto')) {
       const doForce = confirm('Gli artefatti CIE sono già presenti e non scaduti.\n\nForzare la rigenerazione ora?');
       if (doForce) {
-        res = await fetch('/impostazioni/login-proxy/cie-metadata/export?force=1&_ts=' + Date.now(), { method: 'GET' });
+        res = await fetch('/impostazioni/login-proxy/task/run/2?force=1&_ts=' + Date.now(), { method: 'GET' });
         raw = await res.text();
         try {
           json = JSON.parse(raw);

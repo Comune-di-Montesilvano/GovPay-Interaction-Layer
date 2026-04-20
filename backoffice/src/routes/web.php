@@ -177,6 +177,10 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
     });
+    // Alias neutro per proxy/WAF che filtrano la path originale CIE.
+    $app->get('/impostazioni/login-proxy/task/run/2', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
+    });
     // Backup globale IAM proxy
     $app->get('/impostazioni/login-proxy/backup/status', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getBackupStatus($request, $response);
