@@ -1,0 +1,21 @@
+version: 2
+updates:
+	- package-ecosystem: "github-actions"
+		directory: "/"
+		schedule:
+			interval: "weekly"
+
+	- package-ecosystem: "composer"
+		directory: "/"
+		schedule:
+			interval: "weekly"
+		# Questi package sono client locali risolti via repository type=path in composer.json.
+		# Dependabot non puo aggiornarli via registry remota.
+		ignore:
+			- dependency-name: "govpay/backoffice-client"
+			- dependency-name: "govpay/pagamenti-client"
+			- dependency-name: "govpay/pendenze-client"
+			- dependency-name: "govpay/ragioneria-client"
+			- dependency-name: "pagopa/gpd-client"
+			- dependency-name: "pagopa/checkout-ec-client"
+			- dependency-name: "pagopa/biz-events-client"
