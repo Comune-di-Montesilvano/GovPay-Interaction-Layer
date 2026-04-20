@@ -20,6 +20,15 @@ SATOSA_HOST_HEADER="${SATOSA_INTERNAL_HOST_HEADER:-}"
 VERIFY_PUBLIC="${SATOSA_VERIFY_PUBLIC_METADATA:-1}"
 SATOSA_PUBLIC_METADATA_URL="${SATOSA_PUBLIC_METADATA_URL:-}"
 
+ensure_output_permissions() {
+  mkdir -p /output/agid || return 1
+  chmod 775 /output/agid 2>/dev/null || true
+  if [ -f "$OUTPUT" ]; then
+    chmod 664 "$OUTPUT" 2>/dev/null || true
+  fi
+  return 0
+}
+
 if [ -z "$SATOSA_HOST_HEADER" ] && [ -n "$SATOSA_PUBLIC_BASE_URL" ]; then
   SATOSA_HOST_HEADER="$(echo "$SATOSA_PUBLIC_BASE_URL" | sed -E 's#^[a-zA-Z]+://([^/:]+).*$#\1#')"
 fi
@@ -41,7 +50,7 @@ fi
 echo "[DEBUG] Configurazione: SATOSA_NGINX_HOSTNAME=$SATOSA_NGINX_HOSTNAME SATOSA_INTERNAL_SCHEME=$SATOSA_INTERNAL_SCHEME SATOSA_INTERNAL_PORT=$SATOSA_INTERNAL_PORT OUTPUT=$OUTPUT CURL_OPTS='$CURL_OPTS'" >&2
 echo "[DEBUG] Internal URL: $SATOSA_URL_INTERNAL (Host header: ${SATOSA_HOST_HEADER:-none})" >&2
 echo "[DEBUG] Public URL: ${SATOSA_PUBLIC_METADATA_URL:-none}" >&2
-mkdir -p /output/agid || {
+ensure_output_permissions || {
   echo "[ERROR] Impossibile creare directory /output/agid. Verifica permessi e mount del volume." >&2
   exit 1
 }
@@ -49,6 +58,7 @@ echo "[DEBUG] Directory /output/agid pronta" >&2
 
   # Idempotenza: non rigenerare se il file è già presente (usa FORCE=1 per forzare)
   if [ -f "$OUTPUT" ] && [ "${FORCE:-0}" != "1" ]; then
+    ensure_output_permissions || true
     echo "[INFO] Metadata SPID già presente: $OUTPUT (passa FORCE=1 per rigenerare)."
     exit 0
   fi
@@ -127,6 +137,7 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
       rm -f "$TMP_ERR" "$TMP_OUT"
       exit 1
     fi
+    ensure_output_permissions || true
     if command -v xmllint >/dev/null 2>&1; then
       xmllint --format "$OUTPUT" -o "$OUTPUT" 2>/dev/null || true
     fi
