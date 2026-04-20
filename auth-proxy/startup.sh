@@ -496,7 +496,26 @@ def is_valid(path):
             return False
         # Parse ISO 8601 (Z suffix)
         dt = datetime.datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
-        return dt > datetime.datetime.now(datetime.timezone.utc)
+        if dt <= datetime.datetime.now(datetime.timezone.utc):
+            return False
+
+        expected_entity_id = f'{base_url}/saml/sp'
+        expected_acs_url = f'{base_url}/spid/callback'
+
+        entity_id = root.get('entityID', '').rstrip('/')
+        if entity_id != expected_entity_id:
+            return False
+
+        ns = {'md': 'urn:oasis:names:tc:SAML:2.0:metadata'}
+        acs = root.find('.//md:AssertionConsumerService', ns)
+        if acs is None:
+            return False
+
+        acs_location = (acs.get('Location', '') or '').rstrip('/')
+        if acs_location != expected_acs_url:
+            return False
+
+        return True
     except Exception:
         return False
 
