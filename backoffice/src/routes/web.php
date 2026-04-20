@@ -126,6 +126,9 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni/login-proxy/cie-keys/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getCieKeyDetails($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/cie-keys/jwks', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getCieKeysAsJwks($request, $response);
+    });
     $app->post('/impostazioni/login-proxy/backup/restore', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->restoreBackupZip($request, $response);
     });

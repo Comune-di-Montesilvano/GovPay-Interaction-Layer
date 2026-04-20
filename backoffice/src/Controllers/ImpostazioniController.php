@@ -621,8 +621,17 @@ class ImpostazioniController
         }
         $globalLogoSrc = trim((string)($sUi['logo_src'] ?? ''));
         if ($globalLogoSrc !== '') {
-            $env['SATOSA_UI_LOGO_URL'] = $globalLogoSrc;
-            $env['CIE_OIDC_LOGO_URI'] = $globalLogoSrc;
+            // Converti /img/... → /static/img/... (servito da auth-proxy-nginx dal volume gil_images)
+            $proxyLogoSrc = (str_starts_with($globalLogoSrc, '/img/') || str_starts_with($globalLogoSrc, '/assets/'))
+                ? '/static' . $globalLogoSrc
+                : $globalLogoSrc;
+            $env['APP_LOGO_SRC']       = $proxyLogoSrc;
+            $env['SATOSA_UI_LOGO_URL'] = $proxyLogoSrc;
+            // CIE OIDC metadata richiede URL assoluto
+            $satosaBase = rtrim((string)($s['public_base_url'] ?? ''), '/');
+            $env['CIE_OIDC_LOGO_URI'] = ($satosaBase !== '' && !str_starts_with($proxyLogoSrc, 'http'))
+                ? $satosaBase . $proxyLogoSrc
+                : $proxyLogoSrc;
         }
         if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
             $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
@@ -898,6 +907,41 @@ class ImpostazioniController
             'keys'         => $keys,
             'key_count'    => count($keys),
             'generated_at' => $generatedTs ? date('c', $generatedTs) : null,
+        ]);
+    }
+
+    public function getCieKeysAsJwks(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $keysDir = self::CIEOIDC_KEYS_DIR;
+        $files   = glob($keysDir . '/*.json') ?: [];
+
+        $aggregatedKeys = [];
+        foreach ($files as $filePath) {
+            $content = @file_get_contents($filePath);
+            if ($content === false) {
+                continue;
+            }
+            $jwk = json_decode($content, true);
+            if (!is_array($jwk)) {
+                continue;
+            }
+            // Se il file contiene un array "keys", estrai i dati da lì
+            if (isset($jwk['keys']) && is_array($jwk['keys'])) {
+                foreach ($jwk['keys'] as $keyItem) {
+                    if (is_array($keyItem)) {
+                        $aggregatedKeys[] = $keyItem;
+                    }
+                }
+            } else {
+                // Altrimenti il file è una singola chiave JWK
+                $aggregatedKeys[] = $jwk;
+            }
+        }
+
+        return $this->jsonResponse([
+            'content_type' => 'application/json',
+            'data'         => ['keys' => $aggregatedKeys],
         ]);
     }
 
