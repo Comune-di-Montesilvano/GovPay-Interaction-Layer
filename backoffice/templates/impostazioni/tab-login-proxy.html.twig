@@ -1209,6 +1209,30 @@ async function restoreMetadata(type, fileInputId, btn) {
   document.getElementById('lp-public-url')?.addEventListener('input', lpDeriveFromUrl);
   document.getElementById('lp-cie-custom-url')?.addEventListener('input', lpUpdateCieEnv);
 
+  // Stato auth-proxy-nginx
+  (async function lpCheckStatus() {
+    const dot  = document.getElementById('lp-status-dot');
+    const text = document.getElementById('lp-status-text');
+    if (!dot || !text) return;
+    try {
+      const res  = await fetch('/impostazioni/login-proxy/status');
+      const json = await res.json();
+      if (json.running) {
+        dot.className  = 'master-status-dot bg-success';
+        text.textContent = 'In esecuzione';
+        text.className = 'text-success small';
+      } else {
+        dot.className  = 'master-status-dot bg-danger';
+        text.textContent = 'Non raggiungibile';
+        text.className = 'text-danger small';
+      }
+    } catch (_) {
+      dot.className  = 'master-status-dot bg-secondary';
+      text.textContent = 'Stato sconosciuto';
+      text.className = 'text-muted small';
+    }
+  })();
+
   // Badge configurazione e visibilità card condizionali
   function lpUpdatePhaseVisibility() {
     const spid = document.getElementById('en-spid')?.checked;

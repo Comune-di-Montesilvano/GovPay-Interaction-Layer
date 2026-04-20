@@ -1803,6 +1803,40 @@ class ImpostazioniController
     // ──────────────────────────────────────────────────────────────────────
 
     /**
+     * Controlla se il container auth-proxy-nginx risponde.
+     * GET /impostazioni/login-proxy/status
+     */
+    public function getAuthProxyStatus(Request $request, Response $response): Response
+    {
+        $url = 'http://auth-proxy-nginx:80/';
+        $running = false;
+        $detail  = 'Non raggiungibile';
+
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            if ($ch !== false) {
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                curl_setopt($ch, CURLOPT_NOBODY, true);
+                curl_exec($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curlErr  = (string) curl_error($ch);
+                curl_close($ch);
+
+                if ($curlErr === '' && $httpCode > 0) {
+                    $running = true;
+                    $detail  = 'In esecuzione';
+                } else {
+                    $detail = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+                }
+            }
+        }
+
+        return $this->jsonResponse(['running' => $running, 'detail' => $detail]);
+    }
+
+    /**
      * Ritorna disponibilità dei file esportabili per guidare le checkbox UI.
      * GET /impostazioni/login-proxy/backup/status
      */
