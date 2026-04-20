@@ -1156,8 +1156,14 @@ class ImpostazioniController
         }
         $info = ['exists' => true, 'size' => filesize($path), 'file_mtime' => date('c', filemtime($path))];
         if (!is_readable($path)) {
-            $info['read_error'] = 'Metadata presente ma non leggibile dal backoffice (permessi volume).';
-            return $this->jsonResponse($info);
+            $healed = $this->refreshSpidMetadataFromLiveEndpoint();
+            clearstatcache(true, $path);
+            if (!$healed || !is_file($path) || !is_readable($path)) {
+                $info['read_error'] = 'Metadata presente ma non leggibile dal backoffice (permessi volume).';
+                return $this->jsonResponse($info);
+            }
+            $info['size'] = filesize($path);
+            $info['file_mtime'] = date('c', filemtime($path));
         }
         try {
             libxml_use_internal_errors(true);
@@ -1279,7 +1285,10 @@ class ImpostazioniController
             return $this->jsonError("Generazione metadata SPID fallita: {$err}");
         }
 
-        // Leggi entityID e validUntil dal file scritto da metadata-builder sul volume
+        // Riallinea il file locale dal metadata live per evitare drift di permessi sul volume condiviso.
+        $this->refreshSpidMetadataFromLiveEndpoint();
+
+        // Leggi entityID e validUntil dal file scritto sul volume condiviso oppure risincronizzato localmente.
         $info = [];
         $path = self::PUBLIC_SPID_METADATA_PATH;
         if (is_file($path) && is_readable($path)) {
@@ -1298,6 +1307,78 @@ class ImpostazioniController
             'message' => 'Metadata pubblico SPID rigenerato correttamente.',
             ...$info,
         ]);
+    }
+
+    private function refreshSpidMetadataFromLiveEndpoint(): bool
+    {
+        $iamProxy = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $xml = $this->fetchSpidMetadataXml($publicBaseUrl);
+        if ($xml === null) {
+            return false;
+        }
+
+        if (!is_dir(self::SPID_PUBLIC_META_DIR) && !@mkdir(self::SPID_PUBLIC_META_DIR, 0775, true) && !is_dir(self::SPID_PUBLIC_META_DIR)) {
+            return false;
+        }
+
+        $written = @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml, LOCK_EX);
+        if ($written === false) {
+            return false;
+        }
+
+        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+        return true;
+    }
+
+    private function fetchSpidMetadataXml(string $publicBaseUrl = ''): ?string
+    {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+
+        $hostHeader = '';
+        if ($publicBaseUrl !== '') {
+            $hostHeader = (string)(parse_url($publicBaseUrl, PHP_URL_HOST) ?: '');
+        }
+
+        $attempts = [
+            ['url' => 'http://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => $hostHeader],
+            ['url' => 'http://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => ''],
+            ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => $hostHeader],
+            ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => ''],
+        ];
+
+        if ($publicBaseUrl !== '') {
+            $attempts[] = ['url' => rtrim($publicBaseUrl, '/') . '/spidSaml2/metadata', 'host' => ''];
+        }
+
+        foreach ($attempts as $attempt) {
+            $ch = curl_init($attempt['url']);
+            if ($ch === false) {
+                continue;
+            }
+
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+            if ($attempt['host'] !== '') {
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Host: ' . $attempt['host']]);
+            }
+            if (str_starts_with($attempt['url'], 'https://')) {
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            }
+
+            $body = curl_exec($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if (is_string($body) && $status === 200 && str_contains($body, 'EntityDescriptor')) {
+                return $body;
+            }
+        }
+
+        return null;
     }
 
     public function downloadSpidMetadata(Request $request, Response $response): Response
