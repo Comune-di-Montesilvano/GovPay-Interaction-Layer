@@ -66,7 +66,7 @@ echo "[DEBUG] Directory /output/agid pronta" >&2
 echo "[INFO] Attendo che SATOSA sia disponibile..."
 for i in $(seq 1 "$MAX_ATTEMPTS"); do
   TMP_ERR="/tmp/export-agid-curl.err.$$"
-  TMP_OUT="/tmp/export-agid-curl.out.$$"
+  TMP_OUT="/output/agid/.export-agid-curl.out.$$"
 
   HTTP_CODE="curl-fail"
   LAST_ERR=""
