@@ -602,7 +602,11 @@ generate_metadata_if_missing() {
   local _builder="${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}"
   local _q=""
   if [ -n "${IAM_PROXY_PUBLIC_BASE_URL:-}" ]; then
-    _q="?public_base_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${IAM_PROXY_PUBLIC_BASE_URL}" 2>/dev/null || true)"
+    local _host_header
+    _host_header="$(python3 -c "import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).hostname or '')" "${IAM_PROXY_PUBLIC_BASE_URL}" 2>/dev/null || true)"
+    if [ -n "${_host_header}" ]; then
+      _q="?host_header=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${_host_header}" 2>/dev/null || true)"
+    fi
   fi
   if is_true "${ENABLE_SPID:-false}"; then
     echo "[startup] Genero metadata SPID se assente..."
