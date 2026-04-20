@@ -1155,8 +1155,18 @@ class ImpostazioniController
             return $this->jsonResponse(['exists' => false, 'message' => 'Metadata pubblico SPID non ancora esportato.']);
         }
         $info = ['exists' => true, 'size' => filesize($path), 'file_mtime' => date('c', filemtime($path))];
+        if (!is_readable($path)) {
+            $info['read_error'] = 'Metadata presente ma non leggibile dal backoffice (permessi volume).';
+            return $this->jsonResponse($info);
+        }
         try {
-            $xml = simplexml_load_file($path);
+            libxml_use_internal_errors(true);
+            $raw = file_get_contents($path);
+            if (!is_string($raw) || $raw === '') {
+                $info['read_error'] = 'Metadata presente ma non leggibile dal backoffice (permessi volume).';
+                return $this->jsonResponse($info);
+            }
+            $xml = simplexml_load_string($raw);
             if ($xml !== false) {
                 $info['entity_id'] = (string) ($xml['entityID'] ?? '');
                 $attrs = $xml->attributes();
@@ -1257,7 +1267,6 @@ class ImpostazioniController
         $raw = curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr = (string)curl_error($ch);
-        curl_close($ch);
 
         if (!is_string($raw) || $raw === '') {
             $netErr = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
@@ -1273,13 +1282,15 @@ class ImpostazioniController
         // Leggi entityID e validUntil dal file scritto da metadata-builder sul volume
         $info = [];
         $path = self::PUBLIC_SPID_METADATA_PATH;
-        if (is_file($path)) {
+        if (is_file($path) && is_readable($path)) {
             libxml_use_internal_errors(true);
             $xml = simplexml_load_string((string)file_get_contents($path));
             if ($xml !== false) {
                 $info['entity_id']   = (string)($xml['entityID'] ?? '');
                 $info['valid_until'] = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
             }
+        } elseif (is_file($path)) {
+            $info['read_error'] = 'Metadata aggiornato ma non leggibile dal backoffice (permessi volume).';
         }
 
         return $this->jsonResponse([
@@ -1745,7 +1756,6 @@ class ImpostazioniController
         $raw = curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr = (string)curl_error($ch);
-        curl_close($ch);
 
         if (!is_string($raw) || $raw === '') {
             $netErr = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
@@ -2041,7 +2051,6 @@ class ImpostazioniController
         $result   = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr  = curl_error($ch);
-        curl_close($ch);
 
         if ($result === false || $curlErr) {
             return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
