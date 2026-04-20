@@ -1018,6 +1018,18 @@ class ImpostazioniController
         // CIE OIDC keys
         $cieRestored = [];
         $cieErrors = [];
+        $cieGeneratedAt = null;
+        $cieZipMtimeMax = 0;
+        foreach ($contents as $name) {
+            if (basename($name) === 'GENERATED_AT') {
+                $rawGeneratedAt = $zip->getFromName($name);
+                $parsedGeneratedAt = is_string($rawGeneratedAt) ? (int)trim($rawGeneratedAt) : 0;
+                if ($parsedGeneratedAt > 0) {
+                    $cieGeneratedAt = $parsedGeneratedAt;
+                }
+                break;
+            }
+        }
         if (!is_dir(self::CIEOIDC_KEYS_DIR) && !@mkdir(self::CIEOIDC_KEYS_DIR, 0755, true) && !is_dir(self::CIEOIDC_KEYS_DIR)) {
             $results['cieoidc_keys'] = ['success' => false, 'message' => 'Impossibile creare la directory delle chiavi CIE OIDC nel volume.'];
         } else {
@@ -1035,6 +1047,11 @@ class ImpostazioniController
                     continue;
                 }
 
+                $stat = $zip->statName($name);
+                if (is_array($stat) && isset($stat['mtime'])) {
+                    $cieZipMtimeMax = max($cieZipMtimeMax, (int)$stat['mtime']);
+                }
+
                 $target = self::CIEOIDC_KEYS_DIR . '/' . $basename;
                 @unlink($target);
                 $written = @file_put_contents($target, $content, LOCK_EX);
@@ -1047,7 +1064,10 @@ class ImpostazioniController
             }
 
             if (!empty($cieRestored)) {
-                @file_put_contents(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', (string)time(), LOCK_EX);
+                if ($cieGeneratedAt === null || $cieGeneratedAt <= 0) {
+                    $cieGeneratedAt = $cieZipMtimeMax > 0 ? $cieZipMtimeMax : time();
+                }
+                @file_put_contents(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', (string)$cieGeneratedAt, LOCK_EX);
                 @chmod(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', 0644);
                 $msg = 'Chiavi CIE OIDC ripristinate: ' . implode(', ', $cieRestored);
                 if (!empty($cieErrors)) {
@@ -2040,6 +2060,10 @@ class ImpostazioniController
         $files = glob(self::CIEOIDC_KEYS_DIR . '/*.json') ?: [];
         foreach ($files as $path) {
             $zip->addFile($path, 'cieoidc-keys/' . basename($path));
+        }
+        $generatedAt = self::CIEOIDC_KEYS_DIR . '/GENERATED_AT';
+        if (is_file($generatedAt)) {
+            $zip->addFile($generatedAt, 'cieoidc-keys/GENERATED_AT');
         }
     }
 
