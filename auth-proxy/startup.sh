@@ -176,6 +176,7 @@ except Exception:
 # SATOSA è gestito internamente: avviato/fermato in base alla config backoffice.
 _WATCHDOG_INTERVAL="${IAM_WATCHDOG_INTERVAL:-300}"
 _SATOSA_PID=""
+_PKI_CERT_HASH=""
 
 satosa_running() { [ -n "${_SATOSA_PID:-}" ] && kill -0 "$_SATOSA_PID" 2>/dev/null; }
 
@@ -216,6 +217,8 @@ setup_satosa() {
     ls -l "$_pki_key" "$_pki_cert" >&2 || true
     return 1
   fi
+  # Registra hash del cert per rilevare rinnovi durante il watchdog
+  _PKI_CERT_HASH="$(md5sum "$_pki_cert" 2>/dev/null | awk '{print $1}' || echo '')"
 
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
@@ -451,6 +454,13 @@ if [ -f "$ROUTING" ]; then
       sed -i "/\"wallet\": \"OpenID4VP\"/a\\    \"$CIE_ISSUER\": \"CieOidcRp\"" "$ROUTING"
     fi
   fi
+fi
+
+# ── copia immagini ente (logo, favicon) nel volume statico ───────────────────
+if [ -d "/gil-images" ]; then
+  echo "[startup] Copia immagini ente in $SATOSA_PROXY/static/img/..."
+  mkdir -p "$SATOSA_PROXY/static/img"
+  cp -r /gil-images/. "$SATOSA_PROXY/static/img/" 2>/dev/null || true
 fi
 
 # ── copia static files nel volume condiviso con auth-proxy-nginx ─────────────
@@ -727,7 +737,23 @@ for k,v in json.load(sys.stdin).items():
 ")"
       start_satosa || true
     else
-      echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+      # Riavvia SATOSA se il certificato SPID è stato rinnovato
+      _cert_wdg="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
+      [[ "$_cert_wdg" != /* ]] && _cert_wdg="$SATOSA_PROXY/$_cert_wdg"
+      _hash_wdg="$(md5sum "$_cert_wdg" 2>/dev/null | awk '{print $1}' || echo '')"
+      if [ -n "$_PKI_CERT_HASH" ] && [ -n "$_hash_wdg" ] && [ "$_hash_wdg" != "$_PKI_CERT_HASH" ]; then
+        echo "[watchdog] Certificato SPID rinnovato — riavvio SATOSA per caricare il nuovo certificato..."
+        stop_satosa
+        eval "$(printf '%s' "$_NEW" | python3 -c "
+import json,sys,shlex
+for k,v in json.load(sys.stdin).items():
+    if isinstance(v,str) and v and k.replace('_','').replace('-','').isalnum() and k[0].isalpha():
+        print('export {}={}'.format(k,shlex.quote(v)))
+")"
+        start_satosa || true
+      else
+        echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+      fi
     fi
   else
     if satosa_running; then
