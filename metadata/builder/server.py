@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 metadata-builder internal HTTP server.
-Accepts POST /run/<command>[?force=1&public_base_url=...] (authenticated via Bearer MASTER_TOKEN).
+Accepts POST /run/<command>[?force=1&public_base_url=...&host_header=...] (authenticated via Bearer MASTER_TOKEN).
 Dispatches to /builder/entrypoint.sh <command> and returns JSON output.
 public_base_url (optional): sets SATOSA_INTERNAL_HOST_HEADER from URL hostname and
 IAM_PROXY_PUBLIC_BASE_URL to the provided URL for the spawned command.
+host_header (optional): sets only SATOSA_INTERNAL_HOST_HEADER, keeping all fetches on the internal network.
 """
 import http.server
 import json
@@ -91,11 +92,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             extra_env["FORCE"] = "1"
 
         public_base_url = qparams.get("public_base_url", [""])[0].strip()
+        host_header = qparams.get("host_header", [""])[0].strip()
+        if host_header:
+            extra_env["SATOSA_INTERNAL_HOST_HEADER"] = host_header
         if public_base_url:
             parsed_public = urlparse(public_base_url)
-            host_header = parsed_public.hostname or ""
-            if host_header:
-                extra_env["SATOSA_INTERNAL_HOST_HEADER"] = host_header
+            derived_host_header = parsed_public.hostname or ""
+            if derived_host_header and not host_header:
+                extra_env["SATOSA_INTERNAL_HOST_HEADER"] = derived_host_header
             extra_env["IAM_PROXY_PUBLIC_BASE_URL"] = public_base_url
 
         print(

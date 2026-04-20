@@ -1243,7 +1243,10 @@ class ImpostazioniController
             $query['force'] = '1';
         }
         if ($publicBaseUrl !== '') {
-            $query['public_base_url'] = $publicBaseUrl;
+            $hostHeader = (string)(parse_url($publicBaseUrl, PHP_URL_HOST) ?: '');
+            if ($hostHeader !== '') {
+                $query['host_header'] = $hostHeader;
+            }
         }
         $endpoint = "{$builderUrl}/run/export-agid";
         if (!empty($query)) {
@@ -1348,10 +1351,6 @@ class ImpostazioniController
             ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => $hostHeader],
             ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => ''],
         ];
-
-        if ($publicBaseUrl !== '') {
-            $attempts[] = ['url' => rtrim($publicBaseUrl, '/') . '/spidSaml2/metadata', 'host' => ''];
-        }
 
         foreach ($attempts as $attempt) {
             $ch = curl_init($attempt['url']);
