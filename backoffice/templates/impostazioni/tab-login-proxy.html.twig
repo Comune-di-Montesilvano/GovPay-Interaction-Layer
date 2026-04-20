@@ -455,6 +455,9 @@
           </button>
           {% if is_superadmin %}
           <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-info" type="button" onclick="copyCieKeysJwks(this)">
+              <i class="fas fa-copy me-1"></i>Copia JSON
+            </button>
             <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
               <i class="fas fa-key me-1"></i>Genera
             </button>
@@ -1486,6 +1489,27 @@ async function loadSpidCertInfo(btn) {
     bodyEl.innerHTML = '<div class="text-danger small">Errore: ' + escHtml(e.message) + '</div>';
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+// ── Copia JSON JWKS CIE OIDC ─────────────────────────────────────────────────
+async function copyCieKeysJwks(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/cie-keys/jwks');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const jwks = json.data || { keys: [] };
+    const text = JSON.stringify(jwks, null, 4);
+    await navigator.clipboard.writeText(text);
+    impToast('JSON JWKS copiato negli appunti.', true);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
   }
 }
 
