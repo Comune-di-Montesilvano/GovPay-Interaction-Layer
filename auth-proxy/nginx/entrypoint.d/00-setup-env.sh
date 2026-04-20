@@ -6,6 +6,7 @@ set -e
 
 NGINX_HOST="${NGINX_HOST:-auth-proxy-nginx}"
 SSL_ENABLED="${SSL:-on}"
+DNS_RESOLVER="${NGINX_DNS_RESOLVER:-127.0.0.11}"
 
 echo "[nginx-setup] Initializing configuration from templates..."
 # Pulizia conf.d originale e copia dei template
@@ -14,6 +15,7 @@ cp /satosa_config_templates/*.conf /etc/nginx/conf.d/
 
 # Replace $NGINX_HOST in all config files
 find /etc/nginx/conf.d -name "*.conf" -type f -exec sed -i "s|\$NGINX_HOST|${NGINX_HOST}|g" {} \;
+find /etc/nginx/conf.d -name "*.conf" -type f -exec sed -i "s|#DNS_RESOLVER_MARKER#|${DNS_RESOLVER}|g" {} \;
 
 if [ "$SSL_ENABLED" = "on" ]; then
     echo "[nginx-setup] SSL is enabled. Injecting SSL config..."
@@ -60,4 +62,4 @@ for tmpl in /usr/share/nginx/html/errors/*.html; do
 done
 echo "[nginx-setup] Error pages generated in /tmp/errors/ for org: ${ORG_NAME}"
 
-echo "[nginx-setup] Substituted NGINX_HOST=${NGINX_HOST} and SSL macros in config files"
+echo "[nginx-setup] Substituted NGINX_HOST=${NGINX_HOST}, DNS_RESOLVER=${DNS_RESOLVER} and SSL macros in config files"
