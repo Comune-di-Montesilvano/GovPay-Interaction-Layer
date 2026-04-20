@@ -1640,7 +1640,14 @@ async function doExportSpidMetadata(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ force: true }),
     });
-    const json = await res.json();
+    const raw = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      const excerpt = raw.replace(/\s+/g, ' ').trim().slice(0, 180);
+      throw new Error('HTTP ' + res.status + ' risposta non JSON' + (excerpt ? ': ' + excerpt : ''));
+    }
     if (json.success) {
       const exp = json.valid_until ? '<br><strong>validUntil:</strong> ' + escHtml(json.valid_until) : '';
       const eid = json.entity_id ? '<br><strong>Entity ID:</strong> ' + escHtml(json.entity_id) : '';
