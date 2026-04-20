@@ -847,7 +847,9 @@ class ImpostazioniController
         $this->requireSuperadmin();
         $uploadedFiles = $request->getUploadedFiles();
         $certsDir = self::SPID_CERTS_DIR;
-        @mkdir($certsDir, 0755, true);
+        if (!is_dir($certsDir) && !mkdir($certsDir, 0755, true) && !is_dir($certsDir)) {
+            return $this->jsonError("Impossibile creare la directory certificati SPID: {$certsDir}");
+        }
 
         // ZIP mode
         if (isset($uploadedFiles['backup_zip']) && $uploadedFiles['backup_zip']->getError() === UPLOAD_ERR_OK) {
@@ -1211,6 +1213,11 @@ class ImpostazioniController
         $body  = $this->parseBody($request);
         $force = !empty($body['force']);
 
+        // Evita lock di sessione durante una chiamata potenzialmente lunga al metadata-builder.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
+        }
+
         $builderUrl    = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
         $masterToken   = (string)(getenv('MASTER_TOKEN') ?: '');
         $iamProxy      = SettingsRepository::getSection('iam_proxy');
@@ -1227,15 +1234,35 @@ class ImpostazioniController
             $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         }
 
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => 180,
-                'ignore_errors' => true,
-            ],
-        ]);
-        $raw    = @file_get_contents($endpoint, false, $ctx);
+        $raw = false;
+        if (function_exists('curl_init')) {
+            $ch = curl_init($endpoint);
+            if ($ch !== false) {
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    "Authorization: Bearer {$masterToken}",
+                    "Content-Length: 0",
+                ]);
+                $raw = curl_exec($ch);
+                if (!is_string($raw)) {
+                    $raw = false;
+                }
+            }
+        }
+        if ($raw === false) {
+            $ctx = stream_context_create([
+                'http' => [
+                    'method'        => 'POST',
+                    'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
+                    'timeout'       => 45,
+                    'ignore_errors' => true,
+                ],
+            ]);
+            $raw = @file_get_contents($endpoint, false, $ctx);
+        }
         $result = $raw !== false ? json_decode($raw, true) : null;
 
         if (!($result['success'] ?? false)) {
@@ -1438,7 +1465,9 @@ class ImpostazioniController
         SettingsRepository::set('iam_proxy', 'spid_cert_key_size', (string)$keySize);
 
         $certsDir = self::SPID_CERTS_DIR;
-        @mkdir($certsDir, 0755, true);
+        if (!is_dir($certsDir) && !mkdir($certsDir, 0755, true) && !is_dir($certsDir)) {
+            return $this->jsonError("Impossibile creare la directory certificati SPID: {$certsDir}");
+        }
 
         $tmpCnf = tempnam(sys_get_temp_dir(), 'spid_cnf_');
 
