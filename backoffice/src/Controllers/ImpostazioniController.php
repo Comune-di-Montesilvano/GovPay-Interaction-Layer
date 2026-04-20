@@ -2223,7 +2223,13 @@ class ImpostazioniController
 
     private function jsonError(string $message, int $status = 400): Response
     {
-        return $this->jsonResponse(['success' => false, 'message' => $message], $status);
+        $resp = $this->jsonResponse([
+            'success' => false,
+            'message' => $message,
+            'error_status' => $status,
+        ], 200);
+
+        return $resp->withHeader('X-App-Error-Status', (string)$status);
     }
 
     private function jsonResponse(array $data, int $status = 200): Response
