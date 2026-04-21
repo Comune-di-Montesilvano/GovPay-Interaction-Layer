@@ -196,7 +196,10 @@ class ImpostazioniController
             'mailer_from_address'  => $body['mailer_from_address'] ?? '',
             'mailer_from_name'     => $body['mailer_from_name'] ?? '',
         ], $by);
-        SettingsRepository::set('app', 'debug', $body['app_debug'] === 'true' ? 'true' : 'false', false, $by);
+        // Compatibilità: se il vecchio campo è ancora presente nel form, aggiorna il flag app.debug.
+        if (array_key_exists('app_debug', $body)) {
+            SettingsRepository::set('app', 'debug', $body['app_debug'] === 'true' ? 'true' : 'false', false, $by);
+        }
 
         return $this->jsonOk('Impostazioni Backoffice salvate.');
     }
@@ -235,7 +238,10 @@ class ImpostazioniController
             'public_base_url'                  => $publicBaseUrl,
             'saml2_idp_metadata_url'           => $body['saml2_idp_metadata_url'] ?? '',
             'saml2_idp_metadata_url_internal'  => $body['saml2_idp_metadata_url_internal'] ?? '',
-            'debug'                            => $body['debug'] ?? 'false',
+            // Compatibilità: se il vecchio campo debug non arriva dal form, preserva il valore DB.
+            'debug'                            => array_key_exists('debug', $body)
+                ? ($body['debug'] ?? 'false')
+                : SettingsRepository::get('iam_proxy', 'debug', 'false'),
             'enable_spid'                      => $body['enable_spid'] ?? 'false',
             'enable_cie_oidc'                  => $body['enable_cie_oidc'] ?? 'false',
             'enable_it_wallet'                 => $body['enable_it_wallet'] ?? 'false',
@@ -377,6 +383,22 @@ class ImpostazioniController
         $this->triggerAuthProxyReload();
 
         return $this->jsonOk('Impostazioni salvate con successo. Auth Proxy si riavvierà automaticamente entro pochi secondi per applicare le modifiche.');
+    }
+
+    public function saveDebug(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        $by = $this->currentUser();
+        SettingsRepository::set('app', 'debug', ($body['app_debug'] ?? 'false') === 'true' ? 'true' : 'false', false, $by);
+        SettingsRepository::set('iam_proxy', 'debug', ($body['iam_proxy_debug'] ?? 'false') === 'true' ? 'true' : 'false', false, $by);
+
+        $this->triggerAuthProxyReload();
+        return $this->jsonOk('Flag debug salvati con successo.');
     }
 
     private function triggerAuthProxyReload(): void

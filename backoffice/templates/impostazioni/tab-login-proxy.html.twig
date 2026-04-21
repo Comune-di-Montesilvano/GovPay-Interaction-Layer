@@ -45,11 +45,10 @@
               {# Hostname derivato automaticamente dall'URL pubblico — non mostrato nel form #}
               <input type="hidden" name="hostname" id="lp-hostname" value="{{ iam_proxy.hostname|default('') }}">
               <div class="col-12">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="debug" id="lp-debug" value="true"
-                    {{ iam_proxy.debug|default('false') == 'true' ? 'checked' : '' }}
-                    {{ not is_superadmin ? 'disabled' : '' }}>
-                  <label class="form-check-label" for="lp-debug">Modalità debug (verbose logging)</label>
+                <div class="alert alert-light border py-2 mb-0" role="alert">
+                  <i class="fas fa-bug me-1 text-warning"></i>
+                  Il debug Auth Proxy si configura in
+                  <a href="/impostazioni?tab=debug" class="alert-link">Sistema → Debug</a>.
                 </div>
               </div>
             </div>
