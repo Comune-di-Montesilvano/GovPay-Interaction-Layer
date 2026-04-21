@@ -146,7 +146,6 @@
         </div>
       {% else %}
         <div class="alert alert-info">
-          <i class="fas fa-info-circle me-1"></i>
           {% if current_user is defined and current_user.role in ['admin', 'superadmin'] %}
             Nessun template è assegnato al tuo account. Puoi gestire i template e le loro assegnazioni dalla
             <a href="/configurazione?tab=templates">pagina di configurazione</a>.

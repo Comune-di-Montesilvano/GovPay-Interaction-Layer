@@ -11,9 +11,14 @@
   .form-save-bar { display: none; position: sticky; bottom: 0; background: rgba(255,255,255,.95); backdrop-filter: blur(4px); border-top: 1px solid #dee2e6; padding: .75rem 1rem; z-index: 10; }
   .form-save-bar.visible { display: flex; }
   .master-status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  /* Normalizza icone automatiche Bootstrap Italia negli alert */
-  .alert::before { font-size: 1rem !important; }
-  .alert svg { width: 1rem !important; height: 1rem !important; flex-shrink: 0; }
+  /* Bootstrap Italia aggiunge icone via background-image 32x32px su .alert.
+     Riduce l'icona e il padding-left per gli alert compatti (py-2 / small). */
+  .alert.py-2 {
+    background-size: 18px 18px;
+    background-position: 10px center;
+    padding-left: 2.2rem;
+  }
+  .alert.py-2.small, .alert.py-2 .small { font-size: .875rem; }
 </style>
 {% endblock %}
 
