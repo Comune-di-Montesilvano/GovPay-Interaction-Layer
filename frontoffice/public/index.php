@@ -432,7 +432,7 @@ if (!function_exists('frontoffice_detect_auth_provider_name')) {
     function frontoffice_detect_auth_provider_name($auth): string
     {
         if (!$auth || !method_exists($auth, 'getLastResponseXML')) {
-            return 'IAM Proxy';
+            return 'Auth Proxy';
         }
 
         $xml = (string)$auth->getLastResponseXML();
@@ -611,9 +611,6 @@ if (!function_exists('frontoffice_http_get_raw')) {
         $desiredScheme = $sslOn ? 'https' : 'http';
         if (in_array(strtolower($urlHost), ['auth-proxy-nginx', 'localhost', '127.0.0.1'], true)) {
             $proxyBase = rtrim(frontoffice_env_value('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-            if ($proxyBase === '') {
-                $proxyBase = rtrim(frontoffice_env_value('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-            }
             $hostHeader = (string)(parse_url($proxyBase, PHP_URL_HOST) ?: '');
 
             if (str_starts_with($url, 'http://') && $desiredScheme === 'https') {
@@ -2758,12 +2755,9 @@ $routes = [
             }
 
             $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-            if ($proxyBase === '') {
-                $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-            }
             // Preferisci l'URL interno (per il container frontoffice -> auth-proxy-nginx:443)
             // Fallback all'URL esterno (per il browser -> auth-proxy-nginx:9445)
-            $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
+            $metadataUrl = $env('AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
             if ($metadataUrl === '') {
                 $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
             }
@@ -2780,7 +2774,7 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Login IAM Proxy non configurato: imposta IAM_PROXY_PUBLIC_BASE_URL (o SPID_PROXY_PUBLIC_BASE_URL) e verifica IAM_PROXY_SAML2_IDP_METADATA_URL.',
+                        'message' => 'Login Auth Proxy non configurato: imposta IAM_PROXY_PUBLIC_BASE_URL (o SPID_PROXY_PUBLIC_BASE_URL) e verifica IAM_PROXY_SAML2_IDP_METADATA_URL.',
                     ],
                 ];
             }
@@ -2798,12 +2792,12 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Login IAM Proxy non disponibile: impossibile inizializzare SAML. Verifica metadata e dipendenze PHP-SAML.',
+                        'message' => 'Login Auth Proxy non disponibile: impossibile inizializzare SAML. Verifica metadata e dipendenze PHP-SAML.',
                     ],
                 ];
             }
 
-            // RelayState: usa disco page del proxy IAM
+            // RelayState: usa disco page del proxy Auth
             $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
             $discoUrl = $proxyBase ? ($proxyBase . '/static/disco.html') : '/static/disco.html';
 
@@ -2954,12 +2948,9 @@ $routes = [
             }
 
             $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-            if ($proxyBase === '') {
-                $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-            }
             // Preferisci l'URL interno (per il container frontoffice -> auth-proxy-nginx:443)
             // Fallback all'URL esterno (per il browser -> auth-proxy-nginx:9445)
-            $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
+            $metadataUrl = $env('AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
             if ($metadataUrl === '') {
                 $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
             }
@@ -2975,7 +2966,7 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Callback IAM Proxy non valida: SAML non inizializzabile (metadata o configurazione mancante).',
+                        'message' => 'Callback Auth Proxy non valida: SAML non inizializzabile (metadata o configurazione mancante).',
                         'debug_session_info' => $debugFromSessionStr,
                     ],
                 ];
@@ -3002,7 +2993,7 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Login IAM Proxy fallito: ' . ($reason ?: 'risposta SAML non valida.') ,
+                        'message' => 'Login Auth Proxy fallito: ' . ($reason ?: 'risposta SAML non valida.') ,
                         'debug_spid_errors' => implode(', ', $errors),
                         'debug_spid_reason' => $reason,
                         'debug_session_info' => $debugFromSessionStr,
@@ -3207,10 +3198,7 @@ $routes = [
         }
 
         $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-        if ($proxyBase === '') {
-            $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-        }
-        $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
+        $metadataUrl = $env('AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
         if ($metadataUrl === '') {
             $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
         }

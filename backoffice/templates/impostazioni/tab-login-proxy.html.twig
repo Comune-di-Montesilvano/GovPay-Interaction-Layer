@@ -4,7 +4,7 @@
     <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-3">
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <span id="lp-status-dot" class="master-status-dot bg-secondary"></span>
-        <strong>Login Proxy (IAM Proxy)</strong>
+        <strong>Login Proxy (Auth Proxy)</strong>
         <span id="lp-status-text" class="text-muted small">Stato sconosciuto</span>
         <span id="lp-config-badge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-normal small ms-1" style="display:none;"></span>
       </div>
@@ -35,27 +35,15 @@
         <div id="lp-generale" class="accordion-collapse collapse show" data-bs-parent="#acc-lp">
           <div class="accordion-body">
             <div class="row g-3">
-              <div class="col-md-8">
+              <div class="col-md-12">
                 <label class="form-label">URL pubblico del proxy <span class="text-danger">*</span></label>
                 <input type="url" class="form-control" name="public_base_url" id="lp-public-url"
                   value="{{ iam_proxy.public_base_url|default('') }}" placeholder="https://login.comune.example.it"
                   {{ not is_superadmin ? 'readonly' : '' }}>
-                <div class="form-text">URL radice del proxy IAM (es. <code>https://login.comune.example.it</code>). Usato per derivare automaticamente gli endpoint.</div>
+                <div class="form-text">URL radice dell'Auth Proxy (es. <code>https://login.comune.example.it</code>). Usato per derivare automaticamente gli endpoint.</div>
               </div>
               {# Hostname derivato automaticamente dall'URL pubblico — non mostrato nel form #}
               <input type="hidden" name="hostname" id="lp-hostname" value="{{ iam_proxy.hostname|default('') }}">
-              <div class="col-md-3">
-                <label class="form-label">Porta HTTP</label>
-                <input type="number" class="form-control" name="http_port"
-                  value="{{ iam_proxy.http_port|default('8080') }}" min="1" max="65535"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
-              <div class="col-md-5">
-                <label class="form-label">SATOSA base path</label>
-                <input type="text" class="form-control font-monospace" name="satosa_base"
-                  value="{{ iam_proxy.satosa_base|default('/saml2/idp') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
               <div class="col-12">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" name="debug" id="lp-debug" value="true"
@@ -314,68 +302,21 @@
             {% set cie_env = current_cie_url == cie_prod_url ? 'prod' : (current_cie_url == cie_preprod_url ? 'preprod' : 'custom') %}
 
             <div class="row g-3 mb-4">
-              <div class="col-md-6">
+              <div class="col-md-12">
                 <label class="form-label">Ambiente CIE OIDC</label>
-                <select class="form-select" id="lp-cie-env" {{ not is_superadmin ? 'disabled' : '' }}
-                  onchange="lpUpdateCieEnv()">
+                <select class="form-select" id="lp-cie-env" name="cie_env" {{ not is_superadmin ? 'disabled' : '' }}>
                   <option value="prod"    {{ cie_env == 'prod'    ? 'selected' : '' }}>Produzione</option>
                   <option value="preprod" {{ cie_env == 'preprod' ? 'selected' : '' }}>Pre-produzione (collaudo)</option>
-                  <option value="custom"  {{ cie_env == 'custom'  ? 'selected' : '' }}>Personalizzato…</option>
                 </select>
+                <div class="form-text mt-2" id="cie-env-info">
+                  <strong>Produzione:</strong><br>
+                  Trust Anchor: <code>https://registry.servizicie.interno.gov.it</code><br>
+                  Authority Hint: <code>https://oidc.idserver.servizicie.interno.gov.it</code><br><br>
+                  <strong>Pre-produzione (Collaudo):</strong><br>
+                  Trust Anchor: <code>https://preproduzione.cie.interno.gov.it</code><br>
+                  Authority Hint: <code>https://preproduzione.cie.interno.gov.it/idp/oidc/op</code>
+                </div>
               </div>
-              <div class="col-md-8" id="lp-cie-custom-wrap" style="{{ cie_env != 'custom' ? 'display:none' : '' }}">
-                <label class="form-label">Provider URL personalizzato</label>
-                <input type="url" class="form-control font-monospace" id="lp-cie-custom-url"
-                  value="{{ cie_env == 'custom' ? current_cie_url : '' }}"
-                  placeholder="https://…"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
-              {# Campo nascosto con il valore effettivo da salvare #}
-              <input type="hidden" name="cie_oidc_provider_url" id="lp-cie-provider-url-hidden"
-                value="{{ current_cie_url }}">
-            </div>
-
-            <hr class="my-3">
-            <p class="text-muted small mb-3">
-              <i class="fas fa-magic me-1"></i>
-              I campi seguenti vengono calcolati automaticamente dall'<strong>URL pubblico del proxy</strong>.
-              Clicca <i class="fas fa-pencil-alt"></i> per modificarli manualmente.
-            </p>
-
-            {# Macro campi calcolati #}
-            {% macro derived_field(label, name, id, hint_id, value, is_superadmin) %}
-            <div class="col-md-8">
-              <label class="form-label">{{ label }}</label>
-              <div class="input-group">
-                <input type="url" class="form-control font-monospace" name="{{ name }}" id="{{ id }}"
-                  value="{{ value }}"
-                  {{ not is_superadmin ? 'readonly' : 'readonly data-derived="true"' }}>
-                {% if is_superadmin %}
-                <button class="btn btn-outline-secondary" type="button"
-                  onclick="lpUnlock('{{ id }}', this)" title="Modifica manualmente">
-                  <i class="fas fa-pencil-alt"></i>
-                </button>
-                {% endif %}
-              </div>
-              {% if hint_id %}<div class="form-text"><code id="{{ hint_id }}"></code></div>{% endif %}
-            </div>
-            {% endmacro %}
-
-            <div class="row g-3 mb-3">
-              {{ _self.derived_field('Client ID', 'cie_oidc_client_id', 'lp-cie-client-id', 'lp-cie-client-id-hint',
-                iam_proxy.cie_oidc_client_id|default(''), is_superadmin) }}
-              {{ _self.derived_field('Redirect URI', 'cie_oidc_redirect_uri', 'lp-cie-redirect', 'lp-cie-redirect-hint',
-                iam_proxy.cie_oidc_redirect_uri|default(''), is_superadmin) }}
-              {{ _self.derived_field('JWKS URI', 'cie_oidc_jwks_uri', 'lp-cie-jwks', 'lp-cie-jwks-hint',
-                iam_proxy.cie_oidc_jwks_uri|default(''), is_superadmin) }}
-              {{ _self.derived_field('Signed JWKS URI', 'cie_oidc_signed_jwks_uri', 'lp-cie-signed-jwks', 'lp-cie-signed-jwks-hint',
-                iam_proxy.cie_oidc_signed_jwks_uri|default(''), is_superadmin) }}
-              {{ _self.derived_field('Trust Anchor URL', 'cie_oidc_trust_anchor_url', 'lp-cie-trust-anchor', 'lp-cie-trust-anchor-hint',
-                iam_proxy.cie_oidc_trust_anchor_url|default(''), is_superadmin) }}
-              {{ _self.derived_field('Authority Hint URL', 'cie_oidc_authority_hint_url', 'lp-cie-auth-hint', 'lp-cie-auth-hint-hint',
-                iam_proxy.cie_oidc_authority_hint_url|default(''), is_superadmin) }}
-              {{ _self.derived_field('Homepage URI', 'cie_oidc_homepage_uri', 'lp-cie-homepage', 'lp-cie-homepage-hint',
-                iam_proxy.cie_oidc_homepage_uri|default(''), is_superadmin) }}
             </div>
 
             <hr class="my-3">
@@ -388,7 +329,6 @@
                   placeholder="{{ entity.name|default('') ~ ' - CIE OIDC RP' }}"
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
-              {# cie_oidc_organization_name derivato da entity.name — nascosto #}
               <input type="hidden" name="cie_oidc_organization_name" value="{{ iam_proxy.cie_oidc_organization_name|default(entity.name|default('')) }}">
               <div class="col-md-6">
                 <label class="form-label">E-mail di contatto</label>
@@ -398,43 +338,6 @@
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
             </div>
-
-            {# Endpoint federazione (avanzati) #}
-            {% if is_superadmin %}
-            <details class="mt-2">
-              <summary class="text-muted small fw-semibold" style="cursor:pointer">
-                <i class="fas fa-caret-right me-1"></i>Endpoint federazione (avanzati, auto-calcolati)
-              </summary>
-              <div class="row g-3 mt-2">
-                {{ _self.derived_field('Federation Resolve', 'cie_oidc_federation_resolve_endpoint', 'lp-cie-fed-resolve', null,
-                  iam_proxy.cie_oidc_federation_resolve_endpoint|default(''), is_superadmin) }}
-                {{ _self.derived_field('Federation Fetch', 'cie_oidc_federation_fetch_endpoint', 'lp-cie-fed-fetch', null,
-                  iam_proxy.cie_oidc_federation_fetch_endpoint|default(''), is_superadmin) }}
-                {{ _self.derived_field('Trust Mark Status', 'cie_oidc_federation_trust_mark_status_endpoint', 'lp-cie-fed-tm', null,
-                  iam_proxy.cie_oidc_federation_trust_mark_status_endpoint|default(''), is_superadmin) }}
-                {{ _self.derived_field('Federation List', 'cie_oidc_federation_list_endpoint', 'lp-cie-fed-list', null,
-                  iam_proxy.cie_oidc_federation_list_endpoint|default(''), is_superadmin) }}
-                <div class="col-md-8">
-                  <label class="form-label">Policy URI</label>
-                  <div class="input-group">
-                    <input type="url" class="form-control font-monospace" name="cie_oidc_policy_uri"
-                      id="lp-cie-policy" value="{{ iam_proxy.cie_oidc_policy_uri|default('') }}"
-                      readonly data-derived="true">
-                    <button class="btn btn-outline-secondary" type="button" onclick="lpUnlock('lp-cie-policy', this)">
-                      <i class="fas fa-pencil-alt"></i>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </details>
-            {% else %}
-            {# Mantieni i valori nascosti per utenti non-superadmin #}
-            <input type="hidden" name="cie_oidc_federation_resolve_endpoint" value="{{ iam_proxy.cie_oidc_federation_resolve_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_federation_fetch_endpoint" value="{{ iam_proxy.cie_oidc_federation_fetch_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_federation_trust_mark_status_endpoint" value="{{ iam_proxy.cie_oidc_federation_trust_mark_status_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_federation_list_endpoint" value="{{ iam_proxy.cie_oidc_federation_list_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_policy_uri" value="{{ iam_proxy.cie_oidc_policy_uri|default('') }}">
-            {% endif %}
 
           
             {# Cards Gestione CIE OIDC #}
