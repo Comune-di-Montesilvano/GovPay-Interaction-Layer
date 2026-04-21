@@ -1,0 +1,41 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom-0 pb-0">
+    <h5 class="mb-1"><i class="fas fa-bug me-2 text-warning"></i>Debug</h5>
+    <p class="text-muted small mb-0">Gestione centralizzata dei flag di debug applicativi.</p>
+  </div>
+  <div class="card-body">
+    <form id="form-debug" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="app_debug" id="dbg-app" value="true"
+              {{ app.debug|default('false') == 'true' ? 'checked' : '' }}
+              {{ not is_superadmin ? 'disabled' : '' }}>
+            <label class="form-check-label" for="dbg-app">Debug applicativo (GovPay/backoffice verbose)</label>
+          </div>
+          <div class="form-text">Abilita output diagnostico aggiuntivo nelle chiamate e viste di configurazione.</div>
+        </div>
+
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="iam_proxy_debug" id="dbg-iam" value="true"
+              {{ iam_proxy.debug|default('false') == 'true' ? 'checked' : '' }}
+              {{ not is_superadmin ? 'disabled' : '' }}>
+            <label class="form-check-label" for="dbg-iam">Debug Auth Proxy (IAM Proxy)</label>
+          </div>
+          <div class="form-text">Abilita verbose logging nel container auth-proxy.</div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3 mt-4">
+        <button type="button" class="btn btn-primary" onclick="impSaveForm('form-debug', '/impostazioni/debug/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>

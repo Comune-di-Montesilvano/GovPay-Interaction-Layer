@@ -87,6 +87,9 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/frontoffice/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveFrontoffice($request, $response);
     });
+    $app->post('/impostazioni/debug/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveDebug($request, $response);
+    });
     $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
     });

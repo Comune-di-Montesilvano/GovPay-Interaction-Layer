@@ -26,6 +26,25 @@
   </div>
 {% endif %}
 
+{% set debug_app_active = app.debug|default('false') == 'true' %}
+{% set debug_iam_active = iam_proxy.debug|default('false') == 'true' %}
+{% if debug_app_active or debug_iam_active %}
+  <div class="alert alert-warning d-flex align-items-center justify-content-between py-2 mb-3" role="alert">
+    <div>
+      <i class="fas fa-bug me-2"></i>
+      <strong>Modalità debug attiva.</strong>
+      {% if debug_app_active and debug_iam_active %}
+        Sono abilitati Debug applicativo e Debug Auth Proxy.
+      {% elseif debug_app_active %}
+        È abilitato il Debug applicativo.
+      {% else %}
+        È abilitato il Debug Auth Proxy.
+      {% endif %}
+    </div>
+    <a class="btn btn-sm btn-outline-dark" href="/impostazioni?tab=debug">Vai al tab Debug</a>
+  </div>
+{% endif %}
+
 <div id="imp-toast" class="toast align-items-center position-fixed bottom-0 end-0 m-3" role="alert" style="z-index:9999;min-width:280px;">
   <div class="d-flex">
     <div class="toast-body" id="imp-toast-body"></div>
@@ -117,6 +136,9 @@
       </a>
 
       <span class="imp-section-title">Sistema</span>
+      <a class="nav-link {{ active_tab == 'debug' ? 'active' : '' }}" href="/impostazioni?tab=debug">
+        <i class="fas fa-bug me-2"></i>Debug
+      </a>
       <a class="nav-link {{ active_tab == 'info' ? 'active' : '' }}" href="/impostazioni?tab=info">
         <i class="fas fa-info-circle me-2"></i>Info GovPay
       </a>
@@ -149,6 +171,8 @@
       {% include 'impostazioni/tab-frontoffice.html.twig' %}
     {% elseif active_tab == 'login-proxy' %}
       {% include 'impostazioni/tab-login-proxy.html.twig' %}
+    {% elseif active_tab == 'debug' %}
+      {% include 'impostazioni/tab-debug.html.twig' %}
     {% elseif active_tab == 'backup' %}
       {% include 'impostazioni/tab-backup.html.twig' %}
     {% elseif active_tab == 'info-gil' %}
