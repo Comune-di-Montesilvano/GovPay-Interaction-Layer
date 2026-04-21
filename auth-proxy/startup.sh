@@ -192,33 +192,37 @@ stop_satosa() {
 }
 
 setup_satosa() {
-  # Verifica chiavi PKI SATOSA — fail-fast se mancanti (return 1 per gestione watchdog)
   local _pki_key="${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}"
   local _pki_cert="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
   [[ "$_pki_key"  != /* ]] && _pki_key="$SATOSA_PROXY/$_pki_key"
   [[ "$_pki_cert" != /* ]] && _pki_cert="$SATOSA_PROXY/$_pki_cert"
-  if [ ! -f "$_pki_key" ] || [ ! -f "$_pki_cert" ]; then
-    echo "[startup] ERRORE: Chiavi PKI SATOSA non trovate." >&2
-    echo "[startup]   Atteso: $_pki_key" >&2
-    echo "[startup]   Atteso: $_pki_cert" >&2
-    echo "[startup] Generare i certificati SPID dal backoffice: Impostazioni → Login Proxy → Certificati SPID" >&2
-    return 1
+  if is_true "${ENABLE_SPID:-false}"; then
+    # Chiavi PKI richieste solo dal backend SPID (spidsaml2_backend.yaml)
+    if [ ! -f "$_pki_key" ] || [ ! -f "$_pki_cert" ]; then
+      echo "[startup] ERRORE: SPID abilitato ma chiavi PKI SATOSA non trovate." >&2
+      echo "[startup]   Atteso: $_pki_key" >&2
+      echo "[startup]   Atteso: $_pki_cert" >&2
+      echo "[startup] Generare i certificati SPID dal backoffice: Impostazioni → Login Proxy → Certificati SPID" >&2
+      return 1
+    fi
+    # Garantisce attraversamento directory + leggibilità PKI
+    # (startup gira come root; SATOSA gira come utente non-root)
+    local _pki_dir
+    _pki_dir="$(dirname "$_pki_key")"
+    chmod 755 "$SATOSA_PROXY" "$_pki_dir" 2>/dev/null || true
+    chmod 644 "$_pki_key" "$_pki_cert" 2>/dev/null || true
+    if ! test -r "$_pki_key" || ! test -r "$_pki_cert"; then
+      echo "[startup] ERRORE: permessi PKI insufficienti dopo hardening." >&2
+      ls -ld "$SATOSA_PROXY" "$_pki_dir" >&2 || true
+      ls -l "$_pki_key" "$_pki_cert" >&2 || true
+      return 1
+    fi
+    echo "[startup] Chiavi PKI SPID verificate: $_pki_key, $_pki_cert"
+    # Registra hash del cert per rilevare rinnovi durante il watchdog
+    _PKI_CERT_HASH="$(md5sum "$_pki_cert" 2>/dev/null | awk '{print $1}' || echo '')"
+  else
+    echo "[startup] SPID disabilitato — verifica PKI saltata"
   fi
-  echo "[startup] Chiavi PKI verificate: $_pki_key, $_pki_cert"
-  # Garantisce attraversamento directory + leggibilita PKI
-  # (startup gira come root; SATOSA gira come utente non-root).
-  local _pki_dir
-  _pki_dir="$(dirname "$_pki_key")"
-  chmod 755 "$SATOSA_PROXY" "$_pki_dir" 2>/dev/null || true
-  chmod 644 "$_pki_key" "$_pki_cert" 2>/dev/null || true
-  if ! test -r "$_pki_key" || ! test -r "$_pki_cert"; then
-    echo "[startup] ERRORE: permessi PKI insufficienti dopo hardening." >&2
-    ls -ld "$SATOSA_PROXY" "$_pki_dir" >&2 || true
-    ls -l "$_pki_key" "$_pki_cert" >&2 || true
-    return 1
-  fi
-  # Registra hash del cert per rilevare rinnovi durante il watchdog
-  _PKI_CERT_HASH="$(md5sum "$_pki_cert" 2>/dev/null | awk '{print $1}' || echo '')"
 
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
@@ -398,6 +402,10 @@ if [ -f "$PROXY_CONF" ]; then
     sed -i 's|^  - "conf/backends/cieoidc_backend.yaml"|  # - "conf/backends/cieoidc_backend.yaml"  # Disabled (set ENABLE_CIE_OIDC=true)|' "$PROXY_CONF"
     sed -i 's|^  - "conf/backends/pyeudiw_backend.yaml"|  # - "conf/backends/pyeudiw_backend.yaml"  # Disabled|' "$PROXY_CONF"
     sed -i 's|^  - "conf/backends/saml2_backend.yaml"|  # - "conf/backends/saml2_backend.yaml"  # Disabled|' "$PROXY_CONF"
+  fi
+  if ! is_true "${ENABLE_SPID:-false}"; then
+    sed -i 's|^  - "conf/backends/spidsaml2_backend.yaml"|  # - "conf/backends/spidsaml2_backend.yaml"  # Disabled (set ENABLE_SPID=true)|' "$PROXY_CONF"
+    sed -i 's|^  - "conf/backends/ciesaml2_backend.yaml"|  # - "conf/backends/ciesaml2_backend.yaml"  # Disabled (ENABLE_SPID=false)|' "$PROXY_CONF"
   fi
   is_true "${SATOSA_DISABLE_PYEUDIW_BACKEND:-}" && \
     sed -i 's|^  - "conf/backends/pyeudiw_backend.yaml"|  # - "conf/backends/pyeudiw_backend.yaml"  # Disabled by SATOSA_DISABLE_PYEUDIW_BACKEND|' "$PROXY_CONF" || true
@@ -598,13 +606,16 @@ print(f'[startup] frontoffice_sp.xml generato (entityID={entity_id}, validUntil=
 PY
 }
 
-ensure_sp_metadata 0
-
-# Watcher: controlla la scadenza ogni FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS
-(while true; do
-  sleep "${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}"
-  ensure_sp_metadata 0 || true
-done) &
+if is_true "${ENABLE_SPID:-false}"; then
+  ensure_sp_metadata 0
+  # Watcher: controlla la scadenza ogni FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS
+  (while true; do
+    sleep "${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}"
+    ensure_sp_metadata 0 || true
+  done) &
+else
+  echo "[startup] SPID disabilitato — generazione SP metadata saltata"
+fi
 
 # ── patch_saml2.py ────────────────────────────────────────────────────────────
 if [ -f "$SATOSA_PROXY/patch_saml2.py" ]; then
@@ -781,10 +792,10 @@ for k,v in json.load(sys.stdin).items():
 ")"
       start_satosa || true
     else
-      # Riavvia SATOSA se il certificato SPID è stato rinnovato
+      # Riavvia SATOSA se il certificato SPID è stato rinnovato (solo se SPID abilitato)
       _cert_wdg="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
       [[ "$_cert_wdg" != /* ]] && _cert_wdg="$SATOSA_PROXY/$_cert_wdg"
-      _hash_wdg="$(md5sum "$_cert_wdg" 2>/dev/null | awk '{print $1}' || echo '')"
+      _hash_wdg="$(is_true "${ENABLE_SPID:-false}" && md5sum "$_cert_wdg" 2>/dev/null | awk '{print $1}' || echo '')"
       if [ -n "$_PKI_CERT_HASH" ] && [ -n "$_hash_wdg" ] && [ "$_hash_wdg" != "$_PKI_CERT_HASH" ]; then
         echo "[watchdog] Certificato SPID rinnovato — riavvio SATOSA per caricare il nuovo certificato..."
         stop_satosa
