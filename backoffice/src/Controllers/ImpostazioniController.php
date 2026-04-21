@@ -668,7 +668,7 @@ class ImpostazioniController
         if ($cieEnv === 'prod') {
             $env['CIE_OIDC_PROVIDER_URL']       = 'https://oidc.idserver.servizicie.interno.gov.it';
             $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://oidc.idserver.servizicie.interno.gov.it';
-            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://registry.servizicie.interno.gov.it';
+            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://oidc.registry.servizicie.interno.gov.it';
         } else {
             $env['CIE_OIDC_PROVIDER_URL']       = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
             $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';

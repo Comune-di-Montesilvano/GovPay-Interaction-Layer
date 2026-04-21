@@ -157,6 +157,7 @@ class AuthorizationHandler(BaseEndpoint):
         """
         Private method __get_trust_chain:
         This method get Trust chain from provider url from Trust Chains dictionary.
+        If trust chain is not available (empty dict from boot failure), attempt on-demand fetch.
 
         :type self: object
         :rtype: TrustChainBuilder
@@ -169,6 +170,37 @@ class AuthorizationHandler(BaseEndpoint):
             f"Entering method: {inspect.getframeinfo(inspect.currentframe()).function}."
             f"Params[provider: {provider}]"
         )
+        
+        # Try pre-built trust chain first (cached at boot)
+        if self.trust_chains and provider in self.trust_chains:
+            return self.trust_chains[provider]
+        
+        # Fallback: attempt on-demand trust chain build if boot fetch failed
+        if not self.trust_chains or provider not in self.trust_chains:
+            logger.warning(
+                f"[patch] CIE OIDC: trust_chains empty or provider not found. "
+                f"Attempting on-demand fetch for: {provider}"
+            )
+            try:
+                trust_chain_builder = TrustChainBuilder(provider)
+                trust_chain_builder.build()
+                logger.info(
+                    f"[patch] CIE OIDC: on-demand trust chain built successfully for {provider}"
+                )
+                # Cache it for next requests
+                if not self.trust_chains:
+                    self.trust_chains = {}
+                self.trust_chains[provider] = trust_chain_builder
+                return trust_chain_builder
+            except Exception as e:
+                logger.error(
+                    f"[patch] CIE OIDC: on-demand trust chain fetch failed for {provider}: {e}"
+                )
+                raise ValueError(
+                    f"CIE OIDC trust chain not available for {provider}. "
+                    f"Registry unreachable. Authentication cannot proceed."
+                )
+        
         return self.trust_chains[provider]
 
     def __authorization_data(self, provider_authorization_endpoint: str, provider_issuer: str = None) -> dict:
