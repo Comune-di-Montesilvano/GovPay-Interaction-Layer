@@ -71,37 +71,34 @@ else:
 candidates = glob.glob("/.venv/lib/python*/site-packages/saml2/assertion.py")
 if not candidates:
     print("ERROR: saml2/assertion.py not found under /.venv - skipping patch")
-    sys.exit(0)
+else:
+    path = candidates[0]
+    print(f"[patch_saml2] Patching {path}")
 
-path = candidates[0]
-print(f"[patch_saml2] Patching {path}")
+    with open(path) as f:
+        content = f.read()
 
-with open(path) as f:
-    content = f.read()
+    OLD = (
+        "    if not vlist:  # No value specified equals any value\n"
+        "        return vals\n"
+    )
+    NEW = (
+        "    if not vlist:  # No value specified equals any value\n"
+        "        return vals if vals is not None else []\n"
+    )
 
-OLD = (
-    "    if not vlist:  # No value specified equals any value\n"
-    "        return vals\n"
-)
-NEW = (
-    "    if not vlist:  # No value specified equals any value\n"
-    "        return vals if vals is not None else []\n"
-)
-
-if OLD not in content:
-    if "return vals if vals is not None else []" in content:
-        print("[patch_saml2] Already patched, nothing to do.")
-        sys.exit(0)
+    if OLD not in content:
+        if "return vals if vals is not None else []" in content:
+            print("[patch_saml2] Already patched, nothing to do.")
+        else:
+            print("[patch_saml2] WARNING: expected pattern not found — pysaml2 may have changed.")
+            print("[patch_saml2] Skipping patch. SSO may not work correctly.")
     else:
-        print("[patch_saml2] WARNING: expected pattern not found — pysaml2 may have changed.")
-        print("[patch_saml2] Skipping patch. SSO may not work correctly.")
-        sys.exit(0)
+        content = content.replace(OLD, NEW, 1)
+        with open(path, "w") as f:
+            f.write(content)
 
-content = content.replace(OLD, NEW, 1)
-with open(path, "w") as f:
-    f.write(content)
-
-print("[patch_saml2] patch applied successfully.")
+        print("[patch_saml2] patch applied successfully.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Patch 2: spidsaml2.handle_error() → Redirect invece di HTTP 403
@@ -113,57 +110,55 @@ SPID_PATH = "/satosa_proxy/backends/spidsaml2.py"
 
 if not os.path.exists(SPID_PATH):
     print(f"[patch_spidsaml2] {SPID_PATH} not found — skipping patch 2")
-    sys.exit(0)
+else:
+    print(f"[patch_spidsaml2] Patching {SPID_PATH}")
 
-print(f"[patch_spidsaml2] Patching {SPID_PATH}")
+    with open(SPID_PATH) as f:
+        spid_content = f.read()
 
-with open(SPID_PATH) as f:
-    spid_content = f.read()
+    # 2a) Aggiungi import Redirect se non già presente
+    REDIRECT_IMPORT = "from satosa.response import Redirect\n"
+    RESPONSE_IMPORT = "from satosa.response import Response\n"
 
-# 2a) Aggiungi import Redirect se non già presente
-REDIRECT_IMPORT = "from satosa.response import Redirect\n"
-RESPONSE_IMPORT = "from satosa.response import Response\n"
+    if "from satosa.response import Redirect" not in spid_content:
+        spid_content = spid_content.replace(
+            RESPONSE_IMPORT,
+            RESPONSE_IMPORT + REDIRECT_IMPORT,
+            1,
+        )
+        print("[patch_spidsaml2] Added 'from satosa.response import Redirect'")
 
-if "from satosa.response import Redirect" not in spid_content:
-    spid_content = spid_content.replace(
-        RESPONSE_IMPORT,
-        RESPONSE_IMPORT + REDIRECT_IMPORT,
-        1,
+    # 2b) Sostituisce il return 403 con un redirect configurabile
+    OLD2 = (
+        "        return Response(result, content=\"text/html; charset=utf8\", status=\"403\")\n"
     )
-    print("[patch_spidsaml2] Added 'from satosa.response import Redirect'")
+    NEW2 = (
+        "        _cancel_url = (\n"
+        "            os.environ.get(\"SATOSA_CANCEL_REDIRECT_URL\")\n"
+        "            or os.environ.get(\"SATOSA_UNKNOW_ERROR_REDIRECT_PAGE\")\n"
+        "        )\n"
+        "        if _cancel_url:\n"
+        "            return Redirect(_cancel_url)\n"
+        "        return Response(result, content=\"text/html; charset=utf8\", status=\"403\")\n"
+    )
 
-# 2b) Sostituisce il return 403 con un redirect configurabile
-OLD2 = (
-    "        return Response(result, content=\"text/html; charset=utf8\", status=\"403\")\n"
-)
-NEW2 = (
-    "        _cancel_url = (\n"
-    "            os.environ.get(\"SATOSA_CANCEL_REDIRECT_URL\")\n"
-    "            or os.environ.get(\"SATOSA_UNKNOW_ERROR_REDIRECT_PAGE\")\n"
-    "        )\n"
-    "        if _cancel_url:\n"
-    "            return Redirect(_cancel_url)\n"
-    "        return Response(result, content=\"text/html; charset=utf8\", status=\"403\")\n"
-)
-
-if OLD2 not in spid_content:
-    if "_cancel_url" in spid_content:
-        print("[patch_spidsaml2] handle_error already patched, nothing to do.")
+    if OLD2 not in spid_content:
+        if "_cancel_url" in spid_content:
+            print("[patch_spidsaml2] handle_error already patched, nothing to do.")
+        else:
+            print("[patch_spidsaml2] WARNING: expected pattern not found in handle_error — spidsaml2 may have changed.")
+            print("[patch_spidsaml2] Skipping patch 2. Cancellation will still return 403.")
     else:
-        print("[patch_spidsaml2] WARNING: expected pattern not found in handle_error — spidsaml2 may have changed.")
-        print("[patch_spidsaml2] Skipping patch 2. Cancellation will still return 403.")
-    sys.exit(0)
+        # Verifica che 'import os' sia presente nel file
+        if "import os\n" not in spid_content and "import os " not in spid_content:
+            spid_content = "import os\n" + spid_content
+            print("[patch_spidsaml2] Added 'import os'")
 
-# Verifica che 'import os' sia presente nel file
-if "import os\n" not in spid_content and "import os " not in spid_content:
-    spid_content = "import os\n" + spid_content
-    print("[patch_spidsaml2] Added 'import os'")
+        spid_content = spid_content.replace(OLD2, NEW2, 1)
+        with open(SPID_PATH, "w") as f:
+            f.write(spid_content)
 
-spid_content = spid_content.replace(OLD2, NEW2, 1)
-with open(SPID_PATH, "w") as f:
-    f.write(spid_content)
-
-print("[patch_spidsaml2] handle_error patched: 403 -> Redirect on cancel.")
+        print("[patch_spidsaml2] handle_error patched: 403 -> Redirect on cancel.")
 
 # -------------------------------------------------------------------------
 # Patch 4: CieOidcBackend.__init__ -- _generate_trust_chains non-fatal
