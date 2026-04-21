@@ -6,6 +6,23 @@
 
 set -euo pipefail
 
+# ── Configure DNS resolver per risolvere indirizzi esterni (e.g., CIE registry)
+# Necessario in ambienti Podman/Docker dove il default DNS locale non raggiunge
+# indirizzi pubblici. Combina DNS pubblici + Podman internal.
+# ─────────────────────────────────────────────────────────────────────────────
+if [ ! -f /etc/resolv.conf.bak ]; then
+  cp /etc/resolv.conf /etc/resolv.conf.bak || true
+fi
+
+cat > /etc/resolv.conf << EOF
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+nameserver 10.89.6.1
+EOF
+
+echo "[startup] Configurazione DNS per risolvere indirizzi esterni + Podman locale."
+nslookup registry.servizicie.interno.gov.it >/dev/null 2>&1 && echo "[startup] ✓ DNS funzionante (registry.servizicie.interno.gov.it risolvibile)" || echo "[startup] WARN: registry.servizicie.interno.gov.it non ancora risolvibile"
+
 SATOSA_PROXY="/satosa_proxy"
 TEMPLATES="/builder/templates"
 CIEOIDC_KEYS="/cieoidc-keys"
