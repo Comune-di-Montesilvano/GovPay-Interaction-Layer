@@ -682,10 +682,10 @@ class ImpostazioniController
         $env['CIE_OIDC_SIGNED_JWKS_URI']                      = $satosaBase . '/CieOidcRp/openid_relying_party/signed_jwks.jose';
         $env['CIE_OIDC_HOMEPAGE_URI']                         = $satosaBase;
         $env['CIE_OIDC_POLICY_URI']                           = $satosaBase;
-        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT']          = '/CieOidcRp/federation/resolve';
-        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT']            = '/CieOidcRp/federation/fetch';
-        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT']= '/CieOidcRp/federation/trust_mark_status';
-        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT']             = '/CieOidcRp/federation/list';
+        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT']          = '/CieOidcRp/resolve';
+        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT']            = '/CieOidcRp/fetch';
+        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT']= '/CieOidcRp/trust_mark_status';
+        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT']             = '/CieOidcRp/list';
 
         // Variabili cross-section: frontoffice e entity
         if (!empty($sFrontoffice['public_base_url'])) {
