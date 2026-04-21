@@ -76,7 +76,7 @@ class ImpostazioniController
         // Tab Info GIL: stato container e info sistema
         if ($tab === 'info-gil') {
             $gilInfo = [
-                'version' => getenv('GIL_IMAGE_TAG') ?: 'dev',
+                'version' => \App\Config\Config::getVersion(),
                 'php'     => phpversion(),
                 'os'      => php_uname('s') . ' ' . php_uname('r'),
             ];

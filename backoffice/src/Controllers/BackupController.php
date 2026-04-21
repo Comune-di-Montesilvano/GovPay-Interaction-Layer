@@ -79,7 +79,7 @@ class BackupController
             self::GOVPAY_SECTIONS
         );
 
-        $appVersion   = (string)(getenv('GIL_IMAGE_TAG') ?: 'dev');
+        $appVersion   = \App\Config\Config::getVersion();
         $appCommit    = (string)(getenv('GIT_COMMIT_SHA') ?: 'unknown');
         if (str_starts_with($appVersion, 'v')) {
             $rawLabel = $appVersion;
