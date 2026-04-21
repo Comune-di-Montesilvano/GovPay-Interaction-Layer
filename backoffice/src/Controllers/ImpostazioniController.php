@@ -346,6 +346,21 @@ class ImpostazioniController
         // satosa_org_name_en: usa quello inviato oppure rimane vuoto (opzionale)
         $plain['satosa_org_name_en'] = trim((string)($body['satosa_org_name_en'] ?? ''));
 
+        // Demo SPID IdP e SPID Validator sono mutuamente esclusivi.
+        // Validazione bloccante lato server per evitare stati incoerenti anche senza JS.
+        $normalizeBool = static function ($value): bool {
+            if (is_bool($value)) {
+                return $value;
+            }
+            $v = strtolower(trim((string)$value));
+            return in_array($v, ['1', 'true', 'on', 'yes'], true);
+        };
+        $demoSpidEnabled = $normalizeBool($plain['satosa_use_demo_spid_idp'] ?? 'false');
+        $spidValidatorEnabled = $normalizeBool($plain['satosa_use_spid_validator'] ?? 'false');
+        if ($demoSpidEnabled && $spidValidatorEnabled) {
+            return $this->jsonError('Configurazione non valida: Demo SPID IdP e SPID Validator non possono essere attivi contemporaneamente. Disattivane uno e salva di nuovo.', 422);
+        }
+
         // cie_oidc_organization_name: usa quello inviato (hidden) oppure prende entity.name
         $cieOrgName = trim((string)($body['cie_oidc_organization_name'] ?? ''));
         if ($cieOrgName === '') {

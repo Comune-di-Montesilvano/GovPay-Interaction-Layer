@@ -18,8 +18,8 @@ OUTPUT="/output/agid/satosa_spid_public_metadata.xml"
 LAST_ERR=""
 LAST_HTTP=""
 LAST_URL=""
-MAX_ATTEMPTS="${SATOSA_EXPORT_MAX_ATTEMPTS:-20}"
-SLEEP_SECONDS="${SATOSA_EXPORT_RETRY_SLEEP_SECONDS:-3}"
+MAX_ATTEMPTS="${SATOSA_EXPORT_MAX_ATTEMPTS:-8}"
+SLEEP_SECONDS="${SATOSA_EXPORT_RETRY_SLEEP_SECONDS:-2}"
 SATOSA_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
 SATOSA_HOST_HEADER="${SATOSA_INTERNAL_HOST_HEADER:-}"
 VERIFY_PUBLIC="${SATOSA_VERIFY_PUBLIC_METADATA:-1}"
@@ -128,6 +128,29 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
     echo "  Invia questo file ad AgID per l'attestazione SPID."
     rm -f "$TMP_ERR"
     exit 0
+  fi
+
+  # Fail-fast: questi codici indicano configurazione/non-prontezza non transiente.
+  if [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "307" ] || [ "$HTTP_CODE" = "308" ]; then
+    rm -f "$TMP_ERR" "$TMP_OUT"
+    if [ -z "$SATOSA_HOST_HEADER" ]; then
+      echo "[ERROR] SATOSA ha risposto con redirect HTTP ${HTTP_CODE} sull'endpoint interno (${LAST_URL}) senza Host header. Imposta IAM Proxy Public Base URL o SATOSA_INTERNAL_HOST_HEADER per evitare redirect host-based." >&2
+    else
+      echo "[ERROR] SATOSA ha risposto con redirect HTTP ${HTTP_CODE} sull'endpoint interno (${LAST_URL}) anche con Host header='${SATOSA_HOST_HEADER}'. Verifica SSL/redirect e routing auth-proxy-nginx." >&2
+    fi
+    exit 1
+  fi
+
+  if [ "$HTTP_CODE" = "404" ]; then
+    rm -f "$TMP_ERR" "$TMP_OUT"
+    echo "[ERROR] Endpoint interno SATOSA non disponibile (HTTP 404 su ${LAST_URL}). Il backend SPID/SAML2 potrebbe non essere caricato: verifica enable_spid e routing in auth-proxy." >&2
+    exit 1
+  fi
+
+  if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+    rm -f "$TMP_ERR" "$TMP_OUT"
+    echo "[ERROR] Endpoint interno SATOSA risponde HTTP ${HTTP_CODE} su ${LAST_URL}. Verifica policy di accesso/reverse proxy interno." >&2
+    exit 1
   fi
   
   if [ "$HTTP_CODE" != "unknown" ]; then
