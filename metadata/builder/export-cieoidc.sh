@@ -1,26 +1,62 @@
 #!/usr/bin/env bash
 # export-cieoidc.sh — esporta artifact CIE OIDC per onboarding alla federazione
-# Curla auth-proxy-nginx via rete Docker interna (servizio deve essere up)
+# Curla auth-proxy-nginx via rete Docker interna con Host header corretto.
 set -euo pipefail
 
 OUTPUT_DIR="/output/cieoidc"
 FORCE="${FORCE:-0}"
 
-# URL interno Docker (service name) per i curl
-SATOSA_HOSTNAME="${SATOSA_HOSTNAME:-auth-proxy-nginx}"
-SATOSA_SCHEME="$( [ "${SSL:-off}" = "on" ] && echo "https" || echo "http" )"
-IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}"
-CURL_INSECURE="$( [ "${SSL:-off}" = "on" ] && echo "-k" ) --connect-timeout 5 --max-time 10"
+# URL interno Docker (nginx interno)
+SATOSA_HOSTNAME="${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}"
+SATOSA_PORT="${SATOSA_INTERNAL_PORT:-80}"
+SSL_MODE="$(printf '%s' "${SSL:-off}" | tr '[:upper:]' '[:lower:]')"
+DEFAULT_SATOSA_SCHEME="http"
+if [ "$SSL_MODE" = "on" ]; then
+  DEFAULT_SATOSA_SCHEME="https"
+fi
+SATOSA_SCHEME="${SATOSA_INTERNAL_SCHEME:-$DEFAULT_SATOSA_SCHEME}"
+IAM_PROXY_INTERNAL_BASE="${SATOSA_SCHEME}://${SATOSA_HOSTNAME}:${SATOSA_PORT}"
+CURL_INSECURE="-sSf --connect-timeout 5 --max-time 10"
+if [ "${SATOSA_SCHEME}" = "https" ]; then
+  CURL_INSECURE="${CURL_INSECURE} -k"
+fi
+
+fetch_internal() {
+  local url="$1"
+  local out_file="$2"
+  local tmp_err="/tmp/export-cieoidc-curl.err.$$"
+
+  # Tentativo unico: schema deciso da SSL (on=https, off=http).
+  if [[ -n "$SATOSA_HOST_HEADER" ]]; then
+    if curl $CURL_INSECURE -H "Host: $SATOSA_HOST_HEADER" "$url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
+  else
+    echo "[WARN] SATOSA_HOST_HEADER non configurato: tento richiesta interna senza Host header" >&2
+    if curl $CURL_INSECURE "$url" -o "$out_file" 2>"$tmp_err"; then
+      rm -f "$tmp_err"
+      return 0
+    fi
+  fi
+
+  rm -f "$tmp_err"
+  return 1
+}
 
 # URL pubblico (per component-values.env — usato nel portale CIE)
 IAM_PROXY_PUBLIC_BASE_URL="${IAM_PROXY_PUBLIC_BASE_URL:-}"
 CIE_OIDC_CLIENT_ID="${CIE_OIDC_CLIENT_ID:-}"
+SATOSA_HOST_HEADER="${SATOSA_INTERNAL_HOST_HEADER:-}"
+if [[ -z "$SATOSA_HOST_HEADER" ]] && [[ -n "$IAM_PROXY_PUBLIC_BASE_URL" ]]; then
+  SATOSA_HOST_HEADER="$(echo "$IAM_PROXY_PUBLIC_BASE_URL" | sed -E 's#^[a-zA-Z]+://([^/:]+).*$#\1#')"
+fi
 
 if [[ -z "$CIE_OIDC_CLIENT_ID" ]]; then
   if [[ -n "$IAM_PROXY_PUBLIC_BASE_URL" ]]; then
     CIE_OIDC_CLIENT_ID="${IAM_PROXY_PUBLIC_BASE_URL%/}/CieOidcRp"
   else
-    echo "[WARN] CIE_OIDC_CLIENT_ID non impostato. Imposta IAM_PROXY_PUBLIC_BASE_URL in .iam-proxy.env"
+    echo "[WARN] CIE_OIDC_CLIENT_ID non impostato. Configura public_base_url in Login Proxy"
     CIE_OIDC_CLIENT_ID="https://CONFIGURA_IAM_PROXY_PUBLIC_BASE_URL/CieOidcRp"
   fi
 fi
@@ -60,7 +96,7 @@ JWKS_RP_JSON_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.json"
 JWKS_RP_JOSE_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.jose"
 
 for i in $(seq 1 40); do
-  if curl -sf $CURL_INSECURE "$ENTITY_CONFIG_URL" -o "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null; then
+  if fetch_internal "$ENTITY_CONFIG_URL" "$OUTPUT_DIR/entity-configuration.jwt"; then
     break
   fi
   echo "  Tentativo $i/40 (3s)..."
@@ -71,8 +107,15 @@ for i in $(seq 1 40); do
   fi
 done
 
-curl -fsSL $CURL_INSECURE "$JWKS_RP_JSON_URL" -o "$OUTPUT_DIR/jwks-rp.json"
-curl -fsSL $CURL_INSECURE "$JWKS_RP_JOSE_URL" -o "$OUTPUT_DIR/jwks-rp.jose"
+if ! fetch_internal "$JWKS_RP_JSON_URL" "$OUTPUT_DIR/jwks-rp.json"; then
+  echo "[ERROR] Export CIE OIDC fallito: impossibile scaricare jwks-rp.json da endpoint interno." >&2
+  exit 1
+fi
+
+if ! fetch_internal "$JWKS_RP_JOSE_URL" "$OUTPUT_DIR/jwks-rp.jose"; then
+  echo "[ERROR] Export CIE OIDC fallito: impossibile scaricare jwks-rp.jose da endpoint interno." >&2
+  exit 1
+fi
 
 # Decode JWT payload → entity-configuration.json + jwks-federation-public.json + EXP
 python3 - "$OUTPUT_DIR/entity-configuration.jwt" \

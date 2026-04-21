@@ -49,8 +49,8 @@ if [ "$MODE_NEW" -eq 1 ]; then
 fi
 
 # Se il proxy non è SAML2 non c'è nulla da generare
-AUTH_PROXY_TYPE="${FRONTOFFICE_AUTH_PROXY_TYPE:-iam-proxy-saml2}"
-if [ "$AUTH_PROXY_TYPE" != "iam-proxy-saml2" ]; then
+AUTH_PROXY_TYPE="${FRONTOFFICE_AUTH_PROXY_TYPE:-auth-proxy-saml2}"
+if [ "$AUTH_PROXY_TYPE" != "auth-proxy-saml2" ]; then
     echo "[INFO] Auth proxy type '$AUTH_PROXY_TYPE': generazione metadata SP non necessaria."
     exit 0
 fi
@@ -65,6 +65,7 @@ metadata_is_expired() {
 
     php -r '
         $f = $argv[1];
+        $baseUrl = rtrim($argv[2], "/");
         libxml_use_internal_errors(true);
         $xml = @simplexml_load_file($f);
         if ($xml === false) {
@@ -79,8 +80,31 @@ metadata_is_expired() {
         if ($validTs === false) {
             exit(2);
         }
-        exit($validTs <= time() ? 0 : 1);
-    ' "$_file"
+        if ($validTs <= time()) {
+            exit(0);
+        }
+
+        $entityId = isset($xml['entityID']) ? rtrim((string)$xml['entityID'], '/') : '';
+        $expectedEntityId = $baseUrl !== '' ? ($baseUrl . '/saml/sp') : '';
+        if ($expectedEntityId !== '' && $entityId !== $expectedEntityId) {
+            exit(0);
+        }
+
+        $namespaces = $xml->getDocNamespaces(true);
+        $mdNs = $namespaces['md'] ?? 'urn:oasis:names:tc:SAML:2.0:metadata';
+        $acsNodes = $xml->xpath('//*[local-name()="AssertionConsumerService"]');
+        if (!$acsNodes || !isset($acsNodes[0])) {
+            exit(2);
+        }
+        $acsAttrs = $acsNodes[0]->attributes();
+        $acsLocation = isset($acsAttrs['Location']) ? rtrim((string)$acsAttrs['Location'], '/') : '';
+        $expectedAcs = $baseUrl !== '' ? ($baseUrl . '/spid/callback') : '';
+        if ($expectedAcs !== '' && $acsLocation !== $expectedAcs) {
+            exit(0);
+        }
+
+        exit(1);
+    ' "$_file" "$FRONTOFFICE_PUBLIC_BASE_URL"
     _status=$?
 
     # 0=expired, 1=valid, 2=parse error => treat as expired to force regeneration

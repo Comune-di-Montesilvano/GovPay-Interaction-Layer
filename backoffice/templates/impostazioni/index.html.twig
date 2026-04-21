@@ -177,6 +177,17 @@
   window.impSaveForm = async function (formId, url, btn) {
     const form = document.getElementById(formId);
     if (!form) return;
+
+    // Evita trailing slash negli URL base per non generare endpoint con doppio '/'.
+    form.querySelectorAll('input[name="public_base_url"]').forEach((el) => {
+      const value = (el.value || '').trim();
+      if (value && /^https?:\/\//i.test(value)) {
+        el.value = value.replace(/\/+$/, '');
+      } else {
+        el.value = value;
+      }
+    });
+
     const data = new FormData(form);
     const body = new URLSearchParams(data).toString();
     btn.disabled = true;

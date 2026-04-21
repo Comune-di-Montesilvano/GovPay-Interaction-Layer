@@ -4,7 +4,7 @@
     <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-3">
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <span id="lp-status-dot" class="master-status-dot bg-secondary"></span>
-        <strong>Login Proxy (IAM Proxy)</strong>
+        <strong>Login Proxy (Auth Proxy)</strong>
         <span id="lp-status-text" class="text-muted small">Stato sconosciuto</span>
         <span id="lp-config-badge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-normal small ms-1" style="display:none;"></span>
       </div>
@@ -14,13 +14,12 @@
   <form id="form-login-proxy" onsubmit="return false;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-    {# ─── Fase 1: Configurazione ──────────────────────────────────────────── #}
-    <div class="d-flex align-items-center gap-2 mb-2">
-      <span class="badge rounded-pill bg-primary fs-6 fw-bold px-3 py-2">1</span>
-      <h5 class="mb-0">Configurazione</h5>
-    </div>
+    {# ─── Configurazione e Gestione Identity Provider ─────────────────────── #}
     {% if is_superadmin %}
-    <p class="text-muted small mb-3">Imposta i parametri del proxy. <strong>Salva</strong> prima di procedere con la generazione di chiavi e metadata (passi 2 e 3).</p>
+    <div class="alert alert-info py-2 small mb-3">
+      <i class="fas fa-info-circle me-1"></i>
+      <strong>Attenzione:</strong> Salva sempre la configurazione prima di gestire certificati ed esportare metadata.
+    </div>
     {% endif %}
 
     {# ─── Accordion ───────────────────────────────────────────────────────── #}
@@ -36,31 +35,15 @@
         <div id="lp-generale" class="accordion-collapse collapse show" data-bs-parent="#acc-lp">
           <div class="accordion-body">
             <div class="row g-3">
-              <div class="col-md-8">
+              <div class="col-md-12">
                 <label class="form-label">URL pubblico del proxy <span class="text-danger">*</span></label>
                 <input type="url" class="form-control" name="public_base_url" id="lp-public-url"
                   value="{{ iam_proxy.public_base_url|default('') }}" placeholder="https://login.comune.example.it"
                   {{ not is_superadmin ? 'readonly' : '' }}>
-                <div class="form-text">URL radice del proxy IAM (es. <code>https://login.comune.example.it</code>). Usato per derivare automaticamente i vari endpoint.</div>
+                <div class="form-text">URL radice dell'Auth Proxy (es. <code>https://login.comune.example.it</code>). Usato per derivare automaticamente gli endpoint.</div>
               </div>
-              <div class="col-md-4">
-                <label class="form-label">Hostname interno</label>
-                <input type="text" class="form-control font-monospace" name="hostname" id="lp-hostname"
-                  value="{{ iam_proxy.hostname|default('') }}" placeholder="login.comune.example.it"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Porta HTTP</label>
-                <input type="number" class="form-control" name="http_port"
-                  value="{{ iam_proxy.http_port|default('8080') }}" min="1" max="65535"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
-              <div class="col-md-5">
-                <label class="form-label">SATOSA base path</label>
-                <input type="text" class="form-control font-monospace" name="satosa_base"
-                  value="{{ iam_proxy.satosa_base|default('/saml2/idp') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# Hostname derivato automaticamente dall'URL pubblico — non mostrato nel form #}
+              <input type="hidden" name="hostname" id="lp-hostname" value="{{ iam_proxy.hostname|default('') }}">
               <div class="col-12">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" name="debug" id="lp-debug" value="true"
@@ -90,6 +73,56 @@
             {# Mantieni i valori nascosti per IT Wallet e OIDCOP (non ancora supportati nell'UI) #}
             <input type="hidden" name="enable_it_wallet" value="{{ iam_proxy.enable_it_wallet|default('false') }}">
             <input type="hidden" name="enable_oidcop" value="{{ iam_proxy.enable_oidcop|default('false') }}">
+
+            {# ─── Opzioni avanzate ───────────────────────────────────────────── #}
+            {% if is_superadmin %}
+            <hr class="my-3">
+            <details id="lp-advanced-opts">
+              <summary class="text-muted small fw-semibold" style="cursor:pointer">
+                <i class="fas fa-caret-right me-1"></i>Opzioni avanzate (test / pre-produzione)
+              </summary>
+              <div class="d-flex gap-4 flex-wrap mt-3">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
+                    {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="demo-spid">
+                    Demo SPID IdP
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Solo sviluppo</span>
+                  </label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
+                    {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="spid-validator">
+                    SPID Validator (AgID)
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Pre-produzione</span>
+                  </label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
+                    {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="en-idem">IDEM</label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
+                    {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }}>
+                  <label class="form-check-label" for="en-eidas">eIDAS</label>
+                </div>
+              </div>
+              {% if iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' or iam_proxy.satosa_use_spid_validator|default('false') == 'true' %}
+              <div class="alert alert-warning py-2 small mt-3 mb-0">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                <strong>Attenzione:</strong> Demo SPID e/o SPID Validator sono attivi — questo non è un ambiente di produzione.
+              </div>
+              {% endif %}
+            </details>
+            {% else %}
+            {# Mantieni i valori nascosti per utenti non-superadmin #}
+            <input type="hidden" name="satosa_use_demo_spid_idp" value="{{ iam_proxy.satosa_use_demo_spid_idp|default('false') }}">
+            <input type="hidden" name="satosa_use_spid_validator" value="{{ iam_proxy.satosa_use_spid_validator|default('false') }}">
+            <input type="hidden" name="enable_idem" value="{{ iam_proxy.enable_idem|default('false') }}">
+            <input type="hidden" name="enable_eidas" value="{{ iam_proxy.enable_eidas|default('false') }}">
+            {% endif %}
           </div>
         </div>
       </div>
@@ -144,23 +177,9 @@
               Usati per generare il certificato SAML2 del Service Provider.
               I campi pre-compilati sono derivati dai <a href="/impostazioni?tab=generale">Dati ente</a>.
             </p>
+            {# spid_cert_common_name e spid_cert_org_name derivati automaticamente da hostname ed entity.name — non mostrati nel form #}
+            <input type="hidden" name="spid_cert_common_name" id="lp-spid-cn" value="{{ iam_proxy.spid_cert_common_name|default('') }}">
             <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Common Name (CN)</label>
-                <input type="text" class="form-control" name="spid_cert_common_name"
-                  id="lp-spid-cn"
-                  value="{{ iam_proxy.spid_cert_common_name|default('') }}"
-                  placeholder="{{ iam_proxy.hostname|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-                <div class="form-text">Di norma: hostname del proxy (es. <code>login.comune.example.it</code>).</div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Organization Name</label>
-                <input type="text" class="form-control" name="spid_cert_org_name"
-                  value="{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}"
-                  placeholder="{{ entity.name|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
               <div class="col-md-4">
                 <label class="form-label">Organization ID</label>
                 <div class="input-group">
@@ -193,13 +212,8 @@
                 </div>
                 <div class="form-text">Calcolato: <code id="lp-spid-entity-id-hint"></code></div>
               </div>
-              <div class="col-md-4">
-                <label class="form-label">Locality (città)</label>
-                <input type="text" class="form-control" name="spid_cert_locality_name"
-                  value="{{ iam_proxy.spid_cert_locality_name|default('') }}"
-                  placeholder="Es. Montesilvano"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# spid_cert_locality_name derivato da entity.city — non mostrato nel form #}
+              <input type="hidden" name="spid_cert_locality_name" value="{{ iam_proxy.spid_cert_locality_name|default('') }}">
               <div class="col-md-3">
                 <label class="form-label">Key size (bit)</label>
                 <select class="form-select" name="spid_cert_key_size" {{ not is_superadmin ? 'disabled' : '' }}>
@@ -214,9 +228,64 @@
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
             </div>
+          
+            {# Cards Gestione SPID #}
+            <div class="row g-3 mt-4">
+              <div class="col-md-6" id="lp-cert-spid-card"
+      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-certificate me-2 text-success"></i>Certificato SPID</h6>
+          <span class="badge bg-success-subtle text-success border border-success-subtle">SPID</span>
+        </div>
+        <div class="card-body" id="spid-cert-info-body">
+          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare il certificato attuale.</p>
+        </div>
+        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadSpidCertInfo(this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt me-1"></i>Stato
+          </button>
+          {% if is_superadmin %}
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-success" type="button"
+              data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
+              <i class="fas fa-certificate me-1"></i>Genera
+            </button>
           </div>
+          {% endif %}
         </div>
       </div>
+    </div>
+              <div class="col-md-6" id="lp-meta-spid-card"
+      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+        <div class="card-body" id="spid-metadata-body">
+          <p class="text-muted small mb-0">Usa <i class="fas fa-sync-alt"></i> per verificare lo stato. Il metadata viene generato automaticamente all&apos;avvio del proxy e salvato nel volume.</p>
+        </div>
+        {% if is_superadmin %}
+        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
+            <i class="fas fa-download me-1"></i>Scarica XML
+          </button>
+          <button class="btn btn-sm btn-outline-success" type="button"
+                  data-bs-toggle="modal" data-bs-target="#spidMetaExportModal">
+            <i class="fas fa-sync-alt me-1"></i>Rigenera
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+            </div>
+          </div>
+        </div>
 
       {# ─── CIE OIDC ──────────────────────────────────────────────────────── #}
       <div class="accordion-item border shadow-sm mb-2">
@@ -233,68 +302,21 @@
             {% set cie_env = current_cie_url == cie_prod_url ? 'prod' : (current_cie_url == cie_preprod_url ? 'preprod' : 'custom') %}
 
             <div class="row g-3 mb-4">
-              <div class="col-md-6">
+              <div class="col-md-12">
                 <label class="form-label">Ambiente CIE OIDC</label>
-                <select class="form-select" id="lp-cie-env" {{ not is_superadmin ? 'disabled' : '' }}
-                  onchange="lpUpdateCieEnv()">
+                <select class="form-select" id="lp-cie-env" name="cie_env" {{ not is_superadmin ? 'disabled' : '' }}>
                   <option value="prod"    {{ cie_env == 'prod'    ? 'selected' : '' }}>Produzione</option>
                   <option value="preprod" {{ cie_env == 'preprod' ? 'selected' : '' }}>Pre-produzione (collaudo)</option>
-                  <option value="custom"  {{ cie_env == 'custom'  ? 'selected' : '' }}>Personalizzato…</option>
                 </select>
+                <div class="form-text mt-2" id="cie-env-info">
+                  <strong>Produzione:</strong><br>
+                  Trust Anchor: <code>https://registry.servizicie.interno.gov.it</code><br>
+                  Authority Hint: <code>https://oidc.idserver.servizicie.interno.gov.it</code><br><br>
+                  <strong>Pre-produzione (Collaudo):</strong><br>
+                  Trust Anchor: <code>https://preproduzione.cie.interno.gov.it</code><br>
+                  Authority Hint: <code>https://preproduzione.cie.interno.gov.it/idp/oidc/op</code>
+                </div>
               </div>
-              <div class="col-md-8" id="lp-cie-custom-wrap" style="{{ cie_env != 'custom' ? 'display:none' : '' }}">
-                <label class="form-label">Provider URL personalizzato</label>
-                <input type="url" class="form-control font-monospace" id="lp-cie-custom-url"
-                  value="{{ cie_env == 'custom' ? current_cie_url : '' }}"
-                  placeholder="https://…"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
-              {# Campo nascosto con il valore effettivo da salvare #}
-              <input type="hidden" name="cie_oidc_provider_url" id="lp-cie-provider-url-hidden"
-                value="{{ current_cie_url }}">
-            </div>
-
-            <hr class="my-3">
-            <p class="text-muted small mb-3">
-              <i class="fas fa-magic me-1"></i>
-              I campi seguenti vengono calcolati automaticamente dall'<strong>URL pubblico del proxy</strong>.
-              Clicca <i class="fas fa-pencil-alt"></i> per modificarli manualmente.
-            </p>
-
-            {# Macro campi calcolati #}
-            {% macro derived_field(label, name, id, hint_id, value, is_superadmin) %}
-            <div class="col-md-8">
-              <label class="form-label">{{ label }}</label>
-              <div class="input-group">
-                <input type="url" class="form-control font-monospace" name="{{ name }}" id="{{ id }}"
-                  value="{{ value }}"
-                  {{ not is_superadmin ? 'readonly' : 'readonly data-derived="true"' }}>
-                {% if is_superadmin %}
-                <button class="btn btn-outline-secondary" type="button"
-                  onclick="lpUnlock('{{ id }}', this)" title="Modifica manualmente">
-                  <i class="fas fa-pencil-alt"></i>
-                </button>
-                {% endif %}
-              </div>
-              {% if hint_id %}<div class="form-text"><code id="{{ hint_id }}"></code></div>{% endif %}
-            </div>
-            {% endmacro %}
-
-            <div class="row g-3 mb-3">
-              {{ _self.derived_field('Client ID', 'cie_oidc_client_id', 'lp-cie-client-id', 'lp-cie-client-id-hint',
-                iam_proxy.cie_oidc_client_id|default(''), is_superadmin) }}
-              {{ _self.derived_field('Redirect URI', 'cie_oidc_redirect_uri', 'lp-cie-redirect', 'lp-cie-redirect-hint',
-                iam_proxy.cie_oidc_redirect_uri|default(''), is_superadmin) }}
-              {{ _self.derived_field('JWKS URI', 'cie_oidc_jwks_uri', 'lp-cie-jwks', 'lp-cie-jwks-hint',
-                iam_proxy.cie_oidc_jwks_uri|default(''), is_superadmin) }}
-              {{ _self.derived_field('Signed JWKS URI', 'cie_oidc_signed_jwks_uri', 'lp-cie-signed-jwks', 'lp-cie-signed-jwks-hint',
-                iam_proxy.cie_oidc_signed_jwks_uri|default(''), is_superadmin) }}
-              {{ _self.derived_field('Trust Anchor URL', 'cie_oidc_trust_anchor_url', 'lp-cie-trust-anchor', 'lp-cie-trust-anchor-hint',
-                iam_proxy.cie_oidc_trust_anchor_url|default(''), is_superadmin) }}
-              {{ _self.derived_field('Authority Hint URL', 'cie_oidc_authority_hint_url', 'lp-cie-auth-hint', 'lp-cie-auth-hint-hint',
-                iam_proxy.cie_oidc_authority_hint_url|default(''), is_superadmin) }}
-              {{ _self.derived_field('Homepage URI', 'cie_oidc_homepage_uri', 'lp-cie-homepage', 'lp-cie-homepage-hint',
-                iam_proxy.cie_oidc_homepage_uri|default(''), is_superadmin) }}
             </div>
 
             <hr class="my-3">
@@ -307,13 +329,7 @@
                   placeholder="{{ entity.name|default('') ~ ' - CIE OIDC RP' }}"
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
-              <div class="col-md-6">
-                <label class="form-label">Organization Name</label>
-                <input type="text" class="form-control" name="cie_oidc_organization_name"
-                  value="{{ iam_proxy.cie_oidc_organization_name|default(entity.name|default('')) }}"
-                  placeholder="{{ entity.name|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              <input type="hidden" name="cie_oidc_organization_name" value="{{ iam_proxy.cie_oidc_organization_name|default(entity.name|default('')) }}">
               <div class="col-md-6">
                 <label class="form-label">E-mail di contatto</label>
                 <input type="email" class="form-control" name="cie_oidc_contact_email"
@@ -323,58 +339,61 @@
               </div>
             </div>
 
-            {# Endpoint federazione (avanzati) #}
-            {% if is_superadmin %}
-            <details class="mt-2">
-              <summary class="text-muted small fw-semibold" style="cursor:pointer">
-                <i class="fas fa-caret-right me-1"></i>Endpoint federazione (avanzati, auto-calcolati)
-              </summary>
-              <div class="row g-3 mt-2">
-                {{ _self.derived_field('Federation Resolve', 'cie_oidc_federation_resolve_endpoint', 'lp-cie-fed-resolve', null,
-                  iam_proxy.cie_oidc_federation_resolve_endpoint|default(''), is_superadmin) }}
-                {{ _self.derived_field('Federation Fetch', 'cie_oidc_federation_fetch_endpoint', 'lp-cie-fed-fetch', null,
-                  iam_proxy.cie_oidc_federation_fetch_endpoint|default(''), is_superadmin) }}
-                {{ _self.derived_field('Trust Mark Status', 'cie_oidc_federation_trust_mark_status_endpoint', 'lp-cie-fed-tm', null,
-                  iam_proxy.cie_oidc_federation_trust_mark_status_endpoint|default(''), is_superadmin) }}
-                {{ _self.derived_field('Federation List', 'cie_oidc_federation_list_endpoint', 'lp-cie-fed-list', null,
-                  iam_proxy.cie_oidc_federation_list_endpoint|default(''), is_superadmin) }}
-                <div class="col-md-8">
-                  <label class="form-label">Policy URI</label>
-                  <div class="input-group">
-                    <input type="url" class="form-control font-monospace" name="cie_oidc_policy_uri"
-                      id="lp-cie-policy" value="{{ iam_proxy.cie_oidc_policy_uri|default('') }}"
-                      readonly data-derived="true">
-                    <button class="btn btn-outline-secondary" type="button" onclick="lpUnlock('lp-cie-policy', this)">
-                      <i class="fas fa-pencil-alt"></i>
-                    </button>
-                  </div>
-                </div>
-                <div class="col-md-8">
-                  <label class="form-label">Logo URI</label>
-                  <div class="input-group">
-                    <input type="url" class="form-control font-monospace" name="cie_oidc_logo_uri"
-                      id="lp-cie-logo" value="{{ iam_proxy.cie_oidc_logo_uri|default('') }}"
-                      readonly data-derived="true">
-                    <button class="btn btn-outline-secondary" type="button" onclick="lpUnlock('lp-cie-logo', this)">
-                      <i class="fas fa-pencil-alt"></i>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </details>
-            {% else %}
-            {# Mantieni i valori nascosti per utenti non-superadmin #}
-            <input type="hidden" name="cie_oidc_federation_resolve_endpoint" value="{{ iam_proxy.cie_oidc_federation_resolve_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_federation_fetch_endpoint" value="{{ iam_proxy.cie_oidc_federation_fetch_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_federation_trust_mark_status_endpoint" value="{{ iam_proxy.cie_oidc_federation_trust_mark_status_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_federation_list_endpoint" value="{{ iam_proxy.cie_oidc_federation_list_endpoint|default('') }}">
-            <input type="hidden" name="cie_oidc_policy_uri" value="{{ iam_proxy.cie_oidc_policy_uri|default('') }}">
-            <input type="hidden" name="cie_oidc_logo_uri" value="{{ iam_proxy.cie_oidc_logo_uri|default('') }}">
-            {% endif %}
-
+          
+            {# Cards Gestione CIE OIDC #}
+            <div class="row g-3 mt-4">
+              <div class="col-md-6" id="lp-cert-cie-card"
+      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-key me-2 text-info"></i>Chiavi JWK CIE OIDC</h6>
+          <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
+        </div>
+        <div class="card-body" id="cie-keys-info-body">
+          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
+        </div>
+        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt me-1"></i>Stato
+          </button>
+          {% if is_superadmin %}
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-info" type="button" onclick="copyCieKeysJwks(this)">
+              <i class="fas fa-copy me-1"></i>Copia JSON
+            </button>
+            <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
+              <i class="fas fa-key me-1"></i>Genera
+            </button>
           </div>
+          {% endif %}
         </div>
       </div>
+    </div>
+              <div class="col-md-6" id="lp-meta-cie-card"
+      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Metadata SP CIE OIDC</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+        <div class="card-body" id="cie-metadata-body">
+          <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+        </div>
+        {% if is_superadmin %}
+        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
+            <i class="fas fa-sync-alt me-1"></i>Rigenera artefatti CIE
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+            </div>
+          </div>
+        </div>
 
       {# ─── Organizzazione SATOSA ─────────────────────────────────────────── #}
       <div class="accordion-item border shadow-sm mb-2">
@@ -402,13 +421,8 @@
                   placeholder="{{ entity.name|default('') }}"
                   {{ not is_superadmin ? 'readonly' : '' }}>
               </div>
-              <div class="col-md-6">
-                <label class="form-label">Organization Name (IT)</label>
-                <input type="text" class="form-control" name="satosa_org_name_it"
-                  value="{{ iam_proxy.satosa_org_name_it|default(entity.name|default('')) }}"
-                  placeholder="{{ entity.name|default('') }}"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
-              </div>
+              {# satosa_org_name_it derivato da entity.name — nascosto #}
+              <input type="hidden" name="satosa_org_name_it" value="{{ iam_proxy.satosa_org_name_it|default(entity.name|default('')) }}">
               <div class="col-md-6">
                 <label class="form-label">Organization Identifier</label>
                 <input type="text" class="form-control font-monospace" name="satosa_org_identifier"
@@ -481,13 +495,8 @@
                     placeholder="{{ entity.name|default('') }}"
                     {{ not is_superadmin ? 'readonly' : '' }}>
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label">Organization Name (EN)</label>
-                  <input type="text" class="form-control" name="satosa_org_name_en"
-                    value="{{ iam_proxy.satosa_org_name_en|default('') }}"
-                    placeholder="{{ entity.name|default('') }}"
-                    {{ not is_superadmin ? 'readonly' : '' }}>
-                </div>
+              {# satosa_org_name_en nascosto, aggiornabile se necessario tramite i campi EN in dettagli avanzati #}
+              <input type="hidden" name="satosa_org_name_en" value="{{ iam_proxy.satosa_org_name_en|default('') }}">
                 <div class="col-md-6">
                   <label class="form-label">Organization URL (EN)</label>
                   <input type="url" class="form-control" name="satosa_org_url_en"
@@ -585,12 +594,6 @@
                     value="{{ iam_proxy.satosa_ui_accessibility_url_en|default('') }}"
                     {{ not is_superadmin ? 'readonly' : '' }}>
                 </div>
-                <div class="col-md-8">
-                  <label class="form-label">URL Logo</label>
-                  <input type="url" class="form-control" name="satosa_ui_logo_url"
-                    value="{{ iam_proxy.satosa_ui_logo_url|default('') }}"
-                    {{ not is_superadmin ? 'readonly' : '' }}>
-                </div>
                 <div class="col-md-2">
                   <label class="form-label">Larghezza logo (px)</label>
                   <input type="number" class="form-control" name="satosa_ui_logo_width"
@@ -604,6 +607,9 @@
                     value="{{ iam_proxy.satosa_ui_logo_height|default('60') }}"
                     min="1" max="9999"
                     {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div class="col-12">
+                  <div class="form-text">Logo e favicon del Login Proxy sono derivati automaticamente dal logo globale configurato in Impostazioni generali.</div>
                 </div>
               </div>
             </details>
@@ -663,35 +669,8 @@
               </div>
             </div>
 
-            <hr class="my-3">
-            <p class="small text-muted mb-2">Toggle avanzati:</p>
-            <div class="d-flex gap-4 flex-wrap">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
-                  {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="en-idem">IDEM</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
-                  {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="en-eidas">eIDAS</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
-                  {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="demo-spid">Demo SPID IdP</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
-                  {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="spid-validator">SPID Validator</label>
-              </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="satosa_disable_cieoidc_backend" id="dis-cie" value="true"
-                  {{ iam_proxy.satosa_disable_cieoidc_backend|default('false') == 'true' ? 'checked' : '' }}>
-                <label class="form-check-label" for="dis-cie">Disabilita backend CIE OIDC</label>
-              </div>
-            </div>
+            {# satosa_disable_cieoidc_backend rimosso (legacy, non più usato) #}
+            <input type="hidden" name="satosa_disable_cieoidc_backend" value="false">
           </div>
         </div>
       </div>
@@ -709,144 +688,16 @@
     {% endif %}
   </form>
 
-  {# ─── Fase 2: Chiavi e Certificati ────────────────────────────────────────── #}
-  <div class="d-flex align-items-center gap-2 mt-4 mb-2">
-    <span class="badge rounded-pill bg-success fs-6 fw-bold px-3 py-2">2</span>
-    <h5 class="mb-0">Chiavi e Certificati</h5>
-  </div>
-  <p class="text-muted small mb-3">
-    Genera il certificato SPID e/o le chiavi JWK CIE OIDC.
-    {% if is_superadmin %}Completa questo passo prima di rigenerare i metadata (passo 3).{% endif %}
-  </p>
-  <div class="row g-3 mb-2">
-    {# Card SPID certs #}
-    <div class="col-md-6" id="lp-cert-spid-card"
-      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-certificate me-2 text-success"></i>Certificato SPID</h6>
-          <span class="badge bg-success-subtle text-success border border-success-subtle">SPID</span>
-        </div>
-        <div class="card-body" id="spid-cert-info-body">
-          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare il certificato attuale.</p>
-        </div>
-        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadSpidCertInfo(this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt me-1"></i>Stato
-          </button>
-          {% if is_superadmin %}
-          <button class="btn btn-sm btn-outline-success" type="button"
-            data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
-            <i class="fas fa-certificate me-1"></i>Genera certificato SPID
-          </button>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {# Card CIE OIDC keys #}
-    <div class="col-md-6" id="lp-cert-cie-card"
-      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-key me-2 text-info"></i>Chiavi JWK CIE OIDC</h6>
-          <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
-        </div>
-        <div class="card-body" id="cie-keys-info-body">
-          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
-        </div>
-        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt me-1"></i>Stato
-          </button>
-          {% if is_superadmin %}
-          <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
-            <i class="fas fa-key me-1"></i>Genera chiavi JWK
-          </button>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {# Placeholder: nessun metodo abilitato #}
-    <div class="col-12" id="lp-fase2-empty" style="display:none;">
-      <div class="alert alert-secondary mb-0">
-        <i class="fas fa-info-circle me-1"></i>
-        Abilita SPID e/o CIE OIDC nella <strong>Fase 1 → Generale</strong> per accedere alla generazione di chiavi e certificati.
-      </div>
-    </div>
-  </div>
-
-  {# ─── Fase 3: Metadata ────────────────────────────────────────────────────── #}
-  <div class="d-flex align-items-center gap-2 mt-4 mb-2">
-    <span class="badge rounded-pill bg-warning text-dark fs-6 fw-bold px-3 py-2">3</span>
-    <h5 class="mb-0">Metadata</h5>
-  </div>
-  <p class="text-muted small mb-3">
-    La UI gestisce solo gli artifact pubblici federabili. Il metadata interno frontoffice↔iam-proxy si autogenera e si riallinea da solo.
-  </p>
-  <div class="row g-3 mb-2">
-    <div class="col-md-6" id="lp-meta-spid-card"
-      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-        </div>
-        <div class="card-body" id="spid-metadata-body">
-          <p class="text-muted small mb-0">Esporta il file da inviare ad AgID e usa <i class="fas fa-sync-alt"></i> per verificarne lo stato.</p>
-        </div>
-        {% if is_superadmin %}
-        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
-            <i class="fas fa-download me-1"></i>Scarica XML
-          </button>
-          <button class="btn btn-sm btn-outline-success" type="button"
-                  data-bs-toggle="modal" data-bs-target="#spidMetaGeneraModal">
-            <i class="fas fa-file-export me-1"></i>Genera metadata AgID
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="col-md-6" id="lp-meta-cie-card"
-      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Metadata SP CIE OIDC</h6>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-        </div>
-        <div class="card-body" id="cie-metadata-body">
-          <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
-        </div>
-        {% if is_superadmin %}
-        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
-            <i class="fas fa-file-export me-1"></i>Esporta artefatti CIE
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    <div class="col-12" id="lp-fase3-empty" style="display:none;">
-      <div class="alert alert-secondary mb-0">
-        <i class="fas fa-info-circle me-1"></i>
-        Abilita SPID e/o CIE OIDC nella <strong>Fase 1 → Generale</strong> per accedere alla gestione dei metadata.
-      </div>
-    </div>
-  </div>
-
-  {# ─── Fase 4: Backup e Ripristino ─────────────────────────────────────────── #}
+  
+  {# ─── Backup e Ripristino ─────────────────────────────────────────── #}
   {% if is_superadmin %}
   <div class="d-flex align-items-center gap-2 mt-4 mb-2">
-    <span class="badge rounded-pill bg-secondary fs-6 fw-bold px-3 py-2">4</span>
-    <h5 class="mb-0">Backup e Ripristino</h5>
+    <h5 class="mb-0"><i class="fas fa-toolbox me-2 text-secondary"></i>Strumenti: Backup e Ripristino</h5>
   </div>
   <p class="text-muted small mb-3">
     Esporta in un unico archivio ZIP la configurazione e/o i file di chiavi e metadata.
     Il ripristino sostituisce i file esistenti sul volume.
+      Il metadata SPID e CIE nei volumi vengono inclusi nel backup: il ripristino da ZIP ricrea l&apos;ambiente di login completo senza bisogno di rifederare.
   </p>
   <div class="row g-3 mb-2">
     {# Export ZIP #}
@@ -904,26 +755,17 @@
           <h6 class="mb-0"><i class="fas fa-upload me-2 text-warning"></i>Ripristino</h6>
         </div>
         <div class="card-body">
-          <p class="small text-muted mb-3">Il file caricato sovrascrive il file esistente sul volume.</p>
+          <p class="small text-muted mb-3">Ripristina da archivio ZIP completo.</p>
+
           <div class="mb-3">
-            <label class="form-label small fw-semibold"><i class="fas fa-id-card me-1 text-success"></i>Metadata pubblico SPID (XML)</label>
+            <label class="form-label small fw-semibold"><i class="fas fa-file-archive me-1 text-secondary"></i>Ripristino da backup ZIP</label>
             <div class="input-group input-group-sm">
-              <input type="file" class="form-control" id="spid-restore-file" accept=".xml">
-              <button class="btn btn-warning" type="button" onclick="restoreMetadata('spid', 'spid-restore-file', this)">
+              <input type="file" class="form-control" id="bk-restore-zip" accept=".zip">
+              <button class="btn btn-warning" type="button" onclick="lpRestoreBackupZip(this)">
                 <i class="fas fa-upload me-1"></i>Ripristina
               </button>
             </div>
-            <div class="form-text">File XML metadata pubblico SPID (satosa_spid_public_metadata.xml).</div>
-          </div>
-          <div>
-            <label class="form-label small fw-semibold"><i class="fas fa-address-card me-1 text-info"></i>Metadata CIE OIDC (JSON)</label>
-            <div class="input-group input-group-sm">
-              <input type="file" class="form-control" id="cie-restore-file" accept=".json">
-              <button class="btn btn-warning" type="button" onclick="restoreMetadata('cie', 'cie-restore-file', this)">
-                <i class="fas fa-upload me-1"></i>Ripristina
-              </button>
-            </div>
-            <div class="form-text">File JSON entity configuration CIE OIDC.</div>
+            <div class="form-text">ZIP esportato da questo pannello. Ripristina automaticamente cert, chiavi JWK e metadata trovati nel file.</div>
           </div>
         </div>
       </div>
@@ -952,11 +794,11 @@
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Common Name <span class="text-danger">*</span></label>
-            <input type="text" class="form-control form-control-sm" id="spid-cert-cn" placeholder="es. Comune di Montesilvano">
+            <input type="text" class="form-control form-control-sm" id="spid-cert-cn" placeholder="es. Comune di Roma">
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Locality Name <span class="text-danger">*</span></label>
-            <input type="text" class="form-control form-control-sm" id="spid-cert-locality" placeholder="es. Montesilvano">
+            <input type="text" class="form-control form-control-sm" id="spid-cert-locality" placeholder="es. Roma">
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Organization ID <span class="text-danger">*</span></label>
@@ -997,21 +839,21 @@
 </div>
 
 {# ─── Modale anteprima Rigenera SP Metadata ──────────────────────────────────── #}
-<div class="modal fade" id="spidMetaGeneraModal" tabindex="-1" aria-labelledby="spidMetaGeneraModalLabel" aria-hidden="true">
+<div class="modal fade" id="spidMetaExportModal" tabindex="-1" aria-labelledby="spidMetaExportModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="spidMetaGeneraModalLabel">
-          <i class="fas fa-id-card me-2 text-success"></i>Genera metadata pubblico SPID
+        <h5 class="modal-title" id="spidMetaExportModalLabel">
+          <i class="fas fa-id-card me-2 text-success"></i>Rigenera metadata pubblico SPID
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-warning small mb-3">
           <i class="fas fa-exclamation-triangle me-1"></i>
-          Questa operazione recupera il metadata live da SATOSA e sovrascrive
+          Questa operazione chiede al proxy SATOSA di rigenerare il metadata e sovrascrive
           <code>satosa_spid_public_metadata.xml</code> sul volume.
-          Esegui questo passo dopo ogni rigenerazione del certificato SPID (Fase 2).
+          Esegui dopo ogni rigenerazione del certificato SPID.
         </div>
         <dl class="row small mb-0">
           <dt class="col-sm-4">Entity ID</dt>
@@ -1021,13 +863,13 @@
           <dt class="col-sm-4">Endpoint SATOSA</dt>
           <dd class="col-sm-8 text-muted"><code>/spidSaml2/metadata</code></dd>
         </dl>
-        <div id="spid-meta-genera-result" class="mt-3" style="display:none;"></div>
+        <div id="spid-meta-export-result" class="mt-3" style="display:none;"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn btn-success" id="spid-meta-genera-btn"
-                onclick="doGeneraSpidMetadata(this)">
-          <i class="fas fa-file-export me-1"></i>Genera metadata
+        <button type="button" class="btn btn-success" id="spid-meta-export-btn"
+                onclick="doExportSpidMetadata(this)">
+          <i class="fas fa-sync-alt me-1"></i>Rigenera metadata
         </button>
       </div>
     </div>
@@ -1044,7 +886,13 @@ const CIE_TRUST_PREPROD = 'https://preprod.registry.servizicie.interno.gov.it';
 // ── Derivazione campi da URL pubblico ────────────────────────────────────────
 function lpDeriveFromUrl() {
   const pub = (document.getElementById('lp-public-url')?.value || '').replace(/\/$/, '');
-  const host = document.getElementById('lp-hostname')?.value || '';
+  // Hostname: derivato dall'URL pubblico, aggiorna il campo hidden
+  let host = '';
+  if (pub) {
+    try { host = new URL(pub).hostname; } catch (_) {}
+  }
+  const hostnameHidden = document.getElementById('lp-hostname');
+  if (hostnameHidden && host) hostnameHidden.value = host;
 
   // SATOSA metadata URLs
   lpSetDerived('lp-saml2-meta-pub', pub ? pub + '/Saml2IDP/metadata' : '');
@@ -1052,8 +900,11 @@ function lpDeriveFromUrl() {
   const _intScheme = {{ ssl_on is defined and ssl_on ? 'true' : 'false' }} ? 'https' : 'http';
   lpSetDerived('lp-saml2-meta-int', host ? _intScheme + '://' + host + '/Saml2IDP/metadata' : '');
 
-  // SPID cert fields
-  lpSetDerived('lp-spid-cn', host);
+  // SPID cert CN (campo hidden): aggiorna con l'hostname derivato
+  const spidCnHidden = document.getElementById('lp-spid-cn');
+  if (spidCnHidden && host && !spidCnHidden.dataset.manuallySet) spidCnHidden.value = host;
+
+  // SPID fields
   const fo = '{{ frontoffice.public_url|default('') }}';
   const entityId = fo ? fo.replace(/\/$/, '') + '/saml/sp' : (pub ? pub + '/saml/sp' : '');
   lpSetDerived('lp-spid-entity-id', entityId);
@@ -1082,8 +933,6 @@ function lpDeriveFromUrl() {
   lpSetDerived('lp-cie-fed-tm', rp ? rp + '/trust_mark_status' : '');
   lpSetDerived('lp-cie-fed-list', rp ? rp + '/list' : '');
   lpSetDerived('lp-cie-policy', rp ? rp + '/en/website/legal-information' : '');
-  lpSetDerived('lp-cie-logo', pub ? pub + '/static/cie/sample-cie-logo.png' : '');
-
   // CIE trust anchor aggiornato dall'ambiente già selezionato
   lpUpdateCieEnv(false);
 }
@@ -1182,20 +1031,37 @@ async function loadMetadataInfo(type, btn) {
       bodyEl.innerHTML = '<div class="text-danger small"><i class="fas fa-times-circle me-1"></i>Errore parsing: ' + escHtml(d.parse_error) + '</div>';
       return;
     }
+    if (d.read_error) {
+      bodyEl.innerHTML = '<div class="text-danger small"><i class="fas fa-lock me-1"></i>' + escHtml(d.read_error) + '</div>';
+      return;
+    }
     let html = '<dl class="row small mb-0">';
     if (type === 'spid') {
       html += metaRow('Entity ID', escHtml(d.entity_id || '—'));
       if (d.acs_urls && d.acs_urls.length) {
         html += metaRow('ACS URL', d.acs_urls.map(u => '<code class="small">' + escHtml(u) + '</code>').join('<br>'));
       }
-      html += metaRow('Scadenza metadata', expiryBadge(d.valid_until, d.valid_until_expired));
-      html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
+      html += metaRow('Scadenza metadata (validUntil)', d.valid_until
+        ? expiryBadge(d.valid_until, d.valid_until_expired)
+        : '<span class="text-muted">Assente nel metadata</span>');
+      html += metaRow('Scadenza certificato SPID', d.cert_expiry
+        ? expiryBadge(d.cert_expiry, d.cert_expired)
+        : '<span class="text-muted">Non rilevata dal certificato nel metadata</span>');
+      
     } else {
-      html += metaRow('Issuer', escHtml(d.iss || '—'));
-      html += metaRow('Subject', escHtml(d.sub || '—'));
-      html += metaRow('Scadenza (exp)', expiryBadge(d.exp, d.exp_expired));
-      html += metaRow('Emesso (iat)', '<span class="text-muted">' + escHtml(d.iat || '—') + '</span>');
-      html += metaRow('Chiavi JWK', '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">' + (d.jwk_count || 0) + ' chiavi</span>');
+      html += metaRow('Issuer', '<code class="small">' + escHtml(d.iss || '—') + '</code>');
+      html += metaRow('Subject', '<code class="small">' + escHtml(d.sub || '—') + '</code>');
+      if (d.exp) {
+        const daysLeft = d.exp_days_left ?? 0;
+        const expired = d.exp_expired;
+        const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle' : (daysLeft < 30 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-success-subtle text-success border-success-subtle');
+        const icon = expired ? 'fa-times-circle' : (daysLeft < 30 ? 'fa-exclamation-circle' : 'fa-check-circle');
+        const lbl = expired ? 'SCADUTO' : (daysLeft + ' giorni');
+        html += metaRow('Scadenza (exp)', '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(d.exp) + ' (' + lbl + ')</span>');
+      }
+      if (d.iat) html += metaRow('Emesso (iat)', '<span class="text-muted">' + escHtml(d.iat) + '</span>');
+      html += metaRow('Chiavi federazione', '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">' + (d.federation_jwk_count || 0) + ' JWK</span>');
+      if (d.client_name) html += metaRow('Client name', escHtml(d.client_name));
     }
     html += metaRow('Aggiornato', '<span class="text-muted">' + escHtml(d.file_mtime || '—') + '</span>');
     html += '</dl>';
@@ -1212,9 +1078,18 @@ function metaRow(label, value) {
 }
 function expiryBadge(date, expired) {
   if (!date) return '<span class="text-muted">—</span>';
-  const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle' : 'bg-success-subtle text-success border-success-subtle';
-  const icon = expired ? 'fa-times-circle' : 'fa-check-circle';
-  return '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(date) + '</span>';
+  let daysLeft = null;
+  const ts = new Date(date).getTime();
+  if (!isNaN(ts)) daysLeft = Math.floor((ts - Date.now()) / 86400000);
+  const warn = daysLeft !== null && !expired && daysLeft < 30;
+  const cls = expired ? 'bg-danger-subtle text-danger border-danger-subtle'
+             : (warn   ? 'bg-warning-subtle text-warning border-warning-subtle'
+                       : 'bg-success-subtle text-success border-success-subtle');
+  const icon = expired ? 'fa-times-circle' : (warn ? 'fa-exclamation-circle' : 'fa-check-circle');
+  const label = expired ? ' (SCADUTO)'
+              : (daysLeft !== null ? ' (' + Math.max(0, daysLeft) + ' giorni)' : '');
+  return '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>'
+       + escHtml(date) + label + '</span>';
 }
 async function restoreMetadata(type, fileInputId, btn) {
   const fileEl = document.getElementById(fileInputId);
@@ -1238,8 +1113,31 @@ async function restoreMetadata(type, fileInputId, btn) {
   // Derivazione campi al caricamento
   lpDeriveFromUrl();
   document.getElementById('lp-public-url')?.addEventListener('input', lpDeriveFromUrl);
-  document.getElementById('lp-hostname')?.addEventListener('input', lpDeriveFromUrl);
   document.getElementById('lp-cie-custom-url')?.addEventListener('input', lpUpdateCieEnv);
+
+  // Stato auth-proxy-nginx
+  (async function lpCheckStatus() {
+    const dot  = document.getElementById('lp-status-dot');
+    const text = document.getElementById('lp-status-text');
+    if (!dot || !text) return;
+    try {
+      const res  = await fetch('/impostazioni/login-proxy/status');
+      const json = await res.json();
+      if (json.running) {
+        dot.className  = 'master-status-dot bg-success';
+        text.textContent = 'In esecuzione';
+        text.className = 'text-success small';
+      } else {
+        dot.className  = 'master-status-dot bg-danger';
+        text.textContent = 'Non raggiungibile';
+        text.className = 'text-danger small';
+      }
+    } catch (_) {
+      dot.className  = 'master-status-dot bg-secondary';
+      text.textContent = 'Stato sconosciuto';
+      text.className = 'text-muted small';
+    }
+  })();
 
   // Badge configurazione e visibilità card condizionali
   function lpUpdatePhaseVisibility() {
@@ -1283,6 +1181,20 @@ async function restoreMetadata(type, fileInputId, btn) {
   document.getElementById('en-spid')?.addEventListener('change', lpUpdatePhaseVisibility);
   document.getElementById('en-cie')?.addEventListener('change', lpUpdatePhaseVisibility);
 
+  // Auto-carica info card alla prima apertura degli accordion SPID/CIE
+  document.getElementById('lp-spid')?.addEventListener('shown.bs.collapse', () => {
+    if (!document.getElementById('spid-cert-info-body')?.querySelector('dl'))
+      loadSpidCertInfo(null);
+    if (!document.getElementById('spid-metadata-body')?.querySelector('dl'))
+      loadMetadataInfo('spid', null);
+  });
+  document.getElementById('lp-cie')?.addEventListener('shown.bs.collapse', () => {
+    if (!document.getElementById('cie-keys-info-body')?.querySelector('dl'))
+      loadCieKeysInfo(null);
+    if (!document.getElementById('cie-metadata-body')?.querySelector('dl'))
+      loadMetadataInfo('cie', null);
+  });
+
   // Stato backup: disabilita checkbox se file non disponibile
   try {
     const bkRes = await fetch('/impostazioni/login-proxy/backup/status');
@@ -1299,10 +1211,15 @@ async function restoreMetadata(type, fileInputId, btn) {
 
   // Pre-popola il modale generazione cert SPID al momento dell'apertura
   document.getElementById('spidCertGeneraModal')?.addEventListener('show.bs.modal', () => {
-    const cn       = document.getElementById('lp-spid-cn')?.value || '';
-    const locality = '{{ settings.iam_proxy.spid_cert_locality_name|default('') }}';
+    // Common Name: hostname del proxy (da campo hidden derivato)
+    const cn = document.getElementById('lp-spid-cn')?.value
+      || document.getElementById('lp-hostname')?.value
+      || '{{ iam_proxy.spid_cert_common_name|default('') }}';
+    // Locality: da dati ente (già salvato in DB come spid_cert_locality_name)
+    const locality = '{{ iam_proxy.spid_cert_locality_name|default(entity.city|default('')) }}';
     const orgId    = document.getElementById('lp-spid-org-id')?.value || '';
-    const orgName  = '{{ settings.iam_proxy.spid_cert_org_name|default('') }}';
+    // Org Name: da dati ente
+    const orgName  = '{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}';
     const entityId = document.getElementById('lp-spid-entity-id')?.value || '';
     if (cn)       document.getElementById('spid-cert-cn').value        = cn;
     if (locality) document.getElementById('spid-cert-locality').value   = locality;
@@ -1348,7 +1265,7 @@ async function doGeneraSpidCerts(btn) {
     }
     resultEl.innerHTML = html;
     resultEl.style.display = '';
-    if (ok) { impToast('Certificati SPID generati.', true); loadMetadataInfo('spid', null); }
+    if (ok) { impToast('Certificati SPID generati.', true); loadSpidCertInfo(null); }
   } catch (e) {
     resultEl.className = 'mt-3 alert alert-danger';
     resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>Errore: ' + escHtml(e.message);
@@ -1366,26 +1283,30 @@ async function generaCieKeys(btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
   try {
-    let res  = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    let json = await res.json();
+    let res = await fetch('/impostazioni/login-proxy/cie-keys/genera?_ts=' + Date.now(), { method: 'GET' });
+    let raw = await res.text();
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new Error('HTTP ' + res.status + ' risposta non JSON');
+    }
 
     if (!json.success && (json.message || '').includes('già presenti')) {
       const doForce = confirm('Le chiavi sono già state generate di recente.\n\nForza la rigenerazione solo se hai revocato la federazione CIE.\n\nProcedere?');
       if (doForce) {
-        res = await fetch('/impostazioni/login-proxy/cie-keys/genera', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force: true }),
-        });
-        json = await res.json();
+        res = await fetch('/impostazioni/login-proxy/cie-keys/genera?force=1&_ts=' + Date.now(), { method: 'GET' });
+        raw = await res.text();
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error('HTTP ' + res.status + ' risposta non JSON');
+        }
       }
     }
 
     impToast(json.message || (json.success ? 'Chiavi JWK generate.' : 'Generazione fallita.'), !!json.success);
+    if (json.success) loadCieKeysInfo(null);
   } catch (e) {
     impToast('Errore: ' + e.message, false);
   } finally {
@@ -1398,33 +1319,36 @@ async function generaCieKeys(btn) {
 async function exportCieOidc(btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Rigenerazione…';
   try {
-    let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    let json = await res.json();
+    let res  = await fetch('/impostazioni/login-proxy/cie-metadata/export?_ts=' + Date.now(), { method: 'GET' });
+    let raw = await res.text();
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new Error('HTTP ' + res.status + ' risposta non JSON');
+    }
 
     if (!json.success && (json.message || '').includes('già presente e non scaduto')) {
-      const doForce = confirm('L\'export CIE è già presente e non scaduto.\n\nForzare l\'export ora?');
+      const doForce = confirm('Gli artefatti CIE sono già presenti e non scaduti.\n\nForzare la rigenerazione ora?');
       if (doForce) {
-        res = await fetch('/impostazioni/login-proxy/cie-metadata/export', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force: true }),
-        });
-        json = await res.json();
+        res = await fetch('/impostazioni/login-proxy/cie-metadata/export?force=1&_ts=' + Date.now(), { method: 'GET' });
+        raw = await res.text();
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error('HTTP ' + res.status + ' risposta non JSON');
+        }
       }
     }
 
     if (json.success) {
       const info = json.exp ? ` (scade ${escHtml(json.exp)}, giorni rimasti: ${json.days_left})` : '';
-      impToast('Export CIE OIDC completato.' + info, true);
+      impToast('Rigenerazione CIE OIDC completata.' + info, true);
       loadMetadataInfo('cie', null);
     } else {
-      impToast(json.message || 'Export fallito.', false);
+      impToast(json.message || 'Rigenerazione fallita.', false);
     }
   } catch (e) {
     impToast('Errore: ' + e.message, false);
@@ -1444,19 +1368,51 @@ async function loadSpidCertInfo(btn) {
     const json = await res.json();
     const d = json.data || json;
     if (!d.exists) {
-      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Certificato non trovato</span><p class="text-muted small mt-2 mb-0">Genera il certificato SPID per procedere.</p>';
+      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Certificato non presente</span><p class="text-muted small mt-2 mb-0">' + escHtml(d.message || 'Genera o ripristina da ZIP il certificato SPID.') + '</p>';
       return;
     }
     let html = '<dl class="row small mb-0">';
-    if (d.cert_expiry) html += metaRow('Scadenza certificato', expiryBadge(d.cert_expiry, d.cert_expired));
-    if (d.entity_id)   html += metaRow('Entity ID', '<code class="small">' + escHtml(d.entity_id) + '</code>');
-    html += metaRow('File metadata', '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>Presente</span>');
+    html += metaRow('CN', '<code class="small">' + escHtml(d.subject_cn || '—') + '</code>');
+    if (d.subject_o) html += metaRow('Organizzazione', escHtml(d.subject_o));
+    if (d.subject_l) html += metaRow('Locality', escHtml(d.subject_l));
+    if (d.key_bits)  html += metaRow('Chiave', escHtml(d.key_type || 'RSA') + ' ' + d.key_bits + ' bit');
+    if (d.valid_to) {
+      const daysLeft = d.days_left ?? 0;
+      const expiredFlag = d.expired;
+      const cls = expiredFlag ? 'bg-danger-subtle text-danger border-danger-subtle' : (daysLeft < 30 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-success-subtle text-success border-success-subtle');
+      const icon = expiredFlag ? 'fa-times-circle' : (daysLeft < 30 ? 'fa-exclamation-circle' : 'fa-check-circle');
+      const label = expiredFlag ? 'SCADUTO' : (daysLeft + ' giorni');
+      html += metaRow('Scadenza', '<span class="badge ' + cls + ' border"><i class="fas ' + icon + ' me-1"></i>' + escHtml(d.valid_to) + ' (' + label + ')</span>');
+    }
+    if (d.fingerprint_sha256) html += metaRow('SHA-256', '<code class="small text-break">' + escHtml(d.fingerprint_sha256) + '</code>');
+    html += metaRow('Chiave privata', d.has_key ? '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>Presente</span>' : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-times-circle me-1"></i>Mancante</span>');
     html += '</dl>';
     bodyEl.innerHTML = html;
   } catch (e) {
     bodyEl.innerHTML = '<div class="text-danger small">Errore: ' + escHtml(e.message) + '</div>';
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+// ── Copia JSON JWKS CIE OIDC ─────────────────────────────────────────────────
+async function copyCieKeysJwks(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/cie-keys/jwks');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const jwks = json.data || { keys: [] };
+    const text = JSON.stringify(jwks, null, 4);
+    await navigator.clipboard.writeText(text);
+    impToast('JSON JWKS copiato negli appunti.', true);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
   }
 }
 
@@ -1467,14 +1423,25 @@ async function loadCieKeysInfo(btn) {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
   try {
-    const res = await fetch('/impostazioni/login-proxy/backup/status');
+    const res = await fetch('/impostazioni/login-proxy/cie-keys/info');
     const json = await res.json();
     const d = json.data || json;
-    if (!d.cieoidc_keys) {
-      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Chiavi non trovate</span><p class="text-muted small mt-2 mb-0">Genera le chiavi JWK per procedere.</p>';
+    if (!d.exists) {
+      bodyEl.innerHTML = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="fas fa-exclamation-circle me-1"></i>Chiavi non presenti</span><p class="text-muted small mt-2 mb-0">' + escHtml(d.message || 'Genera o ripristina da ZIP le chiavi JWK CIE OIDC.') + '</p>';
       return;
     }
-    bodyEl.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>Chiavi JWK presenti sul volume</span><p class="text-muted small mt-2 mb-0">Genera i metadata nella Fase 3 dopo aver aggiornato le chiavi.</p>';
+    let html = '<dl class="row small mb-0">';
+    html += metaRow('Chiavi JWK', '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check-circle me-1"></i>' + d.key_count + ' chiavi</span>');
+    if (d.generated_at) html += metaRow('Generate il', escHtml(d.generated_at));
+    if (d.keys && d.keys.length) {
+      d.keys.forEach(k => {
+        const label = k.file.replace('.json','');
+        const detail = (k.kty || '') + (k.key_bits ? ' ' + k.key_bits + ' bit' : (k.crv ? ' ' + k.crv : ''));
+        html += metaRow(label, '<code class="small">' + escHtml(k.kid || '—') + '</code> <span class="text-muted">(' + escHtml(detail) + ')</span>');
+      });
+    }
+    html += '</dl>';
+    bodyEl.innerHTML = html;
   } catch (e) {
     bodyEl.innerHTML = '<div class="text-danger small">Errore: ' + escHtml(e.message) + '</div>';
   } finally {
@@ -1518,55 +1485,32 @@ async function lpExportBackupZip(btn) {
   }
 }
 
-async function exportSpidMetadata(btn) {
+async function doExportSpidMetadata(btn) {
   const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Export…';
-  try {
-    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const json = await res.json();
-    if (json.success) {
-      const exp = json.valid_until ? ' (validUntil ' + escHtml(json.valid_until) + ')' : '';
-      impToast('Export metadata pubblico SPID completato.' + exp, true);
-      loadMetadataInfo('spid', null);
-    } else {
-      impToast(json.message || 'Export metadata pubblico SPID fallito.', false);
-    }
-  } catch (e) {
-    impToast('Errore: ' + e.message, false);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
-  }
-}
-
-async function doGeneraSpidMetadata(btn) {
-  const orig = btn.innerHTML;
-  const resultEl = document.getElementById('spid-meta-genera-result');
+  const resultEl = document.getElementById('spid-meta-export-result');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generazione…';
   resultEl.style.display = 'none';
   try {
-    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const json = await res.json();
+    const res = await fetch('/impostazioni/login-proxy/spid-metadata/export?force=1&_ts=' + Date.now(), { method: 'GET' });
+    const raw = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      const excerpt = raw.replace(/\s+/g, ' ').trim().slice(0, 180);
+      throw new Error('HTTP ' + res.status + ' risposta non JSON' + (excerpt ? ': ' + excerpt : ''));
+    }
     if (json.success) {
       const exp = json.valid_until ? '<br><strong>validUntil:</strong> ' + escHtml(json.valid_until) : '';
       const eid = json.entity_id ? '<br><strong>Entity ID:</strong> ' + escHtml(json.entity_id) : '';
       resultEl.className = 'mt-3 alert alert-success small';
-      resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Metadata generato con successo.' + eid + exp;
+      resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Metadata rigenerato con successo.' + eid + exp;
       resultEl.style.display = '';
       loadMetadataInfo('spid', null);
     } else {
       resultEl.className = 'mt-3 alert alert-danger small';
-      resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>' + escHtml(json.message || 'Generazione metadata SPID fallita.');
+      resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i>' + escHtml(json.message || 'Rigenerazione metadata SPID fallita.');
       resultEl.style.display = '';
     }
   } catch (e) {
@@ -1578,7 +1522,6 @@ async function doGeneraSpidMetadata(btn) {
     btn.innerHTML = orig;
   }
 }
-
 function downloadSpidMetadata(btn) {
   const a = document.createElement('a');
   a.href = '/impostazioni/login-proxy/spid-metadata/download';
@@ -1586,5 +1529,42 @@ function downloadSpidMetadata(btn) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+// ── Ripristino da backup ZIP completo ─────────────────────────────────────────
+async function lpRestoreBackupZip(btn) {
+  const fileEl = document.getElementById('bk-restore-zip');
+  if (!fileEl || !fileEl.files[0]) { impToast('Seleziona un file ZIP di backup.', false); return; }
+  if (!confirm('Ripristinare dal file ZIP?\n\nI file esistenti (cert.pem, privkey.pem, chiavi JWK, metadata) saranno sovrascritti con il contenuto del backup.')) return;
+  const fd = new FormData();
+  fd.append('backup_zip', fileEl.files[0]);
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ripristino…';
+  try {
+    const res  = await fetch('/impostazioni/login-proxy/backup/restore', { method: 'POST', body: fd });
+    const json = await res.json();
+    if (!json.success && !json.results) {
+      impToast(json.message || 'Ripristino fallito.', false);
+      return;
+    }
+    const results = json.results || {};
+    const parts = Object.entries(results).map(([k, v]) => (v.success ? '✓ ' : '✗ ') + v.message);
+    if (parts.length) {
+      impToast(json.message + '\n' + parts.join('\n'), Object.values(results).some(v => v.success));
+    } else {
+      impToast('Nessun elemento trovato nel ZIP.', false);
+    }
+    // Refresh cards
+    loadSpidCertInfo(null);
+    loadCieKeysInfo(null);
+    loadMetadataInfo('spid', null);
+    loadMetadataInfo('cie', null);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
 }
 </script>

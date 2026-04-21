@@ -46,7 +46,7 @@
     - [X] Possibilità di gestire i parametri (comprese variabili env, logo, certificati GovPay) direttamente dall'interfaccia.
     - [X] Gestione segreti (API Key, certificati, ecc.) cifrati con la chiave di cifratura dell'applicazione.
 - [x] **Documentazione**: Sistemazione documentazione relativa ai cron (attualmente massivo, in futuro rendicontazione).
-- [ ] **dev**: creazione branch, dev. Con ci/cd automatica ad ogni commit e visualizzazione del commit specifico nel footer, tipo vDEV-commit-hash.
+- [X] **dev**: creazione branch, dev. Con ci/cd automatica ad ogni commit e visualizzazione del commit specifico nel footer, tipo vDEV-commit-hash.
 
 
 ### Integrazioni Esterne

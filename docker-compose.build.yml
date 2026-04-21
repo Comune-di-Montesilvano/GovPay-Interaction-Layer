@@ -12,14 +12,14 @@ services:
       context: .
       target: runtime-frontoffice
 
-  iam-proxy-italia:
+  auth-proxy:
     build:
       context: .
-      dockerfile: iam-proxy/Dockerfile
+      dockerfile: auth-proxy/Dockerfile
 
-  satosa-nginx:
+  auth-proxy-nginx:
     build:
-      context: ./iam-proxy/nginx
+      context: ./auth-proxy/nginx
 
   db:
     build:

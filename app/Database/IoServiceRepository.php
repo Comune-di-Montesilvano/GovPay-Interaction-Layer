@@ -65,10 +65,13 @@ class IoServiceRepository
     public function listAll(): array
     {
         $stmt = $this->pdo->prepare('
-            SELECT id, nome, descrizione, id_service, api_key_primaria, 
-                   api_key_secondaria, codice_catalogo, is_default, created_at, updated_at
-            FROM io_services
-            ORDER BY nome ASC
+            SELECT s.id, s.nome, s.descrizione, s.id_service, s.api_key_primaria,
+                   s.api_key_secondaria, s.codice_catalogo, s.is_default, s.created_at, s.updated_at,
+                   COUNT(t.id_entrata) AS tipologie_count
+            FROM io_services s
+            LEFT JOIN io_service_tipologie t ON s.id = t.io_service_id
+            GROUP BY s.id
+            ORDER BY s.nome ASC
         ');
         $stmt->execute();
         $rows = $stmt->fetchAll();

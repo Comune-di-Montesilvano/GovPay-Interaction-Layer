@@ -20,7 +20,7 @@ is_true() {
 
 # ── Fetch runtime config from backoffice ─────────────────────────────────────
 # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* provengono esclusivamente dal DB
-# del backoffice tramite GET /api/iam-proxy/env. MASTER_TOKEN è obbligatorio.
+# del backoffice tramite GET /api/auth-proxy/env. MASTER_TOKEN è obbligatorio.
 if [ -n "${BACKOFFICE_INTERNAL_URL:-}" ]; then
   _BO_URL="${BACKOFFICE_INTERNAL_URL}"
 else
@@ -37,14 +37,14 @@ if [ -z "${MASTER_TOKEN:-}" ]; then
   exit 1
 fi
 
-echo "[startup] Fetch configurazione da ${_BO_URL}/api/iam-proxy/env ..."
-_MAX_ATTEMPTS=10
+echo "[startup] Fetch configurazione da ${_BO_URL}/api/auth-proxy/env ..."
+_MAX_ATTEMPTS=60
 _ATTEMPT=0
 _CONF=""
 while [ "$_ATTEMPT" -lt "$_MAX_ATTEMPTS" ]; do
   _CONF=$(curl -sf -k --max-time 10 \
     -H "Authorization: Bearer ${MASTER_TOKEN}" \
-    "${_BO_URL}/api/iam-proxy/env" 2>/dev/null) && break
+    "${_BO_URL}/api/auth-proxy/env" 2>/dev/null) && break
   _ATTEMPT=$((_ATTEMPT + 1))
   echo "[startup] Backoffice non ancora pronto (tentativo ${_ATTEMPT}/${_MAX_ATTEMPTS}), attendo 5s..."
   sleep 5
@@ -63,6 +63,22 @@ for k, v in d.items():
     if isinstance(v, str) and v:
         print('export {}={}'.format(k, shlex.quote(v)))
 ")"
+
+# Rileva wizard mode: se backoffice non è ancora configurato, non avviare SATOSA.
+# Il watchdog riproverà ogni _WATCHDOG_INTERVAL finché setup non sarà completo.
+_setup_complete=$(echo "$_CONF" | python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    print('true' if str(d.get('SETUP_COMPLETE','false')).lower() in ('1','true','yes','on') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+
+if [ "$_setup_complete" != "true" ]; then
+  echo "[startup] Backoffice in fase di wizard (setup non completato). SATOSA non avviato."
+  echo "[startup] Il watchdog si occuperà dell'avvio quando la configurazione sarà completata."
+fi
 
 # Hardening: evita crash SATOSA su !ENV quando redirect errore non e valorizzato.
 if [ -z "${SATOSA_UNKNOW_ERROR_REDIRECT_PAGE:-}" ]; then
@@ -158,8 +174,9 @@ except Exception:
 # ── Supervisore SATOSA: funzioni watchdog ─────────────────────────────────────
 # Il container rimane sempre in esecuzione (restart: always in docker-compose).
 # SATOSA è gestito internamente: avviato/fermato in base alla config backoffice.
-_WATCHDOG_INTERVAL="${IAM_WATCHDOG_INTERVAL:-300}"
+_WATCHDOG_INTERVAL="${AUTH_PROXY_WATCHDOG_INTERVAL:-60}"
 _SATOSA_PID=""
+_PKI_CERT_HASH=""
 
 satosa_running() { [ -n "${_SATOSA_PID:-}" ] && kill -0 "$_SATOSA_PID" 2>/dev/null; }
 
@@ -188,6 +205,20 @@ setup_satosa() {
     return 1
   fi
   echo "[startup] Chiavi PKI verificate: $_pki_key, $_pki_cert"
+  # Garantisce attraversamento directory + leggibilita PKI
+  # (startup gira come root; SATOSA gira come utente non-root).
+  local _pki_dir
+  _pki_dir="$(dirname "$_pki_key")"
+  chmod 755 "$SATOSA_PROXY" "$_pki_dir" 2>/dev/null || true
+  chmod 644 "$_pki_key" "$_pki_cert" 2>/dev/null || true
+  if ! test -r "$_pki_key" || ! test -r "$_pki_cert"; then
+    echo "[startup] ERRORE: permessi PKI insufficienti dopo hardening." >&2
+    ls -ld "$SATOSA_PROXY" "$_pki_dir" >&2 || true
+    ls -l "$_pki_key" "$_pki_cert" >&2 || true
+    return 1
+  fi
+  # Registra hash del cert per rilevare rinnovi durante il watchdog
+  _PKI_CERT_HASH="$(md5sum "$_pki_cert" 2>/dev/null | awk '{print $1}' || echo '')"
 
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=unknown}"
@@ -425,6 +456,13 @@ if [ -f "$ROUTING" ]; then
   fi
 fi
 
+# ── copia immagini ente (logo, favicon) nel volume statico ───────────────────
+if [ -d "/gil-images" ]; then
+  echo "[startup] Copia immagini ente in $SATOSA_PROXY/static/img/..."
+  mkdir -p "$SATOSA_PROXY/static/img"
+  cp -r /gil-images/. "$SATOSA_PROXY/static/img/" 2>/dev/null || true
+fi
+
 # ── copia static files nel volume condiviso con auth-proxy-nginx ─────────────
 echo "[startup] Copia static files in $SATOSA_STATIC..."
 mkdir -p "$SATOSA_STATIC"
@@ -468,7 +506,26 @@ def is_valid(path):
             return False
         # Parse ISO 8601 (Z suffix)
         dt = datetime.datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
-        return dt > datetime.datetime.now(datetime.timezone.utc)
+        if dt <= datetime.datetime.now(datetime.timezone.utc):
+            return False
+
+        expected_entity_id = f'{base_url}/saml/sp'
+        expected_acs_url = f'{base_url}/spid/callback'
+
+        entity_id = root.get('entityID', '').rstrip('/')
+        if entity_id != expected_entity_id:
+            return False
+
+        ns = {'md': 'urn:oasis:names:tc:SAML:2.0:metadata'}
+        acs = root.find('.//md:AssertionConsumerService', ns)
+        if acs is None:
+            return False
+
+        acs_location = (acs.get('Location', '') or '').rstrip('/')
+        if acs_location != expected_acs_url:
+            return False
+
+        return True
     except Exception:
         return False
 
@@ -563,12 +620,53 @@ start_satosa() {
   /bin/bash "$SATOSA_PROXY/entrypoint.sh" &
   _SATOSA_PID=$!
   echo "[watchdog] SATOSA avviato (PID=$_SATOSA_PID)"
+  generate_metadata_if_missing &
 }
 
+# Chiede a metadata-builder di generare i metadata SPID/CIE se non già presenti.
+# Eseguita in background dopo start_satosa(): export-agid.sh ha retry interno
+# e aspetta che SATOSA sia pronto. Se i file esistono già (idempotenza),
+# metadata-builder esce subito senza sovrascriverli.
+generate_metadata_if_missing() {
+  local _builder="${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}"
+  local _q=""
+  if [ -n "${IAM_PROXY_PUBLIC_BASE_URL:-}" ]; then
+    local _host_header
+    _host_header="$(python3 -c "import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).hostname or '')" "${IAM_PROXY_PUBLIC_BASE_URL}" 2>/dev/null || true)"
+    if [ -n "${_host_header}" ]; then
+      _q="?host_header=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${_host_header}" 2>/dev/null || true)&public_base_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${IAM_PROXY_PUBLIC_BASE_URL}" 2>/dev/null || true)"
+    fi
+  fi
+  if is_true "${ENABLE_SPID:-false}"; then
+    echo "[startup] Genero metadata SPID se assente..."
+    curl -sf --max-time 120 -X POST \
+      -H "Authorization: Bearer ${MASTER_TOKEN:-}" \
+      "${_builder}/run/export-agid${_q}" -o /dev/null 2>&1 \
+      && echo "[startup] Metadata SPID pronto." \
+      || echo "[startup] Avviso: generazione metadata SPID fallita. Usa 'Rigenera' dal backoffice." >&2
+  fi
+  if is_true "${ENABLE_CIE_OIDC:-false}"; then
+    echo "[startup] Genero artefatti CIE se assenti..."
+    local _cie_tmp _cie_status
+    _cie_tmp="$(mktemp)"
+    _cie_status="$(curl -sS --max-time 120 -X POST \
+      -H "Authorization: Bearer ${MASTER_TOKEN:-}" \
+      -o "${_cie_tmp}" -w "%{http_code}" \
+      "${_builder}/run/export-cieoidc${_q}" 2>/dev/null || echo "curl-fail")"
+    if [ "${_cie_status}" = "200" ]; then
+      echo "[startup] Artefatti CIE pronti."
+    elif grep -qi "già presente e non scaduto" "${_cie_tmp}" 2>/dev/null; then
+      echo "[startup] Artefatti CIE già presenti e validi. Nessuna rigenerazione necessaria."
+    else
+      echo "[startup] Avviso: generazione artefatti CIE fallita. Usa 'Rigenera artefatti CIE' dal backoffice." >&2
+    fi
+    rm -f "${_cie_tmp}"
+  fi
+}
 fetch_conf() {
   curl -sf -k --max-time 10 \
     -H "Authorization: Bearer ${MASTER_TOKEN}" \
-    "${_BO_URL}/api/iam-proxy/env" 2>/dev/null
+    "${_BO_URL}/api/auth-proxy/env" 2>/dev/null
 }
 
 auth_on() {
@@ -589,17 +687,54 @@ print('true' if v in ('1','true','yes','on') else 'false')
 }
 
 # ── Avvio iniziale ────────────────────────────────────────────────────────────
-if [ "$_enable_spid" = "true" ] || [ "$_enable_cie" = "true" ]; then
+if [ "$_setup_complete" = "true" ] && { [ "$_enable_spid" = "true" ] || [ "$_enable_cie" = "true" ]; }; then
   echo "[startup] Auth abilitato al boot — avvio SATOSA iniziale..."
   start_satosa || true
+elif [ "$_setup_complete" != "true" ]; then
+  : # già loggato sopra — il watchdog si occupa dell'avvio
 else
   echo "[startup] IAM Proxy non abilitato al boot. In standby (poll ogni ${_WATCHDOG_INTERVAL}s)."
 fi
 
+# ── Reload trigger server ─────────────────────────────────────────────────────
+_RELOAD_TRIGGER_FILE="/tmp/reload_trigger"
+touch "$_RELOAD_TRIGGER_FILE"
+_LAST_TRIGGER_TIME="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
+
+python3 - <<'PYEOF' &
+import http.server, socketserver, pathlib
+class H(http.server.BaseHTTPRequestHandler):
+    _t = pathlib.Path('/tmp/reload_trigger')
+    def do_POST(self):
+        self._t.touch()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{"ok":true}')
+    def log_message(self, *a): pass
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(('', 9191), H) as s:
+    print('[reload-server] In ascolto su :9191', flush=True)
+    s.serve_forever()
+PYEOF
+echo "[startup] Reload server avviato (porta 9191)"
+
 # ── Loop watchdog ─────────────────────────────────────────────────────────────
-echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s)."
+_CONF_HASH="$(echo "$_CONF" | md5sum | awk '{print $1}' || echo '')"
+echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s). Hash iniziale: ${_CONF_HASH}"
 while true; do
-  sleep "$_WATCHDOG_INTERVAL"
+  # Attesa interrompibile: poll ogni 5s, sveglia anticipata su trigger API reload
+  _sleep_start="$(date +%s)"
+  while true; do
+    sleep 5
+    _t="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
+    if [ "$_t" -gt "$_LAST_TRIGGER_TIME" ]; then
+      _LAST_TRIGGER_TIME="$_t"
+      echo "[watchdog] Reload forzato via API"
+      break
+    fi
+    [ "$(( $(date +%s) - _sleep_start ))" -ge "$_WATCHDOG_INTERVAL" ] && break
+  done
 
   # Rileva crash spontaneo di SATOSA
   if [ -n "${_SATOSA_PID:-}" ] && ! satosa_running; then
@@ -612,6 +747,29 @@ while true; do
     continue
   }
 
+  _NEW_HASH="$(echo "$_NEW" | md5sum | awk '{print $1}' || echo '')"
+
+  # Non avviare SATOSA finché il wizard non è completato
+  _new_setup=$(printf '%s' "$_NEW" | python3 -c "
+import json,sys
+try:
+    d=json.loads(sys.stdin.read())
+    print('true' if str(d.get('SETUP_COMPLETE','false')).lower() in ('1','true','yes','on') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+  if [ "$_new_setup" != "true" ]; then
+    echo "[watchdog] Setup non completato — standby"
+    continue
+  fi
+
+  # Se la configurazione cambia, arresta SATOSA affinché riparta con il config aggiornato
+  if [ -n "$_CONF_HASH" ] && [ -n "$_NEW_HASH" ] && [ "$_NEW_HASH" != "$_CONF_HASH" ]; then
+    echo "[watchdog] Rilevata modifica configurazione dal backoffice — preparo riavvio SATOSA..."
+    _CONF_HASH="$_NEW_HASH"
+    stop_satosa
+  fi
+
   if auth_on "$_NEW"; then
     if ! satosa_running; then
       echo "[watchdog] Auth abilitato, SATOSA non in esecuzione — avvio..."
@@ -623,7 +781,23 @@ for k,v in json.load(sys.stdin).items():
 ")"
       start_satosa || true
     else
-      echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+      # Riavvia SATOSA se il certificato SPID è stato rinnovato
+      _cert_wdg="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
+      [[ "$_cert_wdg" != /* ]] && _cert_wdg="$SATOSA_PROXY/$_cert_wdg"
+      _hash_wdg="$(md5sum "$_cert_wdg" 2>/dev/null | awk '{print $1}' || echo '')"
+      if [ -n "$_PKI_CERT_HASH" ] && [ -n "$_hash_wdg" ] && [ "$_hash_wdg" != "$_PKI_CERT_HASH" ]; then
+        echo "[watchdog] Certificato SPID rinnovato — riavvio SATOSA per caricare il nuovo certificato..."
+        stop_satosa
+        eval "$(printf '%s' "$_NEW" | python3 -c "
+import json,sys,shlex
+for k,v in json.load(sys.stdin).items():
+    if isinstance(v,str) and v and k.replace('_','').replace('-','').isalnum() and k[0].isalpha():
+        print('export {}={}'.format(k,shlex.quote(v)))
+")"
+        start_satosa || true
+      else
+        echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+      fi
     fi
   else
     if satosa_running; then

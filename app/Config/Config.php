@@ -76,7 +76,6 @@ class Config
         'IAM_PROXY_SAML2_IDP_METADATA_URL'             => ['section' => 'iam_proxy', 'key' => 'saml2_idp_metadata_url'],
         'IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL'   => ['section' => 'iam_proxy', 'key' => 'saml2_idp_metadata_url_internal'],
         'IAM_PROXY_HOSTNAME'                           => ['section' => 'iam_proxy', 'key' => 'hostname'],
-        'IAM_PROXY_HTTP_PORT'                          => ['section' => 'iam_proxy', 'key' => 'http_port'],
         'IAM_PROXY_DEBUG'                              => ['section' => 'iam_proxy', 'key' => 'debug'],
         'ENABLE_SPID'                                  => ['section' => 'iam_proxy', 'key' => 'enable_spid'],
         'ENABLE_CIE_OIDC'                              => ['section' => 'iam_proxy', 'key' => 'enable_cie_oidc'],
@@ -84,7 +83,6 @@ class Config
         'ENABLE_OIDCOP'                                => ['section' => 'iam_proxy', 'key' => 'enable_oidcop'],
         'ENABLE_IDEM'                                  => ['section' => 'iam_proxy', 'key' => 'enable_idem'],
         'ENABLE_EIDAS'                                 => ['section' => 'iam_proxy', 'key' => 'enable_eidas'],
-        'SATOSA_BASE'                                  => ['section' => 'iam_proxy', 'key' => 'satosa_base'],
         'SPID_CERT_COMMON_NAME'                        => ['section' => 'iam_proxy', 'key' => 'spid_cert_common_name'],
         'SPID_CERT_ORG_ID'                             => ['section' => 'iam_proxy', 'key' => 'spid_cert_org_id'],
         'SPID_CERT_ORG_NAME'                           => ['section' => 'iam_proxy', 'key' => 'spid_cert_org_name'],
@@ -99,11 +97,7 @@ class Config
         'SATOSA_CONTACT_PERSON_FISCALCODE'             => ['section' => 'iam_proxy', 'key' => 'satosa_contact_fiscalcode'],
         'SATOSA_CONTACT_PERSON_IPA_CODE'               => ['section' => 'iam_proxy', 'key' => 'satosa_contact_ipa_code'],
         'SATOSA_ORGANIZATION_IDENTIFIER'               => ['section' => 'iam_proxy', 'key' => 'satosa_org_identifier'],
-        'CIE_OIDC_PROVIDER_URL'                        => ['section' => 'iam_proxy', 'key' => 'cie_oidc_provider_url'],
-        'CIE_OIDC_CLIENT_ID'                           => ['section' => 'iam_proxy', 'key' => 'cie_oidc_client_id'],
         'CIE_OIDC_CLIENT_NAME'                         => ['section' => 'iam_proxy', 'key' => 'cie_oidc_client_name'],
-        'CIE_OIDC_JWKS_URI'                            => ['section' => 'iam_proxy', 'key' => 'cie_oidc_jwks_uri'],
-        'CIE_OIDC_REDIRECT_URI'                        => ['section' => 'iam_proxy', 'key' => 'cie_oidc_redirect_uri'],
 
         // ui
         'APP_LOGO_SRC'                     => ['section' => 'ui', 'key' => 'logo_src'],

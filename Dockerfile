@@ -4,9 +4,10 @@
 FROM node:lts-trixie-slim AS asset_builder
 
 # Installa dipendenze necessarie per la fase di build (Git, Wget, Unzip)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates unzip wget && \
-    rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git ca-certificates unzip wget
 
 WORKDIR /app
 
@@ -72,15 +73,8 @@ RUN --mount=type=cache,target=/root/.composer,sharing=locked \
 ######################################################################
 FROM php:8.5-apache-trixie AS runtime-base
 
-# Versione immagine iniettata a build-time dalla CI (es. "dev", "1.2.3")
-ARG GIL_IMAGE_TAG=dev
-ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
-
-# Commit SHA iniettato a build-time dalla CI
-ARG GIT_COMMIT_SHA=unknown
-ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
-
-# Installazione delle dipendenze di sistema e PHP (inclusi unzip e wget)
+# System deps + PHP extensions FIRST — stable layer, cache must not be busted
+# by per-commit ARGs. All volatile ARG/ENV go AFTER this RUN.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -88,8 +82,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libicu-dev libzip-dev libonig-dev \
     ca-certificates curl unzip openssl \
     && docker-php-ext-install intl mbstring pdo_mysql zip \
+    && apt-get purge -y libicu-dev libzip-dev libonig-dev \
     && a2enmod ssl rewrite headers \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf
+
+# Versione immagine iniettata a build-time dalla CI (es. "dev", "1.2.3")
+ARG GIL_IMAGE_TAG=dev
+ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
+
+# Commit SHA iniettato a build-time dalla CI
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 
 # Copia vendor dal builder
 COPY --from=vendor_builder /app/vendor /var/www/html/vendor
@@ -166,19 +169,22 @@ COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
     && ln -s /var/www/html/backoffice/templates /var/www/html/templates \
-    && mkdir -p /var/www/html/backoffice/storage/logs
+    && mkdir -p /var/www/html/backoffice/storage/logs \
+    && chown www-data:www-data /var/www/html/backoffice/storage/logs
 COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 # Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
 # Docker inizializza i named volumes copiando il contenuto del path dell'immagine,
 # incluse le permission → il volume nasce con www-data:www-data, non root:root.
-RUN mkdir -p /var/www/html/public/img /var/www/certificate \
-    && chown www-data:www-data /var/www/html/public/img /var/www/certificate \
-    && chmod 755 /var/www/html/public/img /var/www/certificate
+RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
+    && chown www-data:www-data /var/www/html/public/img /var/www/certificate /backups \
+    && chmod 755 /var/www/html/public/img /var/www/certificate \
+    && chmod 775 /backups
 
 FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
-RUN mkdir -p /var/www/html/frontoffice/storage/logs
+RUN mkdir -p /var/www/html/frontoffice/storage/logs \
+    && chown www-data:www-data /var/www/html/frontoffice/storage/logs
 
 # Script per generazione/rinnovo metadata SP SAML (usato da init/refresh-frontoffice-sp-metadata)
 RUN mkdir -p /scripts

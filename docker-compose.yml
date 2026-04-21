@@ -10,7 +10,7 @@ services:
       - gil_certs:/var/www/certificate
       - gil_images:/var/www/html/public/img
       - gil_backups:/backups
-      # Volumi per operazioni senza master container
+      # Volumi per operazioni locali di backup/ripristino
       - gil_ssl_certs:/var/www/html/ssl-certs
       - spid_certs:/var/www/html/spid-certs
       - gil_cieoidc_keys:/var/www/html/cieoidc-keys
@@ -59,7 +59,7 @@ services:
       - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      - IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://auth-proxy-nginx:80/Saml2IDP/metadata}
+      - AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://auth-proxy-nginx:80/Saml2IDP/metadata}
       - MASTER_TOKEN=${MASTER_TOKEN}
       - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
@@ -68,7 +68,7 @@ services:
       - govpay-network
 
   auth-proxy:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-italia:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-italia:${APP_VERSION:-latest}
     container_name: gil-auth-proxy
     command: ["/bin/bash", "/builder/startup.sh"]
     volumes:
@@ -78,6 +78,8 @@ services:
       - frontoffice_sp_metadata:/frontoffice-sp
       # Certificati SPID (per-deployment)
       - spid_certs:/satosa_proxy/pki
+      # Immagini pubbliche ente (logo, favicon) — RO: copiate in static/ da startup.sh
+      - gil_images:/gil-images:ro
       # File statici condivisi con auth-proxy-nginx (popolati da startup.sh)
       - iam_proxy_static:/satosa-static
     environment:
@@ -98,12 +100,12 @@ services:
       - MONGODB_PORT=${MONGODB_PORT:-27017}
       - MONGODB_DB=${MONGODB_DB:-satosa}
       # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* vengono lette dal DB backoffice
-      # tramite GET ${BACKOFFICE_INTERNAL_URL:-<derivato da SSL>}/api/iam-proxy/env all'avvio.
+      # tramite GET ${BACKOFFICE_INTERNAL_URL:-<derivato da SSL>}/api/auth-proxy/env all'avvio.
       - SSL=${SSL:-off}
       - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-}
       - MASTER_TOKEN=${MASTER_TOKEN}
-      # Watchdog: intervallo polling config backoffice (secondi, default 300)
-      - IAM_WATCHDOG_INTERVAL=${IAM_WATCHDOG_INTERVAL:-300}
+      # Watchdog: intervallo polling config backoffice (secondi, default 60)
+      - AUTH_PROXY_WATCHDOG_INTERVAL=${AUTH_PROXY_WATCHDOG_INTERVAL:-60}
     restart: always
     healthcheck:
       test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]
@@ -115,18 +117,19 @@ services:
       - govpay-network
 
   auth-proxy-nginx:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-iam-proxy-nginx:${APP_VERSION:-latest}
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-nginx:${APP_VERSION:-latest}
     container_name: gil-auth-proxy-nginx
     depends_on:
       auth-proxy:
         condition: service_healthy
     ports:
-      - "${IAM_PROXY_HTTP_PORT:-9445}:80"
+      - "${AUTH_PROXY_PORT:-9445}:80"
     environment:
       # Variabili di rete/routing nginx (infrastrutturali)
-      - IAM_PROXY_HOSTNAME=${IAM_PROXY_HOSTNAME:-auth-proxy-nginx}
-      - IAM_PROXY_HTTP_PORT=${IAM_PROXY_HTTP_PORT:-9445}
+      - SSL=${SSL:-off}
+      - AUTH_PROXY_PORT=${AUTH_PROXY_PORT:-9445}
       - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
+      - NGINX_DNS_RESOLVER=${NGINX_DNS_RESOLVER:-127.0.0.11}
       # I flag ENABLE_* non sono usati in nginx.conf: il disco.html viene già generato
       # con il contenuto corretto da auth-proxy/startup.sh (che li legge dal DB).
     volumes:
@@ -180,32 +183,8 @@ services:
       - gil_backups:/backup
     environment:
       - MASTER_TOKEN=${MASTER_TOKEN}
-      - SPID_CERT_KEY_SIZE=${SPID_CERT_KEY_SIZE:-3072}
-      - SPID_CERT_COMMON_NAME=${SPID_CERT_COMMON_NAME:-}
-      - SPID_CERT_DAYS=${SPID_CERT_DAYS:-730}
-      - SPID_CERT_ENTITY_ID=${SPID_CERT_ENTITY_ID:-}
-      - SPID_CERT_LOCALITY_NAME=${SPID_CERT_LOCALITY_NAME:-}
-      - SPID_CERT_ORG_ID=${SPID_CERT_ORG_ID:-}
-      - SPID_CERT_ORG_NAME=${SPID_CERT_ORG_NAME:-}
-      - SPID_CERT_SECTOR=${SPID_CERT_SECTOR:-public}
-      - SPID_CERTS_DOCKER_VOLUME=${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
-      - CIE_OIDC_CLIENT_ID=${CIE_OIDC_CLIENT_ID:-}
-      - CIE_OIDC_CLIENT_NAME=${CIE_OIDC_CLIENT_NAME:-}
-      - CIE_OIDC_ORGANIZATION_NAME=${CIE_OIDC_ORGANIZATION_NAME:-}
-      - CIE_OIDC_JWKS_URI=${CIE_OIDC_JWKS_URI:-}
-      - CIE_OIDC_SIGNED_JWKS_URI=${CIE_OIDC_SIGNED_JWKS_URI:-}
-      - CIE_OIDC_REDIRECT_URI=${CIE_OIDC_REDIRECT_URI:-}
-      - CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT=${CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT:-}
-      - CIE_OIDC_FEDERATION_FETCH_ENDPOINT=${CIE_OIDC_FEDERATION_FETCH_ENDPOINT:-}
-      - CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT=${CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT:-}
-      - CIE_OIDC_FEDERATION_LIST_ENDPOINT=${CIE_OIDC_FEDERATION_LIST_ENDPOINT:-}
-      - CIE_OIDC_HOMEPAGE_URI=${CIE_OIDC_HOMEPAGE_URI:-}
-      - CIE_OIDC_POLICY_URI=${CIE_OIDC_POLICY_URI:-}
-      - CIE_OIDC_LOGO_URI=${CIE_OIDC_LOGO_URI:-}
-      - CIE_OIDC_CONTACT_EMAIL=${CIE_OIDC_CONTACT_EMAIL:-}
-      - CIE_OIDC_PROVIDER_URL=${CIE_OIDC_PROVIDER_URL:-https://oidc.idserver.servizicie.interno.gov.it}
-      - CIE_OIDC_TRUST_ANCHOR_URL=${CIE_OIDC_TRUST_ANCHOR_URL:-https://oidc.registry.servizicie.interno.gov.it}
-      - CIE_OIDC_AUTHORITY_HINT_URL=${CIE_OIDC_AUTHORITY_HINT_URL:-https://oidc.registry.servizicie.interno.gov.it}
+      - SATOSA_INTERNAL_HOSTNAME=${SATOSA_INTERNAL_HOSTNAME:-auth-proxy-nginx}
+      - SATOSA_NGINX_HOSTNAME=${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}
       - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
       - SSL=${SSL:-off}
     networks:

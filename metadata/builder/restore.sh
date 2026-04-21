@@ -34,7 +34,7 @@ case "$BASENAME" in
     [[ "$ans" =~ ^[sS]$ ]] || { echo "Annullato."; exit 0; }
     tar xzf "$FILE" -C /certs
     echo "[OK] Certificati SPID ripristinati."
-    echo "     Riavvia: docker compose --profile iam-proxy restart iam-proxy-italia"
+    echo "     Riavvia: docker compose --profile auth-proxy restart auth-proxy"
     ;;
   frontoffice_sp_metadata_*)
     echo "ATTENZIONE: sovrascriverà il SP metadata nel volume frontoffice_sp_metadata."
@@ -43,7 +43,7 @@ case "$BASENAME" in
     [[ "$ans" =~ ^[sS]$ ]] || { echo "Annullato."; exit 0; }
     tar xzf "$FILE" -C /sp-metadata
     echo "[OK] SP metadata ripristinato."
-    echo "     Riavvia: docker compose --profile iam-proxy restart iam-proxy-italia"
+    echo "     Riavvia: docker compose --profile auth-proxy restart auth-proxy"
     ;;
   metadata_local_*)
     echo "ATTENZIONE: sovrascriverà metadata/cieoidc-keys, metadata/agid, metadata/cieoidc."

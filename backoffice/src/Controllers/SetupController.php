@@ -15,6 +15,9 @@ use Slim\Views\Twig;
 use App\Config\ConfigLoader;
 use App\Config\SettingsRepository;
 use App\Auth\UserRepository;
+use App\Database\Connection;
+use App\Database\EntrateRepository;
+use App\Database\ExternalPaymentTypeRepository;
 
 /**
  * Gestisce il wizard di primo avvio (setup) e il flusso di ripristino da backup.
@@ -27,7 +30,7 @@ use App\Auth\UserRepository;
  *   GET  /setup/restore          → form upload backup
  *   POST /setup/restore          → accetta upload, redirect a review
  *   GET  /setup/restore/review   → anteprima del backup
- *   POST /setup/restore/confirm  → esegue restore via master container
+ *   POST /setup/restore/confirm  → esegue restore locale da archivio backup
  *   GET  /setup/complete         → schermata di successo
  *   GET  /setup/error            → schermata di errore
  */
@@ -41,7 +44,7 @@ class SetupController
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // STEP 0 – Welcome (scelta modalità)
+    // STEP 0 – Welcome
     // ──────────────────────────────────────────────────────────────────────
 
     public function welcome(Request $request, Response $response): Response
@@ -51,12 +54,10 @@ class SetupController
             return $this->redirect('/');
         }
 
-        $mode = $request->getQueryParams()['mode'] ?? 'fresh';
-        $this->initWizardSession($mode);
+        $this->initWizardSession();
         $this->generateCsrf();
 
         return $this->twig->render($response, 'setup/welcome.html.twig', [
-            'mode' => $mode,
             'csrf_token' => $_SESSION['wizard']['csrf_token'],
             'total_steps' => self::TOTAL_STEPS,
         ]);
@@ -85,18 +86,11 @@ class SetupController
             return $this->redirect('/setup/step/' . ($maxReached + 1));
         }
 
-        $mode = $_SESSION['wizard']['mode'] ?? 'fresh';
         $stepData = $_SESSION['wizard']['data']['step' . $step] ?? [];
-
-        // In modalità upgrade, pre-popola i dati dallo step corrente se vuoti
-        if ($mode === 'upgrade' && empty($stepData)) {
-            $stepData = $this->prefillFromEnv($step);
-        }
 
         return $this->twig->render($response, 'setup/step' . $step . '.html.twig', [
             'step'        => $step,
             'total_steps' => self::TOTAL_STEPS,
-            'mode'        => $mode,
             'data'        => $stepData,
             'csrf_token'  => $_SESSION['wizard']['csrf_token'] ?? '',
             'all_data'    => $_SESSION['wizard']['data'] ?? [],
@@ -297,11 +291,10 @@ class SetupController
     // HELPERS PRIVATI
     // ──────────────────────────────────────────────────────────────────────
 
-    private function initWizardSession(string $mode = 'fresh'): void
+    private function initWizardSession(): void
     {
         if (!isset($_SESSION['wizard'])) {
             $_SESSION['wizard'] = [
-                'mode'        => $mode,
                 'max_reached' => 0,
                 'data'        => [],
                 'errors'      => [],
@@ -389,7 +382,7 @@ class SetupController
     /**
      * Gestisce gli upload file per gli step che li prevedono.
      * - Step 1: logo ente (opzionale)
-     * - Step 5: certificato + chiave GovPay (opzionali, solo se sslheader)
+      * - Step 3: certificato + chiave GovPay (opzionali, solo se sslheader)
      *
      * Ritorna array di errori (vuoto = ok).
      */
@@ -416,7 +409,7 @@ class SetupController
             // UPLOAD_ERR_NO_FILE = nessun file selezionato → opzionale, nessun errore
         }
 
-        if ($step === 5) {
+        if ($step === 3) {
             $cert = $uploadedFiles['govpay_cert'] ?? null;
             $key  = $uploadedFiles['govpay_key']  ?? null;
 
@@ -440,57 +433,6 @@ class SetupController
         }
 
         return $errors;
-    }
-
-    /**
-     * Pre-popola i dati di uno step dai valori getenv() (modalità upgrade).
-     */
-    private function prefillFromEnv(int $step): array
-    {
-        $map = [
-            1 => [
-                'entity_ipa_code'  => 'APP_ENTITY_IPA_CODE',
-                'entity_name'      => 'APP_ENTITY_NAME',
-                'entity_suffix'    => 'APP_ENTITY_SUFFIX',
-                'entity_government'=> 'APP_ENTITY_GOVERNMENT',
-                'entity_url'       => 'APP_ENTITY_URL',
-                'id_dominio'       => 'ID_DOMINIO',
-                'id_a2a'           => 'ID_A2A',
-            ],
-            2 => [
-                'admin_email'      => 'ADMIN_EMAIL',
-                'backoffice_url'   => 'BACKOFFICE_PUBLIC_BASE_URL',
-                'frontoffice_url'  => 'FRONTOFFICE_PUBLIC_BASE_URL',
-                'apache_server_name' => 'APACHE_SERVER_NAME',
-            ],
-            3 => [
-                'govpay_pendenze_url'     => 'GOVPAY_PENDENZE_URL',
-                'govpay_pagamenti_url'    => 'GOVPAY_PAGAMENTI_URL',
-                'govpay_ragioneria_url'   => 'GOVPAY_RAGIONERIA_URL',
-                'govpay_backoffice_url'   => 'GOVPAY_BACKOFFICE_URL',
-                'govpay_patch_url'        => 'GOVPAY_PENDENZE_PATCH_URL',
-                'authentication_govpay'   => 'AUTHENTICATION_GOVPAY',
-                'govpay_user'             => 'GOVPAY_USER',
-            ],
-            4 => [
-                'mailer_dsn'             => 'BACKOFFICE_MAILER_DSN',
-                'mailer_from_address'    => 'BACKOFFICE_MAILER_FROM_ADDRESS',
-                'mailer_from_name'       => 'BACKOFFICE_MAILER_FROM_NAME',
-                'pagopa_checkout_url'    => 'PAGOPA_CHECKOUT_EC_BASE_URL',
-                'pagopa_checkout_key'    => 'PAGOPA_CHECKOUT_SUBSCRIPTION_KEY',
-                'biz_events_host'        => 'BIZ_EVENTS_HOST',
-                'biz_events_key'         => 'BIZ_EVENTS_API_KEY',
-            ],
-        ];
-
-        $result = [];
-        foreach (($map[$step] ?? []) as $field => $envKey) {
-            $val = getenv($envKey);
-            if ($val !== false && $val !== '') {
-                $result[$field] = $val;
-            }
-        }
-        return $result;
     }
 
     /**
@@ -599,19 +541,35 @@ class SetupController
         if ($settingsJson) {
             $settings = json_decode($settingsJson, true) ?? [];
             foreach ($settings as $section => $values) {
-                if (is_array($values)) {
+                if (is_array($values) && !empty($values)) {
                     SettingsRepository::setSection($section, $values, 'restore');
                 }
+            }
+        }
+
+        // 1b. Ripristina dati applicativi (stesso formato usato dal backup di impostazioni)
+        $govpayJson = $zip->getFromName('govpay-config.json');
+        if ($govpayJson) {
+            $govpay = json_decode($govpayJson, true) ?? [];
+            $this->restoreGovpayConfig($govpay['sections'] ?? []);
+        }
+
+        // 1c. Ripristina dump DB se presente
+        $dbDumpEntry = $zip->getFromName('db_dump.sql.gz');
+        if ($dbDumpEntry !== false) {
+            $tmpDump = sys_get_temp_dir() . '/gil-setup-dbrestore-' . bin2hex(random_bytes(6)) . '.sql.gz';
+            file_put_contents($tmpDump, $dbDumpEntry);
+            try {
+                $this->runMysqlRestore($tmpDump);
+            } finally {
+                @unlink($tmpDump);
             }
         }
 
         // 2. Ripristina file dei volumi (struttura: volumes/<nome_volume>/<percorso_relativo>)
         $volumeMap = [
             'volumes/gil_certs'               => '/var/www/certificate',
-            'volumes/spid_certs'              => '/var/www/html/spid-certs',
-            'volumes/frontoffice_sp_metadata' => '/var/www/html/metadata-sp',
-            'volumes/gil_metadata_cieoidc'    => '/var/www/html/metadata-cieoidc',
-            'volumes/gil_cieoidc_keys'        => '/var/www/html/cieoidc-keys',
+            'volumes/gil_images'              => '/var/www/html/public/img',
         ];
 
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -648,15 +606,180 @@ class SetupController
 
         $manifest = $zip->getFromName('manifest.json');
         $settings = $zip->getFromName('settings.json');
+
+        // Se non c'e un manifest esplicito (backup creato da impostazioni),
+        // ricava comunque i componenti presenti dall'archivio.
+        $derivedComponents = [];
+        if ($settings !== false) {
+            $derivedComponents[] = 'settings';
+        }
+        if ($zip->getFromName('govpay-config.json') !== false) {
+            $derivedComponents[] = 'govpay_config';
+        }
+        if ($zip->getFromName('db_dump.sql.gz') !== false) {
+            $derivedComponents[] = 'db_dump';
+        }
+        $knownVolumePrefixes = [
+            'volumes/gil_certs/',
+            'volumes/gil_images/',
+        ];
+        $hasVolumeData = false;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false) {
+                continue;
+            }
+            foreach ($knownVolumePrefixes as $prefix) {
+                if (str_starts_with($name, $prefix)) {
+                    $hasVolumeData = true;
+                    break 2;
+                }
+            }
+        }
+        if ($hasVolumeData) {
+            $derivedComponents[] = 'volumes';
+        }
+
         $zip->close();
 
-        $result = $manifest ? json_decode($manifest, true) : [];
+        $result = $manifest ? (json_decode($manifest, true) ?: []) : [];
+        if (!isset($result['components']) && !empty($derivedComponents)) {
+            $result['components'] = $derivedComponents;
+        }
         if ($settings) {
             $settingsData = json_decode($settings, true);
             $result['entity_name'] = $settingsData['entity']['name'] ?? '';
         }
 
         return $result;
+    }
+
+    /**
+     * Ripristina le sezioni applicative presenti in govpay-config.json.
+     */
+    private function restoreGovpayConfig(array $sections): void
+    {
+        $idDominio = (string) (\App\Config\Config::get('ID_DOMINIO') ?: '');
+        $pdo = Connection::getPDO();
+
+        if (!empty($sections['tipologie'])) {
+            (new EntrateRepository())->replaceLocalOverrides($idDominio, $sections['tipologie']);
+        }
+
+        if (!empty($sections['tipologie_esterne'])) {
+            $pdo->exec('DELETE FROM tipologie_pagamento_esterne');
+            $extRepo = new ExternalPaymentTypeRepository();
+            foreach ($sections['tipologie_esterne'] as $t) {
+                if (!empty($t['descrizione']) && !empty($t['url'])) {
+                    $extRepo->create($t['descrizione'], $t['descrizione_estesa'] ?? null, $t['url']);
+                }
+            }
+        }
+
+        if (!empty($sections['io_services'])) {
+            $pdo->exec('DELETE FROM io_service_tipologie');
+            $pdo->exec('DELETE FROM io_services');
+            $ioRepo = new \App\Database\IoServiceRepository();
+            foreach ($sections['io_services'] as $s) {
+                if (empty($s['nome']) || empty($s['id_service']) || empty($s['api_key_primaria'])) {
+                    continue;
+                }
+                $newId = $ioRepo->create(
+                    $s['nome'],
+                    $s['descrizione'] ?? null,
+                    $s['id_service'],
+                    $s['api_key_primaria'],
+                    $s['api_key_secondaria'] ?? null,
+                    $s['codice_catalogo'] ?? null,
+                    !empty($s['is_default'])
+                );
+                foreach ($s['tipologie'] ?? [] as $idEntrata) {
+                    $ioRepo->setTipologiaService((string)$idEntrata, $newId);
+                }
+            }
+        }
+
+        if (!empty($sections['templates'])) {
+            $tplRepo = new \App\Database\PendenzaTemplateRepository();
+            $tplRepo->deleteAllByDominio($idDominio);
+            $usersStmt = $pdo->query('SELECT id, email FROM users');
+            $emailToId = [];
+            foreach ($usersStmt->fetchAll() as $u) {
+                $emailToId[strtolower($u['email'])] = (int)$u['id'];
+            }
+            foreach ($sections['templates'] as $t) {
+                if (empty($t['titolo']) || empty($t['id_tipo_pendenza'])) {
+                    continue;
+                }
+                $newId = $tplRepo->create([
+                    'id_dominio' => $idDominio,
+                    'titolo' => $t['titolo'],
+                    'id_tipo_pendenza' => $t['id_tipo_pendenza'],
+                    'causale' => $t['causale'] ?? '',
+                    'importo' => (float)($t['importo'] ?? 0),
+                ]);
+                $userIds = array_filter(array_map(fn($e) => $emailToId[strtolower((string)$e)] ?? null, $t['assigned_users'] ?? []));
+                if (!empty($userIds)) {
+                    $tplRepo->assignUsers($newId, array_values($userIds));
+                }
+            }
+        }
+
+        if (!empty($sections['utenti'])) {
+            $upsert = $pdo->prepare('INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, created_at, updated_at) VALUES (:email, :role, :fn, :ln, :disabled, :hash, NOW(), NOW()) ON DUPLICATE KEY UPDATE role=VALUES(role), first_name=VALUES(first_name), last_name=VALUES(last_name), is_disabled=VALUES(is_disabled), password_hash=COALESCE(VALUES(password_hash), password_hash), updated_at=NOW()');
+            foreach ($sections['utenti'] as $u) {
+                if (empty($u['email'])) {
+                    continue;
+                }
+                $upsert->execute([
+                    ':email' => $u['email'],
+                    ':role' => $u['role'] ?? 'user',
+                    ':fn' => $u['first_name'] ?? '',
+                    ':ln' => $u['last_name'] ?? '',
+                    ':disabled' => empty($u['is_disabled']) ? 0 : 1,
+                    ':hash' => $u['password_hash'] ?? null,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Ripristina il DB da un file .sql.gz via PDO (senza mysql CLI).
+     */
+    private function runMysqlRestore(string $gzFile): void
+    {
+        $gz = gzopen($gzFile, 'rb');
+        if ($gz === false) {
+            throw new \RuntimeException("Impossibile aprire il dump compresso per il ripristino.");
+        }
+
+        $sql = '';
+        while (!gzeof($gz)) {
+            $sql .= gzread($gz, 65536);
+        }
+        gzclose($gz);
+
+        if (trim($sql) === '') {
+            throw new \RuntimeException("Il dump del database è vuoto: ripristino annullato.");
+        }
+
+        try {
+            $pdo = Connection::getPDO();
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+
+            $statements = array_filter(
+                array_map('trim', explode(";\n", $sql)),
+                fn($s) => $s !== ''
+            );
+
+            foreach ($statements as $stmt) {
+                $pdo->exec($stmt);
+            }
+
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Ripristino DB fallito: " . $e->getMessage(), 0, $e);
+        }
     }
 
 }

@@ -188,8 +188,9 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
+        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
         SettingsRepository::setSection('backoffice', [
-            'public_base_url'      => $body['public_base_url'] ?? '',
+            'public_base_url'      => $publicBaseUrl,
             'apache_server_name'   => $body['apache_server_name'] ?? '',
             'mailer_dsn'           => ['value' => $body['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
             'mailer_from_address'  => $body['mailer_from_address'] ?? '',
@@ -209,8 +210,9 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
+        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
         SettingsRepository::setSection('frontoffice', [
-            'public_base_url'   => $body['public_base_url'] ?? '',
+            'public_base_url'   => $publicBaseUrl,
             'auth_proxy_type'   => $body['auth_proxy_type'] ?? 'none',
         ], $by);
 
@@ -226,14 +228,13 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
+        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
 
         // Campi ordinari (non cifrati)
         $plain = [
-            'public_base_url'                  => $body['public_base_url'] ?? '',
+            'public_base_url'                  => $publicBaseUrl,
             'saml2_idp_metadata_url'           => $body['saml2_idp_metadata_url'] ?? '',
             'saml2_idp_metadata_url_internal'  => $body['saml2_idp_metadata_url_internal'] ?? '',
-            'hostname'                         => $body['hostname'] ?? '',
-            'http_port'                        => $body['http_port'] ?? '',
             'debug'                            => $body['debug'] ?? 'false',
             'enable_spid'                      => $body['enable_spid'] ?? 'false',
             'enable_cie_oidc'                  => $body['enable_cie_oidc'] ?? 'false',
@@ -241,7 +242,6 @@ class ImpostazioniController
             'enable_oidcop'                    => $body['enable_oidcop'] ?? 'false',
             'enable_idem'                      => $body['enable_idem'] ?? 'false',
             'enable_eidas'                     => $body['enable_eidas'] ?? 'false',
-            'satosa_base'                      => $body['satosa_base'] ?? '',
             'satosa_disco_srv'                 => $body['satosa_disco_srv'] ?? '',
             'satosa_cancel_redirect_url'       => $body['satosa_cancel_redirect_url'] ?? '',
             'satosa_unknow_error_redirect_page' => $body['satosa_unknow_error_redirect_page'] ?? '',
@@ -251,18 +251,13 @@ class ImpostazioniController
             'satosa_use_demo_spid_idp'         => $body['satosa_use_demo_spid_idp'] ?? 'false',
             'satosa_use_spid_validator'        => $body['satosa_use_spid_validator'] ?? 'false',
             'satosa_spid_validator_metadata_url' => $body['satosa_spid_validator_metadata_url'] ?? '',
-            'satosa_disable_cieoidc_backend'   => $body['satosa_disable_cieoidc_backend'] ?? 'false',
-            'spid_cert_common_name'            => $body['spid_cert_common_name'] ?? '',
+            'satosa_disable_cieoidc_backend'   => 'false', // legacy: sempre disabilitato
             'spid_cert_org_id'                 => $body['spid_cert_org_id'] ?? '',
-            'spid_cert_org_name'               => $body['spid_cert_org_name'] ?? '',
             'spid_cert_entity_id'              => $body['spid_cert_entity_id'] ?? '',
-            'spid_cert_locality_name'          => $body['spid_cert_locality_name'] ?? '',
             'spid_cert_key_size'               => $body['spid_cert_key_size'] ?? '2048',
             'spid_cert_days'                   => $body['spid_cert_days'] ?? '730',
             'satosa_org_display_name_it'       => $body['satosa_org_display_name_it'] ?? '',
             'satosa_org_display_name_en'       => $body['satosa_org_display_name_en'] ?? '',
-            'satosa_org_name_it'               => $body['satosa_org_name_it'] ?? '',
-            'satosa_org_name_en'               => $body['satosa_org_name_en'] ?? '',
             'satosa_org_url_it'                => $body['satosa_org_url_it'] ?? '',
             'satosa_org_url_en'                => $body['satosa_org_url_en'] ?? '',
             'satosa_org_identifier'            => $body['satosa_org_identifier'] ?? '',
@@ -287,24 +282,73 @@ class ImpostazioniController
             'satosa_ui_logo_url'               => $body['satosa_ui_logo_url'] ?? '',
             'satosa_ui_logo_width'             => $body['satosa_ui_logo_width'] ?? '200',
             'satosa_ui_logo_height'            => $body['satosa_ui_logo_height'] ?? '60',
-            'cie_oidc_provider_url'            => $body['cie_oidc_provider_url'] ?? '',
-            'cie_oidc_trust_anchor_url'        => $body['cie_oidc_trust_anchor_url'] ?? '',
-            'cie_oidc_authority_hint_url'      => $body['cie_oidc_authority_hint_url'] ?? '',
-            'cie_oidc_client_id'               => $body['cie_oidc_client_id'] ?? '',
+            'cie_env'                          => $body['cie_env'] ?? 'prod',
             'cie_oidc_client_name'             => $body['cie_oidc_client_name'] ?? '',
-            'cie_oidc_organization_name'       => $body['cie_oidc_organization_name'] ?? '',
-            'cie_oidc_jwks_uri'                => $body['cie_oidc_jwks_uri'] ?? '',
-            'cie_oidc_signed_jwks_uri'         => $body['cie_oidc_signed_jwks_uri'] ?? '',
-            'cie_oidc_redirect_uri'            => $body['cie_oidc_redirect_uri'] ?? '',
-            'cie_oidc_federation_resolve_endpoint'           => $body['cie_oidc_federation_resolve_endpoint'] ?? '',
-            'cie_oidc_federation_fetch_endpoint'             => $body['cie_oidc_federation_fetch_endpoint'] ?? '',
-            'cie_oidc_federation_trust_mark_status_endpoint' => $body['cie_oidc_federation_trust_mark_status_endpoint'] ?? '',
-            'cie_oidc_federation_list_endpoint'              => $body['cie_oidc_federation_list_endpoint'] ?? '',
-            'cie_oidc_homepage_uri'            => $body['cie_oidc_homepage_uri'] ?? '',
-            'cie_oidc_policy_uri'              => $body['cie_oidc_policy_uri'] ?? '',
-            'cie_oidc_logo_uri'                => $body['cie_oidc_logo_uri'] ?? '',
             'cie_oidc_contact_email'           => $body['cie_oidc_contact_email'] ?? '',
         ];
+
+        // Campi derivabili: aggiorna i valori del DB con quelli calcolati se il form non li invia esplicitamente.
+        // Questo garantisce che getIamProxyEnv() abbia sempre valori coerenti anche se i campi non
+        // sono più presenti nel form (rimossi come ridondanti).
+        $publicUrl = trim($plain['public_base_url']);
+        $derivedHostname = $publicUrl !== '' && filter_var($publicUrl, FILTER_VALIDATE_URL)
+            ? (string) parse_url($publicUrl, PHP_URL_HOST)
+            : '';
+
+        // hostname: usa quello inviato dal form (hidden) oppure deriva dall'URL pubblico
+        $hostname = trim((string)($body['hostname'] ?? ''));
+        if ($hostname === '' && $derivedHostname !== '') {
+            $hostname = $derivedHostname;
+        }
+        $plain['hostname'] = $hostname;
+
+        // spid_cert_common_name: usa quello inviato (hidden) oppure deriva dall'hostname
+        $certCn = trim((string)($body['spid_cert_common_name'] ?? ''));
+        if ($certCn === '' && $hostname !== '') {
+            $certCn = $hostname;
+        }
+        $plain['spid_cert_common_name'] = $certCn;
+
+        // spid_cert_org_name: usa quello inviato (hidden) oppure prende entity.name
+        $certOrgName = trim((string)($body['spid_cert_org_name'] ?? ''));
+        if ($certOrgName === '') {
+            $sEntity = SettingsRepository::getSection('entity');
+            $certOrgName = (string)($sEntity['name'] ?? '');
+        }
+        $plain['spid_cert_org_name'] = $certOrgName;
+
+        // spid_cert_locality_name: usa quello inviato (hidden) oppure prende entity.city
+        $certLocality = trim((string)($body['spid_cert_locality_name'] ?? ''));
+        if ($certLocality === '') {
+            if (!isset($sEntity)) {
+                $sEntity = SettingsRepository::getSection('entity');
+            }
+            $certLocality = (string)($sEntity['city'] ?? '');
+        }
+        $plain['spid_cert_locality_name'] = $certLocality;
+
+        // satosa_org_name_it: usa quello inviato (hidden) oppure prende entity.name
+        $orgNameIt = trim((string)($body['satosa_org_name_it'] ?? ''));
+        if ($orgNameIt === '') {
+            if (!isset($sEntity)) {
+                $sEntity = SettingsRepository::getSection('entity');
+            }
+            $orgNameIt = (string)($sEntity['name'] ?? '');
+        }
+        $plain['satosa_org_name_it'] = $orgNameIt;
+
+        // satosa_org_name_en: usa quello inviato oppure rimane vuoto (opzionale)
+        $plain['satosa_org_name_en'] = trim((string)($body['satosa_org_name_en'] ?? ''));
+
+        // cie_oidc_organization_name: usa quello inviato (hidden) oppure prende entity.name
+        $cieOrgName = trim((string)($body['cie_oidc_organization_name'] ?? ''));
+        if ($cieOrgName === '') {
+            if (!isset($sEntity)) {
+                $sEntity = SettingsRepository::getSection('entity');
+            }
+            $cieOrgName = (string)($sEntity['name'] ?? '');
+        }
+        $plain['cie_oidc_organization_name'] = $cieOrgName;
 
         // Non reintrodurre default legacy se il campo non e' inviato dal form.
         if (array_key_exists('frontoffice_auth_proxy_type', $body)) {
@@ -330,19 +374,52 @@ class ImpostazioniController
         }
 
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
+        $this->triggerAuthProxyReload();
 
-        return $this->jsonOk('Impostazioni Login Proxy salvate. Riavvia i container IAM proxy per applicarle.');
+        return $this->jsonOk('Impostazioni salvate con successo. Auth Proxy si riavvierà automaticamente entro pochi secondi per applicare le modifiche.');
+    }
+
+    private function triggerAuthProxyReload(): void
+    {
+        $ch = curl_init('http://auth-proxy:9191/reload');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 2,
+            CURLOPT_CONNECTTIMEOUT => 1,
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+
+    /**
+     * Normalizza un URL base rimuovendo lo slash finale per evitare doppi slash
+     * nella composizione degli endpoint derivati.
+     */
+    private function normalizePublicBaseUrl(string $url): string
+    {
+        $trimmed = trim($url);
+        if ($trimmed === '') {
+            return '';
+        }
+
+        $parsed = parse_url($trimmed);
+        if ($parsed !== false && isset($parsed['scheme'], $parsed['host'])) {
+            return rtrim($trimmed, '/');
+        }
+
+        return $trimmed;
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // IAM PROXY ENV ENDPOINT (interno — chiamato da iam-proxy/startup.sh)
+    // IAM PROXY ENV ENDPOINT (interno — chiamato da auth-proxy/startup.sh)
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * GET /api/iam-proxy/env
+     * GET /api/auth-proxy/env
      *
      * Restituisce le impostazioni iam_proxy come dizionario piatto di variabili
-     * d'ambiente, da usare in iam-proxy/startup.sh tramite fetch HTTP interno.
+     * d'ambiente, da usare in auth-proxy/startup.sh tramite fetch HTTP interno.
      * Autenticazione: Bearer token (MASTER_TOKEN dall'ambiente del container).
      * Non richiede sessione PHP.
      */
@@ -361,6 +438,7 @@ class ImpostazioniController
         $s            = SettingsRepository::getSection('iam_proxy');
         $sFrontoffice = SettingsRepository::getSection('frontoffice');
         $sEntity      = SettingsRepository::getSection('entity');
+        $sUi          = SettingsRepository::getSection('ui');
 
         // Auto-genera e persiste le chiavi crittografiche SATOSA obbligatorie se mancanti.
         // Queste chiavi devono esistere per far partire SATOSA; se l'operatore non le ha
@@ -415,7 +493,6 @@ class ImpostazioniController
             'debug'                                          => 'IAM_PROXY_DEBUG',
             'frontoffice_auth_proxy_type'                   => 'FRONTOFFICE_AUTH_PROXY_TYPE',
             'hostname'                                       => 'IAM_PROXY_HOSTNAME',
-            'http_port'                                      => 'IAM_PROXY_HTTP_PORT',
             'saml2_idp_metadata_url'                        => 'IAM_PROXY_SAML2_IDP_METADATA_URL',
             'saml2_idp_metadata_url_internal'               => 'IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL',
             'public_base_url'                               => 'SATOSA_BASE',
@@ -476,22 +553,8 @@ class ImpostazioniController
             'spid_cert_locality_name'                       => 'SPID_CERT_LOCALITY_NAME',
             'spid_cert_key_size'                            => 'SPID_CERT_KEY_SIZE',
             'spid_cert_days'                                => 'SPID_CERT_DAYS',
-            'cie_oidc_provider_url'                         => 'CIE_OIDC_PROVIDER_URL',
-            'cie_oidc_trust_anchor_url'                     => 'CIE_OIDC_TRUST_ANCHOR_URL',
-            'cie_oidc_authority_hint_url'                   => 'CIE_OIDC_AUTHORITY_HINT_URL',
-            'cie_oidc_client_id'                            => 'CIE_OIDC_CLIENT_ID',
             'cie_oidc_client_name'                          => 'CIE_OIDC_CLIENT_NAME',
             'cie_oidc_organization_name'                    => 'CIE_OIDC_ORGANIZATION_NAME',
-            'cie_oidc_jwks_uri'                             => 'CIE_OIDC_JWKS_URI',
-            'cie_oidc_signed_jwks_uri'                      => 'CIE_OIDC_SIGNED_JWKS_URI',
-            'cie_oidc_redirect_uri'                         => 'CIE_OIDC_REDIRECT_URI',
-            'cie_oidc_federation_resolve_endpoint'          => 'CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT',
-            'cie_oidc_federation_fetch_endpoint'            => 'CIE_OIDC_FEDERATION_FETCH_ENDPOINT',
-            'cie_oidc_federation_trust_mark_status_endpoint' => 'CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT',
-            'cie_oidc_federation_list_endpoint'             => 'CIE_OIDC_FEDERATION_LIST_ENDPOINT',
-            'cie_oidc_homepage_uri'                         => 'CIE_OIDC_HOMEPAGE_URI',
-            'cie_oidc_policy_uri'                           => 'CIE_OIDC_POLICY_URI',
-            'cie_oidc_logo_uri'                             => 'CIE_OIDC_LOGO_URI',
             'cie_oidc_contact_email'                        => 'CIE_OIDC_CONTACT_EMAIL',
         ];
 
@@ -515,8 +578,72 @@ class ImpostazioniController
         // SATOSA_BASE_STATIC e SATOSA_HOSTNAME derivati
         if (!empty($env['SATOSA_BASE'])) {
             $env['SATOSA_BASE_STATIC'] = rtrim($env['SATOSA_BASE'], '/') . '/static';
-            $env['SATOSA_HOSTNAME']    = $s['hostname'] ?? ($env['IAM_PROXY_HOSTNAME'] ?? '');
+            // SATOSA_HOSTNAME: priorità al campo DB; fallback: parse dall'URL pubblico
+            $hostname = $s['hostname'] ?? '';
+            if ($hostname === '') {
+                $hostname = (string) parse_url((string)($s['public_base_url'] ?? ''), PHP_URL_HOST);
+            }
+            $env['SATOSA_HOSTNAME'] = $hostname;
         }
+
+        // Fallback per campi derivabili rimossi dal form: garantisce che le ENV var
+        // abbiano sempre un valore anche su installazioni precedenti al refactor.
+        if (empty($env['SPID_CERT_ORG_NAME'])) {
+            $env['SPID_CERT_ORG_NAME'] = (string)($sEntity['name'] ?? '');
+        }
+        if (empty($env['SPID_CERT_COMMON_NAME'])) {
+            $env['SPID_CERT_COMMON_NAME'] = $env['SATOSA_HOSTNAME'] ?? (string)($s['hostname'] ?? '');
+        }
+        if (empty($env['SPID_CERT_LOCALITY_NAME'])) {
+            $env['SPID_CERT_LOCALITY_NAME'] = (string)($sEntity['city'] ?? '');
+        }
+        if (empty($env['SATOSA_ORGANIZATION_NAME_IT'])) {
+            $env['SATOSA_ORGANIZATION_NAME_IT'] = (string)($sEntity['name'] ?? '');
+        }
+        if (empty($env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'])) {
+            $env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'] = (string)($sEntity['name'] ?? '');
+        }
+        $globalLogoSrc = trim((string)($sUi['logo_src'] ?? ''));
+        if ($globalLogoSrc !== '') {
+            // Converti /img/... → /static/img/... (servito da auth-proxy-nginx dal volume gil_images)
+            $proxyLogoSrc = (str_starts_with($globalLogoSrc, '/img/') || str_starts_with($globalLogoSrc, '/assets/'))
+                ? '/static' . $globalLogoSrc
+                : $globalLogoSrc;
+            $env['APP_LOGO_SRC']       = $proxyLogoSrc;
+            $env['SATOSA_UI_LOGO_URL'] = $proxyLogoSrc;
+            // CIE OIDC metadata richiede URL assoluto
+            $satosaBase = rtrim((string)($s['public_base_url'] ?? ''), '/');
+            $env['CIE_OIDC_LOGO_URI'] = ($satosaBase !== '' && !str_starts_with($proxyLogoSrc, 'http'))
+                ? $satosaBase . $proxyLogoSrc
+                : $proxyLogoSrc;
+        }
+        if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
+            $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
+        }
+
+        // --- Generazione stringhe hardcoded per CIE OIDC ---
+        $cieEnv = $s['cie_env'] ?? 'prod';
+        if ($cieEnv === 'prod') {
+            $env['CIE_OIDC_PROVIDER_URL']       = 'https://oidc.idserver.servizicie.interno.gov.it';
+            $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://oidc.idserver.servizicie.interno.gov.it';
+            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://registry.servizicie.interno.gov.it';
+        } else {
+            $env['CIE_OIDC_PROVIDER_URL']       = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
+            $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
+            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://preproduzione.cie.interno.gov.it';
+        }
+
+        $satosaBase = rtrim($env['SATOSA_BASE'] ?? '', '/');
+        $env['CIE_OIDC_CLIENT_ID']                            = $satosaBase . '/CieOidcRp';
+        $env['CIE_OIDC_REDIRECT_URI']                         = $satosaBase . '/CieOidcRp/oidc/callback';
+        $env['CIE_OIDC_JWKS_URI']                             = $satosaBase . '/CieOidcRp/openid_relying_party/jwks.json';
+        $env['CIE_OIDC_SIGNED_JWKS_URI']                      = $satosaBase . '/CieOidcRp/openid_relying_party/signed_jwks.jose';
+        $env['CIE_OIDC_HOMEPAGE_URI']                         = $satosaBase;
+        $env['CIE_OIDC_POLICY_URI']                           = $satosaBase;
+        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT']          = '/CieOidcRp/federation/resolve';
+        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT']            = '/CieOidcRp/federation/fetch';
+        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT']= '/CieOidcRp/federation/trust_mark_status';
+        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT']             = '/CieOidcRp/federation/list';
 
         // Variabili cross-section: frontoffice e entity
         if (!empty($sFrontoffice['public_base_url'])) {
@@ -528,6 +655,8 @@ class ImpostazioniController
         if (!empty($sEntity['url'])) {
             $env['APP_ENTITY_URL'] = $sEntity['url'];
         }
+
+        $env['SETUP_COMPLETE'] = \App\Config\ConfigLoader::isSetupComplete() ? 'true' : 'false';
 
         $resp = new SlimResponse(200);
         $resp->getBody()->write(json_encode($env, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
@@ -690,40 +819,319 @@ class ImpostazioniController
     public function getSpidCertInfo(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        $path = self::INTERNAL_SPID_METADATA_PATH;
-        if (!is_file($path)) {
-            return $this->jsonResponse(['exists' => false, 'message' => 'Certificato SPID non ancora disponibile nel metadata interno.']);
+        $certPath = self::SPID_CERTS_DIR . '/cert.pem';
+        $keyPath  = self::SPID_CERTS_DIR . '/privkey.pem';
+
+        if (!is_file($certPath)) {
+            return $this->jsonResponse([
+                'exists'  => false,
+                'message' => 'Certificato SPID non ancora generato. Usa "Genera certificato SPID".',
+            ]);
         }
 
         $info = [
-            'exists'     => true,
-            'file_mtime' => date('c', filemtime($path)),
+            'exists'   => true,
+            'has_key'  => is_file($keyPath),
+            'file_mtime' => date('c', filemtime($certPath)),
         ];
 
-        try {
-            $xml = simplexml_load_file($path);
-            if ($xml !== false) {
-                $info['entity_id'] = (string) ($xml['entityID'] ?? '');
-                $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
-                if ($spSso) {
-                    $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
-                    if ($keyCert) {
-                        $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
-                        if ($cert) {
-                            $parsed = openssl_x509_parse($cert);
-                            if (isset($parsed['validTo_time_t'])) {
-                                $info['cert_expiry'] = date('c', $parsed['validTo_time_t']);
-                                $info['cert_expired'] = $parsed['validTo_time_t'] <= time();
-                            }
-                        }
-                    }
+        $certPem = @file_get_contents($certPath);
+        if ($certPem !== false) {
+            $cert = openssl_x509_read($certPem);
+            if ($cert !== false) {
+                $parsed = openssl_x509_parse($cert);
+                $info['subject_cn']  = $parsed['subject']['CN'] ?? '';
+                $info['subject_o']   = $parsed['subject']['O'] ?? '';
+                $info['subject_l']   = $parsed['subject']['L'] ?? '';
+                $info['subject_c']   = $parsed['subject']['C'] ?? '';
+                $info['valid_from']  = isset($parsed['validFrom_time_t']) ? date('c', $parsed['validFrom_time_t']) : '';
+                $info['valid_to']    = isset($parsed['validTo_time_t']) ? date('c', $parsed['validTo_time_t']) : '';
+                $info['expired']     = isset($parsed['validTo_time_t']) ? ($parsed['validTo_time_t'] <= time()) : null;
+                $info['days_left']   = isset($parsed['validTo_time_t']) ? max(0, (int)(($parsed['validTo_time_t'] - time()) / 86400)) : null;
+                $info['fingerprint_sha256'] = openssl_x509_fingerprint($cert, 'sha256') ?: '';
+                $pubKey = openssl_pkey_get_public($cert);
+                if ($pubKey !== false) {
+                    $keyDetails = openssl_pkey_get_details($pubKey);
+                    $info['key_bits'] = $keyDetails['bits'] ?? null;
+                    $info['key_type'] = match ($keyDetails['type'] ?? -1) {
+                        OPENSSL_KEYTYPE_RSA => 'RSA',
+                        OPENSSL_KEYTYPE_EC  => 'EC',
+                        default => 'unknown',
+                    };
                 }
             }
-        } catch (\Throwable $e) {
-            $info['parse_error'] = $e->getMessage();
         }
 
         return $this->jsonResponse($info);
+    }
+
+    public function getCieKeyDetails(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $keysDir     = self::CIEOIDC_KEYS_DIR;
+        $generatedAt = $keysDir . '/GENERATED_AT';
+        $files       = glob($keysDir . '/*.json') ?: [];
+
+        if (empty($files)) {
+            return $this->jsonResponse([
+                'exists'  => false,
+                'message' => 'Chiavi JWK CIE OIDC non ancora generate. Usa "Genera chiavi JWK".',
+            ]);
+        }
+
+        $generatedTs = is_file($generatedAt) ? (int)trim((string)file_get_contents($generatedAt)) : null;
+
+        $keys = [];
+        foreach ($files as $filePath) {
+            $content = @file_get_contents($filePath);
+            if ($content === false) {
+                continue;
+            }
+            $jwk = json_decode($content, true);
+            if (!is_array($jwk)) {
+                continue;
+            }
+            $keyData = isset($jwk['keys']) ? ($jwk['keys'][0] ?? null) : $jwk;
+            if (!is_array($keyData)) {
+                continue;
+            }
+            $entry = [
+                'file'    => basename($filePath),
+                'kid'     => $keyData['kid'] ?? '',
+                'kty'     => $keyData['kty'] ?? '',
+                'use'     => $keyData['use'] ?? '',
+            ];
+            if (isset($keyData['n'])) {
+                $n = base64_decode(strtr($keyData['n'], '-_', '+/'));
+                $entry['key_bits'] = strlen($n) * 8;
+            } elseif (isset($keyData['crv'])) {
+                $entry['crv'] = $keyData['crv'];
+            }
+            $keys[] = $entry;
+        }
+
+        return $this->jsonResponse([
+            'exists'       => true,
+            'keys'         => $keys,
+            'key_count'    => count($keys),
+            'generated_at' => $generatedTs ? date('c', $generatedTs) : null,
+        ]);
+    }
+
+    public function getCieKeysAsJwks(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+        $keysDir = self::CIEOIDC_KEYS_DIR;
+        $federationKeyPath = $keysDir . '/jwk-federation.json';
+
+        // Priorità: usa jwk-federation.json, altrimenti prendi il primo file disponibile
+        $keyFile = is_file($federationKeyPath) ? $federationKeyPath : null;
+        if (!$keyFile) {
+            $files = glob($keysDir . '/*.json') ?: [];
+            $keyFile = $files[0] ?? null;
+        }
+
+        if (!$keyFile || !is_file($keyFile)) {
+            return $this->jsonResponse([
+                'data' => ['keys' => []],
+            ]);
+        }
+
+        $content = @file_get_contents($keyFile);
+        if ($content === false) {
+            return $this->jsonResponse(['data' => ['keys' => []]]);
+        }
+
+        $jwk = json_decode($content, true);
+        if (!is_array($jwk)) {
+            return $this->jsonResponse(['data' => ['keys' => []]]);
+        }
+
+        // Estrai la chiave (da array "keys" o come oggetto singolo)
+        $keyData = isset($jwk['keys']) ? ($jwk['keys'][0] ?? null) : $jwk;
+        if (!is_array($keyData)) {
+            return $this->jsonResponse(['data' => ['keys' => []]]);
+        }
+
+        // Costruisci la chiave pubblica: includi solo componenti pubblici
+        $publicKey = [];
+        foreach (['kty', 'kid', 'use', 'alg', 'e', 'n', 'crv', 'x', 'y'] as $field) {
+            if (isset($keyData[$field])) {
+                $publicKey[$field] = $keyData[$field];
+            }
+        }
+
+        return $this->jsonResponse([
+            'data' => ['keys' => [$publicKey]],
+        ]);
+    }
+
+    public function restoreBackupZip(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $uploadedFiles = $request->getUploadedFiles();
+
+        $zipFile = $uploadedFiles['backup_zip'] ?? null;
+        if (!$zipFile || $zipFile->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('File ZIP mancante o errore upload.');
+        }
+        if (!class_exists('ZipArchive')) {
+            return $this->jsonError('ZipArchive non disponibile nel container.', 500);
+        }
+
+        $tmpZip = tempnam(sys_get_temp_dir(), 'restore_zip_');
+        $zipFile->moveTo($tmpZip);
+        $zip = new \ZipArchive();
+        if ($zip->open($tmpZip) !== true) {
+            @unlink($tmpZip);
+            return $this->jsonError('File ZIP non valido o corrotto.');
+        }
+
+        // Index archive contents
+        $contents = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $contents[] = $zip->getNameIndex($i);
+        }
+
+        $results = [];
+
+        // SPID certs
+        $certContent = null;
+        $keyContent  = null;
+        foreach ($contents as $name) {
+            if (str_ends_with($name, 'cert.pem')) {
+                $certContent = $zip->getFromName($name);
+            } elseif (str_ends_with($name, 'privkey.pem')) {
+                $keyContent = $zip->getFromName($name);
+            }
+        }
+        if ($certContent !== null && $keyContent !== null) {
+            $cert = openssl_x509_read($certContent);
+            $key  = openssl_pkey_get_private($keyContent);
+            if ($cert && $key && openssl_x509_check_private_key($cert, $key)) {
+                if (!is_dir(self::SPID_CERTS_DIR) && !@mkdir(self::SPID_CERTS_DIR, 0755, true) && !is_dir(self::SPID_CERTS_DIR)) {
+                    $results['spid_certs'] = ['success' => false, 'message' => 'Impossibile creare la directory certificati SPID nel volume.'];
+                } else {
+                file_put_contents(self::SPID_CERTS_DIR . '/cert.pem', $certContent);
+                file_put_contents(self::SPID_CERTS_DIR . '/privkey.pem', $keyContent);
+                @chmod(self::SPID_CERTS_DIR . '/cert.pem', 0644);
+                @chmod(self::SPID_CERTS_DIR . '/privkey.pem', 0600);
+                $results['spid_certs'] = ['success' => true, 'message' => 'Certificati SPID ripristinati.'];
+                }
+            } else {
+                $results['spid_certs'] = ['success' => false, 'message' => 'Certificati SPID nel ZIP non validi o non corrispondenti.'];
+            }
+        }
+
+        // CIE OIDC keys
+        $cieRestored = [];
+        $cieErrors = [];
+        $cieGeneratedAt = null;
+        $cieZipMtimeMax = 0;
+        foreach ($contents as $name) {
+            if (basename($name) === 'GENERATED_AT') {
+                $rawGeneratedAt = $zip->getFromName($name);
+                $parsedGeneratedAt = is_string($rawGeneratedAt) ? (int)trim($rawGeneratedAt) : 0;
+                if ($parsedGeneratedAt > 0) {
+                    $cieGeneratedAt = $parsedGeneratedAt;
+                }
+                break;
+            }
+        }
+        if (!is_dir(self::CIEOIDC_KEYS_DIR) && !@mkdir(self::CIEOIDC_KEYS_DIR, 0755, true) && !is_dir(self::CIEOIDC_KEYS_DIR)) {
+            $results['cieoidc_keys'] = ['success' => false, 'message' => 'Impossibile creare la directory delle chiavi CIE OIDC nel volume.'];
+        } else {
+            foreach ($contents as $name) {
+                $basename = basename($name);
+                if ($basename === '' || !str_ends_with($basename, '.json') || $basename === 'auth-proxy-settings.json') {
+                    continue;
+                }
+
+                $content = $zip->getFromName($name);
+                $decoded = is_string($content) ? json_decode($content, true) : null;
+                $keyData = is_array($decoded) ? (isset($decoded['keys']) ? ($decoded['keys'][0] ?? null) : $decoded) : null;
+                if (!is_array($keyData) || !isset($keyData['kty']) || !isset($keyData['kid'])) {
+                    $cieErrors[] = $basename . ' (JSON chiave non valido)';
+                    continue;
+                }
+
+                $stat = $zip->statName($name);
+                if (is_array($stat) && isset($stat['mtime'])) {
+                    $cieZipMtimeMax = max($cieZipMtimeMax, (int)$stat['mtime']);
+                }
+
+                $target = self::CIEOIDC_KEYS_DIR . '/' . $basename;
+                @unlink($target);
+                $written = @file_put_contents($target, $content, LOCK_EX);
+                if ($written === false) {
+                    $cieErrors[] = $basename . ' (scrittura fallita)';
+                    continue;
+                }
+                @chmod($target, 0600);
+                $cieRestored[] = $basename;
+            }
+
+            if (!empty($cieRestored)) {
+                if ($cieGeneratedAt === null || $cieGeneratedAt <= 0) {
+                    $cieGeneratedAt = $cieZipMtimeMax > 0 ? $cieZipMtimeMax : time();
+                }
+                @file_put_contents(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', (string)$cieGeneratedAt, LOCK_EX);
+                @chmod(self::CIEOIDC_KEYS_DIR . '/GENERATED_AT', 0644);
+                $msg = 'Chiavi CIE OIDC ripristinate: ' . implode(', ', $cieRestored);
+                if (!empty($cieErrors)) {
+                    $msg .= '. File ignorati: ' . implode(', ', $cieErrors);
+                }
+                $results['cieoidc_keys'] = ['success' => true, 'message' => $msg];
+            } elseif (!isset($results['cieoidc_keys'])) {
+                $results['cieoidc_keys'] = ['success' => false, 'message' => 'Nessuna chiave JWK CIE OIDC valida trovata nel file ZIP.'];
+            }
+        }
+
+        // SPID public metadata
+        foreach ($contents as $name) {
+            if (str_ends_with($name, '.xml')) {
+                $content = $zip->getFromName($name);
+                if ($content !== false && str_contains($content, 'EntityDescriptor')) {
+                    if (!is_dir(self::SPID_PUBLIC_META_DIR) && !@mkdir(self::SPID_PUBLIC_META_DIR, 0775, true) && !is_dir(self::SPID_PUBLIC_META_DIR)) {
+                        $results['spid_metadata'] = ['success' => false, 'message' => 'Impossibile creare la directory metadata SPID nel volume.'];
+                    } else {
+                        @unlink(self::PUBLIC_SPID_METADATA_PATH);
+                        file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content);
+                        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+                        $results['spid_metadata'] = ['success' => true, 'message' => 'Metadata pubblico SPID ripristinato.'];
+                    }
+                    break;
+                }
+            }
+        }
+
+        // CIE entity configuration
+        foreach ($contents as $name) {
+            $basename = basename($name);
+            if (str_ends_with($basename, '.json') && !str_starts_with($basename, 'jwk-') && $basename !== 'auth-proxy-settings.json') {
+                $content = $zip->getFromName($name);
+                $decoded = json_decode($content, true);
+                if (is_array($decoded) && isset($decoded['sub'])) {
+                    if (!is_dir(self::CIEOIDC_META_DIR) && !@mkdir(self::CIEOIDC_META_DIR, 0775, true) && !is_dir(self::CIEOIDC_META_DIR)) {
+                        $results['cie_metadata'] = ['success' => false, 'message' => 'Impossibile creare la directory metadata CIE OIDC nel volume.'];
+                    } else {
+                        @unlink(self::CIE_METADATA_PATH);
+                        file_put_contents(self::CIE_METADATA_PATH, $content);
+                        $results['cie_metadata'] = ['success' => true, 'message' => 'Entity configuration CIE OIDC ripristinata.'];
+                    }
+                    break;
+                }
+            }
+        }
+
+        $zip->close();
+        @unlink($tmpZip);
+
+        return $this->jsonResponse([
+            'success' => true,
+            'results' => $results,
+            'message' => 'Ripristino completato. ' . count($results) . ' elemento/i elaborato/i.',
+        ]);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -738,8 +1146,24 @@ class ImpostazioniController
             return $this->jsonResponse(['exists' => false, 'message' => 'Metadata pubblico SPID non ancora esportato.']);
         }
         $info = ['exists' => true, 'size' => filesize($path), 'file_mtime' => date('c', filemtime($path))];
+        if (!is_readable($path)) {
+            $healed = $this->refreshSpidMetadataFromLiveEndpoint();
+            clearstatcache(true, $path);
+            if (!$healed || !is_file($path) || !is_readable($path)) {
+                $info['read_error'] = 'Metadata presente ma non leggibile dal backoffice (permessi volume).';
+                return $this->jsonResponse($info);
+            }
+            $info['size'] = filesize($path);
+            $info['file_mtime'] = date('c', filemtime($path));
+        }
         try {
-            $xml = simplexml_load_file($path);
+            libxml_use_internal_errors(true);
+            $raw = file_get_contents($path);
+            if (!is_string($raw) || $raw === '') {
+                $info['read_error'] = 'Metadata presente ma non leggibile dal backoffice (permessi volume).';
+                return $this->jsonResponse($info);
+            }
+            $xml = simplexml_load_string($raw);
             if ($xml !== false) {
                 $info['entity_id'] = (string) ($xml['entityID'] ?? '');
                 $attrs = $xml->attributes();
@@ -750,10 +1174,16 @@ class ImpostazioniController
                     $info['valid_until_expired'] = $validTs !== false ? $validTs <= time() : null;
                 }
 
-                $spSso = $xml->children('urn:oasis:names:tc:SAML:2.0:metadata')->SPSSODescriptor ?? null;
-                if ($spSso) {
+                $namespaces = $xml->getNamespaces(true);
+                $mdNs = $namespaces['md'] ?? 'urn:oasis:names:tc:SAML:2.0:metadata';
+                $dsNs = $namespaces['ds'] ?? 'http://www.w3.org/2000/09/xmldsig#';
+                $xml->registerXPathNamespace('md', $mdNs);
+                $xml->registerXPathNamespace('ds', $dsNs);
+
+                $spSsoNodes = $xml->xpath('//md:SPSSODescriptor');
+                if (!empty($spSsoNodes)) {
                     $acsUrls = [];
-                    foreach ($spSso->AssertionConsumerService ?? [] as $acs) {
+                    foreach ($xml->xpath('//md:SPSSODescriptor/md:AssertionConsumerService') ?: [] as $acs) {
                         $location = (string) ($acs['Location'] ?? '');
                         if ($location !== '') {
                             $acsUrls[] = $location;
@@ -761,7 +1191,11 @@ class ImpostazioniController
                     }
                     $info['acs_urls'] = $acsUrls;
 
-                    $keyCert = $spSso->KeyDescriptor->KeyInfo->X509Data->X509Certificate ?? null;
+                    $certNodes = $xml->xpath('//md:SPSSODescriptor/md:KeyDescriptor[@use="signing"]/ds:KeyInfo/ds:X509Data/ds:X509Certificate');
+                    if (!$certNodes) {
+                        $certNodes = $xml->xpath('//md:SPSSODescriptor/md:KeyDescriptor/ds:KeyInfo/ds:X509Data/ds:X509Certificate');
+                    }
+                    $keyCert = $certNodes[0] ?? null;
                     if ($keyCert) {
                         $cert = openssl_x509_read("-----BEGIN CERTIFICATE-----\n" . chunk_split((string) $keyCert, 64) . "-----END CERTIFICATE-----\n");
                         if ($cert) {
@@ -783,56 +1217,164 @@ class ImpostazioniController
     public function exportSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
+        $body  = $this->parseBody($request);
+        $force = $this->requestForce($request, $body);
 
-        @mkdir(self::SPID_PUBLIC_META_DIR, 0775, true);
+        // Evita lock di sessione durante una chiamata potenzialmente lunga al metadata-builder.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
+        }
 
-        $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
-        $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
+        $builderUrl    = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
+        $masterToken   = (string)(getenv('MASTER_TOKEN') ?: '');
+        $iamProxy      = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $query = [];
+        if ($force) {
+            $query['force'] = '1';
+        }
+        if ($publicBaseUrl !== '') {
+            $hostHeader = (string)(parse_url($publicBaseUrl, PHP_URL_HOST) ?: '');
+            if ($hostHeader !== '') {
+                $query['host_header'] = $hostHeader;
+            }
+            $query['public_base_url'] = $publicBaseUrl;
+        }
+        $endpoint = "{$builderUrl}/run/export-agid";
+        if (!empty($query)) {
+            $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
 
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => 180,
-                'ignore_errors' => true,
-            ],
+        if (!function_exists('curl_init')) {
+            return $this->jsonError('Generazione metadata SPID fallita: estensione PHP cURL non disponibile.');
+        }
+
+        $raw = false;
+        $httpCode = 0;
+        $curlErr = '';
+        $ch = curl_init($endpoint);
+        if ($ch === false) {
+            return $this->jsonError('Generazione metadata SPID fallita: impossibile inizializzare la connessione HTTP.');
+        }
+
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$masterToken}",
+            "Content-Length: 0",
         ]);
-        $raw    = @file_get_contents("{$builderUrl}/run/export-agid", false, $ctx);
+        $raw = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = (string)curl_error($ch);
+
+        if (!is_string($raw) || $raw === '') {
+            $netErr = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+            return $this->jsonError("Generazione metadata SPID fallita: metadata-builder non raggiungibile ({$netErr}).");
+        }
         $result = $raw !== false ? json_decode($raw, true) : null;
 
         if (!($result['success'] ?? false)) {
-            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
-            return $this->jsonError("Export metadata pubblico SPID fallito: {$err}");
+            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida dal metadata-builder';
+            return $this->jsonError("Generazione metadata SPID fallita: {$err}");
         }
 
-        if (!is_file(self::PUBLIC_SPID_METADATA_PATH)) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: file output non trovato dopo export-agid.');
+        // Riallinea il file locale dal metadata live per evitare drift di permessi sul volume condiviso.
+        if (!$this->refreshSpidMetadataFromLiveEndpoint()) {
+            return $this->jsonError('Metadata SPID rigenerato dal metadata-builder, ma il salvataggio locale è fallito (permessi volume). Controlla i log del container backoffice.');
         }
 
-        $xml = trim((string) file_get_contents(self::PUBLIC_SPID_METADATA_PATH));
-        if ($xml === '') {
-            return $this->jsonError('Export metadata pubblico SPID fallito: file output vuoto dopo export-agid.');
+        // Leggi entityID e validUntil dal file scritto sul volume condiviso oppure risincronizzato localmente.
+        $info = [];
+        $path = self::PUBLIC_SPID_METADATA_PATH;
+        if (is_file($path) && is_readable($path)) {
+            libxml_use_internal_errors(true);
+            $xml = simplexml_load_string((string)file_get_contents($path));
+            if ($xml !== false) {
+                $info['entity_id']   = (string)($xml['entityID'] ?? '');
+                $info['valid_until'] = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
+            }
+        } elseif (is_file($path)) {
+            $info['read_error'] = 'Metadata aggiornato ma non leggibile dal backoffice (permessi volume).';
         }
-
-        libxml_use_internal_errors(true);
-        $parsed = simplexml_load_string($xml);
-        if ($parsed === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: XML non valido restituito da auth-proxy-nginx.');
-        }
-
-        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml . "\n") === false) {
-            return $this->jsonError('Export metadata pubblico SPID fallito: impossibile scrivere il file di output.');
-        }
-        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
-
-        $validUntil = isset($parsed['validUntil']) ? (string) $parsed['validUntil'] : '';
 
         return $this->jsonResponse([
             'success' => true,
-            'message' => 'Metadata pubblico SPID esportato correttamente.',
-            'entity_id' => (string) ($parsed['entityID'] ?? ''),
-            'valid_until' => $validUntil,
+            'message' => 'Metadata pubblico SPID rigenerato correttamente.',
+            ...$info,
         ]);
+    }
+
+    private function refreshSpidMetadataFromLiveEndpoint(): bool
+    {
+        $iamProxy = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $xml = $this->fetchSpidMetadataXml($publicBaseUrl);
+        if ($xml === null) {
+            return false;
+        }
+
+        if (!is_dir(self::SPID_PUBLIC_META_DIR) && !@mkdir(self::SPID_PUBLIC_META_DIR, 0775, true) && !is_dir(self::SPID_PUBLIC_META_DIR)) {
+            return false;
+        }
+
+        // Rimuove il file prima di scrivere: se creato da metadata-builder (root), non è sovrascrivibile
+        // da www-data; unlink funziona perché www-data ha write sulla directory (775).
+        @unlink(self::PUBLIC_SPID_METADATA_PATH);
+        $written = @file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $xml, LOCK_EX);
+        if ($written === false) {
+            return false;
+        }
+
+        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+        return true;
+    }
+
+    private function fetchSpidMetadataXml(string $publicBaseUrl = ''): ?string
+    {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+
+        $hostHeader = '';
+        if ($publicBaseUrl !== '') {
+            $hostHeader = (string)(parse_url($publicBaseUrl, PHP_URL_HOST) ?: '');
+        }
+
+        $attempts = [
+            ['url' => 'http://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => $hostHeader],
+            ['url' => 'http://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => ''],
+            ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => $hostHeader],
+            ['url' => 'https://auth-proxy-nginx:80/spidSaml2/metadata', 'host' => ''],
+        ];
+
+        foreach ($attempts as $attempt) {
+            $ch = curl_init($attempt['url']);
+            if ($ch === false) {
+                continue;
+            }
+
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+            if ($attempt['host'] !== '') {
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Host: ' . $attempt['host']]);
+            }
+            if (str_starts_with($attempt['url'], 'https://')) {
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            }
+
+            $body = curl_exec($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if (is_string($body) && $status === 200 && str_contains($body, 'EntityDescriptor')) {
+                return $body;
+            }
+        }
+
+        return null;
     }
 
     public function downloadSpidMetadata(Request $request, Response $response): Response
@@ -853,7 +1395,34 @@ class ImpostazioniController
     public function restoreSpidMetadata(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
-        return $this->jsonError('Il metadata pubblico SPID non si ripristina manualmente da UI. Usa Export AgID per rigenerarlo.', 405);
+        $uploadedFiles = $request->getUploadedFiles();
+        $file = $uploadedFiles['metadata_file'] ?? null;
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('File metadata SPID (metadata_file) mancante o errore upload.');
+        }
+        $content = (string)$file->getStream();
+        // Basic XML validation
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($content);
+        if ($xml === false || !str_contains($content, 'EntityDescriptor')) {
+            return $this->jsonError('File non valido: deve essere un XML metadata SAML2 con EntityDescriptor.');
+        }
+        if (!is_dir(self::SPID_PUBLIC_META_DIR) && !@mkdir(self::SPID_PUBLIC_META_DIR, 0775, true) && !is_dir(self::SPID_PUBLIC_META_DIR)) {
+            return $this->jsonError('Impossibile creare la directory metadata SPID nel volume.');
+        }
+        @unlink(self::PUBLIC_SPID_METADATA_PATH);
+        if (file_put_contents(self::PUBLIC_SPID_METADATA_PATH, $content) === false) {
+            return $this->jsonError('Impossibile scrivere il file nel volume.');
+        }
+        @chmod(self::PUBLIC_SPID_METADATA_PATH, 0664);
+        $entityId   = (string)($xml['entityID'] ?? '');
+        $validUntil = isset($xml['validUntil']) ? (string)$xml['validUntil'] : '';
+        return $this->jsonResponse([
+            'success'     => true,
+            'message'     => 'Metadata pubblico SPID ripristinato correttamente.',
+            'entity_id'   => $entityId,
+            'valid_until' => $validUntil,
+        ]);
     }
 
     public function getCieMetadataInfo(Request $request, Response $response): Response
@@ -861,14 +1430,29 @@ class ImpostazioniController
         $this->requireAdminOrAbove();
         $path = self::CIE_METADATA_PATH;
         if (!is_file($path)) {
-            return $this->jsonResponse(['exists' => false, 'message' => 'Entity configuration CIE non ancora generata.']);
+            return $this->jsonResponse(['exists' => false, 'message' => 'Entity configuration CIE non ancora esportata.']);
         }
         $info = ['exists' => true, 'size' => filesize($path), 'modified' => date('c', filemtime($path))];
-        $json = json_decode(file_get_contents($path), true);
+        $json = json_decode((string)file_get_contents($path), true);
         if (is_array($json)) {
-            $info['sub']       = $json['sub'] ?? '';
-            $info['iat']       = isset($json['iat']) ? date('c', $json['iat']) : '';
-            $info['exp']       = isset($json['exp']) ? date('c', $json['exp']) : '';
+            $info['sub'] = $json['sub'] ?? '';
+            $info['iss'] = $json['iss'] ?? '';
+            if (isset($json['iat'])) {
+                $info['iat'] = date('c', (int)$json['iat']);
+            }
+            if (isset($json['exp'])) {
+                $expTs = (int)$json['exp'];
+                $info['exp']           = date('c', $expTs);
+                $info['exp_expired']   = $expTs <= time();
+                $info['exp_days_left'] = max(0, (int)(($expTs - time()) / 86400));
+            }
+            // Federation JWK count
+            $fedJwks = $json['jwks']['keys'] ?? [];
+            $info['federation_jwk_count'] = count($fedJwks);
+            // RP metadata
+            $rpMeta = $json['metadata']['openid_relying_party'] ?? [];
+            $info['client_name']   = $rpMeta['client_name'] ?? ($rpMeta['client_name#it'] ?? '');
+            $info['redirect_uris'] = $rpMeta['redirect_uris'] ?? [];
         }
         return $this->jsonResponse($info);
     }
@@ -947,6 +1531,7 @@ class ImpostazioniController
             }
         }
         if (!preg_match('/^PA:IT-[A-Za-z0-9_]+$/', $orgId)) {
+
             return $this->jsonError("org_id deve avere il formato 'PA:IT-<codice IPA>' (es. PA:IT-c_f646)");
         }
         if (!in_array($keySize, [2048, 3072, 4096], true)) {
@@ -961,8 +1546,19 @@ class ImpostazioniController
             }
         }
 
+        // Persist parameters to DB so they survive modal close
+        SettingsRepository::set('iam_proxy', 'spid_cert_common_name', $commonName);
+        SettingsRepository::set('iam_proxy', 'spid_cert_locality_name', $locality);
+        SettingsRepository::set('iam_proxy', 'spid_cert_org_id', $orgId);
+        SettingsRepository::set('iam_proxy', 'spid_cert_org_name', $orgName);
+        SettingsRepository::set('iam_proxy', 'spid_cert_entity_id', $entityId);
+        SettingsRepository::set('iam_proxy', 'spid_cert_days', (string)$days);
+        SettingsRepository::set('iam_proxy', 'spid_cert_key_size', (string)$keySize);
+
         $certsDir = self::SPID_CERTS_DIR;
-        @mkdir($certsDir, 0755, true);
+        if (!is_dir($certsDir) && !mkdir($certsDir, 0755, true) && !is_dir($certsDir)) {
+            return $this->jsonError("Impossibile creare la directory certificati SPID: {$certsDir}");
+        }
 
         $tmpCnf = tempnam(sys_get_temp_dir(), 'spid_cnf_');
 
@@ -1080,7 +1676,7 @@ class ImpostazioniController
     {
         $this->requireSuperadmin();
         $body    = $this->parseBody($request);
-        $force   = !empty($body['force']);
+        $force   = $this->requestForce($request, $body);
         $keysDir = self::CIEOIDC_KEYS_DIR;
 
         $generatedAt = $keysDir . '/GENERATED_AT';
@@ -1094,7 +1690,9 @@ class ImpostazioniController
             }
         }
 
-        @mkdir($keysDir, 0700, true);
+        if (!is_dir($keysDir) && !@mkdir($keysDir, 0700, true) && !is_dir($keysDir)) {
+            return $this->jsonError('Impossibile creare la directory delle chiavi CIE OIDC nel volume.');
+        }
 
         $b64url = static fn(string $bin): string =>
             rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
@@ -1130,7 +1728,6 @@ class ImpostazioniController
                 'dq'  => $b64url($rsa['dmq1']),
                 'qi'  => $b64url($rsa['iqmp']),
             ]);
-            openssl_pkey_free($key);
             return $jwk;
         };
 
@@ -1166,15 +1763,20 @@ class ImpostazioniController
      * Esporta gli artefatti pubblici CIE OIDC dalla auth-proxy-nginx interna.
      * Equivalente PHP di metadata/builder/export-cieoidc.sh.
      *
-     * Richiede iam-proxy attivo (profilo iam-proxy up).
+     * Richiede auth-proxy attivo (profilo auth-proxy up).
      * Body JSON: force (bool, default false)
      */
     public function exportCieOidc(Request $request, Response $response): Response
     {
         $this->requireSuperadmin();
         $body    = $this->parseBody($request);
-        $force   = !empty($body['force']);
+        $force   = $this->requestForce($request, $body);
         $metaDir = self::CIEOIDC_META_DIR;
+
+        // Evita lock di sessione durante una chiamata potenzialmente lunga al metadata-builder.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
+        }
 
         $compValues = $metaDir . '/component-values.env';
         if (!$force && is_file($compValues)) {
@@ -1198,21 +1800,56 @@ class ImpostazioniController
 
         $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
         $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
-        $endpoint    = "{$builderUrl}/run/export-cieoidc" . ($force ? '?force=1' : '');
+        $iamProxy    = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $query = [];
+        if ($force) {
+            $query['force'] = '1';
+        }
+        if ($publicBaseUrl !== '') {
+            $hostHeader = (string)(parse_url($publicBaseUrl, PHP_URL_HOST) ?: '');
+            if ($hostHeader !== '') {
+                $query['host_header'] = $hostHeader;
+            }
+            $query['public_base_url'] = $publicBaseUrl;
+        }
+        $endpoint = "{$builderUrl}/run/export-cieoidc";
+        if (!empty($query)) {
+            $endpoint .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
 
-        $ctx = stream_context_create([
-            'http' => [
-                'method'        => 'POST',
-                'header'        => "Authorization: Bearer {$masterToken}\r\nContent-Length: 0\r\n",
-                'timeout'       => 180,
-                'ignore_errors' => true,
-            ],
+        if (!function_exists('curl_init')) {
+            return $this->jsonError('Export CIE OIDC fallito: estensione PHP cURL non disponibile.');
+        }
+
+        $raw = false;
+        $httpCode = 0;
+        $curlErr = '';
+        $ch = curl_init($endpoint);
+        if ($ch === false) {
+            return $this->jsonError('Export CIE OIDC fallito: impossibile inizializzare la connessione HTTP.');
+        }
+
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$masterToken}",
+            'Content-Length: 0',
         ]);
-        $raw    = @file_get_contents($endpoint, false, $ctx);
-        $result = $raw !== false ? json_decode($raw, true) : null;
+        $raw = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = (string)curl_error($ch);
+
+        if (!is_string($raw) || $raw === '') {
+            $netErr = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+            return $this->jsonError("Export CIE OIDC fallito: metadata-builder non raggiungibile ({$netErr}).");
+        }
+        $result = json_decode($raw, true);
 
         if (!($result['success'] ?? false)) {
-            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida';
+            $err = $result['stderr'] ?? $result['error'] ?? 'risposta non valida dal metadata-builder';
             return $this->jsonError("Export CIE OIDC fallito: {$err}");
         }
 
@@ -1298,6 +1935,39 @@ class ImpostazioniController
     // ──────────────────────────────────────────────────────────────────────
 
     /**
+     * Controlla se il container auth-proxy-nginx risponde.
+     * GET /impostazioni/login-proxy/status
+     */
+    public function getAuthProxyStatus(Request $request, Response $response): Response
+    {
+        $url = 'http://auth-proxy-nginx:80/';
+        $running = false;
+        $detail  = 'Non raggiungibile';
+
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            if ($ch !== false) {
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                curl_setopt($ch, CURLOPT_NOBODY, true);
+                curl_exec($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curlErr  = (string) curl_error($ch);
+
+                if ($curlErr === '' && $httpCode > 0) {
+                    $running = true;
+                    $detail  = 'In esecuzione';
+                } else {
+                    $detail = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+                }
+            }
+        }
+
+        return $this->jsonResponse(['running' => $running, 'detail' => $detail]);
+    }
+
+    /**
      * Ritorna disponibilità dei file esportabili per guidare le checkbox UI.
      * GET /impostazioni/login-proxy/backup/status
      */
@@ -1363,7 +2033,7 @@ class ImpostazioniController
         $data = file_get_contents($tmpFile);
         unlink($tmpFile);
 
-        $filename = 'backup-iam-proxy-' . date('Y-m-d') . '.zip';
+        $filename = 'backup-auth-proxy-' . date('Y-m-d') . '.zip';
         $resp = new \Slim\Psr7\Response(200);
         $resp->getBody()->write($data);
         return $resp
@@ -1380,7 +2050,7 @@ class ImpostazioniController
         foreach ($encrypted as $k) {
             unset($settings[$k]);
         }
-        $zip->addFromString('config/iam-proxy-settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $zip->addFromString('config/auth-proxy-settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
     private function backupZipSpidCerts(\ZipArchive $zip): void
@@ -1398,6 +2068,10 @@ class ImpostazioniController
         $files = glob(self::CIEOIDC_KEYS_DIR . '/*.json') ?: [];
         foreach ($files as $path) {
             $zip->addFile($path, 'cieoidc-keys/' . basename($path));
+        }
+        $generatedAt = self::CIEOIDC_KEYS_DIR . '/GENERATED_AT';
+        if (is_file($generatedAt)) {
+            $zip->addFile($generatedAt, 'cieoidc-keys/GENERATED_AT');
         }
     }
 
@@ -1499,7 +2173,6 @@ class ImpostazioniController
         $result   = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr  = curl_error($ch);
-        curl_close($ch);
 
         if ($result === false || $curlErr) {
             return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
@@ -1557,7 +2230,27 @@ class ImpostazioniController
 
     private function parseBody(Request $request): array
     {
+        $contentType = $request->getHeaderLine('Content-Type');
+        if (str_contains($contentType, 'application/json')) {
+            $raw     = (string) $request->getBody();
+            $decoded = json_decode($raw, true);
+            return is_array($decoded) ? $decoded : [];
+        }
         return (array)($request->getParsedBody() ?? []);
+    }
+
+    private function requestForce(Request $request, array $body): bool
+    {
+        if (!empty($body['force'])) {
+            return true;
+        }
+
+        $q = $request->getQueryParams()['force'] ?? '';
+        if (!is_string($q)) {
+            return false;
+        }
+
+        return in_array(strtolower(trim($q)), ['1', 'true', 'yes', 'on'], true);
     }
 
     private function jsonOk(string $message): Response
@@ -1567,7 +2260,13 @@ class ImpostazioniController
 
     private function jsonError(string $message, int $status = 400): Response
     {
-        return $this->jsonResponse(['success' => false, 'message' => $message], $status);
+        $resp = $this->jsonResponse([
+            'success' => false,
+            'message' => $message,
+            'error_status' => $status,
+        ], 200);
+
+        return $resp->withHeader('X-App-Error-Status', (string)$status);
     }
 
     private function jsonResponse(array $data, int $status = 200): Response
