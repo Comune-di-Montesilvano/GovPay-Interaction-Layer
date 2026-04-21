@@ -11,27 +11,27 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "up-iam-proxy",
+			"label": "up-auth-proxy",
 			"type": "shell",
-			"command": "docker compose --profile iam-proxy up -d",
+			"command": "docker compose --profile auth-proxy up -d",
 			"args": [],
 			"isBackground": false,
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
-			"label": "logs-iam-proxy",
+			"label": "logs-auth-proxy",
 			"type": "shell",
-			"command": "docker compose logs -f satosa-nginx iam-proxy-italia",
+			"command": "docker compose logs -f auth-proxy-nginx auth-proxy",
 			"args": [],
 			"isBackground": true,
 			"group": "none",
 			"problemMatcher": []
 		},
 		{
-			"label": "up-iam-proxy-now",
+			"label": "up-auth-proxy-now",
 			"type": "shell",
-			"command": "docker compose --profile iam-proxy up -d",
+			"command": "docker compose --profile auth-proxy up -d",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
@@ -53,14 +53,14 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "up-iam-proxy-with-metadata",
+			"label": "up-auth-proxy-with-metadata",
 			"type": "shell",
-			"command": "echo 'Starting iam-proxy with local metadata setup'",
+			"command": "echo 'Starting auth-proxy with local metadata setup'",
 			"isBackground": false,
 			"group": "build",
 			"dependsOn": [
 				"setup-sp",
-				"up-iam-proxy"
+				"up-auth-proxy"
 			],
 			"problemMatcher": []
 		}

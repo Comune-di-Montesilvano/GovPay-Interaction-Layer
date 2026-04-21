@@ -24,16 +24,16 @@ scripts/
 
 ## Prima installazione
 
-**Prerequisiti**: Docker Desktop attivo, file `.iam-proxy.env` configurato.
-Tutte le variabili `SPID_CERT_*`, `SATOSA_*`, `CIE_OIDC_*` sono in `.iam-proxy.env`
-(copia `.iam-proxy.env.example` e compila i valori). Il file `.env` contiene le
+**Prerequisiti**: Docker Desktop attivo, file `.auth-proxy.env` configurato.
+Tutte le variabili `SPID_CERT_*`, `SATOSA_*`, `CIE_OIDC_*` sono in `.auth-proxy.env`
+(copia `.auth-proxy.env.example` e compila i valori). Il file `.env` contiene le
 variabili generali dell'applicazione.
 
 ```bash
 # 1. Configura i file di ambiente
 cp .env.example .env
-cp .iam-proxy.env.example .iam-proxy.env
-# Edita .iam-proxy.env:
+cp .auth-proxy.env.example .auth-proxy.env
+# Edita .auth-proxy.env:
 #   SPID_CERT_COMMON_NAME, SPID_CERT_ORG_NAME, SPID_CERT_ORG_ID,
 #   SATOSA_ORGANIZATION_*, SATOSA_CONTACT_PERSON_*, CIE_OIDC_*,
 #   IAM_PROXY_PUBLIC_BASE_URL
@@ -42,7 +42,7 @@ cp .iam-proxy.env.example .iam-proxy.env
 docker compose run --rm metadata-builder setup
 
 # 3. Avvia i container
-docker compose --profile iam-proxy up -d
+docker compose --profile auth-proxy up -d
 
 # 4. Esporta il metadata pubblico per AgID
 docker compose run --rm metadata-builder export-agid
@@ -105,7 +105,7 @@ Il tipo di ripristino viene rilevato automaticamente dal nome del file. Ogni com
 Dopo il ripristino:
 
 ```bash
-docker compose --profile iam-proxy restart iam-proxy-italia
+docker compose --profile auth-proxy restart auth-proxy
 ```
 
 ---
@@ -115,7 +115,7 @@ docker compose --profile iam-proxy restart iam-proxy-italia
 ### Pre-generare il nuovo metadata (senza interrompere la federazione)
 
 Il metadata SP viene auto-rinnovato ogni 6 ore dal servizio `refresh-sp-metadata`.
-Quando scade entro 7 giorni, `iam-proxy-italia` registra un WARNING nei log.
+Quando scade entro 7 giorni, `auth-proxy` registra un WARNING nei log.
 
 Per generare in anticipo un nuovo metadata senza toccare quello attivo:
 
@@ -128,7 +128,7 @@ La federazione rimane attiva. Per attivarlo:
 
 ```bash
 docker exec govpay-interaction-frontoffice bash /scripts/ensure-sp-metadata.sh --force
-docker compose --profile iam-proxy restart iam-proxy-italia
+docker compose --profile auth-proxy restart auth-proxy
 ```
 
 ### Rinnovo certificati SPID (alla scadenza)
@@ -163,7 +163,7 @@ rigenerare le chiavi rompe la federazione finché l'Entity Statement non è scad
 docker compose run --rm metadata-builder export-cieoidc
 ```
 
-Richiede che il profilo `iam-proxy` sia avviato. Curla gli endpoint interni di `satosa-nginx`.
+Richiede che il profilo `auth-proxy` sia avviato. Curla gli endpoint interni di `auth-proxy-nginx`.
 
 Output generato in `metadata/cieoidc/`:
 
@@ -197,14 +197,14 @@ restart container, attesa propagazione fino a 24h, backup).
 
 Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazione CIE **è necessario completare il processo di onboarding** sulla Federazione CIE.
 
-1. **Test degli endpoint pubblici**: l'Identity Provider deve poter scaricare l'Entity Configuration esposta dal tuo IAM Proxy.
+1. **Test degli endpoint pubblici**: l'Identity Provider deve poter scaricare l'Entity Configuration esposta dal tuo Auth Proxy.
    ```bash
    bash scripts/check-cie-oidc-federation-endpoints.sh -b "https://iltuodominio.it/CieOidcRp"
    ```
    Tutte le chiamate (eccetto forse POST a `trust_mark_status`) dovrebbero restituire HTTP 200.
 
 2. **Scelta dell'ambiente (Collaudo o Produzione)**:
-   Modifica nel file `.iam-proxy.env` gli endpoint puntando a **Collaudo** (`preproduzione.oidc.*`) in fase di test, o a **Produzione** per la messa in onda definitiva. Dopo un cambio, riavvia il container `iam-proxy-italia`.
+   Modifica nel file `.auth-proxy.env` gli endpoint puntando a **Collaudo** (`preproduzione.oidc.*`) in fase di test, o a **Produzione** per la messa in onda definitiva. Dopo un cambio, riavvia il container `auth-proxy`.
 
 3. **Registrazione Portale Federazione**:
    Recati sul portale CIE per gli sviluppatori ed effettua l'onboarding. Ti sarà richiesto di fornire l'URL del tuo *Client ID* (la rotta root configurata in `CIE_OIDC_CLIENT_ID` senza slash finale).
@@ -220,7 +220,7 @@ Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazion
 - Metadata interno Frontoffice SP — gestito automaticamente nel volume Docker `frontoffice_sp_metadata` (auto-rinnovato ogni 6h), non esposto né gestito dalla UI.
 - Certificati SPID — nel volume Docker `govpay_spid_certs` (o nel volume indicato da `SPID_CERTS_DOCKER_VOLUME`).
 
-## Variabili rilevanti in `.iam-proxy.env`
+## Variabili rilevanti in `.auth-proxy.env`
 
 | Variabile | Descrizione |
 |---|---|

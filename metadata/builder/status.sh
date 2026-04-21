@@ -24,7 +24,7 @@ if [[ -f "/sp-metadata/frontoffice_sp.xml" ]]; then
     echo "  (validUntil non trovato nel metadata)"
   fi
 else
-  echo -e "  ${YELLOW}frontoffice_sp.xml non trovato — avviare il profilo iam-proxy${NC}"
+  echo -e "  ${YELLOW}frontoffice_sp.xml non trovato — avviare il profilo auth-proxy${NC}"
 fi
 
 echo -e "\n${BOLD}=== CIE OIDC Entity Statement ===${NC}"

@@ -7,7 +7,7 @@ case "${1:-help}" in
     bash /builder/setup-cieoidc.sh
     echo ""
     echo "Setup completato. Prossimi passi:"
-    echo "  docker compose --profile iam-proxy up -d"
+    echo "  docker compose --profile auth-proxy up -d"
     echo "  docker compose run --rm metadata-builder export-agid"
     ;;
   setup-spid)        bash /builder/setup-spid.sh ;;
@@ -27,8 +27,8 @@ Uso: docker compose run --rm metadata-builder <subcomando>
 
 Prima installazione:
   setup           Genera cert SPID + chiavi JWK CIE OIDC
-  export-agid     Esporta metadata AgID (richiede profilo iam-proxy up)
-  export-cieoidc  Esporta artifact CIE OIDC per onboarding (richiede iam-proxy up)
+  export-agid     Esporta metadata AgID (richiede profilo auth-proxy up)
+  export-cieoidc  Esporta artifact CIE OIDC per onboarding (richiede auth-proxy up)
 
 Operazioni:
   status          Mostra scadenze: cert SPID, SP metadata, Entity Statement CIE OIDC

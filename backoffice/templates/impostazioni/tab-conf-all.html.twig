@@ -1405,6 +1405,7 @@
                       <th>Nome</th>
                       <th>ID Servizio</th>
                       <th>Status</th>
+                      <th class="text-center">Tassonomie</th>
                       <th class="text-end">Azioni</th>
                     </tr>
                   </thead>
@@ -1423,6 +1424,7 @@
                             <i class="fas fa-edit"></i> Modifica
                           </button>
                         </td>
+                        <td class="text-center">{{ svc.tipologie_count }}</td>
                         <td class="text-end">
                           <div class="btn-group">
                             {% if not svc.is_default %}
@@ -1443,7 +1445,7 @@
                       
                       <!-- Collapse Edit IO Service -->
                       <tr>
-                        <td colspan="4" class="p-0 border-0">
+                        <td colspan="5" class="p-0 border-0">
                           <div class="collapse" id="editIoService{{ svc.id }}">
                             <div class="card card-body bg-light rounded-0 border-top-0 border-bottom">
                               <form method="post" action="/configurazione/io-services/{{ svc.id }}/update" class="row g-2">

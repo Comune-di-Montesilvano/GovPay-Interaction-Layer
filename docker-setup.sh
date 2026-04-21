@@ -103,14 +103,14 @@ if [ "$SSL_ON" = "on" ] && [ -z "${SKIP_SELF_SIGNED:-}" ] && ( [ ! -s /ssl/serve
   echo "✅ Certificati self-signed creati.";
 fi
 
-# === IAM Proxy Italia: genera cert.pem e privkey.pem in pki/ se non esistono ===
-IAM_PROXY_PKI_DIR="/var/www/html/iam-proxy/iam-proxy-italia-project/pki"
-CERT="$IAM_PROXY_PKI_DIR/cert.pem"
-KEY="$IAM_PROXY_PKI_DIR/privkey.pem"
-GEN_SCRIPT="$IAM_PROXY_PKI_DIR/generate-dev-certs.sh"
-if [ -d "$IAM_PROXY_PKI_DIR" ] && [ -f "$GEN_SCRIPT" ]; then
+# === Auth Proxy Italia: genera cert.pem e privkey.pem in pki/ se non esistono ===
+AUTH_PROXY_PKI_DIR="/var/www/html/iam-proxy/iam-proxy-italia-project/pki"
+CERT="$AUTH_PROXY_PKI_DIR/cert.pem"
+KEY="$AUTH_PROXY_PKI_DIR/privkey.pem"
+GEN_SCRIPT="$AUTH_PROXY_PKI_DIR/generate-dev-certs.sh"
+if [ -d "$AUTH_PROXY_PKI_DIR" ] && [ -f "$GEN_SCRIPT" ]; then
   if [ ! -s "$CERT" ] || [ ! -s "$KEY" ]; then
-    echo "⚙️  Certificati SATOSA mancanti o vuoti: genero cert.pem e privkey.pem in $IAM_PROXY_PKI_DIR ..."
+    echo "⚙️  Certificati SATOSA mancanti o vuoti: genero cert.pem e privkey.pem in $AUTH_PROXY_PKI_DIR ..."
     bash "$GEN_SCRIPT"
   else
     echo "✅ Certificati SATOSA già presenti: nessuna azione."
@@ -180,6 +180,9 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
     mkdir -p /var/www/html/public/img
     chown www-data:www-data /var/www/html/public/img 2>/dev/null || true
     chmod 755 /var/www/html/public/img 2>/dev/null || true
+  mkdir -p /backups
+  chown www-data:www-data /backups 2>/dev/null || true
+  chmod 775 /backups 2>/dev/null || true
     mkdir -p /var/www/certificate
     chown www-data:www-data /var/www/certificate 2>/dev/null || true
     chmod 755 /var/www/certificate 2>/dev/null || true

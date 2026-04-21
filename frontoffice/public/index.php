@@ -432,7 +432,7 @@ if (!function_exists('frontoffice_detect_auth_provider_name')) {
     function frontoffice_detect_auth_provider_name($auth): string
     {
         if (!$auth || !method_exists($auth, 'getLastResponseXML')) {
-            return 'IAM Proxy';
+            return 'Auth Proxy';
         }
 
         $xml = (string)$auth->getLastResponseXML();
@@ -569,14 +569,14 @@ if (!function_exists('frontoffice_compose_profiles')) {
 
 if (!function_exists('frontoffice_spid_mode')) {
     /**
-     * @return 'none'|'external'|'internal'|'iam-proxy'
+     * @return 'none'|'external'|'internal'|'auth-proxy'
      */
     function frontoffice_spid_mode(): string
     {
         // Sorgente canonica: configurazione Frontoffice da UI.
         $frontofficeType = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
         if (in_array($frontofficeType, ['spid', 'cie', 'spid_cie'], true)) {
-            return 'iam-proxy';
+            return 'auth-proxy';
         }
         return 'none';
     }
@@ -591,12 +591,12 @@ if (!function_exists('frontoffice_spid_enabled')) {
 
 if (!function_exists('frontoffice_auth_proxy_type')) {
     /**
-     * @return 'php-proxy'|'iam-proxy-saml2'
+     * @return 'php-proxy'|'auth-proxy-saml2'
      */
     function frontoffice_auth_proxy_type(): string
     {
-        if (frontoffice_spid_mode() === 'iam-proxy') {
-            return 'iam-proxy-saml2';
+        if (frontoffice_spid_mode() === 'auth-proxy') {
+            return 'auth-proxy-saml2';
         }
         return 'php-proxy';
     }
@@ -605,17 +605,37 @@ if (!function_exists('frontoffice_auth_proxy_type')) {
 if (!function_exists('frontoffice_http_get_raw')) {
     function frontoffice_http_get_raw(string $url, bool $insecureSsl = false): ?string
     {
+        $hostHeader = '';
+        $urlHost = (string)(parse_url($url, PHP_URL_HOST) ?: '');
+        $sslOn = strtolower((string)frontoffice_env_value('SSL', 'off')) === 'on';
+        $desiredScheme = $sslOn ? 'https' : 'http';
+        if (in_array(strtolower($urlHost), ['auth-proxy-nginx', 'localhost', '127.0.0.1'], true)) {
+            $proxyBase = rtrim(frontoffice_env_value('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
+            $hostHeader = (string)(parse_url($proxyBase, PHP_URL_HOST) ?: '');
+
+            if (str_starts_with($url, 'http://') && $desiredScheme === 'https') {
+                $url = 'https://' . substr($url, 7);
+            } elseif (str_starts_with($url, 'https://') && $desiredScheme === 'http') {
+                $url = 'http://' . substr($url, 8);
+            }
+        }
+
+        $attempt = ['url' => $url, 'host' => $hostHeader];
+
         if (function_exists('curl_init')) {
-            $ch = curl_init($url);
+            $ch = curl_init($attempt['url']);
             if ($ch === false) {
-                Logger::getInstance()->warning('CURL init failed', ['url' => $url]);
+                Logger::getInstance()->warning('CURL init failed', ['url' => $attempt['url']]);
                 return null;
             }
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
             curl_setopt($ch, CURLOPT_TIMEOUT, 20);
-            if ($insecureSsl) {
+            if ($attempt['host'] !== '') {
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Host: ' . $attempt['host']]);
+            }
+            if ($insecureSsl || str_starts_with($attempt['url'], 'https://')) {
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
             }
@@ -623,16 +643,30 @@ if (!function_exists('frontoffice_http_get_raw')) {
             $body = curl_exec($ch);
             $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $err = curl_error($ch);
-            
-            Logger::getInstance()->info('HTTP GET request', ['url' => $url, 'status' => $status, 'error' => $err, 'insecureSSL' => $insecureSsl]);
-            
-            if (!is_string($body) || $body === '' || $status < 200 || $status >= 300) {
-                if ($err !== '') {
-                    Logger::getInstance()->warning('HTTP GET (raw) fallita', ['url' => $url, 'error' => $err, 'status' => $status]);
-                }
-                return null;
+
+            Logger::getInstance()->info('HTTP GET request', [
+                'url' => $attempt['url'],
+                'status' => $status,
+                'error' => $err,
+                'insecureSSL' => $insecureSsl,
+                'hostHeader' => $attempt['host'],
+                'mode' => $desiredScheme,
+            ]);
+
+            if (is_string($body) && $body !== '' && $status >= 200 && $status < 300) {
+                return $body;
             }
-            return $body;
+
+            if ($err !== '') {
+                Logger::getInstance()->warning('HTTP GET (raw) fallita', [
+                    'url' => $attempt['url'],
+                    'error' => $err,
+                    'status' => $status,
+                    'hostHeader' => $attempt['host'],
+                    'mode' => $desiredScheme,
+                ]);
+            }
+            return null;
         }
 
         $opts = [
@@ -642,15 +676,22 @@ if (!function_exists('frontoffice_http_get_raw')) {
                 'ignore_errors' => true,
             ],
         ];
-        if (stripos($url, 'https://') === 0) {
-            $opts['ssl' ] = [
-                'verify_peer' => !$insecureSsl,
-                'verify_peer_name' => !$insecureSsl,
+        $attemptOpts = $opts;
+        if ($attempt['host'] !== '') {
+            $attemptOpts['http']['header'] = "Host: {$attempt['host']}\r\n";
+        }
+        if (stripos($attempt['url'], 'https://') === 0) {
+            $attemptOpts['ssl' ] = [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
             ];
         }
-        $ctx = stream_context_create($opts);
-        $body = @file_get_contents($url, false, $ctx);
-        return is_string($body) && $body !== '' ? $body : null;
+        $ctx = stream_context_create($attemptOpts);
+        $body = @file_get_contents($attempt['url'], false, $ctx);
+        if (is_string($body) && $body !== '') {
+            return $body;
+        }
+        return null;
     }
 }
 
@@ -2482,9 +2523,9 @@ if (!function_exists('frontoffice_generate_checkout_link')) {
     }
 }
 
-$entityName = trim($env('APP_ENTITY_NAME', 'Comune di Montesilvano'));
-$entitySuffix = trim($env('APP_ENTITY_SUFFIX', 'Provincia di Pescara'));
-$entityGovernment = trim($env('APP_ENTITY_GOVERNMENT', 'Regione Abruzzo'));
+$entityName = trim($env('APP_ENTITY_NAME', 'Ente'));
+$entitySuffix = trim($env('APP_ENTITY_SUFFIX', 'Servizi ai cittadini'));
+$entityGovernment = trim($env('APP_ENTITY_GOVERNMENT', ''));
 $entityFull = trim($entityName . ($entitySuffix !== '' ? ' - ' . $entitySuffix : '')) ?: $entityGovernment;
 
 $documentRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? __DIR__), '/\\');
@@ -2522,7 +2563,9 @@ $faviconCandidates = [
     ['href' => '/img/favicon.ico', 'path' => $imgDir . '/favicon.ico', 'type' => 'image/x-icon'],
     ['href' => '/img/favicon.png', 'path' => $imgDir . '/favicon.png', 'type' => 'image/png'],
 ];
-$appFavicon = ['href' => '/img/favicon_default.png', 'type' => 'image/png'];
+$appFavicon = (($appLogo['type'] ?? '') === 'img' && !empty($appLogo['src']))
+    ? ['href' => $appLogo['src'], 'type' => 'image/png']
+    : ['href' => '/img/favicon_default.png', 'type' => 'image/png'];
 foreach ($faviconCandidates as $candidate) {
     if (file_exists($candidate['path'])) {
         $appFavicon = ['href' => $candidate['href'], 'type' => $candidate['type']];
@@ -2684,7 +2727,7 @@ $routes = [
             ];
         }
 
-        if (frontoffice_auth_proxy_type() === 'iam-proxy-saml2') {
+        if (frontoffice_auth_proxy_type() === 'auth-proxy-saml2') {
             $frontofficeBaseUrl = rtrim($env('FRONTOFFICE_PUBLIC_BASE_URL', ''), '/');
             $envValue = $env('FRONTOFFICE_PUBLIC_BASE_URL', '');
             $httpHost = (string)($_SERVER['HTTP_HOST'] ?? '');
@@ -2712,12 +2755,9 @@ $routes = [
             }
 
             $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-            if ($proxyBase === '') {
-                $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-            }
             // Preferisci l'URL interno (per il container frontoffice -> auth-proxy-nginx:443)
             // Fallback all'URL esterno (per il browser -> auth-proxy-nginx:9445)
-            $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
+            $metadataUrl = $env('AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
             if ($metadataUrl === '') {
                 $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
             }
@@ -2734,7 +2774,7 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Login IAM Proxy non configurato: imposta IAM_PROXY_PUBLIC_BASE_URL (o SPID_PROXY_PUBLIC_BASE_URL) e verifica IAM_PROXY_SAML2_IDP_METADATA_URL.',
+                        'message' => 'Login Auth Proxy non configurato: imposta IAM_PROXY_PUBLIC_BASE_URL (o SPID_PROXY_PUBLIC_BASE_URL) e verifica IAM_PROXY_SAML2_IDP_METADATA_URL.',
                     ],
                 ];
             }
@@ -2752,12 +2792,12 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Login IAM Proxy non disponibile: impossibile inizializzare SAML. Verifica metadata e dipendenze PHP-SAML.',
+                        'message' => 'Login Auth Proxy non disponibile: impossibile inizializzare SAML. Verifica metadata e dipendenze PHP-SAML.',
                     ],
                 ];
             }
 
-            // RelayState: usa disco page del proxy IAM
+            // RelayState: usa disco page del proxy Auth
             $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
             $discoUrl = $proxyBase ? ($proxyBase . '/static/disco.html') : '/static/disco.html';
 
@@ -2883,8 +2923,8 @@ $routes = [
             ];
         }
 
-        if (frontoffice_auth_proxy_type() === 'iam-proxy-saml2') {
-            file_put_contents('/tmp/spid_callback.log', date('Y-m-d H:i:s') . " - ENTERING iam-proxy-saml2 block\n", FILE_APPEND);
+        if (frontoffice_auth_proxy_type() === 'auth-proxy-saml2') {
+            file_put_contents('/tmp/spid_callback.log', date('Y-m-d H:i:s') . " - ENTERING auth-proxy-saml2 block\n", FILE_APPEND);
             // Get debug info from session (set in /login handler)
             $debugFromSession = $_SESSION['debug_spid_url_config'] ?? [];
             $debugFromSessionStr = $debugFromSession ? json_encode($debugFromSession) : 'no debug data';
@@ -2908,12 +2948,9 @@ $routes = [
             }
 
             $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-            if ($proxyBase === '') {
-                $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-            }
             // Preferisci l'URL interno (per il container frontoffice -> auth-proxy-nginx:443)
             // Fallback all'URL esterno (per il browser -> auth-proxy-nginx:9445)
-            $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
+            $metadataUrl = $env('AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
             if ($metadataUrl === '') {
                 $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
             }
@@ -2929,7 +2966,7 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Callback IAM Proxy non valida: SAML non inizializzabile (metadata o configurazione mancante).',
+                        'message' => 'Callback Auth Proxy non valida: SAML non inizializzabile (metadata o configurazione mancante).',
                         'debug_session_info' => $debugFromSessionStr,
                     ],
                 ];
@@ -2956,7 +2993,7 @@ $routes = [
                 return [
                     'template' => 'errors/503.html.twig',
                     'context' => [
-                        'message' => 'Login IAM Proxy fallito: ' . ($reason ?: 'risposta SAML non valida.') ,
+                        'message' => 'Login Auth Proxy fallito: ' . ($reason ?: 'risposta SAML non valida.') ,
                         'debug_spid_errors' => implode(', ', $errors),
                         'debug_spid_reason' => $reason,
                         'debug_session_info' => $debugFromSessionStr,
@@ -3161,10 +3198,7 @@ $routes = [
         }
 
         $proxyBase = rtrim($env('IAM_PROXY_PUBLIC_BASE_URL', ''), '/');
-        if ($proxyBase === '') {
-            $proxyBase = rtrim($env('SPID_PROXY_PUBLIC_BASE_URL', ''), '/');
-        }
-        $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
+        $metadataUrl = $env('AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL', '');
         if ($metadataUrl === '') {
             $metadataUrl = $env('IAM_PROXY_SAML2_IDP_METADATA_URL', '');
         }
@@ -5070,7 +5104,7 @@ $baseContext = [
     'support_email' => $supportEmail,
     'support_phone' => $env('APP_SUPPORT_PHONE', '800.000.000'),
     'support_hours' => $env('APP_SUPPORT_HOURS', 'Lun-Ven 9:00-18:00'),
-    'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Montesilvano (PE)'),
+    'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Roma (RM)'),
     'cart_count' => frontoffice_cart_count(),
     'cart_items_ids' => array_keys(frontoffice_cart_items()),
     'current_locale' => $currentLocale,

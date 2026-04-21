@@ -26,8 +26,23 @@
 
 <header class="wizard-header">
   <div class="container">
-    <div class="brand">
-      <i class="fa fa-cog me-2"></i>GovPay Interaction Layer — Configurazione guidata
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="brand">
+        <i class="fa fa-cog me-2"></i>GovPay Interaction Layer — Configurazione guidata
+      </div>
+      <div class="small opacity-75">
+        {% if app_version starts with 'v' %}
+          {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/' ~ app_version %}
+          {% set gh_label = app_version %}
+        {% else %}
+          {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/commit/' ~ app_commit %}
+          {% set gh_label = app_version ~ (app_commit != 'unknown' ? '@' ~ app_commit|slice(0, 7) : '') %}
+        {% endif %}
+        <a href="{{ gh_url }}" target="_blank" rel="noopener noreferrer"
+           class="text-white text-decoration-none" title="Vai al repository GitHub">
+          <i class="fab fa-github me-1"></i>{{ gh_label }}
+        </a>
+      </div>
     </div>
   </div>
 </header>
@@ -37,7 +52,18 @@
 </main>
 
 <footer class="text-center text-muted py-3 small">
-  GovPay Interaction Layer
+  GovPay Interaction Layer &mdash;
+  {% if app_version starts with 'v' %}
+    {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/' ~ app_version %}
+    {% set gh_label = app_version %}
+  {% else %}
+    {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/commit/' ~ app_commit %}
+    {% set gh_label = app_version ~ (app_commit != 'unknown' ? '@' ~ app_commit|slice(0, 7) : '') %}
+  {% endif %}
+  <a href="{{ gh_url }}" target="_blank" rel="noopener noreferrer"
+     class="text-muted text-decoration-none" title="Vai al repository GitHub">
+    <i class="fab fa-github me-1"></i>{{ gh_label }}
+  </a>
 </footer>
 
 <script src="/assets/bootstrap-italia/js/bootstrap-italia.bundle.min.js"></script>

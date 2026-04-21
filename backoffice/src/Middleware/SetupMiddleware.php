@@ -24,6 +24,7 @@ class SetupMiddleware implements MiddlewareInterface
     private const BYPASS_PATHS = [
         '/setup',
         '/setup/*',
+        '/api/*',
         '/assets/*',
         '/health',
         '/login',
@@ -49,12 +50,8 @@ class SetupMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        // Determina se è un upgrade (variabili .env ancora presenti) o installazione nuova
-        $isUpgrade = $this->hasLegacyEnv();
-        $mode = $isUpgrade ? 'upgrade' : 'fresh';
-
         $resp = new SlimResponse(302);
-        return $resp->withHeader('Location', '/setup?mode=' . $mode);
+        return $resp->withHeader('Location', '/setup');
     }
 
     private function matchPath(string $path, string $pattern): bool
@@ -66,19 +63,4 @@ class SetupMiddleware implements MiddlewareInterface
         return rtrim($path, '/') === rtrim($pattern, '/');
     }
 
-    /**
-     * True se le variabili d'ambiente del .env legacy sono ancora presenti.
-     * Indica un deployment esistente che deve fare upgrade, non una nuova installazione.
-     */
-    private function hasLegacyEnv(): bool
-    {
-        $legacyVars = ['DB_PASSWORD', 'GOVPAY_BACKOFFICE_URL', 'APP_ENTITY_NAME'];
-        foreach ($legacyVars as $var) {
-            $val = getenv($var);
-            if ($val !== false && $val !== '') {
-                return true;
-            }
-        }
-        return false;
-    }
 }

@@ -15,7 +15,10 @@ class SessionMiddleware implements MiddlewareInterface
     public function process(Request $request, RequestHandler $handler): Response
     {
         if (session_status() === PHP_SESSION_NONE) {
-            $secure = (($_SERVER['HTTPS'] ?? 'off') === 'on');
+            $https = strtolower((string)($_SERVER['HTTPS'] ?? 'off'));
+            $xfp = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+            $xfSsl = strtolower((string)($_SERVER['HTTP_X_FORWARDED_SSL'] ?? ''));
+            $secure = ($https === 'on' || $https === '1' || $xfp === 'https' || $xfSsl === 'on');
             session_set_cookie_params([
                 'lifetime' => 0,
                 'path' => '/',

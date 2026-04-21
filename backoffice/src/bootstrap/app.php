@@ -66,7 +66,9 @@ return (function (): array {
         ? ['href' => '/img/favicon.ico', 'type' => 'image/x-icon']
         : (file_exists($customFaviconPng)
             ? ['href' => '/img/favicon.png', 'type' => 'image/png']
-            : ['href' => '/img/favicon_default.png', 'type' => 'image/png']);
+            : ((($appLogo['type'] ?? '') === 'img' && !empty($appLogo['src']))
+                ? ['href' => $appLogo['src'], 'type' => 'image/png']
+                : ['href' => '/img/favicon_default.png', 'type' => 'image/png']));
 
     $twig->getEnvironment()->addGlobal('app_entity', [
         'name' => $entityName,
@@ -171,7 +173,7 @@ return (function (): array {
     });
 
     // Percorsi pubblici che non richiedono sessione (AuthMiddleware li salta).
-    // Aggiungiamo '/api/*' per permettere chiamate interne autenticata via Bearer (es. iam-proxy/startup.sh)
+    // Aggiungiamo '/api/*' per permettere chiamate interne autenticata via Bearer (es. auth-proxy/startup.sh)
     $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health', '/api/*'];
     $app->add(new AuthMiddleware($publicPaths));
     // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack

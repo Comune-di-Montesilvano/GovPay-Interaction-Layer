@@ -60,7 +60,7 @@ return function (App $app, Twig $twig): void {
     });
 
     // ── API interna: endpoint senza sessione (autenticati via Bearer token) ──────
-    $app->get('/api/iam-proxy/env', function (Request $request, Response $response) use ($twig): Response {
+    $app->get('/api/auth-proxy/env', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
     });
 
@@ -123,11 +123,23 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni/login-proxy/spid-certs/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getSpidCertInfo($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/cie-keys/info', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getCieKeyDetails($request, $response);
+    });
+    $app->get('/impostazioni/login-proxy/cie-keys/jwks', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getCieKeysAsJwks($request, $response);
+    });
+    $app->post('/impostazioni/login-proxy/backup/restore', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restoreBackupZip($request, $response);
+    });
     // SPID metadata
     $app->get('/impostazioni/login-proxy/spid-metadata/info', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getSpidMetadataInfo($request, $response);
     });
     $app->post('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
+    });
+    $app->get('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
     });
     $app->get('/impostazioni/login-proxy/spid-metadata/download', function (Request $request, Response $response) use ($twig): Response {
@@ -153,10 +165,19 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
+    });
     $app->post('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
     });
+    $app->get('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
+    });
     // Backup globale IAM proxy
+    $app->get('/impostazioni/login-proxy/status', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getAuthProxyStatus($request, $response);
+    });
     $app->get('/impostazioni/login-proxy/backup/status', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getBackupStatus($request, $response);
     });
@@ -585,16 +606,7 @@ return function (App $app, Twig $twig): void {
         return $controller->bulkSetTipologieIoService($request, $response);
     });
 
-    // Backup / Import configurazione dati GovPay
-    $app->post('/configurazione/backup/export', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->exportBackup($request, $response);
-    });
-
-    $app->post('/configurazione/backup/import', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->importBackup($request, $response);
-    });
-
-    // Backup di sistema (via Master Container)
+    // Backup di sistema (logica locale nel backoffice)
     $app->post('/backup/sistema/crea', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupCreate($request, $response);
     });
@@ -605,6 +617,10 @@ return function (App $app, Twig $twig): void {
 
     $app->get('/backup/sistema/download', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupDownload($request, $response);
+    });
+
+    $app->post('/backup/sistema/elimina', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupDelete($request, $response);
     });
 
     $app->post('/backup/sistema/ripristina', function ($request, $response) use ($twig) {
@@ -824,6 +840,7 @@ return function (App $app, Twig $twig): void {
     }
 
     // Error handling personalizzato per 404
+    $appDebugRaw = getenv('APP_DEBUG');
     $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true'
         || ($appDebugRaw !== false && in_array(strtolower((string)$appDebugRaw), ['1','true','yes','on'], true));
     $errorMiddleware = $app->addErrorMiddleware($displayErrorDetails, true, true);
@@ -1001,7 +1018,4 @@ return function (App $app, Twig $twig): void {
         return $controller->fetchBizEvent($request, $response);
     });
 
-    $app->post('/backup/sistema/carica-ripristina', function (Request $request, Response $response) use ($twig): Response {
-        return (new \App\Controllers\BackupController($twig))->systemBackupUploadRestore($request, $response);
-    });
 };
