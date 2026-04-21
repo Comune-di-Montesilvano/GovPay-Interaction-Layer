@@ -24,25 +24,22 @@ scripts/
 
 ## Prima installazione
 
-**Prerequisiti**: Docker Desktop attivo, file `.auth-proxy.env` configurato.
-Tutte le variabili `SPID_CERT_*`, `SATOSA_*`, `CIE_OIDC_*` sono in `.auth-proxy.env`
-(copia `.auth-proxy.env.example` e compila i valori). Il file `.env` contiene le
-variabili generali dell'applicazione.
+**Prerequisiti**: Docker Desktop attivo, file `.env` configurato.
+Tutte le variabili operative SPID/CIE (dati ente, URL proxy, segreti SATOSA, ecc.)
+si impostano via **Backoffice → Impostazioni → Login Proxy** dopo il primo avvio.
 
 ```bash
-# 1. Configura i file di ambiente
+# 1. Configura le variabili di bootstrap
 cp .env.example .env
-cp .auth-proxy.env.example .auth-proxy.env
-# Edita .auth-proxy.env:
-#   SPID_CERT_COMMON_NAME, SPID_CERT_ORG_NAME, SPID_CERT_ORG_ID,
-#   SATOSA_ORGANIZATION_*, SATOSA_CONTACT_PERSON_*, CIE_OIDC_*,
-#   IAM_PROXY_PUBLIC_BASE_URL
+# Edita .env: DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD, FRONTOFFICE_DB_PASSWORD,
+#             APP_ENCRYPTION_KEY (32 char), MASTER_TOKEN, MONGODB_*
 
 # 2. Genera certificati SPID + chiavi JWK CIE OIDC
 docker compose run --rm metadata-builder setup
 
-# 3. Avvia i container
-docker compose --profile auth-proxy up -d
+# 3. Avvia i container e configura SPID/CIE dal backoffice
+docker compose up -d
+# Apri Backoffice → Impostazioni → Login Proxy e completa la procedura guidata
 
 # 4. Esporta il metadata pubblico per AgID
 docker compose run --rm metadata-builder export-agid
@@ -120,15 +117,15 @@ Quando scade entro 7 giorni, `auth-proxy` registra un WARNING nei log.
 Per generare in anticipo un nuovo metadata senza toccare quello attivo:
 
 ```bash
-docker exec govpay-interaction-frontoffice bash /scripts/ensure-sp-metadata.sh --new
+docker exec gil-frontoffice bash /scripts/ensure-sp-metadata.sh --new
 ```
 
 Genera un file `frontoffice_sp-new-{timestamp}.xml` nel volume `frontoffice_sp_metadata`.
 La federazione rimane attiva. Per attivarlo:
 
 ```bash
-docker exec govpay-interaction-frontoffice bash /scripts/ensure-sp-metadata.sh --force
-docker compose --profile auth-proxy restart auth-proxy
+docker exec gil-frontoffice bash /scripts/ensure-sp-metadata.sh --force
+docker compose restart auth-proxy
 ```
 
 ### Rinnovo certificati SPID (alla scadenza)
@@ -163,7 +160,7 @@ rigenerare le chiavi rompe la federazione finché l'Entity Statement non è scad
 docker compose run --rm metadata-builder export-cieoidc
 ```
 
-Richiede che il profilo `auth-proxy` sia avviato. Curla gli endpoint interni di `auth-proxy-nginx`.
+Richiede che il container `auth-proxy` sia avviato. Curla gli endpoint interni di `auth-proxy-nginx`.
 
 Output generato in `metadata/cieoidc/`:
 
@@ -204,7 +201,7 @@ Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazion
    Tutte le chiamate (eccetto forse POST a `trust_mark_status`) dovrebbero restituire HTTP 200.
 
 2. **Scelta dell'ambiente (Collaudo o Produzione)**:
-   Modifica nel file `.auth-proxy.env` gli endpoint puntando a **Collaudo** (`preproduzione.oidc.*`) in fase di test, o a **Produzione** per la messa in onda definitiva. Dopo un cambio, riavvia il container `auth-proxy`.
+   Modifica l'ambiente in **Backoffice → Impostazioni → Login Proxy → Configurazione CIE OIDC → Ambiente** (Produzione o Pre-produzione). Dopo il salvataggio, `auth-proxy` si riavvia automaticamente entro pochi secondi.
 
 3. **Registrazione Portale Federazione**:
    Recati sul portale CIE per gli sviluppatori ed effettua l'onboarding. Ti sarà richiesto di fornire l'URL del tuo *Client ID* (la rotta root configurata in `CIE_OIDC_CLIENT_ID` senza slash finale).
@@ -220,32 +217,18 @@ Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazion
 - Metadata interno Frontoffice SP — gestito automaticamente nel volume Docker `frontoffice_sp_metadata` (auto-rinnovato ogni 6h), non esposto né gestito dalla UI.
 - Certificati SPID — nel volume Docker `govpay_spid_certs` (o nel volume indicato da `SPID_CERTS_DOCKER_VOLUME`).
 
-## Variabili rilevanti in `.auth-proxy.env`
+## Variabili rilevanti
 
-| Variabile | Descrizione |
+Le variabili operative (dati ente, URL proxy, dati SPID/CIE, segreti SATOSA) si configurano
+via **Backoffice → Impostazioni → Login Proxy** e vengono salvate nel database.
+
+Le uniche variabili infrastrutturali gestite in `.env` riguardanti i metadata sono:
+
+| Variabile in `.env` | Descrizione |
 |---|---|
-| `IAM_PROXY_PUBLIC_BASE_URL` | URL pubblico del proxy (usato come base per CIE_OIDC_CLIENT_ID) |
-| `SPID_CERT_COMMON_NAME` | Common Name del certificato SPID |
-| `SPID_CERT_DAYS` | Durata del certificato in giorni |
-| `SPID_CERT_ENTITY_ID` | EntityID da incidere nel cert (default: `$FRONTOFFICE_PUBLIC_BASE_URL/saml/sp`) |
-| `SPID_CERT_KEY_SIZE` | Dimensione chiave RSA (2048/3072/4096, default 3072) |
-| `SPID_CERT_LOCALITY_NAME` | Comune per il certificato |
-| `SPID_CERT_ORG_ID` | Organization Identifier (`PA:IT-<codice_IPA>`) |
-| `SPID_CERT_ORG_NAME` | Organization Name |
-| `SPID_CERTS_DOCKER_VOLUME` | Nome del volume Docker per i certificati (default: `govpay_spid_certs`) |
-| `SATOSA_ORGANIZATION_*` | Nome e URL dell'organizzazione nel metadata SATOSA |
-| `SATOSA_CONTACT_PERSON_*` | Dati del contatto tecnico nel metadata |
-| `CIE_OIDC_CLIENT_ID` | Client ID per la federazione CIE OIDC |
-| `CIE_OIDC_CLIENT_NAME` | Nome del Relying Party CIE OIDC |
-| `FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS` | Durata validità metadata (default 365) |
-
-In `.env`:
-
-| Variabile | Descrizione |
-|---|---|
-| `FRONTOFFICE_PUBLIC_BASE_URL` | URL pubblico del Frontoffice (usato come fallback in setup-sp.sh) |
-| `APP_ENTITY_NAME` | Nome dell'ente (usato come fallback per SPID_CERT_COMMON_NAME) |
-| `APP_ENTITY_IPA_CODE` | Codice IPA (usato come fallback per SPID_CERT_ORG_ID) |
+| `SPID_CERTS_DOCKER_VOLUME` | Nome volume Docker certificati SPID (default: `govpay_spid_certs`) |
+| `FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS` | Durata validità metadata SP (default: 730) |
+| `FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS` | Intervallo rinnovo automatico SP metadata (default: 21600) |
 
 ## Note
 
