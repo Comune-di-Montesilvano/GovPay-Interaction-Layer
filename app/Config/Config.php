@@ -152,4 +152,24 @@ class Config
     {
         return self::ENV_TO_SETTINGS[$envKey] ?? null;
     }
+
+    /**
+     * Recupera la versione applicativa leggendo il file VERSION nella root del progetto.
+     * Fallback su GIL_IMAGE_TAG se non presente (es. avvio senza build/volume).
+     */
+    public static function getVersion(): string
+    {
+        $candidates = [
+            dirname(__DIR__, 2) . '/VERSION',
+            '/var/www/html/VERSION',
+        ];
+
+        foreach ($candidates as $f) {
+            if (file_exists($f)) {
+                return trim((string) file_get_contents($f));
+            }
+        }
+
+        return (string)(getenv('GIL_IMAGE_TAG') ?: 'dev');
+    }
 }

@@ -76,7 +76,7 @@ class ImpostazioniController
         // Tab Info GIL: stato container e info sistema
         if ($tab === 'info-gil') {
             $gilInfo = [
-                'version' => getenv('GIL_IMAGE_TAG') ?: 'dev',
+                'version' => \App\Config\Config::getVersion(),
                 'php'     => phpversion(),
                 'os'      => php_uname('s') . ' ' . php_uname('r'),
             ];
@@ -653,6 +653,11 @@ class ImpostazioniController
             $env['CIE_OIDC_LOGO_URI'] = ($satosaBase !== '' && !str_starts_with($proxyLogoSrc, 'http'))
                 ? $satosaBase . $proxyLogoSrc
                 : $proxyLogoSrc;
+        }
+        // Compatibilità con installazioni restore: se logo globale assente ma SATOSA_UI_LOGO_URL
+        // è già valorizzato in iam_proxy, usalo anche per la discovery page.
+        if (empty($env['APP_LOGO_SRC']) && !empty($env['SATOSA_UI_LOGO_URL'])) {
+            $env['APP_LOGO_SRC'] = (string)$env['SATOSA_UI_LOGO_URL'];
         }
         if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
             $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');

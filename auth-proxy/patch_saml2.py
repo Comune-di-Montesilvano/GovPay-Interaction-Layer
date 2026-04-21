@@ -27,6 +27,7 @@ Fix: se SATOSA_CANCEL_REDIRECT_URL (priorità) o SATOSA_UNKNOW_ERROR_REDIRECT_PA
 import sys
 import glob
 import os
+import re
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Patch 3: CieOidcRp authorization_endpoint — Redirect → JS window.location
@@ -199,9 +200,30 @@ else:
         "            self.trust_chain = {}\n"
     )
 
+    _MALFORMED4 = (
+        "        try:\n"
+        "        self.trust_chain = self._generate_trust_chains()\n"
+    )
+
     if _OLD4 not in _cie_content:
         if "trust chain fetch fallita al boot" in _cie_content:
             print("[patch_cieoidc_init] Already patched, nothing to do.")
+        elif _MALFORMED4 in _cie_content:
+            _cie_content = _cie_content.replace(_MALFORMED4, _NEW4, 1)
+            with open(_CIEOIDC_PATH, "w") as _f:
+                _f.write(_cie_content)
+            print("[patch_cieoidc_init] Repaired malformed try-block indentation.")
+        elif re.search(r"^\s*try:\n\s*self\.trust_chain = self\._generate_trust_chains\(\)", _cie_content, flags=re.MULTILINE):
+            _cie_content = re.sub(
+                r"^(\s*)try:\n\s*self\.trust_chain = self\._generate_trust_chains\(\)",
+                _NEW4.rstrip("\n"),
+                _cie_content,
+                count=1,
+                flags=re.MULTILINE,
+            ) + ("\n" if not _cie_content.endswith("\n") else "")
+            with open(_CIEOIDC_PATH, "w") as _f:
+                _f.write(_cie_content)
+            print("[patch_cieoidc_init] Repaired malformed trust_chain block via regex.")
         else:
             print("[patch_cieoidc_init] WARNING: expected pattern not found -- skipping patch 4.")
     else:
