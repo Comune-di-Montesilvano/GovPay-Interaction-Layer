@@ -103,20 +103,6 @@ if [ "$SSL_ON" = "on" ] && [ -z "${SKIP_SELF_SIGNED:-}" ] && ( [ ! -s /ssl/serve
   echo "✅ Certificati self-signed creati.";
 fi
 
-# === Auth Proxy Italia: genera cert.pem e privkey.pem in pki/ se non esistono ===
-AUTH_PROXY_PKI_DIR="/var/www/html/iam-proxy/iam-proxy-italia-project/pki"
-CERT="$AUTH_PROXY_PKI_DIR/cert.pem"
-KEY="$AUTH_PROXY_PKI_DIR/privkey.pem"
-GEN_SCRIPT="$AUTH_PROXY_PKI_DIR/generate-dev-certs.sh"
-if [ -d "$AUTH_PROXY_PKI_DIR" ] && [ -f "$GEN_SCRIPT" ]; then
-  if [ ! -s "$CERT" ] || [ ! -s "$KEY" ]; then
-    echo "⚙️  Certificati SATOSA mancanti o vuoti: genero cert.pem e privkey.pem in $AUTH_PROXY_PKI_DIR ..."
-    bash "$GEN_SCRIPT"
-  else
-    echo "✅ Certificati SATOSA già presenti: nessuna azione."
-  fi
-fi
-
 # === 1. SCENARIO AGGIORNAMENTO/RIGENERAZIONE LOCK ===
 # Se il file lock NON esiste E la cartella vendor ESISTE,
 # l'utente ha ELIMINATO il lock per forzare un aggiornamento.
