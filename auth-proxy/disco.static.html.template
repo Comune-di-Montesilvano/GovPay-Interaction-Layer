@@ -141,11 +141,9 @@
       <div class="d-flex align-items-center">
         <script>
           (function(){
-            var src = "${APP_LOGO_SRC}";
+            var src = "${APP_LOGO_SRC}" || "${SATOSA_UI_LOGO_URL}";
             if(src && src !== "") {
               document.write('<img src="' + src + '" alt="${APP_ENTITY_NAME}" style="height:48px; margin-right:12px;" onerror="this.style.display=\'none\'">');
-            } else {
-              document.write('<img src="/static/svg/it-pa.svg" alt="Logo PA" style="height:48px; margin-right:12px;">');
             }
           })();
         </script>
