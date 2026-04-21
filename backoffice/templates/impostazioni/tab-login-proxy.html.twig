@@ -349,10 +349,9 @@
         </div>
         <div class="card-body" id="cie-keys-info-body">
           <p class="text-muted small mb-2">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
-          <div class="alert alert-warning py-2 px-3 small mb-0">
-            <strong>Attenzione:</strong> questo JSON contiene <code>jwks.keys</code> completi dal file locale
-            (puo includere componenti private come <code>d</code>, <code>p</code>, <code>q</code>). Trattalo come dato sensibile.
-            Non va incollato nel portale di <strong>Federazione CIE</strong> (li serve Entity Configuration con campo <code>sub</code>).
+          <div class="alert alert-info py-2 px-3 small mb-0">
+            <strong>Formato copia:</strong> <code>{"keys":[...]}</code> completo (inclusi eventuali campi privati).
+            Questo e il formato richiesto per Federazione CIE nel tuo flusso operativo.
           </div>
         </div>
         <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -362,7 +361,7 @@
           {% if is_superadmin %}
           <div class="d-flex gap-2 flex-wrap">
             <button class="btn btn-sm btn-outline-info" type="button" onclick="copyCieKeysJwks(this)">
-              <i class="fas fa-copy me-1"></i>Copia JSON JWKS completo
+              <i class="fas fa-copy me-1"></i>Copia JSON Federazione CIE
             </button>
             <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
               <i class="fas fa-key me-1"></i>Genera
@@ -390,9 +389,6 @@
         </div>
         {% if is_superadmin %}
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-primary" type="button" onclick="copyCieEntityConfiguration(this)">
-            <i class="fas fa-copy me-1"></i>Copia JSON Federazione CIE
-          </button>
           <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
             <i class="fas fa-sync-alt me-1"></i>Rigenera artefatti CIE
           </button>
@@ -1435,31 +1431,6 @@ async function copyCieKeysJwks(btn) {
     impToast('JSON JWKS copiato negli appunti.', true);
   } catch (e) {
     impToast('Errore: ' + e.message, false);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
-  }
-}
-
-// ── Copia Entity Configuration CIE OIDC (per Federazione CIE) ───────────────
-async function copyCieEntityConfiguration(btn) {
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
-  try {
-    const res = await fetch('/impostazioni/login-proxy/cie-metadata/download');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const json = JSON.parse(text);
-
-    if (!json || typeof json !== 'object' || !json.sub) {
-      throw new Error('Entity Configuration non valida: campo sub mancante');
-    }
-
-    await navigator.clipboard.writeText(JSON.stringify(json, null, 4));
-    impToast('Entity Configuration CIE copiata. Usala nel portale Federazione CIE.', true);
-  } catch (e) {
-    impToast('Errore copia Entity Configuration: ' + e.message, false);
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
