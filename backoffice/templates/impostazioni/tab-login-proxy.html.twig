@@ -82,6 +82,7 @@
               <div class="d-flex gap-4 flex-wrap mt-3">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
+                    onclick="if(this.checked){var el=document.getElementById('spid-validator');if(el){el.checked=false;}}"
                     {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
                   <label class="form-check-label" for="demo-spid">
                     Demo SPID IdP
@@ -90,6 +91,7 @@
                 </div>
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
+                    onclick="if(this.checked){var el=document.getElementById('demo-spid');if(el){el.checked=false;}}"
                     {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
                   <label class="form-check-label" for="spid-validator">
                     SPID Validator (AgID)
@@ -1176,8 +1178,20 @@ async function restoreMetadata(type, fileInputId, btn) {
   const demoSpidEl = document.getElementById('demo-spid');
   const validatorEl = document.getElementById('spid-validator');
   if (demoSpidEl && validatorEl) {
-    demoSpidEl.addEventListener('change', () => { if (demoSpidEl.checked) validatorEl.checked = false; });
-    validatorEl.addEventListener('change', () => { if (validatorEl.checked) demoSpidEl.checked = false; });
+    const enforceSpidExclusivity = (source) => {
+      if (!demoSpidEl.checked || !validatorEl.checked) return;
+      if (source === 'validator') {
+        demoSpidEl.checked = false;
+      } else {
+        validatorEl.checked = false;
+      }
+    };
+
+    // Normalizza eventuale stato iniziale incoerente (entrambi true dal DB).
+    enforceSpidExclusivity('demo');
+
+    demoSpidEl.addEventListener('change', () => enforceSpidExclusivity('demo'));
+    validatorEl.addEventListener('change', () => enforceSpidExclusivity('validator'));
   }
 
   // Auto-carica info card alla prima apertura degli accordion SPID/CIE

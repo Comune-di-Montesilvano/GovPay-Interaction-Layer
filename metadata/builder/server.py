@@ -151,5 +151,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"[server] metadata-builder server in ascolto su :{PORT}", flush=True)
-    httpd = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+    # Threading server: evita che una richiesta lunga blocchi /health e altre chiamate.
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     httpd.serve_forever()
