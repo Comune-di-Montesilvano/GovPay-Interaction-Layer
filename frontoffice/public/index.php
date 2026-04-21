@@ -5108,19 +5108,7 @@ $baseContext = [
     'cart_count' => frontoffice_cart_count(),
     'cart_items_ids' => array_keys(frontoffice_cart_items()),
     'current_locale' => $currentLocale,
-    'app_version' => (function () {
-        $candidates = [
-            dirname(__DIR__, 2) . '/VERSION',
-            dirname(__DIR__, 3) . '/VERSION',
-            '/var/www/html/VERSION',
-        ];
-        foreach ($candidates as $f) {
-            if (file_exists($f)) {
-                return trim((string) file_get_contents($f));
-            }
-        }
-        return 'dev';
-    })(),
+    'app_version' => \App\Config\Config::getVersion(),
 ];
 
 $context = array_merge(
