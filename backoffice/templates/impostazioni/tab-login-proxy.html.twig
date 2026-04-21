@@ -348,7 +348,11 @@
           <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
         </div>
         <div class="card-body" id="cie-keys-info-body">
-          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
+          <p class="text-muted small mb-2">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
+          <div class="alert alert-warning py-2 px-3 small mb-0">
+            <strong>Attenzione:</strong> questo JSON contiene solo <code>jwks.keys</code>.
+            Non va incollato nel portale di <strong>Federazione CIE</strong> (l\u00ec serve Entity Configuration con campo <code>sub</code>).
+          </div>
         </div>
         <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
@@ -357,7 +361,7 @@
           {% if is_superadmin %}
           <div class="d-flex gap-2 flex-wrap">
             <button class="btn btn-sm btn-outline-info" type="button" onclick="copyCieKeysJwks(this)">
-              <i class="fas fa-copy me-1"></i>Copia JSON
+              <i class="fas fa-copy me-1"></i>Copia JSON JWKS (chiavi)
             </button>
             <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
               <i class="fas fa-key me-1"></i>Genera
@@ -371,16 +375,23 @@
       style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Metadata SP CIE OIDC</h6>
+          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Federazione CIE: Entity Configuration</h6>
           <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
             <i class="fas fa-sync-alt"></i>
           </button>
         </div>
         <div class="card-body" id="cie-metadata-body">
-          <p class="text-muted small mb-0">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+          <p class="text-muted small mb-2">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+          <div class="alert alert-info py-2 px-3 small mb-0">
+            Questo \u00e8 il JSON da usare nel portale di <strong>Federazione CIE</strong>.
+            Deve contenere <code>sub</code>, <code>iss</code>, <code>metadata</code> e <code>jwks</code>.
+          </div>
         </div>
         {% if is_superadmin %}
         <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
+          <button class="btn btn-sm btn-primary" type="button" onclick="copyCieEntityConfiguration(this)">
+            <i class="fas fa-copy me-1"></i>Copia JSON Federazione CIE
+          </button>
           <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
             <i class="fas fa-sync-alt me-1"></i>Rigenera artefatti CIE
           </button>
@@ -1423,6 +1434,31 @@ async function copyCieKeysJwks(btn) {
     impToast('JSON JWKS copiato negli appunti.', true);
   } catch (e) {
     impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+// ── Copia Entity Configuration CIE OIDC (per Federazione CIE) ───────────────
+async function copyCieEntityConfiguration(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/cie-metadata/download');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const json = JSON.parse(text);
+
+    if (!json || typeof json !== 'object' || !json.sub) {
+      throw new Error('Entity Configuration non valida: campo sub mancante');
+    }
+
+    await navigator.clipboard.writeText(JSON.stringify(json, null, 4));
+    impToast('Entity Configuration CIE copiata. Usala nel portale Federazione CIE.', true);
+  } catch (e) {
+    impToast('Errore copia Entity Configuration: ' + e.message, false);
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
