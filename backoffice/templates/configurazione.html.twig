@@ -8,6 +8,7 @@
   .imp-nav .nav-link.active { border-left-color: var(--bs-primary); background: rgba(var(--bs-primary-rgb), .06); }
   .imp-nav .nav-link:hover:not(.active) { background: rgba(0,0,0,.04); }
   .imp-section-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; font-weight: 600; padding: .5rem 1rem .25rem; }
+  .alert.py-2 { background-size: 18px 18px; background-position: 10px center; padding-left: 2.2rem; }
 </style>
 {% endblock %}
 
@@ -22,7 +23,7 @@
 
   {% if config_readonly %}
     <div class="alert alert-info py-2 mb-3" role="alert">
-      <i class="fas fa-info-circle me-2"></i>Sei autenticato come <strong>admin</strong>: le sezioni di configurazione sono in sola lettura. La scheda <strong>Utenti</strong> resta pienamente operativa.
+      Sei autenticato come <strong>admin</strong>: le sezioni di configurazione sono in sola lettura. La scheda <strong>Utenti</strong> resta pienamente operativa.
     </div>
   {% endif %}
 
@@ -1679,12 +1680,9 @@
               <h3 class="h6 mb-0"><i class="fas fa-file-import me-2"></i>Importa configurazione</h3>
             </div>
             <div class="card-body">
-              <div class="alert alert-warning d-flex gap-2 align-items-start py-2 small mb-3" role="alert">
-                <i class="fas fa-exclamation-triangle mt-1 flex-shrink-0"></i>
-                <span>
-                  <strong>Attenzione:</strong> i dati delle sezioni selezionate verranno <strong>sostituiti</strong> con quelli del file.
-                  Questa operazione non è reversibile. Assicurati di aver esportato un backup aggiornato prima di procedere.
-                </span>
+              <div class="alert alert-warning py-2 small mb-3" role="alert">
+                <strong>Attenzione:</strong> i dati delle sezioni selezionate verranno <strong>sostituiti</strong> con quelli del file.
+                Questa operazione non è reversibile. Assicurati di aver esportato un backup aggiornato prima di procedere.
               </div>
               <form method="post" action="/configurazione/backup/import" enctype="multipart/form-data">
                 <div class="mb-3">

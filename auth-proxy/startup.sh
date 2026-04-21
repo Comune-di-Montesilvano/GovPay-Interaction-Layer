@@ -221,7 +221,50 @@ setup_satosa() {
     # Registra hash del cert per rilevare rinnovi durante il watchdog
     _PKI_CERT_HASH="$(md5sum "$_pki_cert" 2>/dev/null | awk '{print $1}' || echo '')"
   else
-    echo "[startup] SPID disabilitato — verifica PKI saltata"
+    # SPID disabilitato — saml2_frontend.yaml (immagine upstream) richiede comunque
+    # ./pki/privkey.pem a prescindere dalle feature flag. Se i cert non esistono, ne
+    # generiamo uno auto-firmato minimale nel volume (solo per uso interno SATOSA).
+    local _pki_dir
+    _pki_dir="$(dirname "$_pki_key")"
+    if [ ! -f "$_pki_key" ] || [ ! -f "$_pki_cert" ]; then
+      echo "[startup] SPID disabilitato — generazione cert auto-firmato per SATOSA frontend..."
+      mkdir -p "$_pki_dir"
+      python3 - "$_pki_key" "$_pki_cert" <<'PY'
+import sys, datetime
+from pathlib import Path
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+key_path  = Path(sys.argv[1])
+cert_path = Path(sys.argv[2])
+
+key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "satosa-internal")])
+now  = datetime.datetime.now(datetime.timezone.utc)
+cert = (
+    x509.CertificateBuilder()
+    .subject_name(name).issuer_name(name)
+    .public_key(key.public_key())
+    .serial_number(x509.random_serial_number())
+    .not_valid_before(now)
+    .not_valid_after(now + datetime.timedelta(days=3650))
+    .sign(key, hashes.SHA256())
+)
+key_path.write_bytes(key.private_bytes(
+    serialization.Encoding.PEM,
+    serialization.PrivateFormat.TraditionalOpenSSL,
+    serialization.NoEncryption(),
+))
+cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+print(f"[startup] Cert auto-firmato generato: {cert_path}")
+PY
+    else
+      echo "[startup] SPID disabilitato — cert SATOSA presenti, nessuna generazione necessaria"
+    fi
+    chmod 755 "$SATOSA_PROXY" "$_pki_dir" 2>/dev/null || true
+    chmod 644 "$_pki_key" "$_pki_cert" 2>/dev/null || true
   fi
 
 # Versione dell'immagine (se non passata, usa unknown)
@@ -406,6 +449,7 @@ if [ -f "$PROXY_CONF" ]; then
   if ! is_true "${ENABLE_SPID:-false}"; then
     sed -i 's|^  - "conf/backends/spidsaml2_backend.yaml"|  # - "conf/backends/spidsaml2_backend.yaml"  # Disabled (set ENABLE_SPID=true)|' "$PROXY_CONF"
     sed -i 's|^  - "conf/backends/ciesaml2_backend.yaml"|  # - "conf/backends/ciesaml2_backend.yaml"  # Disabled (ENABLE_SPID=false)|' "$PROXY_CONF"
+    sed -i 's|^  - "conf/backends/saml2_backend.yaml"|  # - "conf/backends/saml2_backend.yaml"  # Disabled (ENABLE_SPID=false)|' "$PROXY_CONF"
   fi
   is_true "${SATOSA_DISABLE_PYEUDIW_BACKEND:-}" && \
     sed -i 's|^  - "conf/backends/pyeudiw_backend.yaml"|  # - "conf/backends/pyeudiw_backend.yaml"  # Disabled by SATOSA_DISABLE_PYEUDIW_BACKEND|' "$PROXY_CONF" || true
