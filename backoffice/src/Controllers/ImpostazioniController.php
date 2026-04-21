@@ -989,22 +989,20 @@ class ImpostazioniController
             return $this->jsonResponse(['data' => ['keys' => []]]);
         }
 
-        // Estrai la chiave (da array "keys" o come oggetto singolo)
-        $keyData = isset($jwk['keys']) ? ($jwk['keys'][0] ?? null) : $jwk;
-        if (!is_array($keyData)) {
+        // Restituisce il JSON JWK completo dal file sorgente.
+        // Se il file contiene una JWK singola, viene normalizzata in JWKS {keys:[...]}
+        if (isset($jwk['keys']) && is_array($jwk['keys'])) {
+            $keys = array_values(array_filter($jwk['keys'], 'is_array'));
+        } else {
+            $keys = [ $jwk ];
+        }
+
+        if (count($keys) === 0) {
             return $this->jsonResponse(['data' => ['keys' => []]]);
         }
 
-        // Costruisci la chiave pubblica: includi solo componenti pubblici
-        $publicKey = [];
-        foreach (['kty', 'kid', 'use', 'alg', 'e', 'n', 'crv', 'x', 'y'] as $field) {
-            if (isset($keyData[$field])) {
-                $publicKey[$field] = $keyData[$field];
-            }
-        }
-
         return $this->jsonResponse([
-            'data' => ['keys' => [$publicKey]],
+            'data' => ['keys' => $keys],
         ]);
     }
 
