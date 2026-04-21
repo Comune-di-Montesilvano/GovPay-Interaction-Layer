@@ -11,6 +11,9 @@
   .form-save-bar { display: none; position: sticky; bottom: 0; background: rgba(255,255,255,.95); backdrop-filter: blur(4px); border-top: 1px solid #dee2e6; padding: .75rem 1rem; z-index: 10; }
   .form-save-bar.visible { display: flex; }
   .master-status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  /* Normalizza icone automatiche Bootstrap Italia negli alert */
+  .alert::before { font-size: 1rem !important; }
+  .alert svg { width: 1rem !important; height: 1rem !important; flex-shrink: 0; }
 </style>
 {% endblock %}
 
@@ -22,7 +25,7 @@
 
 {% if not is_superadmin %}
   <div class="alert alert-info py-2 mb-3" role="alert">
-    <i class="fas fa-info-circle me-2"></i>Sei autenticato come <strong>admin</strong>: le impostazioni sono in sola lettura. Per apportare modifiche è necessario un superadmin.
+    Sei autenticato come <strong>admin</strong>: le impostazioni sono in sola lettura. Per apportare modifiche è necessario un superadmin.
   </div>
 {% endif %}
 

@@ -17,7 +17,6 @@
     {# ─── Configurazione e Gestione Identity Provider ─────────────────────── #}
     {% if is_superadmin %}
     <div class="alert alert-info py-2 small mb-3">
-      <i class="fas fa-info-circle me-1"></i>
       <strong>Attenzione:</strong> Salva sempre la configurazione prima di gestire certificati ed esportare metadata.
     </div>
     {% endif %}
@@ -110,7 +109,6 @@
               </div>
               {% if iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' or iam_proxy.satosa_use_spid_validator|default('false') == 'true' %}
               <div class="alert alert-warning py-2 small mt-3 mb-0">
-                <i class="fas fa-exclamation-triangle me-1"></i>
                 <strong>Attenzione:</strong> Demo SPID e/o SPID Validator sono attivi — questo non è un ambiente di produzione.
               </div>
               {% endif %}
@@ -141,7 +139,6 @@
               <i class="fas fa-link me-1"></i>URL metadata SATOSA
             </h6>
             <div class="alert alert-info py-2 small mb-3">
-              <i class="fas fa-info-circle me-1"></i>
               Questi URL puntano ai <strong>metadata SAML2 del proxy SATOSA stesso</strong>
               (non al registro nazionale SPID). Il riallineamento del canale interno avviene automaticamente:
               in UI viene esposto solo l'endpoint pubblico calcolato dall'URL del proxy.
@@ -404,7 +401,6 @@
         <div id="lp-satosa" class="accordion-collapse collapse" data-bs-parent="#acc-lp">
           <div class="accordion-body">
             <div class="alert alert-info py-2 small mb-3">
-              <i class="fas fa-info-circle me-1"></i>
               Valori usati nel metadata SP e nei campi di contatto SATOSA.
               I campi pre-compilati sono derivati dai <a href="/impostazioni?tab=generale">Dati ente</a>.
             </div>
@@ -512,7 +508,6 @@
                 <i class="fas fa-caret-right me-1"></i>UI IDP — testi e logo pagina di login (avanzati)
               </summary>
               <div class="alert alert-info py-2 small mt-2 mb-0">
-                <i class="fas fa-info-circle me-1"></i>
                 Testi e URL mostrati nella schermata di scelta IdP (disco.html) e nei metadata SAML2.
                 Se lasciati vuoti vengono usate stringhe vuote (SATOSA accetta ma l'interfaccia potrebbe risultare incompleta).
               </div>
@@ -628,7 +623,6 @@
         <div id="lp-satosa-keys" class="accordion-collapse collapse" data-bs-parent="#acc-lp">
           <div class="accordion-body">
             <div class="alert alert-warning py-2 small mb-3">
-              <i class="fas fa-exclamation-triangle me-1"></i>
               Chiavi per firma/cifratura sessioni SATOSA. Almeno <strong>32 caratteri</strong>.
               Genera con: <code>openssl rand -hex 24</code>.
               Lasciare vuoto per non modificare il valore esistente.
@@ -786,7 +780,6 @@
       </div>
       <div class="modal-body">
         <div class="alert alert-warning small mb-3">
-          <i class="fas fa-exclamation-triangle me-1"></i>
           Questa operazione sovrascrive <code>cert.pem</code> e <code>privkey.pem</code> nel volume SPID.
           Dopo la generazione sarà necessario esportare nuovamente il metadata pubblico da inviare ad AgID.
         </div>
@@ -849,7 +842,6 @@
       </div>
       <div class="modal-body">
         <div class="alert alert-warning small mb-3">
-          <i class="fas fa-exclamation-triangle me-1"></i>
           Questa operazione chiede al proxy SATOSA di rigenerare il metadata e sovrascrive
           <code>satosa_spid_public_metadata.xml</code> sul volume.
           Esegui dopo ogni rigenerazione del certificato SPID.
@@ -1179,6 +1171,14 @@ async function restoreMetadata(type, fileInputId, btn) {
   lpUpdatePhaseVisibility();
   document.getElementById('en-spid')?.addEventListener('change', lpUpdatePhaseVisibility);
   document.getElementById('en-cie')?.addEventListener('change', lpUpdatePhaseVisibility);
+
+  // Demo SPID e SPID Validator sono mutualmente esclusivi
+  const demoSpidEl = document.getElementById('demo-spid');
+  const validatorEl = document.getElementById('spid-validator');
+  if (demoSpidEl && validatorEl) {
+    demoSpidEl.addEventListener('change', () => { if (demoSpidEl.checked) validatorEl.checked = false; });
+    validatorEl.addEventListener('change', () => { if (validatorEl.checked) demoSpidEl.checked = false; });
+  }
 
   // Auto-carica info card alla prima apertura degli accordion SPID/CIE
   document.getElementById('lp-spid')?.addEventListener('shown.bs.collapse', () => {
