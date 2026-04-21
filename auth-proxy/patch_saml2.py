@@ -163,4 +163,54 @@ spid_content = spid_content.replace(OLD2, NEW2, 1)
 with open(SPID_PATH, "w") as f:
     f.write(spid_content)
 
-print("[patch_spidsaml2] handle_error patched: 403 → Redirect on cancel.")
+print("[patch_spidsaml2] handle_error patched: 403 -> Redirect on cancel.")
+
+# -------------------------------------------------------------------------
+# Patch 4: CieOidcBackend.__init__ -- _generate_trust_chains non-fatal
+#
+# Root cause:
+#   CieOidcBackend.__init__ chiama self._generate_trust_chains() che fa una
+#   richiesta HTTP alla trust anchor (registry.servizicie.interno.gov.it).
+#   Se il registry non e' raggiungibile al boot, l'eccezione propaga e
+#   SATOSA non si avvia, bloccando anche export-cieoidc.
+#
+# Fix:
+#   Wrappa la chiamata in try/except: se la fetch fallisce, log warning e
+#   imposta self.trust_chain = {} -- SATOSA parte, gli endpoint entity
+#   configuration funzionano, il fallimento si manifesta solo all'auth reale.
+# -------------------------------------------------------------------------
+
+_CIEOIDC_PATH = "/satosa_proxy/backends/cieoidc/cieoidc.py"
+
+if not os.path.exists(_CIEOIDC_PATH):
+    print(f"[patch_cieoidc_init] {_CIEOIDC_PATH} not found -- skipping patch 4")
+else:
+    print(f"[patch_cieoidc_init] Patching {_CIEOIDC_PATH}")
+    with open(_CIEOIDC_PATH) as _f:
+        _cie_content = _f.read()
+
+    _OLD4 = "        self.trust_chain = self._generate_trust_chains()\n"
+    _NEW4 = (
+        "        try:\n"
+        "            self.trust_chain = self._generate_trust_chains()\n"
+        "        except Exception as _tc_exc:\n"
+        "            import logging as _log\n"
+        "            _log.getLogger(__name__).warning(\n"
+        "                f\"[patch] CieOidcBackend: trust chain fetch fallita al boot \"\n"
+        "                f\"({type(_tc_exc).__name__}: {_tc_exc}). \"\n"
+        "                \"SATOSA parte senza trust chain precalcolata. \"\n"
+        "                \"L'autenticazione CIE potrebbe fallire se il registry non e' raggiungibile.\"\n"
+        "            )\n"
+        "            self.trust_chain = {}\n"
+    )
+
+    if _OLD4 not in _cie_content:
+        if "trust chain fetch fallita al boot" in _cie_content:
+            print("[patch_cieoidc_init] Already patched, nothing to do.")
+        else:
+            print("[patch_cieoidc_init] WARNING: expected pattern not found -- skipping patch 4.")
+    else:
+        _cie_content = _cie_content.replace(_OLD4, _NEW4, 1)
+        with open(_CIEOIDC_PATH, "w") as _f:
+            _f.write(_cie_content)
+        print("[patch_cieoidc_init] Patch applied: _generate_trust_chains non-fatal.")
