@@ -654,6 +654,11 @@ class ImpostazioniController
                 ? $satosaBase . $proxyLogoSrc
                 : $proxyLogoSrc;
         }
+        // Compatibilità con installazioni restore: se logo globale assente ma SATOSA_UI_LOGO_URL
+        // è già valorizzato in iam_proxy, usalo anche per la discovery page.
+        if (empty($env['APP_LOGO_SRC']) && !empty($env['SATOSA_UI_LOGO_URL'])) {
+            $env['APP_LOGO_SRC'] = (string)$env['SATOSA_UI_LOGO_URL'];
+        }
         if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
             $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
         }
