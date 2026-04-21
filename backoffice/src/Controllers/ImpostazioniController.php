@@ -235,7 +235,6 @@ class ImpostazioniController
             'public_base_url'                  => $publicBaseUrl,
             'saml2_idp_metadata_url'           => $body['saml2_idp_metadata_url'] ?? '',
             'saml2_idp_metadata_url_internal'  => $body['saml2_idp_metadata_url_internal'] ?? '',
-            'http_port'                        => $body['http_port'] ?? '',
             'debug'                            => $body['debug'] ?? 'false',
             'enable_spid'                      => $body['enable_spid'] ?? 'false',
             'enable_cie_oidc'                  => $body['enable_cie_oidc'] ?? 'false',
@@ -243,7 +242,6 @@ class ImpostazioniController
             'enable_oidcop'                    => $body['enable_oidcop'] ?? 'false',
             'enable_idem'                      => $body['enable_idem'] ?? 'false',
             'enable_eidas'                     => $body['enable_eidas'] ?? 'false',
-            'satosa_base'                      => $body['satosa_base'] ?? '',
             'satosa_disco_srv'                 => $body['satosa_disco_srv'] ?? '',
             'satosa_cancel_redirect_url'       => $body['satosa_cancel_redirect_url'] ?? '',
             'satosa_unknow_error_redirect_page' => $body['satosa_unknow_error_redirect_page'] ?? '',
@@ -284,21 +282,8 @@ class ImpostazioniController
             'satosa_ui_logo_url'               => $body['satosa_ui_logo_url'] ?? '',
             'satosa_ui_logo_width'             => $body['satosa_ui_logo_width'] ?? '200',
             'satosa_ui_logo_height'            => $body['satosa_ui_logo_height'] ?? '60',
-            'cie_oidc_provider_url'            => $body['cie_oidc_provider_url'] ?? '',
-            'cie_oidc_trust_anchor_url'        => $body['cie_oidc_trust_anchor_url'] ?? '',
-            'cie_oidc_authority_hint_url'      => $body['cie_oidc_authority_hint_url'] ?? '',
-            'cie_oidc_client_id'               => $body['cie_oidc_client_id'] ?? '',
+            'cie_env'                          => $body['cie_env'] ?? 'prod',
             'cie_oidc_client_name'             => $body['cie_oidc_client_name'] ?? '',
-            'cie_oidc_jwks_uri'                => $body['cie_oidc_jwks_uri'] ?? '',
-            'cie_oidc_signed_jwks_uri'         => $body['cie_oidc_signed_jwks_uri'] ?? '',
-            'cie_oidc_redirect_uri'            => $body['cie_oidc_redirect_uri'] ?? '',
-            'cie_oidc_federation_resolve_endpoint'           => $body['cie_oidc_federation_resolve_endpoint'] ?? '',
-            'cie_oidc_federation_fetch_endpoint'             => $body['cie_oidc_federation_fetch_endpoint'] ?? '',
-            'cie_oidc_federation_trust_mark_status_endpoint' => $body['cie_oidc_federation_trust_mark_status_endpoint'] ?? '',
-            'cie_oidc_federation_list_endpoint'              => $body['cie_oidc_federation_list_endpoint'] ?? '',
-            'cie_oidc_homepage_uri'            => $body['cie_oidc_homepage_uri'] ?? '',
-            'cie_oidc_policy_uri'              => $body['cie_oidc_policy_uri'] ?? '',
-            'cie_oidc_logo_uri'                => $body['cie_oidc_logo_uri'] ?? '',
             'cie_oidc_contact_email'           => $body['cie_oidc_contact_email'] ?? '',
         ];
 
@@ -389,8 +374,22 @@ class ImpostazioniController
         }
 
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
+        $this->triggerAuthProxyReload();
 
-        return $this->jsonOk('Impostazioni Login Proxy salvate. Riavvia i container IAM proxy per applicarle.');
+        return $this->jsonOk('Impostazioni salvate con successo. Auth Proxy si riavvierà automaticamente entro pochi secondi per applicare le modifiche.');
+    }
+
+    private function triggerAuthProxyReload(): void
+    {
+        $ch = curl_init('http://auth-proxy:9191/reload');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 2,
+            CURLOPT_CONNECTTIMEOUT => 1,
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
     }
 
     /**
@@ -494,7 +493,6 @@ class ImpostazioniController
             'debug'                                          => 'IAM_PROXY_DEBUG',
             'frontoffice_auth_proxy_type'                   => 'FRONTOFFICE_AUTH_PROXY_TYPE',
             'hostname'                                       => 'IAM_PROXY_HOSTNAME',
-            'http_port'                                      => 'IAM_PROXY_HTTP_PORT',
             'saml2_idp_metadata_url'                        => 'IAM_PROXY_SAML2_IDP_METADATA_URL',
             'saml2_idp_metadata_url_internal'               => 'IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL',
             'public_base_url'                               => 'SATOSA_BASE',
@@ -555,22 +553,8 @@ class ImpostazioniController
             'spid_cert_locality_name'                       => 'SPID_CERT_LOCALITY_NAME',
             'spid_cert_key_size'                            => 'SPID_CERT_KEY_SIZE',
             'spid_cert_days'                                => 'SPID_CERT_DAYS',
-            'cie_oidc_provider_url'                         => 'CIE_OIDC_PROVIDER_URL',
-            'cie_oidc_trust_anchor_url'                     => 'CIE_OIDC_TRUST_ANCHOR_URL',
-            'cie_oidc_authority_hint_url'                   => 'CIE_OIDC_AUTHORITY_HINT_URL',
-            'cie_oidc_client_id'                            => 'CIE_OIDC_CLIENT_ID',
             'cie_oidc_client_name'                          => 'CIE_OIDC_CLIENT_NAME',
             'cie_oidc_organization_name'                    => 'CIE_OIDC_ORGANIZATION_NAME',
-            'cie_oidc_jwks_uri'                             => 'CIE_OIDC_JWKS_URI',
-            'cie_oidc_signed_jwks_uri'                      => 'CIE_OIDC_SIGNED_JWKS_URI',
-            'cie_oidc_redirect_uri'                         => 'CIE_OIDC_REDIRECT_URI',
-            'cie_oidc_federation_resolve_endpoint'          => 'CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT',
-            'cie_oidc_federation_fetch_endpoint'            => 'CIE_OIDC_FEDERATION_FETCH_ENDPOINT',
-            'cie_oidc_federation_trust_mark_status_endpoint' => 'CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT',
-            'cie_oidc_federation_list_endpoint'             => 'CIE_OIDC_FEDERATION_LIST_ENDPOINT',
-            'cie_oidc_homepage_uri'                         => 'CIE_OIDC_HOMEPAGE_URI',
-            'cie_oidc_policy_uri'                           => 'CIE_OIDC_POLICY_URI',
-            'cie_oidc_logo_uri'                             => 'CIE_OIDC_LOGO_URI',
             'cie_oidc_contact_email'                        => 'CIE_OIDC_CONTACT_EMAIL',
         ];
 
@@ -636,6 +620,30 @@ class ImpostazioniController
         if (empty($env['CIE_OIDC_ORGANIZATION_NAME'])) {
             $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
         }
+
+        // --- Generazione stringhe hardcoded per CIE OIDC ---
+        $cieEnv = $s['cie_env'] ?? 'prod';
+        if ($cieEnv === 'prod') {
+            $env['CIE_OIDC_PROVIDER_URL']       = 'https://oidc.idserver.servizicie.interno.gov.it';
+            $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://oidc.idserver.servizicie.interno.gov.it';
+            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://registry.servizicie.interno.gov.it';
+        } else {
+            $env['CIE_OIDC_PROVIDER_URL']       = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
+            $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
+            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://preproduzione.cie.interno.gov.it';
+        }
+
+        $satosaBase = rtrim($env['SATOSA_BASE'] ?? '', '/');
+        $env['CIE_OIDC_CLIENT_ID']                            = $satosaBase . '/CieOidcRp';
+        $env['CIE_OIDC_REDIRECT_URI']                         = $satosaBase . '/CieOidcRp/oidc/callback';
+        $env['CIE_OIDC_JWKS_URI']                             = $satosaBase . '/CieOidcRp/openid_relying_party/jwks.json';
+        $env['CIE_OIDC_SIGNED_JWKS_URI']                      = $satosaBase . '/CieOidcRp/openid_relying_party/signed_jwks.jose';
+        $env['CIE_OIDC_HOMEPAGE_URI']                         = $satosaBase;
+        $env['CIE_OIDC_POLICY_URI']                           = $satosaBase;
+        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT']          = '/CieOidcRp/federation/resolve';
+        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT']            = '/CieOidcRp/federation/fetch';
+        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT']= '/CieOidcRp/federation/trust_mark_status';
+        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT']             = '/CieOidcRp/federation/list';
 
         // Variabili cross-section: frontoffice e entity
         if (!empty($sFrontoffice['public_base_url'])) {

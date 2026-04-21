@@ -360,6 +360,22 @@
       link.setAttribute('href', servicePath + sep + 'entityID=' + encodeURIComponent(entityId));
     });
   })();
+
+  (function activateFirstTab() {
+    if (!document.querySelector('.nav-tabs .nav-link.active')) {
+      const firstTab = document.querySelector('.nav-tabs .nav-link');
+      if (firstTab) {
+        firstTab.classList.add('active');
+        const targetId = firstTab.getAttribute('data-bs-target');
+        if (targetId) {
+          const targetPanel = document.querySelector(targetId);
+          if (targetPanel) {
+            targetPanel.classList.add('show', 'active');
+          }
+        }
+      }
+    }
+  })();
 </script>
 <script src="/static/spid/spid-sp-access-button.js"></script>
 <script src="/static/spid/spid_button.js"></script>

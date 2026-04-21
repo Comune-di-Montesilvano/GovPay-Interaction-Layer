@@ -174,7 +174,7 @@ except Exception:
 # ── Supervisore SATOSA: funzioni watchdog ─────────────────────────────────────
 # Il container rimane sempre in esecuzione (restart: always in docker-compose).
 # SATOSA è gestito internamente: avviato/fermato in base alla config backoffice.
-_WATCHDOG_INTERVAL="${IAM_WATCHDOG_INTERVAL:-300}"
+_WATCHDOG_INTERVAL="${AUTH_PROXY_WATCHDOG_INTERVAL:-60}"
 _SATOSA_PID=""
 _PKI_CERT_HASH=""
 
@@ -696,10 +696,45 @@ else
   echo "[startup] IAM Proxy non abilitato al boot. In standby (poll ogni ${_WATCHDOG_INTERVAL}s)."
 fi
 
+# ── Reload trigger server ─────────────────────────────────────────────────────
+_RELOAD_TRIGGER_FILE="/tmp/reload_trigger"
+touch "$_RELOAD_TRIGGER_FILE"
+_LAST_TRIGGER_TIME="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
+
+python3 - <<'PYEOF' &
+import http.server, socketserver, pathlib
+class H(http.server.BaseHTTPRequestHandler):
+    _t = pathlib.Path('/tmp/reload_trigger')
+    def do_POST(self):
+        self._t.touch()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{"ok":true}')
+    def log_message(self, *a): pass
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(('', 9191), H) as s:
+    print('[reload-server] In ascolto su :9191', flush=True)
+    s.serve_forever()
+PYEOF
+echo "[startup] Reload server avviato (porta 9191)"
+
 # ── Loop watchdog ─────────────────────────────────────────────────────────────
-echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s)."
+_CONF_HASH="$(echo "$_CONF" | md5sum | awk '{print $1}' || echo '')"
+echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s). Hash iniziale: ${_CONF_HASH}"
 while true; do
-  sleep "$_WATCHDOG_INTERVAL"
+  # Attesa interrompibile: poll ogni 5s, sveglia anticipata su trigger API reload
+  _sleep_start="$(date +%s)"
+  while true; do
+    sleep 5
+    _t="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
+    if [ "$_t" -gt "$_LAST_TRIGGER_TIME" ]; then
+      _LAST_TRIGGER_TIME="$_t"
+      echo "[watchdog] Reload forzato via API"
+      break
+    fi
+    [ "$(( $(date +%s) - _sleep_start ))" -ge "$_WATCHDOG_INTERVAL" ] && break
+  done
 
   # Rileva crash spontaneo di SATOSA
   if [ -n "${_SATOSA_PID:-}" ] && ! satosa_running; then
@@ -711,6 +746,8 @@ while true; do
     echo "[watchdog] Fetch config fallito — stato invariato"
     continue
   }
+
+  _NEW_HASH="$(echo "$_NEW" | md5sum | awk '{print $1}' || echo '')"
 
   # Non avviare SATOSA finché il wizard non è completato
   _new_setup=$(printf '%s' "$_NEW" | python3 -c "
@@ -724,6 +761,13 @@ except Exception:
   if [ "$_new_setup" != "true" ]; then
     echo "[watchdog] Setup non completato — standby"
     continue
+  fi
+
+  # Se la configurazione cambia, arresta SATOSA affinché riparta con il config aggiornato
+  if [ -n "$_CONF_HASH" ] && [ -n "$_NEW_HASH" ] && [ "$_NEW_HASH" != "$_CONF_HASH" ]; then
+    echo "[watchdog] Rilevata modifica configurazione dal backoffice — preparo riavvio SATOSA..."
+    _CONF_HASH="$_NEW_HASH"
+    stop_satosa
   fi
 
   if auth_on "$_NEW"; then
