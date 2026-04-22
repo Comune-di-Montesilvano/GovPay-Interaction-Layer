@@ -293,6 +293,14 @@ class ImpostazioniController
             'cie_oidc_contact_email'           => $body['cie_oidc_contact_email'] ?? '',
         ];
 
+        // Normalizza ambiente CIE: accetta alias legacy e impedisce fallback implicito a preprod.
+        $cieEnvRaw = strtolower(trim((string)($plain['cie_env'] ?? 'prod')));
+        if (in_array($cieEnvRaw, ['preprod', 'pre-production', 'preproduction', 'collaudo', 'test'], true)) {
+            $plain['cie_env'] = 'preprod';
+        } else {
+            $plain['cie_env'] = 'prod';
+        }
+
         // Campi derivabili: aggiorna i valori del DB con quelli calcolati se il form non li invia esplicitamente.
         // Questo garantisce che getIamProxyEnv() abbia sempre valori coerenti anche se i campi non
         // sono più presenti nel form (rimossi come ridondanti).
@@ -664,8 +672,9 @@ class ImpostazioniController
         }
 
         // --- CIE OIDC URLs: deterministici (no override da DB) ---
-        $cieEnv = (string)($s['cie_env'] ?? 'prod');
-        if ($cieEnv === 'prod') {
+        $cieEnv = strtolower(trim((string)($s['cie_env'] ?? 'prod')));
+        $isPreprod = in_array($cieEnv, ['preprod', 'pre-production', 'preproduction', 'collaudo', 'test'], true);
+        if (!$isPreprod) {
             $providerUrl = 'https://oidc.idserver.servizicie.interno.gov.it';
             $trustAnchorUrl = 'https://oidc.registry.servizicie.interno.gov.it';
             // In OIDC Federation authority_hints deve puntare all'anchor autorevole.
