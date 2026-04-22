@@ -8,6 +8,13 @@
         <span id="lp-status-text" class="text-muted small">Stato sconosciuto</span>
         <span id="lp-config-badge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-normal small ms-1" style="display:none;"></span>
       </div>
+      {% if is_superadmin %}
+      <div class="d-flex align-items-center gap-2">
+        <button id="lp-restart-btn" type="button" class="btn btn-outline-warning btn-sm" onclick="lpRestartAuthProxy(this)">
+          <i class="fas fa-rotate-right me-1"></i>Riavvia Auth Proxy
+        </button>
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -1550,6 +1557,33 @@ function downloadSpidMetadata(btn) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+async function lpRestartAuthProxy(btn) {
+  if (!confirm('Richiedere il riavvio completo di Auth Proxy ora?')) return;
+  const csrf = document.querySelector('#form-login-proxy input[name="csrf_token"]')?.value || '';
+  if (!csrf) {
+    impToast('Token CSRF non disponibile.', false);
+    return;
+  }
+
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Riavvio…';
+  try {
+    const res = await fetch('/impostazioni/login-proxy/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csrf_token: csrf }),
+    });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'Riavvio richiesto.' : 'Riavvio fallito.'), !!json.success);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
 }
 
 // ── Ripristino da backup ZIP completo ─────────────────────────────────────────

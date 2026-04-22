@@ -775,15 +775,22 @@ fi
 
 # ── Reload trigger server ─────────────────────────────────────────────────────
 _RELOAD_TRIGGER_FILE="/tmp/reload_trigger"
+_RESTART_TRIGGER_FILE="/tmp/restart_trigger"
 touch "$_RELOAD_TRIGGER_FILE"
+touch "$_RESTART_TRIGGER_FILE"
 _LAST_TRIGGER_TIME="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
+_LAST_RESTART_TIME="$(stat -c %Y "$_RESTART_TRIGGER_FILE" 2>/dev/null || echo 0)"
 
 python3 - <<'PYEOF' &
 import http.server, socketserver, pathlib
 class H(http.server.BaseHTTPRequestHandler):
-    _t = pathlib.Path('/tmp/reload_trigger')
+    _reload_t = pathlib.Path('/tmp/reload_trigger')
+    _restart_t = pathlib.Path('/tmp/restart_trigger')
     def do_POST(self):
-        self._t.touch()
+        if self.path.rstrip('/').endswith('/restart'):
+            self._restart_t.touch()
+        else:
+            self._reload_t.touch()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
@@ -800,6 +807,8 @@ echo "[startup] Reload server avviato (porta 9191)"
 _CONF_HASH="$(echo "$_CONF" | md5sum | awk '{print $1}' || echo '')"
 echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s). Hash iniziale: ${_CONF_HASH}"
 while true; do
+  _FORCE_RESTART="false"
+
   # Attesa interrompibile: poll ogni 5s, sveglia anticipata su trigger API reload
   _sleep_start="$(date +%s)"
   while true; do
@@ -808,6 +817,13 @@ while true; do
     if [ "$_t" -gt "$_LAST_TRIGGER_TIME" ]; then
       _LAST_TRIGGER_TIME="$_t"
       echo "[watchdog] Reload forzato via API"
+      break
+    fi
+    _rt="$(stat -c %Y "$_RESTART_TRIGGER_FILE" 2>/dev/null || echo 0)"
+    if [ "$_rt" -gt "$_LAST_RESTART_TIME" ]; then
+      _LAST_RESTART_TIME="$_rt"
+      _FORCE_RESTART="true"
+      echo "[watchdog] Riavvio completo forzato via API"
       break
     fi
     [ "$(( $(date +%s) - _sleep_start ))" -ge "$_WATCHDOG_INTERVAL" ] && break
@@ -838,6 +854,10 @@ except Exception:
   if [ "$_new_setup" != "true" ]; then
     echo "[watchdog] Setup non completato — standby"
     continue
+  fi
+
+  if [ "$_FORCE_RESTART" = "true" ] && satosa_running; then
+    stop_satosa
   fi
 
   # Se la configurazione cambia, arresta SATOSA affinché riparta con il config aggiornato

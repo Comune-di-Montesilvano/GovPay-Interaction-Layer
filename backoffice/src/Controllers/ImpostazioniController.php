@@ -402,10 +402,39 @@ class ImpostazioniController
             // valore vuoto → si omette: SettingsRepository::setSection lo ignora se già presente
         }
 
+        $currentIamProxy = SettingsRepository::getSection('iam_proxy');
+        $requiresFullRestart = $this->requiresAuthProxyFullRestart($currentIamProxy, $plain, $encrypted);
+
         SettingsRepository::setSection('iam_proxy', $iamData, $by);
+        if ($requiresFullRestart) {
+            $this->triggerAuthProxyRestart();
+            return $this->jsonOk(
+                'Impostazioni salvate. Rilevate modifiche critiche: richiesto riavvio completo Auth Proxy.',
+                ['restart_suggested' => true]
+            );
+        }
+
         $this->triggerAuthProxyReload();
 
-        return $this->jsonOk('Impostazioni salvate con successo. Auth Proxy si riavvierà automaticamente entro pochi secondi per applicare le modifiche.');
+        return $this->jsonOk(
+            'Impostazioni salvate con successo. Reload Auth Proxy richiesto: applicazione modifiche in pochi secondi.',
+            ['restart_suggested' => false]
+        );
+    }
+
+    public function restartAuthProxy(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        if ($this->triggerAuthProxyRestart()) {
+            return $this->jsonOk('Riavvio completo Auth Proxy richiesto. Attendi qualche secondo e verifica lo stato.');
+        }
+
+        return $this->jsonError('Impossibile contattare Auth Proxy per il riavvio.', 502);
     }
 
     public function saveDebug(Request $request, Response $response): Response
@@ -424,17 +453,75 @@ class ImpostazioniController
         return $this->jsonOk('Flag debug salvati con successo.');
     }
 
-    private function triggerAuthProxyReload(): void
+    private function triggerAuthProxyReload(): bool
     {
-        $ch = curl_init('http://auth-proxy:9191/reload');
+        return $this->callAuthProxyControlEndpoint('reload');
+    }
+
+    private function triggerAuthProxyRestart(): bool
+    {
+        return $this->callAuthProxyControlEndpoint('restart');
+    }
+
+    private function callAuthProxyControlEndpoint(string $action): bool
+    {
+        $ch = curl_init('http://auth-proxy:9191/' . $action);
+        if ($ch === false) {
+            return false;
+        }
+
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 2,
             CURLOPT_CONNECTTIMEOUT => 1,
         ]);
-        curl_exec($ch);
+
+        $ok = curl_exec($ch) !== false;
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        return $ok && $httpCode >= 200 && $httpCode < 300;
+    }
+
+    private function requiresAuthProxyFullRestart(array $current, array $plain, array $encrypted): bool
+    {
+        $criticalKeys = [
+            'public_base_url',
+            'hostname',
+            'enable_spid',
+            'enable_cie_oidc',
+            'satosa_disco_srv',
+            'satosa_cancel_redirect_url',
+            'satosa_unknow_error_redirect_page',
+            'satosa_use_demo_spid_idp',
+            'satosa_use_spid_validator',
+            'satosa_spid_validator_metadata_url',
+            'spid_cert_org_id',
+            'spid_cert_entity_id',
+            'spid_cert_key_size',
+            'spid_cert_days',
+            'cie_env',
+            'cie_oidc_client_name',
+            'cie_oidc_contact_email',
+        ];
+
+        foreach ($criticalKeys as $key) {
+            $old = trim((string)($current[$key] ?? ''));
+            $new = trim((string)($plain[$key] ?? ''));
+            if ($old !== $new) {
+                return true;
+            }
+        }
+
+        // Se vengono inviati nuovi segreti, forziamo restart completo.
+        foreach ($encrypted as $value) {
+            if (trim((string)$value) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2313,9 +2400,9 @@ class ImpostazioniController
         return in_array(strtolower(trim($q)), ['1', 'true', 'yes', 'on'], true);
     }
 
-    private function jsonOk(string $message): Response
+    private function jsonOk(string $message, array $extra = []): Response
     {
-        return $this->jsonResponse(['success' => true, 'message' => $message]);
+        return $this->jsonResponse(array_merge(['success' => true, 'message' => $message], $extra));
     }
 
     private function jsonError(string $message, int $status = 400): Response
