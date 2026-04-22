@@ -379,8 +379,7 @@
         <div class="card-body" id="cie-metadata-body">
           <p class="text-muted small mb-2">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
           <div class="alert alert-info py-2 px-3 small mb-0">
-            Questo pulsante copia la <strong>Entity Configuration</strong> CIE completa
-            (inclusi <code>iss</code> e <code>sub</code>) richiesta in onboarding federazione.
+            Questo pulsante copia il payload nel formato <code>{"keys":[...]}</code> richiesto dal portale federazione.
           </div>
         </div>
         {% if is_superadmin %}
@@ -1415,25 +1414,23 @@ async function loadSpidCertInfo(btn) {
   }
 }
 
-// ── Copia Entity Configuration CIE OIDC (payload onboarding federazione) ─────
+// ── Copia JWKS keys payload CIE OIDC (formato federazione) ─────────────────────
 async function copyCieFederationJson(btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
   try {
-    const res = await fetch('/impostazioni/login-proxy/cie-metadata/download');
+    const res = await fetch('/impostazioni/login-proxy/cie-keys/jwks');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const cfg = await res.json();
-    if (!cfg || typeof cfg !== 'object') {
-      throw new Error('Entity Configuration non valida');
+    const data = await res.json();
+    const jwks = data.data || data;
+    if (!jwks || !Array.isArray(jwks.keys) || jwks.keys.length === 0) {
+      throw new Error('Payload JWKS non disponibile o vuoto');
     }
-    if (!cfg.sub || !cfg.iss) {
-      throw new Error('Entity Configuration incompleta (iss/sub mancanti)');
-    }
-    await navigator.clipboard.writeText(JSON.stringify(cfg, null, 4));
-    impToast('Entity Configuration CIE copiata negli appunti.', true);
+    await navigator.clipboard.writeText(JSON.stringify(jwks, null, 4));
+    impToast('Payload JWKS copiato negli appunti.', true);
   } catch (e) {
-    impToast('Errore copia Federazione CIE: ' + e.message, false);
+    impToast('Errore copia JWKS: ' + e.message, false);
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
