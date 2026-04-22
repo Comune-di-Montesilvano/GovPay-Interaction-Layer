@@ -692,6 +692,7 @@ class ImpostazioniController
         $env['CIE_OIDC_HOMEPAGE_URI'] = $satosaBase;
         $env['CIE_OIDC_POLICY_URI'] = $satosaBase;
 
+        // Profilo RP: l'Entity Configuration deve esporre solo il resolve endpoint.
         $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT'] = $rpBase . '/resolve';
         $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT'] = $rpBase . '/fetch';
         $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT'] = $rpBase . '/trust_mark_status';
