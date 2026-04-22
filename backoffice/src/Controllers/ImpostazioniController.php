@@ -1706,6 +1706,12 @@ class ImpostazioniController
         if (!is_dir($certsDir) && !mkdir($certsDir, 0755, true) && !is_dir($certsDir)) {
             return $this->jsonError("Impossibile creare la directory certificati SPID: {$certsDir}");
         }
+        @chmod($certsDir, 0775);
+        if (!is_writable($certsDir)) {
+            $mode = @fileperms($certsDir);
+            $modeStr = $mode !== false ? substr(sprintf('%o', $mode), -4) : 'unknown';
+            return $this->jsonError("Directory certificati SPID non scrivibile: {$certsDir} (permessi {$modeStr}).");
+        }
 
         $tmpCnf = tempnam(sys_get_temp_dir(), 'spid_cnf_');
 
@@ -1759,13 +1765,20 @@ class ImpostazioniController
 
         $certPath = $certsDir . '/cert.pem';
         $keyPath  = $certsDir . '/privkey.pem';
+        $tmpCertPath = tempnam(sys_get_temp_dir(), 'spid_cert_');
+        $tmpKeyPath  = tempnam(sys_get_temp_dir(), 'spid_key_');
+
+        if (!is_string($tmpCertPath) || !is_string($tmpKeyPath)) {
+            @unlink($tmpCnf);
+            return $this->jsonError('Impossibile creare file temporanei per la generazione certificati SPID.');
+        }
 
         $cmd = [
             'openssl', 'req', '-new', '-x509',
             '-config', $tmpCnf,
             '-days', (string)$days,
-            '-keyout', $keyPath,
-            '-out', $certPath,
+            '-keyout', $tmpKeyPath,
+            '-out', $tmpCertPath,
             '-extensions', 'req_ext',
         ];
 
@@ -1788,7 +1801,46 @@ class ImpostazioniController
         @unlink($tmpCnf);
 
         if ($exitCode !== 0) {
+            @unlink($tmpCertPath);
+            @unlink($tmpKeyPath);
             return $this->jsonError('Generazione cert SPID fallita: ' . trim($stderr));
+        }
+
+        if (!is_file($tmpCertPath) || !is_file($tmpKeyPath)) {
+            @unlink($tmpCertPath);
+            @unlink($tmpKeyPath);
+            return $this->jsonError('Generazione cert SPID fallita: file temporanei non creati.');
+        }
+
+        // Se i file destinazione esistono con owner/perms non compatibili,
+        // tentiamo prima la rimozione per consentire la ricreazione.
+        foreach ([$certPath, $keyPath] as $targetPath) {
+            if (is_file($targetPath)) {
+                @chmod($targetPath, 0666);
+                if (!@unlink($targetPath)) {
+                    @unlink($tmpCertPath);
+                    @unlink($tmpKeyPath);
+                    return $this->jsonError("Impossibile sovrascrivere {$targetPath}: permessi insufficienti.");
+                }
+            }
+        }
+
+        if (!@rename($tmpCertPath, $certPath)) {
+            $certContent = @file_get_contents($tmpCertPath);
+            if ($certContent === false || @file_put_contents($certPath, $certContent) === false) {
+                @unlink($tmpCertPath);
+                @unlink($tmpKeyPath);
+                return $this->jsonError("Impossibile scrivere {$certPath}: permessi insufficienti.");
+            }
+            @unlink($tmpCertPath);
+        }
+        if (!@rename($tmpKeyPath, $keyPath)) {
+            $keyContent = @file_get_contents($tmpKeyPath);
+            if ($keyContent === false || @file_put_contents($keyPath, $keyContent) === false) {
+                @unlink($tmpKeyPath);
+                return $this->jsonError("Impossibile scrivere {$keyPath}: permessi insufficienti.");
+            }
+            @unlink($tmpKeyPath);
         }
 
         @chmod($certPath, 0644);
@@ -1943,7 +1995,9 @@ class ImpostazioniController
             }
         }
 
-        @mkdir($metaDir, 0755, true);
+        if (!is_dir($metaDir) && !@mkdir($metaDir, 0755, true) && !is_dir($metaDir)) {
+            return $this->jsonError('Export CIE OIDC fallito: impossibile creare la directory metadata locale.');
+        }
 
         $builderUrl  = rtrim((string)(getenv('METADATA_BUILDER_INTERNAL_URL') ?: 'http://metadata-builder:8081'), '/');
         $masterToken = (string)(getenv('MASTER_TOKEN') ?: '');
