@@ -973,7 +973,7 @@ function lpUpdateCieEnv(updateFields = true) {
   const hidden = document.getElementById('lp-cie-provider-url-hidden');
   if (!sel) return;
   const env = sel.value;
-  wrap.style.display = env === 'custom' ? '' : 'none';
+  if (wrap) wrap.style.display = env === 'custom' ? '' : 'none';
 
   let providerUrl = '';
   let trustUrl = '';
