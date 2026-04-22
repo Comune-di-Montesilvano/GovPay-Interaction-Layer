@@ -385,6 +385,26 @@ export CIE_OIDC_POLICY_URI CIE_OIDC_LOGO_URI CIE_OIDC_CONTACT_EMAIL
 mkdir -p "$SATOSA_PROXY/conf/backends"
 envsubst < "$TEMPLATES/cieoidc_backend.override.yaml.template" > "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml"
 
+# Se trust mark non disponibile, evita di pubblicare un oggetto trust_marks vuoto
+# (id/trust_mark="") che puo' rompere la validazione lato onboarding.
+if [ -z "${CIE_OIDC_TRUST_MARK:-}" ] || [ -z "${CIE_OIDC_TRUST_MARK_ID:-}" ]; then
+  echo "[startup] Trust mark assente: normalizzazione trust_marks nel metadata CIE OIDC"
+  python3 - "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml" <<'PY'
+import sys
+from pathlib import Path
+
+p = Path(sys.argv[1])
+text = p.read_text(encoding="utf-8")
+text = text.replace(
+    "        trust_marks:\n"
+    "          - id: \"\"\n"
+    "            trust_mark: \"\"\n",
+    "        trust_marks: []\n",
+)
+p.write_text(text, encoding="utf-8")
+PY
+fi
+
 # Inject JWK keys
 JWK_FED="$CIEOIDC_KEYS/jwk-federation.json"
 JWK_SIG="$CIEOIDC_KEYS/jwk-core-sig.json"
