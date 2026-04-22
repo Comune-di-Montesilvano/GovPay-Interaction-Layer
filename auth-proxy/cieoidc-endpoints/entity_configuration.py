@@ -29,6 +29,11 @@ class EntityConfigHandler(BaseEndpoint):
     # - "code_challenge": configurazione PKCE letta da authorization_endpoint.py
     # - "claim": alias interno del campo standard "claims" (letto da authorization_endpoint.py)
     _INTERNAL_METADATA_KEYS = ("code_challenge", "claim")
+    _RP_ONLY_EXCLUDED_FEDERATION_KEYS = (
+        "federation_fetch_endpoint",
+        "federation_trust_mark_status_endpoint",
+        "federation_list_endpoint",
+    )
 
     def __init__(self, config: dict,
                  internal_attributes: dict[str, dict[str, str | list[str]]],
@@ -55,6 +60,11 @@ class EntityConfigHandler(BaseEndpoint):
         _meta[self._entity_type]["client_id"] = self._client_id
         _meta[self._entity_type]["jwks"] = {}
         _meta[self._entity_type]["jwks"]["keys"] = [public_jwk_from_private_jwk(_k) for _k in self._jwks_core]
+        if self._entity_type == "openid_relying_party":
+            # Profilo RP CIE: in federation_entity sono ammessi well-known e resolve.
+            fed_meta = _meta.get("federation_entity", {})
+            for _key in self._RP_ONLY_EXCLUDED_FEDERATION_KEYS:
+                fed_meta.pop(_key, None)
         # Rimuovi campi interni che non devono comparire nella entity configuration
         # pubblicata (violerebbero la spec OIDC o confonderebbero l'IdP)
         for _key in self._INTERNAL_METADATA_KEYS:
