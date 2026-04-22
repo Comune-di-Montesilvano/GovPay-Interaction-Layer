@@ -59,6 +59,8 @@ class FederationResolveHandler(BaseEndpoint):
             fed_meta = self._metadata.get("federation_entity", {})
             for key in _RP_ONLY_EXCLUDED_FEDERATION_KEYS:
                 fed_meta.pop(key, None)
+            for key in [k for k, v in list(fed_meta.items()) if v is None]:
+                fed_meta.pop(key)
         meta = self._metadata.get(self._entity_type, {})
         self._subject = meta.get("client_id") or f"{base_url}/{name}"
 
