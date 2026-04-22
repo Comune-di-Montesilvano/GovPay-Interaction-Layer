@@ -15,6 +15,12 @@ from backends.cieoidc.utils.helpers.jwtse import create_jws
 
 logger = logging.getLogger(__name__)
 
+_RP_ONLY_EXCLUDED_FEDERATION_KEYS = (
+    "federation_fetch_endpoint",
+    "federation_trust_mark_status_endpoint",
+    "federation_list_endpoint",
+)
+
 
 def _normalize_entity_id(value: str) -> str:
     if not value:
@@ -49,6 +55,10 @@ class FederationResolveHandler(BaseEndpoint):
         self._entity_configuration_exp = self.config.get("entity_configuration_exp", 2800)
         self._entity_type = self.config.get("entity_type", "openid_relying_party")
         self._metadata = copy.deepcopy(self.config.get("metadata", {}))
+        if self._entity_type == "openid_relying_party":
+            fed_meta = self._metadata.get("federation_entity", {})
+            for key in _RP_ONLY_EXCLUDED_FEDERATION_KEYS:
+                fed_meta.pop(key, None)
         meta = self._metadata.get(self._entity_type, {})
         self._subject = meta.get("client_id") or f"{base_url}/{name}"
 
