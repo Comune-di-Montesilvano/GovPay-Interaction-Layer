@@ -93,6 +93,9 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
     });
+    $app->post('/impostazioni/login-proxy/restart', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->restartAuthProxy($request, $response);
+    });
     $app->get('/impostazioni/govpay/test-connection', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testGovpayConnection($request, $response);
     });
