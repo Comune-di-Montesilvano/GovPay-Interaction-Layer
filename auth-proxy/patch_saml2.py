@@ -205,15 +205,18 @@ else:
         "        self.trust_chain = self._generate_trust_chains()\n"
     )
 
-    if _OLD4 not in _cie_content:
-        if "trust chain fetch fallita al boot" in _cie_content:
-            print("[patch_cieoidc_init] Already patched, nothing to do.")
-        elif _MALFORMED4 in _cie_content:
+    # Verifica malformazioni PRIMA di dichiarare "already patched":
+    # il file potrebbe contenere la stringa del warning ma avere il try-block malformato.
+    # Rileva specificamente: try: e self.trust_chain alla stessa indentazione (blocco vuoto).
+    _is_malformed = (
+        _MALFORMED4 in _cie_content
+        or re.search(r"^( +)try:\n\1self\.trust_chain = self\._generate_trust_chains\(\)", _cie_content, flags=re.MULTILINE) is not None
+    )
+
+    if _is_malformed:
+        if _MALFORMED4 in _cie_content:
             _cie_content = _cie_content.replace(_MALFORMED4, _NEW4, 1)
-            with open(_CIEOIDC_PATH, "w") as _f:
-                _f.write(_cie_content)
-            print("[patch_cieoidc_init] Repaired malformed try-block indentation.")
-        elif re.search(r"^\s*try:\n\s*self\.trust_chain = self\._generate_trust_chains\(\)", _cie_content, flags=re.MULTILINE):
+        else:
             _cie_content = re.sub(
                 r"^(\s*)try:\n\s*self\.trust_chain = self\._generate_trust_chains\(\)",
                 _NEW4.rstrip("\n"),
@@ -221,9 +224,12 @@ else:
                 count=1,
                 flags=re.MULTILINE,
             ) + ("\n" if not _cie_content.endswith("\n") else "")
-            with open(_CIEOIDC_PATH, "w") as _f:
-                _f.write(_cie_content)
-            print("[patch_cieoidc_init] Repaired malformed trust_chain block via regex.")
+        with open(_CIEOIDC_PATH, "w") as _f:
+            _f.write(_cie_content)
+        print("[patch_cieoidc_init] Repaired malformed try-block indentation.")
+    elif _OLD4 not in _cie_content:
+        if "trust chain fetch fallita al boot" in _cie_content:
+            print("[patch_cieoidc_init] Already patched, nothing to do.")
         else:
             print("[patch_cieoidc_init] WARNING: expected pattern not found -- skipping patch 4.")
     else:
