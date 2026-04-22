@@ -65,6 +65,9 @@ class EntityConfigHandler(BaseEndpoint):
             fed_meta = _meta.get("federation_entity", {})
             for _key in self._RP_ONLY_EXCLUDED_FEDERATION_KEYS:
                 fed_meta.pop(_key, None)
+            # Rimuovi campi None: i validatori CIE rifiutano campi null nel JWT.
+            for _key in [k for k, v in list(fed_meta.items()) if v is None]:
+                fed_meta.pop(_key)
         # Rimuovi campi interni che non devono comparire nella entity configuration
         # pubblicata (violerebbero la spec OIDC o confonderebbero l'IdP)
         for _key in self._INTERNAL_METADATA_KEYS:
