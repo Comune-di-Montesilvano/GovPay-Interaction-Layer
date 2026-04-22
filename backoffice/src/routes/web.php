@@ -64,6 +64,11 @@ return function (App $app, Twig $twig): void {
         return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
     });
 
+    // Stato runtime Auth Proxy per dashboard/UI. Non richiede sessione.
+    $app->get('/api/auth-proxy/status', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getAuthProxyStatus($request, $response);
+    });
+
     $app->get('/api/frontoffice/config', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getFrontofficeConfig($request, $response);
     });

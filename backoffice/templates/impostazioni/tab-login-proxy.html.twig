@@ -1129,7 +1129,10 @@ async function restoreMetadata(type, fileInputId, btn) {
     const extra = document.getElementById('lp-status-extra');
     if (!dot || !text) return;
     try {
-      const res  = await fetch('/impostazioni/login-proxy/status');
+      const res  = await fetch('/api/auth-proxy/status', { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error('HTTP ' + res.status);
+      }
       const json = await res.json();
       if (json.running) {
         dot.className  = 'master-status-dot bg-success';
@@ -1166,7 +1169,7 @@ async function restoreMetadata(type, fileInputId, btn) {
       if (extra) extra.textContent = 'API stato non disponibile.';
     }
   }
-  await lpCheckStatus();
+  lpCheckStatus(); // fire-and-forget: non bloccare il setup dei listener
   setInterval(lpCheckStatus, 15000);
 
   // Badge configurazione e visibilità card condizionali
@@ -1258,33 +1261,33 @@ async function restoreMetadata(type, fileInputId, btn) {
       }
     }
   } catch (_) {}
-
-  // Pre-popola il modale generazione cert SPID al momento dell'apertura
-  document.getElementById('spidCertGeneraModal')?.addEventListener('show.bs.modal', () => {
-    const ipaCode = '{{ entity.ipa_code|default('') }}';
-    const foUrl   = '{{ frontoffice.public_url|default('') }}'.replace(/\/$/, '');
-    // Common Name: campo derivato (hostname proxy) → nome ente
-    const cn = document.getElementById('lp-spid-cn')?.value
-      || document.getElementById('lp-hostname')?.value
-      || '{{ entity.name|default('') }}';
-    // Locality: da iam_proxy (se salvato) → city ente
-    const locality = '{{ iam_proxy.spid_cert_locality_name|default(entity.city|default('')) }}';
-    // Org ID: campo derivato → PA:IT-{ipa_code}
-    const orgId = document.getElementById('lp-spid-org-id')?.value
-      || (ipaCode ? 'PA:IT-' + ipaCode : '');
-    // Org Name: da iam_proxy (se salvato) → nome ente
-    const orgName = '{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}';
-    // Entity ID: campo derivato → {frontoffice_url}/saml/sp
-    const entityId = document.getElementById('lp-spid-entity-id')?.value
-      || (foUrl ? foUrl + '/saml/sp' : '');
-    if (cn)       document.getElementById('spid-cert-cn').value        = cn;
-    if (locality) document.getElementById('spid-cert-locality').value   = locality;
-    if (orgId)    document.getElementById('spid-cert-org-id').value     = orgId;
-    if (orgName)  document.getElementById('spid-cert-org-name').value   = orgName;
-    if (entityId) document.getElementById('spid-cert-entity-id').value  = entityId;
-    document.getElementById('spid-cert-result').style.display = 'none';
-  });
 })();
+
+// Pre-popola il modale generazione cert SPID — sincrono, fuori dall'IIFE async
+document.getElementById('spidCertGeneraModal')?.addEventListener('show.bs.modal', () => {
+  const ipaCode = '{{ entity.ipa_code|default('') }}';
+  const foUrl   = '{{ frontoffice.public_url|default('') }}'.replace(/\/$/, '');
+  // Common Name: campo derivato (hostname proxy) → nome ente
+  const cn = document.getElementById('lp-spid-cn')?.value
+    || document.getElementById('lp-hostname')?.value
+    || '{{ entity.name|default('') }}';
+  // Locality: da iam_proxy (se salvato) → city ente
+  const locality = '{{ iam_proxy.spid_cert_locality_name|default(entity.city|default('')) }}';
+  // Org ID: campo derivato → PA:IT-{ipa_code}
+  const orgId = document.getElementById('lp-spid-org-id')?.value
+    || (ipaCode ? 'PA:IT-' + ipaCode : '');
+  // Org Name: da iam_proxy (se salvato) → nome ente
+  const orgName = '{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}';
+  // Entity ID: campo derivato → {frontoffice_url}/saml/sp
+  const entityId = document.getElementById('lp-spid-entity-id')?.value
+    || (foUrl ? foUrl + '/saml/sp' : '');
+  if (cn)       document.getElementById('spid-cert-cn').value        = cn;
+  if (locality) document.getElementById('spid-cert-locality').value   = locality;
+  if (orgId)    document.getElementById('spid-cert-org-id').value     = orgId;
+  if (orgName)  document.getElementById('spid-cert-org-name').value   = orgName;
+  if (entityId) document.getElementById('spid-cert-entity-id').value  = entityId;
+  document.getElementById('spid-cert-result').style.display = 'none';
+});
 
 // ── Generazione cert SPID ─────────────────────────────────────────────────────
 async function doGeneraSpidCerts(btn) {
