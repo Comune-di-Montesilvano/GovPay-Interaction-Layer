@@ -174,7 +174,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
     chmod 755 /var/www/certificate 2>/dev/null || true
   mkdir -p /var/www/html/spid-certs
   chown www-data:www-data /var/www/html/spid-certs 2>/dev/null || true
-  chmod 775 /var/www/html/spid-certs 2>/dev/null || true
+  chmod 777 /var/www/html/spid-certs 2>/dev/null || true
   # Rendi leggibili i certificati SPID dai container auth-proxy e auth-proxy-nginx
   find /var/www/html/spid-certs -name "*.pem" -type f -exec chmod 644 {} \; 2>/dev/null || true
   mkdir -p /var/www/html/cieoidc-keys /var/www/html/metadata-cieoidc /var/www/html/metadata-agid
