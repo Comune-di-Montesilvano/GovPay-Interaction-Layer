@@ -15,6 +15,7 @@
         </button>
       </div>
       {% endif %}
+      <div id="lp-status-extra" class="small text-muted w-100"></div>
     </div>
   </div>
 
@@ -1121,10 +1122,11 @@ async function restoreMetadata(type, fileInputId, btn) {
   document.getElementById('lp-public-url')?.addEventListener('input', lpDeriveFromUrl);
   document.getElementById('lp-cie-custom-url')?.addEventListener('input', lpUpdateCieEnv);
 
-  // Stato auth-proxy-nginx
-  (async function lpCheckStatus() {
+  // Stato auth-proxy (API interna + reachability URL pubblica)
+  async function lpCheckStatus() {
     const dot  = document.getElementById('lp-status-dot');
     const text = document.getElementById('lp-status-text');
+    const extra = document.getElementById('lp-status-extra');
     if (!dot || !text) return;
     try {
       const res  = await fetch('/impostazioni/login-proxy/status');
@@ -1135,15 +1137,37 @@ async function restoreMetadata(type, fileInputId, btn) {
         text.className = 'text-success small';
       } else {
         dot.className  = 'master-status-dot bg-danger';
-        text.textContent = 'Non raggiungibile';
+        text.textContent = json.detail || 'Non raggiungibile';
         text.className = 'text-danger small';
+      }
+
+      if (extra) {
+        const details = [];
+        if (json.app_version) details.push('Versione ' + json.app_version);
+        if (json.booted_at) details.push('Avvio ' + json.booted_at.replace('T', ' ').replace('Z', ' UTC'));
+        if (json.last_event) {
+          const evtAt = json.last_event_at ? (' @ ' + json.last_event_at.replace('T', ' ').replace('Z', ' UTC')) : '';
+          details.push('Evento ' + json.last_event + evtAt);
+        }
+        if (json.loaded_config_hash) details.push('Hash config ' + String(json.loaded_config_hash).slice(0, 12));
+        if (json.public_base_url) {
+          if (json.public_reachable === true) {
+            details.push('URL pubblica OK (' + (json.public_detail || 'reachable') + ')');
+          } else if (json.public_reachable === false) {
+            details.push('URL pubblica KO (' + (json.public_detail || 'unreachable') + ')');
+          }
+        }
+        extra.textContent = details.join(' | ');
       }
     } catch (_) {
       dot.className  = 'master-status-dot bg-secondary';
       text.textContent = 'Stato sconosciuto';
       text.className = 'text-muted small';
+      if (extra) extra.textContent = 'API stato non disponibile.';
     }
-  })();
+  }
+  await lpCheckStatus();
+  setInterval(lpCheckStatus, 15000);
 
   // Badge configurazione e visibilità card condizionali
   function lpUpdatePhaseVisibility() {
@@ -1237,16 +1261,22 @@ async function restoreMetadata(type, fileInputId, btn) {
 
   // Pre-popola il modale generazione cert SPID al momento dell'apertura
   document.getElementById('spidCertGeneraModal')?.addEventListener('show.bs.modal', () => {
-    // Common Name: hostname del proxy (da campo hidden derivato)
+    const ipaCode = '{{ entity.ipa_code|default('') }}';
+    const foUrl   = '{{ frontoffice.public_url|default('') }}'.replace(/\/$/, '');
+    // Common Name: campo derivato (hostname proxy) → nome ente
     const cn = document.getElementById('lp-spid-cn')?.value
       || document.getElementById('lp-hostname')?.value
-      || '{{ iam_proxy.spid_cert_common_name|default('') }}';
-    // Locality: da dati ente (già salvato in DB come spid_cert_locality_name)
+      || '{{ entity.name|default('') }}';
+    // Locality: da iam_proxy (se salvato) → city ente
     const locality = '{{ iam_proxy.spid_cert_locality_name|default(entity.city|default('')) }}';
-    const orgId    = document.getElementById('lp-spid-org-id')?.value || '';
-    // Org Name: da dati ente
-    const orgName  = '{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}';
-    const entityId = document.getElementById('lp-spid-entity-id')?.value || '';
+    // Org ID: campo derivato → PA:IT-{ipa_code}
+    const orgId = document.getElementById('lp-spid-org-id')?.value
+      || (ipaCode ? 'PA:IT-' + ipaCode : '');
+    // Org Name: da iam_proxy (se salvato) → nome ente
+    const orgName = '{{ iam_proxy.spid_cert_org_name|default(entity.name|default('')) }}';
+    // Entity ID: campo derivato → {frontoffice_url}/saml/sp
+    const entityId = document.getElementById('lp-spid-entity-id')?.value
+      || (foUrl ? foUrl + '/saml/sp' : '');
     if (cn)       document.getElementById('spid-cert-cn').value        = cn;
     if (locality) document.getElementById('spid-cert-locality').value   = locality;
     if (orgId)    document.getElementById('spid-cert-org-id').value     = orgId;
