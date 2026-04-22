@@ -36,10 +36,17 @@ bash /builder/spid-gencert-public.sh
 cp crt.pem cert.pem
 cp key.pem privkey.pem
 chmod 644 ./*.pem
-chmod 755 "$CERTS_DIR" 2>/dev/null || true
+# Permessi 775 per permettere a www-data (e altri utenti del gruppo) di scrivere nella directory
+chmod 775 "$CERTS_DIR" 2>/dev/null || true
+# Fallback con chmod 777 se 775 non riesce (per ambienti con mount options restrittive)
+if [ ! -w "$CERTS_DIR" ]; then
+  echo "[WARN] Directory non scrivibile dopo chmod 775, provo chmod 777..."
+  chmod 777 "$CERTS_DIR" 2>/dev/null || true
+fi
 rm -f crt.pem key.pem csr.pem
 
 echo ""
 echo "[OK] Certificati generati:"
 echo "       /certs/cert.pem     (certificato pubblico)"
 echo "       /certs/privkey.pem  (chiave privata)"
+echo "       Permessi: $(stat -c '%a' "$CERTS_DIR") (directory)"
