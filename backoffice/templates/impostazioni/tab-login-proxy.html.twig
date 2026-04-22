@@ -379,8 +379,8 @@
         <div class="card-body" id="cie-metadata-body">
           <p class="text-muted small mb-2">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
           <div class="alert alert-info py-2 px-3 small mb-0">
-            Questo e il JSON da usare nel portale di <strong>Federazione CIE</strong>.
-            Deve contenere <code>sub</code>, <code>iss</code>, <code>metadata</code> e <code>jwks</code>.
+            Questo pulsante copia il payload nel formato storico <code>{"keys":[...]}</code>
+            usato per la federazione nel tuo flusso operativo.
           </div>
         </div>
         {% if is_superadmin %}
@@ -1415,20 +1415,20 @@ async function loadSpidCertInfo(btn) {
   }
 }
 
-// ── Copia JSON Entity Configuration CIE OIDC (Federazione) ──────────────────
+// ── Copia JSON JWKS CIE OIDC (Federazione, formato storico) ─────────────────
 async function copyCieFederationJson(btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
   try {
-    const res = await fetch('/impostazioni/login-proxy/cie-metadata/download');
+    const res = await fetch('/impostazioni/login-proxy/cie-keys/jwks');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const json = JSON.parse(text);
-    if (!json || typeof json !== 'object' || !json.sub) {
-      throw new Error('Payload non valido: campo sub mancante');
+    const json = await res.json();
+    const jwks = json.data || { keys: [] };
+    if (!jwks || !Array.isArray(jwks.keys) || jwks.keys.length === 0) {
+      throw new Error('Nessuna chiave disponibile');
     }
-    await navigator.clipboard.writeText(JSON.stringify(json, null, 4));
+    await navigator.clipboard.writeText(JSON.stringify(jwks, null, 4));
     impToast('Dati Federazione CIE copiati negli appunti.', true);
   } catch (e) {
     impToast('Errore copia Federazione CIE: ' + e.message, false);
