@@ -177,8 +177,78 @@ except Exception:
 _WATCHDOG_INTERVAL="${AUTH_PROXY_WATCHDOG_INTERVAL:-60}"
 _SATOSA_PID=""
 _PKI_CERT_HASH=""
+_STATUS_FILE="/tmp/auth_proxy_status.json"
+_BOOT_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+_LAST_EVENT="boot"
+_LAST_EVENT_AT="$_BOOT_TS"
+_LOADED_CONF_HASH=""
+_AUTH_ENABLED_LAST="false"
+_SETUP_COMPLETE_LAST="${_setup_complete:-false}"
+_LAST_RELOAD_EPOCH="0"
+_LAST_RESTART_EPOCH="0"
 
 satosa_running() { [ -n "${_SATOSA_PID:-}" ] && kill -0 "$_SATOSA_PID" 2>/dev/null; }
+
+emit_status_json() {
+  local _now _running _pid
+  _now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if satosa_running; then
+    _running="true"
+    _pid="$_SATOSA_PID"
+  else
+    _running="false"
+    _pid=""
+  fi
+
+  STATUS_NOW="$_now" \
+  STATUS_RUNNING="$_running" \
+  STATUS_PID="$_pid" \
+  STATUS_BOOT_TS="$_BOOT_TS" \
+  STATUS_LAST_EVENT="$_LAST_EVENT" \
+  STATUS_LAST_EVENT_AT="$_LAST_EVENT_AT" \
+  STATUS_SETUP_COMPLETE="${_SETUP_COMPLETE_LAST:-false}" \
+  STATUS_AUTH_ENABLED="${_AUTH_ENABLED_LAST:-false}" \
+  STATUS_OBSERVED_CONF_HASH="${_CONF_HASH:-}" \
+  STATUS_LOADED_CONF_HASH="${_LOADED_CONF_HASH:-}" \
+  STATUS_LAST_RELOAD_EPOCH="${_LAST_RELOAD_EPOCH:-0}" \
+  STATUS_LAST_RESTART_EPOCH="${_LAST_RESTART_EPOCH:-0}" \
+  STATUS_APP_VERSION="${APP_VERSION:-}" \
+  python3 - "$_STATUS_FILE" <<'PY'
+import json
+import os
+import sys
+
+def as_bool(value):
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+payload = {
+    "ok": True,
+    "service": "auth-proxy",
+    "updated_at": os.environ.get("STATUS_NOW", ""),
+    "booted_at": os.environ.get("STATUS_BOOT_TS", ""),
+    "app_version": os.environ.get("STATUS_APP_VERSION", ""),
+    "satosa_running": as_bool(os.environ.get("STATUS_RUNNING", "false")),
+    "satosa_pid": os.environ.get("STATUS_PID", ""),
+    "setup_complete": as_bool(os.environ.get("STATUS_SETUP_COMPLETE", "false")),
+    "auth_enabled": as_bool(os.environ.get("STATUS_AUTH_ENABLED", "false")),
+    "last_event": os.environ.get("STATUS_LAST_EVENT", ""),
+    "last_event_at": os.environ.get("STATUS_LAST_EVENT_AT", ""),
+    "observed_config_hash": os.environ.get("STATUS_OBSERVED_CONF_HASH", ""),
+    "loaded_config_hash": os.environ.get("STATUS_LOADED_CONF_HASH", ""),
+    "last_reload_trigger_epoch": int(os.environ.get("STATUS_LAST_RELOAD_EPOCH", "0") or "0"),
+    "last_restart_trigger_epoch": int(os.environ.get("STATUS_LAST_RESTART_EPOCH", "0") or "0"),
+}
+
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump(payload, f, ensure_ascii=True)
+PY
+}
+
+mark_status_event() {
+  _LAST_EVENT="$1"
+  _LAST_EVENT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  emit_status_json
+}
 
 stop_satosa() {
   if satosa_running; then
@@ -188,6 +258,7 @@ stop_satosa() {
     wait "$_SATOSA_PID" 2>/dev/null || true
     _SATOSA_PID=""
     echo "[watchdog] SATOSA fermato."
+    mark_status_event "satosa_stopped"
   fi
 }
 
@@ -693,10 +764,16 @@ fi
 } # fine setup_satosa()
 
 start_satosa() {
-  setup_satosa || { echo "[watchdog] Setup SATOSA fallito — verrà riprovato al prossimo ciclo." >&2; return 1; }
+  setup_satosa || {
+    echo "[watchdog] Setup SATOSA fallito — verrà riprovato al prossimo ciclo." >&2
+    mark_status_event "setup_failed"
+    return 1
+  }
   /bin/bash "$SATOSA_PROXY/entrypoint.sh" &
   _SATOSA_PID=$!
   echo "[watchdog] SATOSA avviato (PID=$_SATOSA_PID)"
+  _LOADED_CONF_HASH="${_CONF_HASH:-}"
+  mark_status_event "satosa_started"
   generate_metadata_if_missing &
 }
 
@@ -765,11 +842,14 @@ print('true' if v in ('1','true','yes','on') else 'false')
 
 # ── Avvio iniziale ────────────────────────────────────────────────────────────
 if [ "$_setup_complete" = "true" ] && { [ "$_enable_spid" = "true" ] || [ "$_enable_cie" = "true" ]; }; then
+  _AUTH_ENABLED_LAST="true"
   echo "[startup] Auth abilitato al boot — avvio SATOSA iniziale..."
   start_satosa || true
 elif [ "$_setup_complete" != "true" ]; then
+  _AUTH_ENABLED_LAST="false"
   : # già loggato sopra — il watchdog si occupa dell'avvio
 else
+  _AUTH_ENABLED_LAST="false"
   echo "[startup] IAM Proxy non abilitato al boot. In standby (poll ogni ${_WATCHDOG_INTERVAL}s)."
 fi
 
@@ -782,10 +862,12 @@ _LAST_TRIGGER_TIME="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
 _LAST_RESTART_TIME="$(stat -c %Y "$_RESTART_TRIGGER_FILE" 2>/dev/null || echo 0)"
 
 python3 - <<'PYEOF' &
-import http.server, socketserver, pathlib
+import http.server, socketserver, pathlib, json
 class H(http.server.BaseHTTPRequestHandler):
     _reload_t = pathlib.Path('/tmp/reload_trigger')
     _restart_t = pathlib.Path('/tmp/restart_trigger')
+    _status = pathlib.Path('/tmp/auth_proxy_status.json')
+
     def do_POST(self):
         if self.path.rstrip('/').endswith('/restart'):
             self._restart_t.touch()
@@ -795,7 +877,35 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
         self.wfile.write(b'{"ok":true}')
+
+    def do_GET(self):
+        if self.path.rstrip('/') != '/status':
+            self.send_response(404)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"ok":false,"error":"not_found"}')
+            return
+        payload = {
+            'ok': False,
+            'service': 'auth-proxy',
+            'error': 'status_unavailable'
+        }
+        if self._status.exists():
+            try:
+                payload = json.loads(self._status.read_text(encoding='utf-8'))
+            except Exception:
+                payload = {
+                    'ok': False,
+                    'service': 'auth-proxy',
+                    'error': 'status_corrupted'
+                }
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode('utf-8'))
+
     def log_message(self, *a): pass
+
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(('', 9191), H) as s:
     print('[reload-server] In ascolto su :9191', flush=True)
@@ -805,6 +915,8 @@ echo "[startup] Reload server avviato (porta 9191)"
 
 # ── Loop watchdog ─────────────────────────────────────────────────────────────
 _CONF_HASH="$(echo "$_CONF" | md5sum | awk '{print $1}' || echo '')"
+_LOADED_CONF_HASH="${_CONF_HASH:-}"
+emit_status_json
 echo "[watchdog] Watchdog attivo (poll ogni ${_WATCHDOG_INTERVAL}s). Hash iniziale: ${_CONF_HASH}"
 while true; do
   _FORCE_RESTART="false"
@@ -816,14 +928,18 @@ while true; do
     _t="$(stat -c %Y "$_RELOAD_TRIGGER_FILE" 2>/dev/null || echo 0)"
     if [ "$_t" -gt "$_LAST_TRIGGER_TIME" ]; then
       _LAST_TRIGGER_TIME="$_t"
+      _LAST_RELOAD_EPOCH="$_t"
       echo "[watchdog] Reload forzato via API"
+      mark_status_event "reload_triggered"
       break
     fi
     _rt="$(stat -c %Y "$_RESTART_TRIGGER_FILE" 2>/dev/null || echo 0)"
     if [ "$_rt" -gt "$_LAST_RESTART_TIME" ]; then
       _LAST_RESTART_TIME="$_rt"
+      _LAST_RESTART_EPOCH="$_rt"
       _FORCE_RESTART="true"
       echo "[watchdog] Riavvio completo forzato via API"
+      mark_status_event "restart_triggered"
       break
     fi
     [ "$(( $(date +%s) - _sleep_start ))" -ge "$_WATCHDOG_INTERVAL" ] && break
@@ -833,6 +949,7 @@ while true; do
   if [ -n "${_SATOSA_PID:-}" ] && ! satosa_running; then
     echo "[watchdog] SATOSA (PID=$_SATOSA_PID) terminato inaspettatamente."
     _SATOSA_PID=""
+    mark_status_event "satosa_crashed"
   fi
 
   _NEW=$(fetch_conf) || {
@@ -851,8 +968,11 @@ try:
 except Exception:
     print('false')
 " 2>/dev/null || echo "false")
+  _SETUP_COMPLETE_LAST="$_new_setup"
   if [ "$_new_setup" != "true" ]; then
+    _AUTH_ENABLED_LAST="false"
     echo "[watchdog] Setup non completato — standby"
+    mark_status_event "setup_pending"
     continue
   fi
 
@@ -864,10 +984,12 @@ except Exception:
   if [ -n "$_CONF_HASH" ] && [ -n "$_NEW_HASH" ] && [ "$_NEW_HASH" != "$_CONF_HASH" ]; then
     echo "[watchdog] Rilevata modifica configurazione dal backoffice — preparo riavvio SATOSA..."
     _CONF_HASH="$_NEW_HASH"
+    mark_status_event "config_changed"
     stop_satosa
   fi
 
   if auth_on "$_NEW"; then
+    _AUTH_ENABLED_LAST="true"
     if ! satosa_running; then
       echo "[watchdog] Auth abilitato, SATOSA non in esecuzione — avvio..."
       eval "$(printf '%s' "$_NEW" | python3 -c "
@@ -884,6 +1006,7 @@ for k,v in json.load(sys.stdin).items():
       _hash_wdg="$(is_true "${ENABLE_SPID:-false}" && md5sum "$_cert_wdg" 2>/dev/null | awk '{print $1}' || echo '')"
       if [ -n "$_PKI_CERT_HASH" ] && [ -n "$_hash_wdg" ] && [ "$_hash_wdg" != "$_PKI_CERT_HASH" ]; then
         echo "[watchdog] Certificato SPID rinnovato — riavvio SATOSA per caricare il nuovo certificato..."
+        mark_status_event "spid_cert_changed"
         stop_satosa
         eval "$(printf '%s' "$_NEW" | python3 -c "
 import json,sys,shlex
@@ -894,15 +1017,19 @@ for k,v in json.load(sys.stdin).items():
         start_satosa || true
       else
         echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+        emit_status_json
       fi
     fi
   else
+    _AUTH_ENABLED_LAST="false"
     if satosa_running; then
       echo "[watchdog] Auth disabilitato dal backoffice — arresto SATOSA..."
       stop_satosa
       echo "[watchdog] In standby. SATOSA ripartirà quando auth sarà ri-abilitato."
+      mark_status_event "auth_disabled"
     else
       echo "[watchdog] Auth disabilitato, SATOSA già fermo — standby"
+      emit_status_json
     fi
   fi
 done

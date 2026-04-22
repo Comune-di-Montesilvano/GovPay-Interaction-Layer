@@ -2082,36 +2082,87 @@ class ImpostazioniController
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Controlla se il container auth-proxy-nginx risponde.
+     * Controlla stato Auth Proxy via API interna di controllo (porta 9191)
+     * e opzionalmente verifica raggiungibilità URL pubblico.
      * GET /impostazioni/login-proxy/status
      */
     public function getAuthProxyStatus(Request $request, Response $response): Response
     {
-        $url = 'http://auth-proxy-nginx:80/';
+        $statusUrl = 'http://auth-proxy:9191/status';
         $running = false;
-        $detail  = 'Non raggiungibile';
+        $detail  = 'Status API non raggiungibile';
+        $statusData = [];
+
+        $iamProxy = SettingsRepository::getSection('iam_proxy');
+        $publicBaseUrl = trim((string)($iamProxy['public_base_url'] ?? ''));
+        $publicReachable = null;
+        $publicDetail = '';
 
         if (function_exists('curl_init')) {
-            $ch = curl_init($url);
+            $ch = curl_init($statusUrl);
             if ($ch !== false) {
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
                 curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-                curl_setopt($ch, CURLOPT_NOBODY, true);
-                curl_exec($ch);
+                $raw = curl_exec($ch);
                 $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $curlErr  = (string) curl_error($ch);
 
-                if ($curlErr === '' && $httpCode > 0) {
-                    $running = true;
-                    $detail  = 'In esecuzione';
+                if ($curlErr === '' && $httpCode === 200 && is_string($raw) && $raw !== '') {
+                    $decoded = json_decode($raw, true);
+                    if (is_array($decoded)) {
+                        $statusData = $decoded;
+                        $running = (bool)($decoded['satosa_running'] ?? false);
+                        $detail = $running ? 'In esecuzione' : 'SATOSA fermo';
+                    } else {
+                        $detail = 'Status API non valida';
+                    }
                 } else {
                     $detail = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
+                }
+
+                curl_close($ch);
+            }
+
+            if ($publicBaseUrl !== '') {
+                $chPub = curl_init($publicBaseUrl);
+                if ($chPub !== false) {
+                    curl_setopt($chPub, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($chPub, CURLOPT_CONNECTTIMEOUT, 3);
+                    curl_setopt($chPub, CURLOPT_TIMEOUT, 4);
+                    curl_setopt($chPub, CURLOPT_NOBODY, true);
+                    curl_setopt($chPub, CURLOPT_FOLLOWLOCATION, true);
+                    curl_exec($chPub);
+                    $pubCode = (int)curl_getinfo($chPub, CURLINFO_HTTP_CODE);
+                    $pubErr = (string)curl_error($chPub);
+                    if ($pubErr === '' && $pubCode > 0) {
+                        $publicReachable = true;
+                        $publicDetail = "HTTP {$pubCode}";
+                    } else {
+                        $publicReachable = false;
+                        $publicDetail = $pubErr !== '' ? $pubErr : "HTTP {$pubCode}";
+                    }
+                    curl_close($chPub);
                 }
             }
         }
 
-        return $this->jsonResponse(['running' => $running, 'detail' => $detail]);
+        return $this->jsonResponse([
+            'running' => $running,
+            'detail' => $detail,
+            'booted_at' => (string)($statusData['booted_at'] ?? ''),
+            'app_version' => (string)($statusData['app_version'] ?? ''),
+            'satosa_pid' => (string)($statusData['satosa_pid'] ?? ''),
+            'last_event' => (string)($statusData['last_event'] ?? ''),
+            'last_event_at' => (string)($statusData['last_event_at'] ?? ''),
+            'observed_config_hash' => (string)($statusData['observed_config_hash'] ?? ''),
+            'loaded_config_hash' => (string)($statusData['loaded_config_hash'] ?? ''),
+            'setup_complete' => (bool)($statusData['setup_complete'] ?? false),
+            'auth_enabled' => (bool)($statusData['auth_enabled'] ?? false),
+            'public_base_url' => $publicBaseUrl,
+            'public_reachable' => $publicReachable,
+            'public_detail' => $publicDetail,
+        ]);
     }
 
     /**
