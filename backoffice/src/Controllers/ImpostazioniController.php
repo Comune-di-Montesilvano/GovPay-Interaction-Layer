@@ -663,29 +663,37 @@ class ImpostazioniController
             $env['CIE_OIDC_ORGANIZATION_NAME'] = (string)($sEntity['name'] ?? '');
         }
 
-        // --- Generazione stringhe hardcoded per CIE OIDC ---
-        $cieEnv = $s['cie_env'] ?? 'prod';
+        // --- CIE OIDC URLs: deterministici (no override da DB) ---
+        $cieEnv = (string)($s['cie_env'] ?? 'prod');
         if ($cieEnv === 'prod') {
-            $env['CIE_OIDC_PROVIDER_URL']       = 'https://oidc.idserver.servizicie.interno.gov.it';
-            $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://oidc.idserver.servizicie.interno.gov.it';
-            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://oidc.registry.servizicie.interno.gov.it';
+            $providerUrl = 'https://oidc.idserver.servizicie.interno.gov.it';
+            $authorityHintUrl = 'https://oidc.idserver.servizicie.interno.gov.it';
+            $trustAnchorUrl = 'https://oidc.registry.servizicie.interno.gov.it';
         } else {
-            $env['CIE_OIDC_PROVIDER_URL']       = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
-            $env['CIE_OIDC_AUTHORITY_HINT_URL'] = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
-            $env['CIE_OIDC_TRUST_ANCHOR_URL']   = 'https://preproduzione.cie.interno.gov.it';
+            $providerUrl = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
+            $authorityHintUrl = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
+            $trustAnchorUrl = 'https://preprod.registry.servizicie.interno.gov.it';
         }
 
-        $satosaBase = rtrim($env['SATOSA_BASE'] ?? '', '/');
-        $env['CIE_OIDC_CLIENT_ID']                            = $satosaBase . '/CieOidcRp';
-        $env['CIE_OIDC_REDIRECT_URI']                         = $satosaBase . '/CieOidcRp/oidc/callback';
-        $env['CIE_OIDC_JWKS_URI']                             = $satosaBase . '/CieOidcRp/openid_relying_party/jwks.json';
-        $env['CIE_OIDC_SIGNED_JWKS_URI']                      = $satosaBase . '/CieOidcRp/openid_relying_party/signed_jwks.jose';
-        $env['CIE_OIDC_HOMEPAGE_URI']                         = $satosaBase;
-        $env['CIE_OIDC_POLICY_URI']                           = $satosaBase;
-        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT']          = '/CieOidcRp/resolve';
-        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT']            = '/CieOidcRp/fetch';
-        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT']= '/CieOidcRp/trust_mark_status';
-        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT']             = '/CieOidcRp/list';
+        $env['CIE_OIDC_PROVIDER_URL'] = $providerUrl;
+        $env['CIE_OIDC_AUTHORITY_HINT_URL'] = $authorityHintUrl;
+        $env['CIE_OIDC_TRUST_ANCHOR_URL'] = $trustAnchorUrl;
+
+        $satosaBase = rtrim((string)($env['SATOSA_BASE'] ?? ''), '/');
+        $satosaPath = rtrim((string)(parse_url($satosaBase, PHP_URL_PATH) ?? ''), '/');
+        $rpWebPath = ($satosaPath !== '' ? $satosaPath : '') . '/CieOidcRp';
+
+        $env['CIE_OIDC_CLIENT_ID'] = $satosaBase . '/CieOidcRp';
+        $env['CIE_OIDC_REDIRECT_URI'] = $satosaBase . '/CieOidcRp/oidc/callback';
+        $env['CIE_OIDC_JWKS_URI'] = $satosaBase . '/CieOidcRp/openid_relying_party/jwks.json';
+        $env['CIE_OIDC_SIGNED_JWKS_URI'] = $satosaBase . '/CieOidcRp/openid_relying_party/jwks.jose';
+        $env['CIE_OIDC_HOMEPAGE_URI'] = $satosaBase;
+        $env['CIE_OIDC_POLICY_URI'] = $satosaBase;
+
+        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT'] = $rpWebPath . '/resolve';
+        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT'] = $rpWebPath . '/fetch';
+        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT'] = $rpWebPath . '/trust_mark_status';
+        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT'] = $rpWebPath . '/list';
 
         // Variabili cross-section: frontoffice e entity
         if (!empty($sFrontoffice['public_base_url'])) {
