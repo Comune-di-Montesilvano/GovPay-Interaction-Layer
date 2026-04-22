@@ -75,9 +75,6 @@ config:
   metadata: &metadata
     federation_entity:
       federation_resolve_endpoint: ${CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT}
-      federation_fetch_endpoint: ${CIE_OIDC_FEDERATION_FETCH_ENDPOINT}
-      federation_trust_mark_status_endpoint: ${CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT}
-      federation_list_endpoint: ${CIE_OIDC_FEDERATION_LIST_ENDPOINT}
       organization_name: ${CIE_OIDC_ORGANIZATION_NAME}
       homepage_uri: ${CIE_OIDC_HOMEPAGE_URI}
       policy_uri: ${CIE_OIDC_POLICY_URI}
