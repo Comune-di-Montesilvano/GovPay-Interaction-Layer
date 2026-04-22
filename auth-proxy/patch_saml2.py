@@ -185,55 +185,40 @@ else:
     with open(_CIEOIDC_PATH) as _f:
         _cie_content = _f.read()
 
-    _OLD4 = "        self.trust_chain = self._generate_trust_chains()\n"
-    _NEW4 = (
-        "        try:\n"
-        "            self.trust_chain = self._generate_trust_chains()\n"
-        "        except Exception as _tc_exc:\n"
-        "            import logging as _log\n"
-        "            _log.getLogger(__name__).warning(\n"
-        "                f\"[patch] CieOidcBackend: trust chain fetch fallita al boot \"\n"
-        "                f\"({type(_tc_exc).__name__}: {_tc_exc}). \"\n"
-        "                \"SATOSA parte senza trust chain precalcolata. \"\n"
-        "                \"L'autenticazione CIE potrebbe fallire se il registry non e' raggiungibile.\"\n"
-        "            )\n"
-        "            self.trust_chain = {}\n"
-    )
-
-    _MALFORMED4 = (
-        "        try:\n"
-        "        self.trust_chain = self._generate_trust_chains()\n"
-    )
-
-    # Verifica malformazioni PRIMA di dichiarare "already patched":
-    # il file potrebbe contenere la stringa del warning ma avere il try-block malformato.
-    # Rileva specificamente: try: e self.trust_chain alla stessa indentazione (blocco vuoto).
-    _is_malformed = (
-        _MALFORMED4 in _cie_content
-        or re.search(r"^( +)try:\n\1self\.trust_chain = self\._generate_trust_chains\(\)", _cie_content, flags=re.MULTILINE) is not None
-    )
-
-    if _is_malformed:
-        if _MALFORMED4 in _cie_content:
-            _cie_content = _cie_content.replace(_MALFORMED4, _NEW4, 1)
-        else:
-            _cie_content = re.sub(
-                r"^(\s*)try:\n\s*self\.trust_chain = self\._generate_trust_chains\(\)",
-                _NEW4.rstrip("\n"),
-                _cie_content,
-                count=1,
-                flags=re.MULTILINE,
-            ) + ("\n" if not _cie_content.endswith("\n") else "")
-        with open(_CIEOIDC_PATH, "w") as _f:
-            _f.write(_cie_content)
-        print("[patch_cieoidc_init] Repaired malformed try-block indentation.")
-    elif _OLD4 not in _cie_content:
-        if "trust chain fetch fallita al boot" in _cie_content:
-            print("[patch_cieoidc_init] Already patched, nothing to do.")
-        else:
-            print("[patch_cieoidc_init] WARNING: expected pattern not found -- skipping patch 4.")
+    _endpoints_re = re.compile(r"^(\s*)self\.endpoints\s*=\s*\{\}\s*$", re.MULTILINE)
+    _m_end = _endpoints_re.search(_cie_content)
+    if _m_end is None:
+        print("[patch_cieoidc_init] WARNING: anchor 'self.endpoints = {}' not found -- skipping patch 4.")
     else:
-        _cie_content = _cie_content.replace(_OLD4, _NEW4, 1)
-        with open(_CIEOIDC_PATH, "w") as _f:
-            _f.write(_cie_content)
-        print("[patch_cieoidc_init] Patch applied: _generate_trust_chains non-fatal.")
+        _indent = _m_end.group(1)
+        _start = _m_end.end()
+        _metadata_re = re.compile(
+            rf"^{re.escape(_indent)}metadata\s*=\s*self\.config\.get\(\"metadata\",\s*\{{\}}\)\.get\(\"openid_relying_party\",\s*\{{\}}\)\s*$",
+            re.MULTILINE,
+        )
+        _m_meta = _metadata_re.search(_cie_content, _start)
+        if _m_meta is None:
+            print("[patch_cieoidc_init] WARNING: anchor 'metadata = ...openid_relying_party...' not found -- skipping patch 4.")
+        else:
+            _current_block = _cie_content[_start:_m_meta.start()]
+            _desired_block = (
+                f"\n{_indent}try:\n"
+                f"{_indent}    self.trust_chain = self._generate_trust_chains()\n"
+                f"{_indent}except Exception as _tc_exc:\n"
+                f"{_indent}    import logging as _log\n"
+                f"{_indent}    _log.getLogger(__name__).warning(\n"
+                f"{_indent}        f\"[patch] CieOidcBackend: trust chain fetch fallita al boot \"\n"
+                f"{_indent}        f\"({{type(_tc_exc).__name__}}: {{_tc_exc}}). \"\n"
+                f"{_indent}        \"SATOSA parte senza trust chain precalcolata. \"\n"
+                f"{_indent}        \"L'autenticazione CIE potrebbe fallire se il registry non e' raggiungibile.\"\n"
+                f"{_indent}    )\n"
+                f"{_indent}    self.trust_chain = {{}}\n"
+            )
+
+            if _current_block == _desired_block:
+                print("[patch_cieoidc_init] Already patched, nothing to do.")
+            else:
+                _cie_content = _cie_content[:_start] + _desired_block + _cie_content[_m_meta.start():]
+                with open(_CIEOIDC_PATH, "w") as _f:
+                    _f.write(_cie_content)
+                print("[patch_cieoidc_init] Normalized trust-chain init block (idempotent).")
