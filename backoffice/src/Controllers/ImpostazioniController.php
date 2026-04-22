@@ -667,12 +667,13 @@ class ImpostazioniController
         $cieEnv = (string)($s['cie_env'] ?? 'prod');
         if ($cieEnv === 'prod') {
             $providerUrl = 'https://oidc.idserver.servizicie.interno.gov.it';
-            $authorityHintUrl = 'https://oidc.idserver.servizicie.interno.gov.it';
             $trustAnchorUrl = 'https://oidc.registry.servizicie.interno.gov.it';
+            // In OIDC Federation authority_hints deve puntare all'anchor autorevole.
+            $authorityHintUrl = $trustAnchorUrl;
         } else {
             $providerUrl = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
-            $authorityHintUrl = 'https://preproduzione.cie.interno.gov.it/idp/oidc/op';
             $trustAnchorUrl = 'https://preprod.registry.servizicie.interno.gov.it';
+            $authorityHintUrl = $trustAnchorUrl;
         }
 
         $env['CIE_OIDC_PROVIDER_URL'] = $providerUrl;
@@ -682,6 +683,7 @@ class ImpostazioniController
         $satosaBase = rtrim((string)($env['SATOSA_BASE'] ?? ''), '/');
         $satosaPath = rtrim((string)(parse_url($satosaBase, PHP_URL_PATH) ?? ''), '/');
         $rpWebPath = ($satosaPath !== '' ? $satosaPath : '') . '/CieOidcRp';
+        $rpBase = $satosaBase !== '' ? ($satosaBase . '/CieOidcRp') : $rpWebPath;
 
         $env['CIE_OIDC_CLIENT_ID'] = $satosaBase . '/CieOidcRp';
         $env['CIE_OIDC_REDIRECT_URI'] = $satosaBase . '/CieOidcRp/oidc/callback';
@@ -690,10 +692,10 @@ class ImpostazioniController
         $env['CIE_OIDC_HOMEPAGE_URI'] = $satosaBase;
         $env['CIE_OIDC_POLICY_URI'] = $satosaBase;
 
-        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT'] = $rpWebPath . '/resolve';
-        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT'] = $rpWebPath . '/fetch';
-        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT'] = $rpWebPath . '/trust_mark_status';
-        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT'] = $rpWebPath . '/list';
+        $env['CIE_OIDC_FEDERATION_RESOLVE_ENDPOINT'] = $rpBase . '/resolve';
+        $env['CIE_OIDC_FEDERATION_FETCH_ENDPOINT'] = $rpBase . '/fetch';
+        $env['CIE_OIDC_FEDERATION_TRUST_MARK_STATUS_ENDPOINT'] = $rpBase . '/trust_mark_status';
+        $env['CIE_OIDC_FEDERATION_LIST_ENDPOINT'] = $rpBase . '/list';
 
         // Variabili cross-section: frontoffice e entity
         if (!empty($sFrontoffice['public_base_url'])) {
