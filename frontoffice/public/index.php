@@ -699,7 +699,7 @@ if (!function_exists('frontoffice_satosa_idp_metadata')) {
     /**
      * Estrae dai metadata SATOSA IdP: entityID, SSO Redirect URL, certificato X509.
      */
-    function frontoffice_satosa_idp_metadata(string $metadataUrl, bool $insecureSsl = false): ?array
+    function frontoffice_satosa_idp_metadata(string $metadataUrl, bool $insecureSsl = false, bool $forceRefresh = false): ?array
     {
         $metadataUrl = trim($metadataUrl);
         if ($metadataUrl === '') {
@@ -707,7 +707,8 @@ if (!function_exists('frontoffice_satosa_idp_metadata')) {
         }
 
         $cache = $_SESSION['satosa_idp_metadata_cache'] ?? null;
-        if (is_array($cache)
+        if (!$forceRefresh
+            && is_array($cache)
             && isset($cache['ts'], $cache['url'], $cache['data'])
             && is_int($cache['ts'])
             && $cache['url'] === $metadataUrl
@@ -790,7 +791,7 @@ if (!function_exists('frontoffice_satosa_idp_metadata')) {
 }
 
 if (!function_exists('frontoffice_satosa_saml_auth')) {
-    function frontoffice_satosa_saml_auth(string $frontofficeBaseUrl, string $callbackPath, string $idpMetadataUrl, bool $debug = false): ?SamlAuth
+    function frontoffice_satosa_saml_auth(string $frontofficeBaseUrl, string $callbackPath, string $idpMetadataUrl, bool $debug = false, bool $forceMetadataRefresh = false): ?SamlAuth
     {
         if ($frontofficeBaseUrl === '') {
             return null;
@@ -801,7 +802,7 @@ if (!function_exists('frontoffice_satosa_saml_auth')) {
         }
 
         $insecureSsl = frontoffice_spid_proxy_insecure_ssl($idpMetadataUrl);
-        $idp = frontoffice_satosa_idp_metadata($idpMetadataUrl, $insecureSsl);
+        $idp = frontoffice_satosa_idp_metadata($idpMetadataUrl, $insecureSsl, $forceMetadataRefresh);
         if (!is_array($idp)) {
             return null;
         }
@@ -2985,9 +2986,33 @@ $routes = [
             }
 
             $errors = $auth->getErrors();
+            $reason = $auth->getLastErrorReason();
+            $shouldRetryWithFreshMetadata = !$auth->isAuthenticated()
+                && !empty($errors)
+                && in_array('invalid_response', $errors, true)
+                && is_string($reason)
+                && stripos($reason, 'Signature validation failed') !== false;
+
+            if ($shouldRetryWithFreshMetadata) {
+                error_log('DEBUG SPID CALLBACK: retry con metadata SATOSA aggiornati dopo errore firma');
+                $auth = frontoffice_satosa_saml_auth($frontofficeBaseUrl, $spidCallbackPath, $metadataUrl, $debug, true);
+                if ($auth instanceof SamlAuth) {
+                    try {
+                        $auth->processResponse();
+                    } catch (SamlError $e) {
+                        error_log("DEBUG SPID CALLBACK: SamlError in processResponse retry: " . $e->getMessage());
+                        Logger::getInstance()->warning('SAML error retry', ['error' => $e->getMessage()]);
+                    } catch (\Throwable $e) {
+                        error_log("DEBUG SPID CALLBACK: Exception in processResponse retry: " . $e->getMessage());
+                        Logger::getInstance()->warning('Errore processResponse SAML retry', ['error' => $e->getMessage()]);
+                    }
+                    $errors = $auth->getErrors();
+                    $reason = $auth->getLastErrorReason();
+                }
+            }
+
             error_log("DEBUG SPID CALLBACK: errors=" . implode(', ', $errors) . ", isAuthenticated=" . ($auth->isAuthenticated() ? 'true' : 'false'));
             if (!empty($errors) || !$auth->isAuthenticated()) {
-                $reason = $auth->getLastErrorReason();
                 error_log("DEBUG SPID CALLBACK: getLastErrorReason=$reason");
                 http_response_code(503);
                 return [
