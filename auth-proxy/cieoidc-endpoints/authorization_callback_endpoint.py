@@ -195,7 +195,7 @@ class AuthorizationCallBackHandler(BaseEndpoint):
 
         self.__update_authorization(authorization)
 
-        internal_data = self._translate_response(user.model_dump(mode="json"), iss, authorization.get("client_id"))
+        internal_data = self._translate_response(user.model_dump(mode="json"), iss, user.sub)
         return self._auth_callback(context, internal_data)
 
     def __get_authorization(self, state: str) -> dict:
@@ -331,6 +331,16 @@ class AuthorizationCallBackHandler(BaseEndpoint):
         auth_info = AuthenticationInformation("https://www.spid.gov.it/SpidL2", str(round(time.time())), issuer)
         internal_resp = InternalData(auth_info=auth_info)
         internal_resp.attributes = self._converter.to_internal("cie_oidc", attributes)
+        # Defensive fallback: some SATOSA/SPID flows expect this key explicitly.
+        # Ensure it is always available even if converter mapping omits it.
+        if "edupersontargetedid" not in internal_resp.attributes:
+            targeted_id = (
+                attributes.get("edupersontargetedid")
+                or attributes.get("sub")
+                or sub
+            )
+            if targeted_id:
+                internal_resp.attributes["edupersontargetedid"] = [targeted_id]
         internal_resp.subject_id = sub
         return internal_resp
 
