@@ -86,13 +86,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && a2enmod ssl rewrite headers \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
-# Versione immagine iniettata a build-time dalla CI (es. "dev", "1.2.3")
-ARG GIL_IMAGE_TAG=dev
+# Versione immagine iniettata a build-time dalla CI (es. "development", "dev", "v1.2.3")
+ARG GIL_IMAGE_TAG=development
 ENV GIL_IMAGE_TAG=$GIL_IMAGE_TAG
+
+ARG GIL_VERSION_TYPE=development
+ENV GIL_VERSION_TYPE=$GIL_VERSION_TYPE
+
+ARG GIL_VERSION_LABEL=development
+ENV GIL_VERSION_LABEL=$GIL_VERSION_LABEL
+
+ARG GIL_REF_URL=
+ENV GIL_REF_URL=$GIL_REF_URL
 
 # Commit SHA iniettato a build-time dalla CI
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+
+RUN printf '%s\n' "$GIL_IMAGE_TAG" > /var/www/html/VERSION \
+    && php -r '$data = ["version" => getenv("GIL_IMAGE_TAG") ?: "development", "version_type" => getenv("GIL_VERSION_TYPE") ?: "development", "version_label" => getenv("GIL_VERSION_LABEL") ?: (getenv("GIL_IMAGE_TAG") ?: "development"), "commit" => getenv("GIT_COMMIT_SHA") ?: "unknown", "ref_url" => getenv("GIL_REF_URL") ?: ""]; file_put_contents("/var/www/html/VERSION_INFO.json", json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
 
 # Copia vendor dal builder
 COPY --from=vendor_builder /app/vendor /var/www/html/vendor

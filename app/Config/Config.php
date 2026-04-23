@@ -17,6 +17,8 @@ namespace App\Config;
  */
 class Config
 {
+    private const REPOSITORY_URL = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer';
+
     /**
      * Mappa ENV_KEY => ['section' => '...', 'key' => '...']
      * Tutti i parametri che erano in .env e ora risiedono nella tabella settings.
@@ -159,17 +161,146 @@ class Config
      */
     public static function getVersion(): string
     {
-        $candidates = [
-            dirname(__DIR__, 2) . '/VERSION',
-            '/var/www/html/VERSION',
+        $info = self::getVersionInfo();
+
+        return (string) ($info['version'] ?? 'development');
+    }
+
+    /**
+     * Ritorna i metadati normalizzati per versioning e footer.
+     *
+     * Keys:
+     * - version: stringa base (`development`, `dev`, `v1.2.3`, ...)
+     * - version_type: `development`, `dev`, `release`, `tag`, `commit`
+     * - version_label: label finale da renderizzare (`dev@sha7`, `v1.2.3`, ...)
+     * - commit: full SHA se disponibile
+     * - ref_url: URL GitHub finale oppure stringa vuota
+     */
+    public static function getVersionInfo(): array
+    {
+        $commit = (string) (getenv('GIT_COMMIT_SHA') ?: 'unknown');
+        $version = self::readVersionFile() ?? (string) (getenv('GIL_IMAGE_TAG') ?: 'development');
+
+        $info = [
+            'version' => trim($version) !== '' ? trim($version) : 'development',
+            'version_type' => '',
+            'version_label' => '',
+            'commit' => $commit,
+            'ref_url' => '',
         ];
 
-        foreach ($candidates as $f) {
-            if (file_exists($f)) {
-                return trim((string) file_get_contents($f));
+        $fileInfo = self::readVersionInfoFile();
+        if ($fileInfo !== null) {
+            $info = array_merge($info, array_intersect_key($fileInfo, $info));
+        }
+
+        $info['version'] = trim((string) ($info['version'] ?? 'development')) ?: 'development';
+        $info['version_type'] = self::normalizeVersionType((string) ($info['version_type'] ?? ''), $info['version'], $commit);
+        $info['version_label'] = trim((string) ($info['version_label'] ?? ''));
+        if ($info['version_label'] === '') {
+            $info['version_label'] = self::buildVersionLabel($info['version_type'], $info['version'], $commit);
+        }
+
+        $info['ref_url'] = trim((string) ($info['ref_url'] ?? ''));
+        if ($info['ref_url'] === '') {
+            $info['ref_url'] = self::buildRefUrl($info['version_type'], $info['version'], $commit);
+        }
+
+        return $info;
+    }
+
+    private static function readVersionFile(): ?string
+    {
+        foreach (self::getVersionCandidates('VERSION') as $filePath) {
+            if (is_file($filePath)) {
+                return trim((string) file_get_contents($filePath));
             }
         }
 
-        return (string)(getenv('GIL_IMAGE_TAG') ?: 'dev');
+        return null;
+    }
+
+    private static function readVersionInfoFile(): ?array
+    {
+        foreach (self::getVersionCandidates('VERSION_INFO.json') as $filePath) {
+            if (!is_file($filePath)) {
+                continue;
+            }
+
+            $decoded = json_decode((string) file_get_contents($filePath), true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
+    private static function getVersionCandidates(string $fileName): array
+    {
+        return [
+            dirname(__DIR__, 2) . '/' . $fileName,
+            '/var/www/html/' . $fileName,
+        ];
+    }
+
+    private static function normalizeVersionType(string $versionType, string $version, string $commit): string
+    {
+        $normalized = strtolower(trim($versionType));
+        if (in_array($normalized, ['development', 'dev', 'release', 'tag', 'commit'], true)) {
+            return $normalized;
+        }
+
+        if ($version === 'development') {
+            return 'development';
+        }
+
+        if ($version === 'dev') {
+            return 'dev';
+        }
+
+        if (preg_match('/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/', $version) === 1) {
+            return 'release';
+        }
+
+        if ($commit !== 'unknown') {
+            return 'commit';
+        }
+
+        return 'development';
+    }
+
+    private static function buildVersionLabel(string $versionType, string $version, string $commit): string
+    {
+        if ($versionType === 'dev') {
+            return $commit !== 'unknown' ? 'dev@' . substr($commit, 0, 7) : 'dev';
+        }
+
+        if ($versionType === 'commit') {
+            return $commit !== 'unknown' ? substr($commit, 0, 7) : $version;
+        }
+
+        return $version;
+    }
+
+    private static function buildRefUrl(string $versionType, string $version, string $commit): string
+    {
+        if ($versionType === 'development') {
+            return '';
+        }
+
+        if (in_array($versionType, ['dev', 'commit'], true) && $commit !== 'unknown') {
+            return self::REPOSITORY_URL . '/commit/' . $commit;
+        }
+
+        if ($versionType === 'release') {
+            return self::REPOSITORY_URL . '/releases/tag/' . $version;
+        }
+
+        if ($versionType === 'tag') {
+            return self::REPOSITORY_URL . '/tree/' . $version;
+        }
+
+        return self::REPOSITORY_URL;
     }
 }

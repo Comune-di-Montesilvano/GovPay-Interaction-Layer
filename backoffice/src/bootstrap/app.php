@@ -79,8 +79,12 @@ return (function (): array {
     $twig->getEnvironment()->addGlobal('app_logo', $appLogo);
     $twig->getEnvironment()->addGlobal('app_favicon', $appFavicon);
 
-    $twig->getEnvironment()->addGlobal('app_version', \App\Config\Config::getVersion());
-    $twig->getEnvironment()->addGlobal('app_commit', (string)(getenv('GIT_COMMIT_SHA') ?: 'unknown'));
+    $versionInfo = \App\Config\Config::getVersionInfo();
+    $twig->getEnvironment()->addGlobal('app_version', $versionInfo['version']);
+    $twig->getEnvironment()->addGlobal('app_commit', $versionInfo['commit']);
+    $twig->getEnvironment()->addGlobal('app_version_type', $versionInfo['version_type']);
+    $twig->getEnvironment()->addGlobal('app_version_label', $versionInfo['version_label']);
+    $twig->getEnvironment()->addGlobal('app_ref_url', $versionInfo['ref_url']);
 
 
     $pendenzaStates = [
