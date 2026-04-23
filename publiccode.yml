@@ -1,0 +1,72 @@
+publiccodeYmlVersion: "0.2"
+
+name: GovPay Interaction Layer
+url: "https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer"
+softwareVersion: "1.0.0"
+releaseDate: "2025-01-01"
+platforms:
+  - web
+categories:
+  - payments
+developmentStatus: stable
+softwareType: "standalone/web"
+
+description:
+  it:
+    localisedName: "GovPay Interaction Layer"
+    shortDescription: >
+      Piattaforma containerizzata per migliorare il flusso di lavoro
+      degli enti che utilizzano GovPay come soluzione PagoPA.
+    longDescription: >
+      GovPay Interaction Layer (GIL) è una piattaforma containerizzata
+      sviluppata dal Comune di Montesilvano per migliorare il flusso di
+      lavoro degli enti locali che utilizzano GovPay come soluzione
+      PagoPA. Include un backoffice per operatori (gestione pendenze,
+      flussi di rendicontazione, ricevute pagoPA on-demand), un
+      frontoffice per cittadini e sportello, e un proxy SPID/CIE
+      opzionale configurabile tramite interfaccia web. Si integra con
+      GovPay, pagoPA Checkout, pagoPA Biz Events e App IO. Il deployment
+      è gestito tramite Docker Compose o Portainer con immagini
+      pubblicate su GitHub Container Registry. L'autenticazione federata
+      SPID/CIE è basata su SATOSA (IAM Proxy Italia).
+    features:
+      - Backoffice per la gestione delle pendenze pagoPA
+      - Flussi di rendicontazione con ricevute on-demand via Biz Events
+      - Frontoffice cittadini con autenticazione SPID/CIE (opzionale)
+      - Proxy SPID/CIE integrato basato su SATOSA (IAM Proxy Italia)
+      - Integrazione con App IO per l'invio di avvisi di pagamento
+      - Dashboard con statistiche e grafici
+      - Inserimento massivo pendenze tramite lotti
+      - Deploy containerizzato tramite Docker Compose e Portainer
+
+legal:
+  license: EUPL-1.2
+  mainCopyrightOwner: Comune di Montesilvano
+  repoOwner: Comune di Montesilvano
+
+maintenance:
+  type: internal
+  contacts:
+    - name: Settore Informatica - Comune di Montesilvano
+      affiliation: Comune di Montesilvano
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - it
+
+it:
+  countryExtensionVersion: "1.0"
+  conforme:
+    lineeGuidaDesign: true
+    modelloInteroperabilita: true
+    misureMinimeSicurezza: false
+    gdpr: false
+  piattaforme:
+    spid: true
+    pagopa: true
+    cie: true
+    anpr: false
+    io: true
+  riuso:
+    codiceIPA: c_f646
