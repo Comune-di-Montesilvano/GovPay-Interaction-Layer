@@ -331,6 +331,11 @@ class AuthorizationCallBackHandler(BaseEndpoint):
         auth_info = AuthenticationInformation("https://www.spid.gov.it/SpidL2", str(round(time.time())), issuer)
         internal_resp = InternalData(auth_info=auth_info)
         internal_resp.attributes = self._converter.to_internal("cie_oidc", attributes)
+
+        def _set_if_missing(key: str, value: str) -> None:
+            if value and key not in internal_resp.attributes:
+                internal_resp.attributes[key] = [value]
+
         # Defensive fallback: some SATOSA/SPID flows expect this key explicitly.
         # Ensure it is always available even if converter mapping omits it.
         if "edupersontargetedid" not in internal_resp.attributes:
@@ -341,6 +346,41 @@ class AuthorizationCallBackHandler(BaseEndpoint):
             )
             if targeted_id:
                 internal_resp.attributes["edupersontargetedid"] = [targeted_id]
+
+        first_name = str(attributes.get("first_name") or attributes.get("given_name") or "")
+        last_name = str(attributes.get("last_name") or attributes.get("family_name") or "")
+        fiscal_number = str(
+            attributes.get("fiscal_number")
+            or attributes.get("https://attributes.eid.gov.it/fiscal_number")
+            or ""
+        )
+
+        # Frontoffice SAML callback checks multiple aliases; provide them defensively.
+        _set_if_missing("first_name", first_name)
+        _set_if_missing("given_name", first_name)
+        _set_if_missing("givenName", first_name)
+        _set_if_missing("name", first_name)
+        _set_if_missing("urn:oid:2.5.4.42", first_name)
+
+        _set_if_missing("last_name", last_name)
+        _set_if_missing("family_name", last_name)
+        _set_if_missing("familyName", last_name)
+        _set_if_missing("sn", last_name)
+        _set_if_missing("surname", last_name)
+        _set_if_missing("urn:oid:2.5.4.4", last_name)
+
+        _set_if_missing("fiscal_number", fiscal_number)
+        _set_if_missing("fiscalNumber", fiscal_number)
+        _set_if_missing("fiscalnumber", fiscal_number)
+        _set_if_missing("FiscalNumber", fiscal_number)
+        _set_if_missing("fiscalCode", fiscal_number)
+        _set_if_missing("fiscal_code", fiscal_number)
+        _set_if_missing("codiceFiscale", fiscal_number)
+        _set_if_missing("https://attributes.eid.gov.it/fiscal_number", fiscal_number)
+        _set_if_missing("https://attributes.spid.gov.it/fiscalNumber", fiscal_number)
+        _set_if_missing("urn:oid:2.5.4.97", fiscal_number)
+        _set_if_missing("urn:oid:1.3.6.1.4.1.4710.2.1.1", fiscal_number)
+
         internal_resp.subject_id = sub
         return internal_resp
 
