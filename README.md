@@ -140,7 +140,7 @@ Le variabili obbligatorie prima del primo avvio:
 
 ## Integrazioni API esterne
 
-GIL si integra con i seguenti servizi esterni. Tutte le credenziali vanno configurate nel `.env` (vedi `.env.example`).
+GIL si integra con i seguenti servizi esterni. Le variabili infrastrutturali/bootstrap stanno nel `.env`; la configurazione operativa di SPID/CIE viene invece salvata dal backoffice in tabella `settings`.
 
 | Integrazione | Scopo | Variabili `.env` |
 |---|---|---|
@@ -152,23 +152,25 @@ GIL si integra con i seguenti servizi esterni. Tutte le credenziali vanno config
 
 ### Certificati client GovPay (mTLS)
 
-Se `AUTHENTICATION_GOVPAY=ssl` o `sslheader`, GIL autentica le chiamate verso GovPay tramite certificato X.509 client. I file del certificato vanno messi nella cartella `certificate/` nella root del progetto:
+Se `AUTHENTICATION_GOVPAY=ssl` o `sslheader`, GIL autentica le chiamate verso GovPay tramite certificato X.509 client.
 
-```
-certificate/
-├── certificate.cer    ← certificato client
-└── private_key.key    ← chiave privata
-```
+Il flusso operativo corrente e' **UI first**:
 
-Il Dockerfile copia automaticamente questa cartella all'interno del container in `/var/www/certificate/`. Imposta i path container nel `.env`:
+- carica certificato e chiave dal backoffice durante il setup guidato oppure da **Impostazioni**
+- il backoffice salva i file nel volume Docker `gil_certs`
+- i path applicativi vengono registrati nel DB come `/var/www/certificate/govpay-cert.pem` e `/var/www/certificate/govpay-key.pem`
+
+I path runtime attesi sono:
 
 ```env
-GOVPAY_TLS_CERT=/var/www/certificate/certificate.cer
-GOVPAY_TLS_KEY=/var/www/certificate/private_key.key
+GOVPAY_TLS_CERT=/var/www/certificate/govpay-cert.pem
+GOVPAY_TLS_KEY=/var/www/certificate/govpay-key.pem
 ```
 
 > [!WARNING]
-> I file in `certificate/` vengono **inclusi nell'immagine Docker** al momento della build (non montati come volume). Dopo aver aggiornato i certificati è necessario ricostruire l'immagine con `docker compose up -d --build`. Un certificato scaduto o mancante blocca silenziosamente tutte le chiamate a GovPay.
+> In deploy normali i certificati GovPay non vanno gestiti copiando file nel repository: vengono mantenuti nel volume `gil_certs` e aggiornati dalla UI. La cartella `certificate/` nella root ha senso solo come supporto locale/storico, non come flusso operativo principale.
+
+Se la chiave privata e' protetta da password, valorizza anche `GOVPAY_TLS_KEY_PASSWORD`. In assenza dei file o con certificato scaduto le chiamate a GovPay falliscono a runtime.
 
 Vedi [certificate/README.md](certificate/README.md) per dettagli su nomi file accettati e provenienza dei certificati.
 
@@ -184,15 +186,20 @@ Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)**. I container `auth-
 
 - Porta libera: `9445` (proxy IAM, configurabile con `AUTH_PROXY_PORT` in `.env`)
 
-### 1. Genera certificati e chiavi CIE OIDC
+### 1. Bootstrap artifact SPID/CIE
 
-Prima del primo avvio, genera i certificati SPID e le chiavi JWK CIE OIDC:
+Prima dell'onboarding genera gli artifact iniziali per il deployment: certificati SPID nel volume `govpay_spid_certs` e chiavi JWK CIE OIDC nel volume `gil_cieoidc_keys`.
 
 ```bash
 docker compose run --rm metadata-builder setup
 ```
 
-I certificati vengono scritti nel volume Docker `govpay_spid_certs`; le chiavi CIE OIDC nel volume `gil_cieoidc_keys`.
+In alternativa, dal backoffice puoi generare gli stessi artifact da **Impostazioni → Login Proxy**:
+
+- card **Certificato SPID** → `Genera`
+- card **Chiavi CIE OIDC** → `Genera`
+
+Rigenerare certificati SPID o chiavi CIE dopo l'onboarding rompe la federazione finche' non completi nuovamente i passi di registrazione lato AgID/CIE.
 
 ### 2. Configura dal backoffice
 
@@ -211,7 +218,7 @@ Poi apri **Backoffice → Impostazioni → Login Proxy** e compila la procedura 
 
 > Il watchdog di `auth-proxy` effettua polling della configurazione ogni `AUTH_PROXY_WATCHDOG_INTERVAL` secondi (default: 60). Al salvataggio dal backoffice viene inviato un trigger immediato via API interna (porta 9191) per applicare le modifiche in ~2 secondi.
 
-### 3. Endpoint esposti da SATOSA
+### 3. Endpoint SPID esposti da SATOSA
 
 > [!IMPORTANT]
 > SATOSA espone due set di metadata con scopi distinti. Usare l'endpoint sbagliato è la causa più comune di errori di configurazione.
@@ -242,18 +249,50 @@ https://localhost:9445/static/disco.html    ← pagina di scelta IdP
 
 In breve: `frontoffice_sp.xml` serve solo nel canale interno Frontoffice → SATOSA, si autogenera e si riallinea senza interventi da UI; ad AgID si invia il metadata pubblico esposto da SATOSA a `/spidSaml2/metadata`.
 
-Per esportare una copia locale del metadata pubblico da inviare ad AgID:
+Per esportare una copia locale del metadata pubblico da inviare ad AgID usa il backoffice:
 
-- da backoffice: Impostazioni → Login Proxy → Fase 3 → "Esporta metadata AgID"
-- da CLI:
+- Impostazioni → Login Proxy → Fase 3 → "Esporta metadata AgID"
 
-```bash
-docker compose run --rm metadata-builder export-agid
-```
+L'export AgID non e' piu' un passaggio operativo da eseguire manualmente via CLI.
 
 In produzione usa il dominio pubblico del proxy (es. `https://login.ente.gov.it/spidSaml2/metadata`).
 
-### 5. Metadata Service Provider (frontoffice)
+### 5. Endpoint pubblici CIE OIDC
+
+Gli endpoint CIE OIDC pubblici sono esposti sotto il path `/CieOidcRp`, che coincide con il `client_id` derivato dal backoffice.
+
+| Endpoint pubblico | Uso |
+|---|---|
+| `/CieOidcRp/.well-known/openid-federation` | Entity Configuration del relying party da usare per onboarding e verifiche |
+| `/.well-known/openid-federation` | Alias root riscritto internamente verso `/CieOidcRp/.well-known/openid-federation` |
+| `/CieOidcRp/openid_relying_party/jwks.json` | JWKS pubblico JSON |
+| `/CieOidcRp/openid_relying_party/jwks.jose` | JWKS firmato |
+| `/CieOidcRp/resolve` | Federation resolve endpoint |
+| `/CieOidcRp/fetch` | Federation fetch endpoint |
+| `/CieOidcRp/list` | Federation list endpoint |
+| `/CieOidcRp/trust_mark_status` | Trust mark status endpoint |
+| `/CieOidcRp/oidc/callback` | Redirect URI da registrare lato CIE |
+
+**Esempio base URL pubblico:**
+
+```text
+https://login.ente.gov.it/CieOidcRp
+```
+
+Da questa base derivano in automatico:
+
+- `client_id`: `https://login.ente.gov.it/CieOidcRp`
+- `redirect_uri`: `https://login.ente.gov.it/CieOidcRp/oidc/callback`
+- `jwks_uri`: `https://login.ente.gov.it/CieOidcRp/openid_relying_party/jwks.json`
+- `signed_jwks_uri`: `https://login.ente.gov.it/CieOidcRp/openid_relying_party/jwks.jose`
+
+Per verificare l'esposizione degli endpoint dal tuo dominio pubblico:
+
+```bash
+bash scripts/check-cie-oidc-federation-endpoints.sh -b "https://login.ente.gov.it/CieOidcRp"
+```
+
+### 6. Metadata Service Provider (frontoffice)
 
 SATOSA ha bisogno dei metadata del frontoffice (Service Provider) per accettare le richieste di autenticazione. Sono generati automaticamente all'avvio e mantenuti in volume Docker interno (`frontoffice_sp_metadata`), senza file nel repository e senza gestione manuale da UI.
 
