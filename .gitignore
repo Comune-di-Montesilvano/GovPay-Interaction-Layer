@@ -8,7 +8,6 @@
 # File generati a runtime dal master container (env iam-proxy, ecc.)
 runtime/
 .claude/
-docker-compose.override.yml
 
 # SSL directory - exclude all except README
 ssl/*

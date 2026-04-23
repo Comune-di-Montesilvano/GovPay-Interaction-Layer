@@ -14,6 +14,7 @@ License: European Union Public Licence v1.2 (EUPL-1.2)
 
 ## Indice
 
+- [Ambiente consigliato](#ambiente-consigliato)
 - [Avvio rapido](#avvio-rapido)
 - [Configurazione: .env](#configurazione-env)
 - [Integrazioni API esterne](#integrazioni-api-esterne)
@@ -28,11 +29,28 @@ License: European Union Public Licence v1.2 (EUPL-1.2)
 
 ---
 
+## Ambiente consigliato
+
+L'ambiente di deploy **predefinito e consigliato** è uno **Stack Portainer**.
+
+Portainer semplifica la gestione del ciclo di vita dello stack (deploy, aggiornamenti, rollback, log, variabili d'ambiente) senza richiedere accesso SSH diretto al server.
+
+| Scenario | Strumento | Note |
+|---|---|---|
+| **Produzione** | **Portainer Stack** (Podman rootless) | Raccomandato — vedi [Setup produzione](#setup-produzione) |
+| Sviluppo locale | Docker Compose CLI | `docker compose up -d --build` |
+| CI/CD | GitHub Actions | Build + test automatici — vedi `.github/workflows/` |
+
+> [!NOTE]
+> In Portainer le variabili d'ambiente dello stack si inseriscono direttamente nell'editor dello Stack (sezione *Environment variables*), senza necessità di copiare il file `.env` sul server.
+
+---
+
 ## Avvio rapido
 
 ### Prerequisiti
 
-- Docker Desktop (o Docker Engine + plugin `docker compose`)
+- Docker Desktop (o Docker Engine + plugin `docker compose`), oppure Portainer con Podman rootless in produzione
 - Git
 - Porte libere sul tuo host (default): `8443` (backoffice), `8444` (frontoffice)
 
@@ -51,7 +69,10 @@ Il file `.env` non è versionato per motivi di sicurezza. Usa il file d'esempio 
 cp .env.example .env
 ```
 
-Compila le variabili secondo le tue esigenze. Il file è commentato sezione per sezione.
+Il file `.env.example` contiene già **tutti i valori di default preimpostati**: per un primo avvio locale è sufficiente modificare le sole password e le chiavi crittografiche (indicate dai commenti). Tutto il resto — URL pubblici, integrazioni GovPay/pagoPA, branding — si configura dopo il primo avvio dal Backoffice → Impostazioni.
+
+> [!NOTE]
+> In **Portainer**: non serve copiare il file `.env` sul server. Inserisci le variabili direttamente in *Stacks → \<stack\> → Editor → Environment variables*. Usa `.env.example` come riferimento per i nomi e i valori.
 
 ### 3. Avvia i container
 
@@ -244,11 +265,81 @@ I metadata SP del frontoffice sono **interni a SATOSA** e non vanno inviati ad A
 
 ## Setup produzione
 
+### Ambiente di produzione: Podman rootless + Portainer
+
+> [!IMPORTANT]
+> L'ambiente di produzione ufficiale è **Podman rootless gestito tramite Portainer**.
+> Podman rootless garantisce isolamento dei container senza privilegi root sul sistema host, riducendo la superficie d'attacco.
+
+**Requisiti sul server:**
+
+```bash
+# Podman + plugin docker-compose compatibile
+podman --version          # >= 4.x
+podman-compose --version  # oppure docker-compose con DOCKER_HOST=unix:///run/user/<uid>/podman/podman.sock
+
+# Portainer Agent (o Portainer CE/BE già installato)
+```
+
+**Deploy tramite Portainer:**
+
+1. In Portainer: *Stacks → Add stack → Repository*
+2. URL repository: `https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer.git`
+3. Compose path: `docker-compose.yml`  
+   (**non** selezionare `docker-compose.override.yml` — vedi sotto)
+4. Inserisci le variabili d'ambiente nella sezione *Environment variables* dell'editor  
+   (usa `.env.example` come riferimento)
+5. Deploy
+
+Per aggiornare lo stack a una nuova versione: modifica `APP_VERSION` nelle *Environment variables* → *Update the stack*.
+
+> [!NOTE]
+> In Podman rootless il DNS resolver della rete interna differisce da Docker. Se nei log di `auth-proxy-nginx` compare `resolver 127.0.0.11`, imposta la variabile:
+> ```env
+> NGINX_DNS_RESOLVER=10.89.0.1
+> ```
+> Il valore esatto dipende dalla configurazione di rete Podman (`podman network inspect <network-name>` → campo `dns_enabled`/gateway).
+
+---
+
+### Volumi: regola aurea in produzione
+
+> [!WARNING]
+> **In produzione usare esclusivamente named volumes. I bind mount sono vietati.**
+>
+> Il `docker-compose.override.yml` presente nella root del repository aggiunge bind mount locali (`./debug:/var/www/html/public/debug`) pensati **esclusivamente per il debug in sviluppo locale**. In produzione questo file **non deve mai essere incluso nello stack**.
+
+Il `docker-compose.yml` ufficiale usa già solo named volumes per tutti i dati persistenti:
+
+| Volume | Contenuto | Persistenza |
+|---|---|---|
+| `gil_db_data` | Dati MariaDB | ⚠️ Critico — mai eliminare |
+| `gil_ssl_certs` | Certificati TLS server | Da popolare prima del primo avvio |
+| `gil_certs` | Certificati mTLS GovPay | Da popolare prima del primo avvio |
+| `spid_certs` | Certificati/chiavi SPID | Generati da `metadata-builder` |
+| `gil_cieoidc_keys` | Chiavi JWK CIE OIDC | Generati da `metadata-builder` |
+| `frontoffice_sp_metadata` | Metadata SP frontoffice | Auto-generati da `auth-proxy` |
+| `gil_images` | Immagini/loghi personalizzati | Caricati via Backoffice UI |
+| `gil_backups` | Backup DB | Prodotti da script di backup |
+
+**Backup dei volumi:** prima di qualsiasi aggiornamento dello stack esegui un backup dei volumi critici, in particolare `gil_db_data`.
+
+```bash
+# Esempio backup volume DB (da adattare all'ambiente Podman)
+podman run --rm -v gil_db_data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/gil_db_data_$(date +%Y%m%d).tar.gz -C /data .
+```
+
+> [!CAUTION]
+> **Non usare `docker-compose.override.yml` in produzione.** In Portainer, assicurati che il campo *Compose path* punti **solo** a `docker-compose.yml`. Se viene accidentalmente incluso l'override, i bind mount montano percorsi inesistenti sul server e causano errori di avvio.
+
+---
+
 ### URL pubblici
 
 In produzione evita `localhost`/`127.0.0.1` — finiscono nei redirect e nei metadata SAML.
 
-Imposta nel `.env`:
+Imposta nel `.env` (o nelle *Environment variables* di Portainer):
 ```env
 BACKOFFICE_PUBLIC_BASE_URL=https://backoffice.ente.gov.it
 FRONTOFFICE_PUBLIC_BASE_URL=https://pagamenti.ente.gov.it
@@ -258,13 +349,13 @@ L'URL pubblico del proxy IAM (`IAM_PROXY_PUBLIC_BASE_URL`) si imposta in **Backo
 
 ### Certificati TLS
 
-Per HTTPS server (browser → applicazione), metti i certificati validi in `ssl/`:
-- `ssl/server.crt`
-- `ssl/server.key`
+Per HTTPS server (browser → applicazione), i certificati validi vanno nel volume `gil_ssl_certs`:
+- `server.crt`
+- `server.key`
 
-Vedi [ssl/README.md](ssl/README.md) per dettagli e troubleshooting permessi.
+In Portainer puoi popolare il volume prima del deploy tramite un container helper o `podman volume import`. Vedi [ssl/README.md](ssl/README.md) per dettagli e troubleshooting permessi.
 
-I certificati in `certificate/` sono distinti: servono per l'autenticazione client verso GovPay (mTLS app → GovPay). Vedi [certificate/README.md](certificate/README.md).
+I certificati in `gil_certs` sono distinti: servono per l'autenticazione client verso GovPay (mTLS app → GovPay). Vedi [certificate/README.md](certificate/README.md).
 
 ### Reverse proxy
 
@@ -277,7 +368,7 @@ X-Forwarded-Proto: https
 X-Forwarded-For: <IP client>
 ```
 
-Imposta `SSL=false` nel `.env` se il reverse proxy termina TLS e il container riceve HTTP interno.
+Imposta `SSL=off` nel `.env` se il reverse proxy termina TLS e il container riceve HTTP interno.
 
 ### Immagini Docker pre-buildate
 
@@ -295,7 +386,7 @@ Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` su:
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-nginx`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db`
 
-Per un server di produzione sono sufficienti: `.env`, la cartella `ssl/`, `certificate/` e il `docker-compose.yml`. I volumi Docker (`govpay_spid_certs`, `gil_cieoidc_keys`, ecc.) vengono popolati automaticamente da `metadata-builder` e dai container stessi.
+Per un server di produzione sono sufficienti: il `docker-compose.yml` e le variabili d'ambiente (tramite `.env` o Portainer). I volumi Docker vengono popolati automaticamente da `metadata-builder` e dai container stessi.
 
 ---
 
@@ -417,12 +508,16 @@ docker compose logs -f
 docker compose exec backoffice bash
 ```
 
-#### Override per sviluppo locale
+#### Override per sviluppo locale (solo dev)
 
-Il file `docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` se presente nella stessa directory. Aggiunge il mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice per utility di test live.
+Il file `docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` se presente nella stessa directory. Aggiunge bind mount locali (`./debug:/var/www/html/public/debug`) su backoffice e frontoffice per utility di test live.
 
 > [!WARNING]
-> In produzione, rimuovi o non copiare `docker-compose.override.yml`. Per avviare esplicitamente senza override: `docker compose -f docker-compose.yml up -d`.
+> **`docker-compose.override.yml` è esclusivamente per sviluppo locale.** Non copiarlo né includerlo in produzione. Per avviare esplicitamente senza override:
+> ```bash
+> docker compose -f docker-compose.yml up -d
+> ```
+> In Portainer, il campo *Compose path* deve puntare **solo** a `docker-compose.yml`.
 
 Struttura codice:
 - `backoffice/` — applicazione backoffice

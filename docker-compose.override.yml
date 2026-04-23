@@ -1,0 +1,35 @@
+# Override per sviluppo locale — caricato automaticamente da docker compose.
+# NON usare in produzione. Aggiunge mount live per debug e sviluppo.
+services:
+  backoffice:
+    build:
+      context: .
+      target: runtime-backoffice
+    volumes:
+      - ./debug:/var/www/html/public/debug
+
+  frontoffice:
+    build:
+      context: .
+      target: runtime-frontoffice
+    volumes:
+      - ./debug:/var/www/html/public/debug
+
+  auth-proxy:
+    build:
+      context: .
+      dockerfile: auth-proxy/Dockerfile
+
+  auth-proxy-nginx:
+    build:
+      context: ./auth-proxy/nginx
+
+  metadata-builder:
+    build:
+      context: .
+      dockerfile: metadata/builder/Dockerfile
+
+  db:
+    build:
+      context: ./docker
+      dockerfile: db/Dockerfile
