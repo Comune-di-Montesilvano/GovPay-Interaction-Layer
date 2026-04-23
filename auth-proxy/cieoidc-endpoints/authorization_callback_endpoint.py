@@ -226,6 +226,14 @@ class AuthorizationCallBackHandler(BaseEndpoint):
             f"Entering method: {inspect.getframeinfo(inspect.currentframe()).function}. "
             f"Params [user_attrs {user_attrs}]"
         )
+
+        # SATOSA pipeline SPID/SAML may require edupersontargetedid.
+        # For CIE OIDC, use sub as stable identifier fallback.
+        if "edupersontargetedid" not in user_attrs:
+            sub_value = user_attrs.get("sub")
+            if sub_value:
+                user_attrs["edupersontargetedid"] = sub_value
+
         try:
             user_token = OidcUser(**user_attrs)
             user_token.attributes = user_attrs

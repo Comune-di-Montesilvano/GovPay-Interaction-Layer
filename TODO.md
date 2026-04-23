@@ -53,7 +53,7 @@
 - [PAUSED] **PagoPA Checkout**: Implementazione API PagoPA per avviare il checkout di pagamenti non generati da GovPay (simulazione portale checkout.pagopa.it). PROBABILMENTE NON FATTIBILE
 
 ### Ottimizzazione Infrastruttura e Cleanup
-- [ ] **Snellimento Build**
+- [X] **Snellimento Build**
     - [X] Semplificazione degli script di build.
     - [X] Rimozione dei container effimeri che terminano dopo la build (es. `sync-iam-proxy`).
     - [X] Valutazione sostituzione bind-mount con istruzioni `COPY` (o `docker cp`) per le cartelle statiche.
