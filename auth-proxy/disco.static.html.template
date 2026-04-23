@@ -338,11 +338,26 @@
 </footer>
 
 <script>
+  (function guardDirectDiscoAccess() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasReturn = urlParams.has('return');
+    const hasEntityId = urlParams.has('entityID');
+
+    // If disco is opened directly (without SATOSA routing parameters),
+    // send user back to frontoffice login entry point.
+    if (!hasReturn || !hasEntityId) {
+      const frontofficeBase = ("${FRONTOFFICE_PUBLIC_BASE_URL}" || '').replace(/\/$/, '');
+      const fallbackLogin = '/login?return_to=%2Fpendenze';
+      const loginUrl = frontofficeBase ? (frontofficeBase + fallbackLogin) : fallbackLogin;
+      window.location.replace(loginUrl);
+    }
+  })();
+
   (function applyDiscoLinks() {
     const urlParams = new URLSearchParams(window.location.search);
     const servicePath = urlParams.get('return');
     if (!servicePath) {
-      console.warn('[disco] Parametro ?return= mancante. La pagina è stata aperta direttamente.');
+      console.warn('[disco] Parametro ?return= mancante dopo guardia di accesso.');
       return;
     }
 
