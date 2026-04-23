@@ -1,0 +1,71 @@
+name: Resolve version info
+description: Derives version, version_type, version_label, ref_url from GITHUB_REF/SHA.
+
+inputs:
+  github_token:
+    required: true
+
+outputs:
+  version:
+    description: Version string (e.g. "dev", "v1.2.3", short-sha)
+    value: ${{ steps.resolve.outputs.version }}
+  version_type:
+    description: development | dev | release | tag | commit
+    value: ${{ steps.resolve.outputs.version_type }}
+  version_label:
+    description: Human-readable label
+    value: ${{ steps.resolve.outputs.version_label }}
+  ref_url:
+    description: GitHub URL for commit/tag/release
+    value: ${{ steps.resolve.outputs.ref_url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve
+      id: resolve
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+        repo_url="https://github.com/${GITHUB_REPOSITORY}"
+        commit_url="${repo_url}/commit/${GITHUB_SHA}"
+
+        version="development"
+        version_type="development"
+        version_label="development"
+        ref_url=""
+
+        if [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
+          version="dev"
+          version_type="dev"
+          version_label="dev@${GITHUB_SHA::7}"
+          ref_url="${commit_url}"
+        elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          version="${GITHUB_REF_NAME}"
+          version_label="${GITHUB_REF_NAME}"
+          if curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+            >/dev/null 2>&1; then
+            version_type="release"
+            ref_url="${repo_url}/releases/tag/${GITHUB_REF_NAME}"
+          else
+            version_type="tag"
+            ref_url="${repo_url}/tree/${GITHUB_REF_NAME}"
+          fi
+        else
+          version="${GITHUB_SHA::7}"
+          version_type="commit"
+          version_label="${GITHUB_SHA::7}"
+          ref_url="${commit_url}"
+        fi
+
+        {
+          echo "version=${version}"
+          echo "version_type=${version_type}"
+          echo "version_label=${version_label}"
+          echo "ref_url=${ref_url}"
+        } >> "$GITHUB_OUTPUT"

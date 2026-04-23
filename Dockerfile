@@ -3,11 +3,11 @@
 ######################################################################
 FROM node:lts-trixie-slim AS asset_builder
 
-# Installa dipendenze necessarie per la fase di build (Git, Wget, Unzip)
+# Installa dipendenze necessarie per la fase di build (Wget, Unzip)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates unzip wget
+    apt-get install -y --no-install-recommends ca-certificates unzip wget
 
 WORKDIR /app
 
@@ -26,12 +26,14 @@ ENV FA_DIR="fontawesome-free-${FA_VERSION}-web"
 # Variabili per Chart.js
 ARG CHARTJS_VERSION="4.5.1"
 
-# 1. Clona il repository, checkout, installa e compila Bootstrap Italia
+# 1. Scarica e compila Bootstrap Italia
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    git clone https://github.com/italia/bootstrap-italia.git . && \
-    git checkout ${BOOTSTRAP_TAG} && \
-    echo "Scarico e compilo Bootstap-italia versione ${BOOTSTRAP_TAG}..." && \
-    npm install && \
+    wget -q "https://github.com/italia/bootstrap-italia/archive/refs/tags/${BOOTSTRAP_TAG}.tar.gz" \
+         -O /tmp/bootstrap.tar.gz && \
+    tar -xzf /tmp/bootstrap.tar.gz --strip-components=1 -C . && \
+    rm /tmp/bootstrap.tar.gz && \
+    echo "Compilo Bootstrap-italia versione ${BOOTSTRAP_TAG}..." && \
+    npm ci && \
     npm run build
 
 # 2. Scarica Font Awesome in questa fase per usarlo come asset copiabile nella Fase 2
@@ -62,9 +64,9 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
 ######################################################################
 FROM composer:2 AS vendor_builder
 WORKDIR /app
-COPY composer.json composer.lock* ./
-COPY govpay-clients/ ./govpay-clients/
-COPY pagopa-clients/ ./pagopa-clients/
+COPY --link composer.json composer.lock* ./
+COPY --link govpay-clients/ ./govpay-clients/
+COPY --link pagopa-clients/ ./pagopa-clients/
 RUN --mount=type=cache,target=/root/.composer,sharing=locked \
     composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
@@ -107,9 +109,9 @@ RUN printf '%s\n' "$GIL_IMAGE_TAG" > /var/www/html/VERSION \
     && php -r '$data = ["version" => getenv("GIL_IMAGE_TAG") ?: "development", "version_type" => getenv("GIL_VERSION_TYPE") ?: "development", "version_label" => getenv("GIL_VERSION_LABEL") ?: (getenv("GIL_IMAGE_TAG") ?: "development"), "commit" => getenv("GIT_COMMIT_SHA") ?: "unknown", "ref_url" => getenv("GIL_REF_URL") ?: ""]; file_put_contents("/var/www/html/VERSION_INFO.json", json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
 
 # Copia vendor dal builder
-COPY --from=vendor_builder /app/vendor /var/www/html/vendor
+COPY --link --from=vendor_builder /app/vendor /var/www/html/vendor
 # Reintroduco composer solo per script di setup (dump-autoload scenario)
-COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+COPY --link --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 # Imposta la directory di lavoro
 WORKDIR /var/www/html
@@ -119,17 +121,17 @@ WORKDIR /var/www/html
 # ----------------------------------------------------------------------
 
 RUN mkdir -p public/assets/bootstrap-italia public/assets/fontawesome
-COPY --chown=www-app:www-data --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
+COPY --chown=www-app:www-data --link --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
 
 # 2. Copia Font Awesome (Asset scaricati dalla Fase 1)
 ENV FA_DEST="/var/www/html/public/assets/fontawesome"
-COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
-COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
-COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
+COPY --chown=www-app:www-data --link --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
+COPY --chown=www-app:www-data --link --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
+COPY --chown=www-app:www-data --link --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
 RUN chmod -R 755 public/assets
 
 # (Documentativo) composer gestito nello stage vendor_builder
-COPY --chown=www-app:www-data composer.json composer.lock* /var/www/html/
+COPY --chown=www-app:www-data --link composer.json composer.lock* /var/www/html/
 
 # ----------------------------------------------------------------------
 # Configurazione Finale
@@ -137,30 +139,30 @@ COPY --chown=www-app:www-data composer.json composer.lock* /var/www/html/
 
 # Copia i certificati SSL
 RUN mkdir -p /ssl
-COPY --chown=www-app:www-data ssl/ /ssl/ 
+COPY --chown=www-app:www-data --link ssl/ /ssl/
 
 #Copia i certificati di govpay se esistono
 RUN mkdir -p /certificate
-COPY --chown=www-app:www-data certificate/ /var/www/certificate/
+COPY --chown=www-app:www-data --link certificate/ /var/www/certificate/
 
 # Copia lo script di setup nel container e rendilo eseguibile
-COPY docker-setup.sh /usr/local/bin/docker-setup.sh
+COPY --link docker-setup.sh /usr/local/bin/docker-setup.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-setup.sh && chmod 755 /usr/local/bin/docker-setup.sh
 
 # Copia e Abilita la configurazione Apache personalizzata
 RUN rm /etc/apache2/sites-enabled/000-default.conf
-COPY --chown=root:root apache/000-default-ssl.conf /etc/apache2/sites-available/000-default.conf
+COPY --chown=root:root --link apache/000-default-ssl.conf /etc/apache2/sites-available/000-default.conf
 RUN a2ensite 000-default.conf
 
-COPY --chown=www-app:www-data img /var/www/html/public/img
-COPY --chown=www-app:www-data assets /var/www/html/public/assets
-COPY --chown=www-app:www-data public.htaccess /var/www/html/public/.htaccess
-COPY --chown=www-app:www-data app/ /var/www/html/app/
-COPY --chown=www-app:www-data migrations/ /var/www/html/migrations/
+COPY --chown=www-app:www-data --link img /var/www/html/public/img
+COPY --chown=www-app:www-data --link assets /var/www/html/public/assets
+COPY --chown=www-app:www-data --link public.htaccess /var/www/html/public/.htaccess
+COPY --chown=www-app:www-data --link app/ /var/www/html/app/
+COPY --chown=www-app:www-data --link migrations/ /var/www/html/migrations/
 
 # Copia la sorgente dei client generati (necessario se Composer ha creato symlink per path repositories)
-COPY --chown=www-app:www-data govpay-clients/ /var/www/html/govpay-clients/
-COPY --chown=www-app:www-data pagopa-clients/ /var/www/html/pagopa-clients/
+COPY --chown=www-app:www-data --link govpay-clients/ /var/www/html/govpay-clients/
+COPY --chown=www-app:www-data --link pagopa-clients/ /var/www/html/pagopa-clients/
 
 # Hardening Apache: rimuove Indexes e aggiunge security headers
 RUN sed -i 's/Options Indexes FollowSymLinks/Options FollowSymLinks/g' /etc/apache2/apache2.conf && \
@@ -176,14 +178,14 @@ EXPOSE 443
 CMD ["apache2-foreground"]
 
 FROM runtime-base AS runtime-backoffice
-COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
-COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
+COPY --chown=www-app:www-data --link backoffice/ /var/www/html/backoffice/
+COPY --chown=www-app:www-data --link backoffice/bin/ /var/www/html/bin/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
     && ln -s /var/www/html/backoffice/templates /var/www/html/templates \
     && mkdir -p /var/www/html/backoffice/storage/logs \
     && chown www-data:www-data /var/www/html/backoffice/storage/logs
-COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
+COPY --chown=www-app:www-data --link --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 # Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
 # Docker inizializza i named volumes copiando il contenuto del path dell'immagine,
@@ -194,11 +196,11 @@ RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
     && chmod 775 /backups
 
 FROM runtime-base AS runtime-frontoffice
-COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
+COPY --chown=www-app:www-data --link frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs \
     && chown www-data:www-data /var/www/html/frontoffice/storage/logs
 
 # Script per generazione/rinnovo metadata SP SAML (usato da init/refresh-frontoffice-sp-metadata)
 RUN mkdir -p /scripts
-COPY metadata/ensure-sp-metadata.sh /scripts/ensure-sp-metadata.sh
+COPY --link metadata/ensure-sp-metadata.sh /scripts/ensure-sp-metadata.sh
 RUN chmod +x /scripts/ensure-sp-metadata.sh
