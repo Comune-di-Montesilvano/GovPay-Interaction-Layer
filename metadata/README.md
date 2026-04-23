@@ -41,9 +41,9 @@ docker compose run --rm metadata-builder setup
 docker compose up -d
 # Apri Backoffice → Impostazioni → Login Proxy e completa la procedura guidata
 
-# 4. Esporta il metadata pubblico per AgID
-docker compose run --rm metadata-builder export-agid
-# → metadata/agid/satosa_spid_public_metadata.xml
+# 4. Esporta il metadata pubblico per AgID dal backoffice
+# Backoffice → Impostazioni → Login Proxy → Fase 3 → "Esporta metadata AgID"
+# → download del file XML dal browser
 
 # 5. Esporta gli artifact CIE OIDC per l'onboarding
 docker compose run --rm metadata-builder export-cieoidc
@@ -54,6 +54,15 @@ docker compose run --rm metadata-builder export-cieoidc
 # 8. Dopo la federazione: esegui subito un backup
 docker compose run --rm metadata-builder backup
 ```
+
+Le stesse operazioni di generazione iniziale possono essere avviate anche dal backoffice:
+
+- **Certificato SPID** → `Genera`
+- **Chiavi CIE OIDC** → `Genera`
+- **Metadata pubblico SPID** → `Rigenera`
+- **Artefatti CIE OIDC** → `Rigenera artefatti CIE`
+
+Usa la CLI `metadata-builder` soprattutto per bootstrap, export, backup/ripristino e troubleshooting.
 
 ---
 
@@ -137,7 +146,7 @@ docker compose run --rm metadata-builder renew-spid
 ```
 
 Lo script rigenera cert.pem + privkey.pem nel volume Docker. Segui le istruzioni a schermo
-per i passi successivi (esporta con `export-agid`, invia ad AgID, riavvia, backup).
+per i passi successivi (riesporta il metadata AgID dalla UI backoffice, invia ad AgID, riavvia, backup).
 
 ---
 
@@ -160,7 +169,7 @@ rigenerare le chiavi rompe la federazione finché l'Entity Statement non è scad
 docker compose run --rm metadata-builder export-cieoidc
 ```
 
-Richiede che il container `auth-proxy` sia avviato. Curla gli endpoint interni di `auth-proxy-nginx`.
+Richiede che il container `auth-proxy` sia avviato. Curla gli endpoint pubblicati da `auth-proxy-nginx` sotto `/CieOidcRp`.
 
 Output generato in `metadata/cieoidc/`:
 
@@ -170,6 +179,18 @@ Output generato in `metadata/cieoidc/`:
 - `jwks-rp.json`
 - `jwks-rp.jose`
 - `component-values.env` — contiene `ENTITY_STATEMENT_EXP_UTC` e `ENTITY_STATEMENT_EXP_DAYS_REMAINING`
+
+Endpoint pubblici coinvolti nell'export e nell'onboarding:
+
+- `/CieOidcRp/.well-known/openid-federation`
+- `/CieOidcRp/openid_relying_party/jwks.json`
+- `/CieOidcRp/openid_relying_party/jwks.jose`
+- `/CieOidcRp/resolve`
+- `/CieOidcRp/fetch`
+- `/CieOidcRp/list`
+- `/CieOidcRp/trust_mark_status`
+
+Nginx espone anche l'alias root `/.well-known/openid-federation`, riscritto internamente verso `/CieOidcRp/.well-known/openid-federation`, per compatibilita' con validator che interrogano il well-known alla radice del dominio.
 
 > L'export è bloccato se già presente e non scaduto. Usa `FORCE=1` solo in caso di rinnovo:
 > ```bash
@@ -204,9 +225,15 @@ Dopo aver generato le chiavi e avviato l'ambiente, per abilitare l'autenticazion
    Modifica l'ambiente in **Backoffice → Impostazioni → Login Proxy → Configurazione CIE OIDC → Ambiente** (Produzione o Pre-produzione). Dopo il salvataggio, `auth-proxy` si riavvia automaticamente entro pochi secondi.
 
 3. **Registrazione Portale Federazione**:
-   Recati sul portale CIE per gli sviluppatori ed effettua l'onboarding. Ti sarà richiesto di fornire l'URL del tuo *Client ID* (la rotta root configurata in `CIE_OIDC_CLIENT_ID` senza slash finale).
+   Recati sul portale CIE per gli sviluppatori ed effettua l'onboarding. Ti verra' richiesto di fornire l'URL del tuo `client_id`, che in GIL coincide con la base pubblica `https://<dominio-login-proxy>/CieOidcRp` senza slash finale.
 
-4. **Tempi di Propagazione**:
+4. **Valori derivati usati da GIL**:
+   - `client_id`: `https://<dominio-login-proxy>/CieOidcRp`
+   - `redirect_uri`: `https://<dominio-login-proxy>/CieOidcRp/oidc/callback`
+   - `jwks_uri`: `https://<dominio-login-proxy>/CieOidcRp/openid_relying_party/jwks.json`
+   - `signed_jwks_uri`: `https://<dominio-login-proxy>/CieOidcRp/openid_relying_party/jwks.jose`
+
+5. **Tempi di Propagazione**:
    Una volta completata la registrazione nel Registry, l'Identity Provider può impiegare **diverse ore (fino a 24h)** per aggiornare la cache e fidarsi del nuovo Relying Party. Durante questo periodo visualizzerai l'errore: **"L'applicazione a cui hai acceduto non è registrata"**. Questo è il comportamento atteso.
 
 ---
