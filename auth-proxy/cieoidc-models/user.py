@@ -11,3 +11,4 @@ class OidcUser(BaseModel):
     sub: str
     fiscal_number: str
     attributes: Optional[dict] = None
+    edupersontargetedid: Optional[str] = None
