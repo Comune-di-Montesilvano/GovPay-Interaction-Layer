@@ -735,6 +735,24 @@ class ImpostazioniController
         if (empty($env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'])) {
             $env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'] = (string)($sEntity['name'] ?? '');
         }
+        // URL e campi EN: pysaml2 omette <md:Organization> se URL è stringa vuota.
+        // Fallback: URL ente (entity.url), poi URL pubblico frontoffice come last-resort.
+        $orgUrlFallback = (string)($sEntity['url'] ?? '');
+        if ($orgUrlFallback === '') {
+            $orgUrlFallback = (string)($sFrontoffice['public_base_url'] ?? '');
+        }
+        if (empty($env['SATOSA_ORGANIZATION_URL_IT'])) {
+            $env['SATOSA_ORGANIZATION_URL_IT'] = $orgUrlFallback;
+        }
+        if (empty($env['SATOSA_ORGANIZATION_URL_EN'])) {
+            $env['SATOSA_ORGANIZATION_URL_EN'] = $orgUrlFallback;
+        }
+        if (empty($env['SATOSA_ORGANIZATION_NAME_EN'])) {
+            $env['SATOSA_ORGANIZATION_NAME_EN'] = $env['SATOSA_ORGANIZATION_NAME_IT'];
+        }
+        if (empty($env['SATOSA_ORGANIZATION_DISPLAY_NAME_EN'])) {
+            $env['SATOSA_ORGANIZATION_DISPLAY_NAME_EN'] = $env['SATOSA_ORGANIZATION_DISPLAY_NAME_IT'];
+        }
         $globalLogoSrc = trim((string)($sUi['logo_src'] ?? ''));
         if ($globalLogoSrc !== '') {
             // Converti /img/... → /static/img/... (servito da auth-proxy-nginx dal volume gil_images)
