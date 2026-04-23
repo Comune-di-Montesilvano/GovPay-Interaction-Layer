@@ -19,9 +19,8 @@
     .btn-back { display: inline-block; background: #0073e6; color: #fff; padding: 0.75rem 2rem; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 1rem; transition: background 0.2s; }
     .btn-back:hover { background: #0059c0; color: #fff; text-decoration: none; }
     footer { background: #0072CE; color: #fff; padding: 1.25rem 0; }
-    footer .brand { display: flex; align-items: center; gap: 1rem; }
-    footer .brand img { height: 44px; width: auto; }
-    footer .brand span { font-size: 1rem; font-weight: 600; }
+    footer a { color: #fff; text-decoration: none; margin-right: 1.5rem; font-size: 0.9rem; }
+    footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -47,10 +46,12 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      <div class="brand">
-        <img src="#ORG_LOGO#" alt="#ORG_NAME#" onerror="this.style.display='none'">
-        <span>#ORG_NAME#</span>
-      </div>
+      <a href="#LEGAL_URL#" target="_blank" rel="noopener">Note legali</a>
+      <a href="#PRIVACY_URL#" target="_blank" rel="noopener">Privacy policy</a>
+      <a href="#ACCESSIBILITY_URL#" target="_blank" rel="noopener">Accessibilità</a>
+      <span style="margin-left:auto; font-size:0.8rem; opacity:0.75;">
+        #APP_VERSION_HTML#
+      </span>
     </div>
   </footer>
 

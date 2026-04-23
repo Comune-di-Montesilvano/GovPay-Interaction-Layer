@@ -22,7 +22,8 @@ Root cause:
   un errore del backend e interrompono il flusso applicativo.
 
 Fix: se SATOSA_CANCEL_REDIRECT_URL (priorità) o SATOSA_UNKNOW_ERROR_REDIRECT_PAGE
-  sono configurate, handle_error() restituisce un 302 Redirect invece di 403.
+    sono configurate, handle_error() restituisce una pagina HTML 200 che esegue
+    redirect client-side via window.location.replace(), evitando 302 server-side.
 """
 import sys
 import glob
@@ -139,7 +140,12 @@ else:
         "            or os.environ.get(\"SATOSA_UNKNOW_ERROR_REDIRECT_PAGE\")\n"
         "        )\n"
         "        if _cancel_url:\n"
-        "            return Redirect(_cancel_url)\n"
+        "            _js_url = json.dumps(_cancel_url)\n"
+        "            return Response(\n"
+        "                message=f\"<!DOCTYPE html><html><head><meta charset='utf-8'><script>window.location.replace({_js_url});</script></head><body></body></html>\".encode(\"utf-8\"),\n"
+        "                status=\"200 OK\",\n"
+        "                content=\"text/html; charset=utf8\",\n"
+        "            )\n"
         "        return Response(result, content=\"text/html; charset=utf8\", status=\"403\")\n"
     )
 

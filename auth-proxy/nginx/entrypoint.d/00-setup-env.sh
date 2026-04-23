@@ -34,7 +34,53 @@ fi
 # Genera le pagine di errore a partire dai template, sostituendo le variabili dell'organizzazione
 # Le pagine vengono scritte in /tmp/errors/ (percorso scrivibile) e servite da nginx
 mkdir -p /tmp/errors
-APP_VERSION="${APP_VERSION:-unknown}"
+APP_VERSION="${APP_VERSION:-development}"
+APP_VERSION_TYPE="${APP_VERSION_TYPE:-development}"
+APP_COMMIT_SHA="${APP_COMMIT_SHA:-unknown}"
+APP_VERSION_LABEL="${APP_VERSION_LABEL:-}"
+APP_REF_URL="${APP_REF_URL:-}"
+
+short_sha() {
+    printf '%s' "$1" | cut -c1-7
+}
+
+if [ -z "$APP_VERSION_LABEL" ]; then
+    if [ "$APP_VERSION_TYPE" = "dev" ] && [ "$APP_COMMIT_SHA" != "unknown" ]; then
+        APP_VERSION_LABEL="dev@$(short_sha "$APP_COMMIT_SHA")"
+    elif [ "$APP_VERSION_TYPE" = "commit" ] && [ "$APP_COMMIT_SHA" != "unknown" ]; then
+        APP_VERSION_LABEL="$(short_sha "$APP_COMMIT_SHA")"
+    else
+        APP_VERSION_LABEL="$APP_VERSION"
+    fi
+fi
+
+if [ -z "$APP_REF_URL" ]; then
+    case "$APP_VERSION_TYPE" in
+        development)
+            APP_REF_URL=""
+            ;;
+        dev|commit)
+            if [ "$APP_COMMIT_SHA" != "unknown" ]; then
+                APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/commit/${APP_COMMIT_SHA}"
+            fi
+            ;;
+        release)
+            APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/${APP_VERSION}"
+            ;;
+        tag)
+            APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/tree/${APP_VERSION}"
+            ;;
+        *)
+            APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer"
+            ;;
+    esac
+fi
+
+if [ -n "$APP_REF_URL" ]; then
+    APP_VERSION_HTML="<a href=\"${APP_REF_URL}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:#fff; text-decoration:none;\">IAMProxy@GovPayInteractionLayer ${APP_VERSION_LABEL}</a>"
+else
+    APP_VERSION_HTML="<span style=\"color:#fff; text-decoration:none;\">IAMProxy@GovPayInteractionLayer ${APP_VERSION_LABEL}</span>"
+fi
 ORG_NAME="${SATOSA_ORGANIZATION_NAME_IT:-Servizio di Autenticazione}"
 ORG_DISPLAY_NAME="${SATOSA_ORGANIZATION_DISPLAY_NAME_IT:-${SATOSA_ORGANIZATION_NAME_IT:-Servizio di Autenticazione}}"
 ORG_LOGO="${SATOSA_UI_LOGO_URL:-}"
@@ -57,7 +103,7 @@ for tmpl in /usr/share/nginx/html/errors/*.html; do
     -e "s|#LEGAL_URL#|${LEGAL_URL}|g" \
     -e "s|#PRIVACY_URL#|${PRIVACY_URL}|g" \
     -e "s|#ACCESSIBILITY_URL#|${ACCESSIBILITY_URL}|g" \
-    -e "s|#APP_VERSION#|${APP_VERSION}|g" \
+    -e "s|#APP_VERSION_HTML#|${APP_VERSION_HTML}|g" \
     "$tmpl" > "/tmp/errors/$fname"
 done
 echo "[nginx-setup] Error pages generated in /tmp/errors/ for org: ${ORG_NAME}"

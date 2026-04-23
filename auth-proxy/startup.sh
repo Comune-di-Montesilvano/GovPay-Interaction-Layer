@@ -341,10 +341,46 @@ PY
 # Versione dell'immagine (se non passata, usa unknown)
 : "${APP_VERSION:=development}"
 : "${APP_VERSION_TYPE:=development}"
-: "${APP_VERSION_LABEL:=${APP_VERSION}}"
+: "${APP_COMMIT_SHA:=unknown}"
+: "${APP_VERSION_LABEL:=}"
 : "${APP_REF_URL:=}"
+
+if [ -z "${APP_VERSION_LABEL}" ]; then
+  if [ "${APP_VERSION_TYPE}" = "dev" ] && [ "${APP_COMMIT_SHA}" != "unknown" ]; then
+    APP_VERSION_LABEL="dev@${APP_COMMIT_SHA%${APP_COMMIT_SHA#???????}}"
+  elif [ "${APP_VERSION_TYPE}" = "commit" ] && [ "${APP_COMMIT_SHA}" != "unknown" ]; then
+    APP_VERSION_LABEL="${APP_COMMIT_SHA%${APP_COMMIT_SHA#???????}}"
+  else
+    APP_VERSION_LABEL="${APP_VERSION}"
+  fi
+fi
+
+if [ -z "${APP_REF_URL}" ]; then
+  case "${APP_VERSION_TYPE}" in
+    development)
+      APP_REF_URL=""
+      ;;
+    dev|commit)
+      if [ "${APP_COMMIT_SHA}" != "unknown" ]; then
+        APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/commit/${APP_COMMIT_SHA}"
+      else
+        APP_REF_URL=""
+      fi
+      ;;
+    release)
+      APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/${APP_VERSION}"
+      ;;
+    tag)
+      APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/tree/${APP_VERSION}"
+      ;;
+    *)
+      APP_REF_URL="https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer"
+      ;;
+  esac
+fi
 export APP_VERSION
 export APP_VERSION_TYPE
+export APP_COMMIT_SHA
 export APP_VERSION_LABEL
 export APP_REF_URL
 

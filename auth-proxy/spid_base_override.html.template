@@ -219,6 +219,9 @@
 		Protezione dei dati
 	      </a>
 	    </li>
+	    <li class="list-inline-item ms-md-auto">
+	      ${APP_VERSION_HTML}
+	    </li>
 	  </ul>
 
 	</div>

@@ -5152,5 +5152,10 @@ $context = array_merge(
 if (!empty($route['raw_output'])) {
     echo $route['raw_output'];
 } else {
+    // Courtesy pages must be HTTP 200 to prevent upstream reverse proxies
+    // from replacing our branded error templates.
+    if (!empty($route['template']) && is_string($route['template']) && str_starts_with($route['template'], 'errors/')) {
+        http_response_code(200);
+    }
     echo $twig->render($route['template'], $context);
 }
