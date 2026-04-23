@@ -48,53 +48,54 @@ Portainer semplifica la gestione del ciclo di vita dello stack (deploy, aggiorna
 
 ## Avvio rapido
 
+> [!NOTE]
+> Le immagini Docker sono **già pubblicate su GHCR**. Non è necessario clonare il repository né avere Git installato per un deploy di produzione.
+
 ### Prerequisiti
 
-- Docker Desktop (o Docker Engine + plugin `docker compose`), oppure Portainer con Podman rootless in produzione
-- Git
+- Docker Engine + plugin `docker compose` (oppure Portainer con Podman rootless — [ambiente consigliato](#ambiente-consigliato))
 - Porte libere sul tuo host (default): `8443` (backoffice), `8444` (frontoffice)
 
-### 1. Clona il repository
+### 1. Scarica il file `docker-compose.yml`
 
 ```bash
-git clone https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer.git
-cd GovPay-Interaction-Layer
+curl -O https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docker-compose.yml
 ```
 
-### 2. Crea il file `.env`
+In **Portainer**: usa *Stacks → Add stack → Repository* puntando al repository — non serve scaricare nulla manualmente. Vedi [Setup produzione](#setup-produzione).
 
-Il file `.env` non è versionato per motivi di sicurezza. Usa il file d'esempio come base:
+### 2. Configura le variabili d'ambiente
+
+Scarica il file d'esempio come riferimento:
 
 ```bash
+curl -O https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/.env.example
 cp .env.example .env
 ```
 
-Il file `.env.example` contiene già **tutti i valori di default preimpostati**: per un primo avvio locale è sufficiente modificare le sole password e le chiavi crittografiche (indicate dai commenti). Tutto il resto — URL pubblici, integrazioni GovPay/pagoPA, branding — si configura dopo il primo avvio dal Backoffice → Impostazioni.
+Il file contiene già **tutti i valori di default preimpostati**. Modifica solo le password e le chiavi crittografiche (indicate dai commenti). Tutto il resto — URL pubblici, integrazioni GovPay/pagoPA, branding — si configura dopo il primo avvio dal Backoffice → Impostazioni.
 
 > [!NOTE]
-> In **Portainer**: non serve copiare il file `.env` sul server. Inserisci le variabili direttamente in *Stacks → \<stack\> → Editor → Environment variables*. Usa `.env.example` come riferimento per i nomi e i valori.
+> In **Portainer**: non serve il file `.env`. Inserisci le variabili direttamente in *Stacks → Editor → Environment variables*, usando `.env.example` come riferimento.
 
 ### 3. Avvia i container
 
-**Sviluppo** — build locale dalle sorgenti:
 ```bash
-# primo avvio o dopo modifiche a Dockerfile/PHP/asset
-docker compose up -d --build
-
-# avvii successivi (nessun rebuild)
-docker compose up -d
-```
-
-**Produzione** — usa le immagini pre-buildate da GHCR (nessun build richiesto):
-```bash
-# scarica le immagini pubblicate su GHCR
-docker compose pull
-
-# avvia i container
-docker compose up -d
+# scarica le immagini pubblicate su GHCR e avvia
+docker compose pull && docker compose up -d
 ```
 
 > Vedi [Rilasci e immagini Docker (GHCR)](#rilasci-e-immagini-docker-ghcr) per i dettagli sulle immagini disponibili.
+
+---
+
+> **Sviluppo locale** — per lavorare sulle sorgenti è necessario clonare il repository:
+> ```bash
+> git clone https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer.git
+> cd GovPay-Interaction-Layer
+> docker compose up -d --build
+> ```
+> Vedi [Workflow di sviluppo](#workflow-di-sviluppo) per dettagli.
 
 ### 4. Primo accesso
 
