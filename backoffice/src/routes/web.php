@@ -863,7 +863,7 @@ return function (App $app, Twig $twig): void {
         bool $logErrorDetails
     ) use ($twig) : Response {
         $response = new \Slim\Psr7\Response();
-        return $twig->render($response->withStatus(404), 'errors/404.html.twig', [
+        return $twig->render($response->withStatus(200), 'errors/404.html.twig', [
             'path' => $request->getUri()->getPath()
         ]);
     });
@@ -885,7 +885,7 @@ return function (App $app, Twig $twig): void {
         }
         $status = $exception instanceof HttpInternalServerErrorException ? 500 : 500;
         $response = new \Slim\Psr7\Response();
-        return $twig->render($response->withStatus($status), 'errors/500.html.twig', [
+        return $twig->render($response->withStatus(200), 'errors/500.html.twig', [
             'exception' => $exception,
             'displayErrorDetails' => $displayErrorDetails,
         ]);
