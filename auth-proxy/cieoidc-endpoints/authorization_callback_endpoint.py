@@ -67,6 +67,21 @@ class AuthorizationCallBackHandler(BaseEndpoint):
             error = context.qs_params.get("error")
             description = context.qs_params.get("error_description", "Autenticazione fallita")
             logger.warning(f"IdP returned error: {error} — {description}")
+
+            import os
+            _cancel_url = (
+                os.environ.get("SATOSA_CANCEL_REDIRECT_URL")
+                or os.environ.get("SATOSA_UNKNOW_ERROR_REDIRECT_PAGE")
+            )
+            if _cancel_url:
+                _js_url = json.dumps(_cancel_url)
+                html = (
+                    f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                    f"<script>window.location.replace({_js_url});</script>"
+                    f"</head><body></body></html>"
+                ).encode("utf-8")
+                return Response(message=html, status="200 OK", content="text/html; charset=utf-8")
+
             html = (
                 f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
                 f"<title>Errore autenticazione</title></head>"
