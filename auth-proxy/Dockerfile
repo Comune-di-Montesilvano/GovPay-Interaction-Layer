@@ -12,8 +12,16 @@ RUN apk add --no-cache gettext curl git
 
 # Bake-in il progetto SATOSA dal repo upstream (versione fissa a build time → riproducibile)
 ARG IAM_PROXY_REF=master
-ARG GIL_IMAGE_TAG=dev
+ARG GIL_IMAGE_TAG=development
+ARG GIL_VERSION_TYPE=development
+ARG GIL_VERSION_LABEL=development
+ARG GIL_REF_URL=
+ARG GIT_COMMIT_SHA=unknown
 ENV APP_VERSION=$GIL_IMAGE_TAG
+ENV APP_VERSION_TYPE=$GIL_VERSION_TYPE
+ENV APP_VERSION_LABEL=$GIL_VERSION_LABEL
+ENV APP_REF_URL=$GIL_REF_URL
+ENV APP_COMMIT_SHA=$GIT_COMMIT_SHA
 
 RUN git clone --depth 1 --branch "${IAM_PROXY_REF}" \
       https://github.com/italia/iam-proxy-italia.git /tmp/upstream \

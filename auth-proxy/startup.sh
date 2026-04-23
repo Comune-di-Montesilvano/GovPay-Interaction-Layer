@@ -212,7 +212,7 @@ emit_status_json() {
   STATUS_LOADED_CONF_HASH="${_LOADED_CONF_HASH:-}" \
   STATUS_LAST_RELOAD_EPOCH="${_LAST_RELOAD_EPOCH:-0}" \
   STATUS_LAST_RESTART_EPOCH="${_LAST_RESTART_EPOCH:-0}" \
-  STATUS_APP_VERSION="${APP_VERSION:-}" \
+  STATUS_APP_VERSION="${APP_VERSION_LABEL:-${APP_VERSION:-}}" \
   python3 - "$_STATUS_FILE" <<'PY'
 import json
 import os
@@ -339,10 +339,23 @@ PY
   fi
 
 # Versione dell'immagine (se non passata, usa unknown)
-: "${APP_VERSION:=unknown}"
+: "${APP_VERSION:=development}"
+: "${APP_VERSION_TYPE:=development}"
+: "${APP_VERSION_LABEL:=${APP_VERSION}}"
+: "${APP_REF_URL:=}"
 export APP_VERSION
+export APP_VERSION_TYPE
+export APP_VERSION_LABEL
+export APP_REF_URL
 
-echo "[startup] auth-proxy startup — applicazione configurazione... (v${APP_VERSION:-unknown})"
+if [ -n "${APP_REF_URL}" ]; then
+  APP_VERSION_HTML="<a href=\"${APP_REF_URL}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-white text-decoration-none\" style=\"font-size:0.8rem; opacity:0.75;\">IAMProxy@GovPayInteractionLayer ${APP_VERSION_LABEL}</a>"
+else
+  APP_VERSION_HTML="<span class=\"text-white text-decoration-none\" style=\"font-size:0.8rem; opacity:0.75;\">IAMProxy@GovPayInteractionLayer ${APP_VERSION_LABEL}</span>"
+fi
+export APP_VERSION_HTML
+
+echo "[startup] auth-proxy startup — applicazione configurazione... (${APP_VERSION_LABEL})"
 
 # ── i18n wallets ─────────────────────────────────────────────────────────────
 echo "[startup] Generazione wallets i18n JSON..."
@@ -361,7 +374,7 @@ envsubst < "$TEMPLATES/wallets-config.json.template" > "$SATOSA_PROXY/static/con
 
 # ── disco.html ───────────────────────────────────────────────────────────────
 echo "[startup] Generazione disco.html..."
-envsubst '${APP_LOGO_SRC} ${SATOSA_UI_LOGO_URL} ${APP_LOGO_TYPE} ${APP_ENTITY_NAME} ${APP_ENTITY_URL} ${FRONTOFFICE_PUBLIC_BASE_URL} ${SATOSA_UI_LEGAL_URL_IT} ${SATOSA_UI_PRIVACY_URL_IT} ${SATOSA_UI_ACCESSIBILITY_URL_IT} ${SATOSA_ORGANIZATION_URL_IT} ${SATOSA_ORGANIZATION_DISPLAY_NAME_IT} ${CIE_OIDC_PROVIDER_URL} ${APP_VERSION}' \
+envsubst '${APP_LOGO_SRC} ${SATOSA_UI_LOGO_URL} ${APP_LOGO_TYPE} ${APP_ENTITY_NAME} ${APP_ENTITY_URL} ${FRONTOFFICE_PUBLIC_BASE_URL} ${SATOSA_UI_LEGAL_URL_IT} ${SATOSA_UI_PRIVACY_URL_IT} ${SATOSA_UI_ACCESSIBILITY_URL_IT} ${SATOSA_ORGANIZATION_URL_IT} ${SATOSA_ORGANIZATION_DISPLAY_NAME_IT} ${CIE_OIDC_PROVIDER_URL} ${APP_VERSION_HTML}' \
   < "$TEMPLATES/disco.static.html.template" > "$SATOSA_PROXY/static/disco.html"
 is_true "${ENABLE_SPID:-true}"         || sed -i '/SPID_BLOCK_START/,/SPID_BLOCK_END/d'            "$SATOSA_PROXY/static/disco.html"
 is_true "${SATOSA_USE_DEMO_SPID_IDP:-}" || sed -i '/SPID_DEMO_START/,/SPID_DEMO_END/d'             "$SATOSA_PROXY/static/disco.html"

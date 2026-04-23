@@ -5114,6 +5114,8 @@ $twig->addExtension(new I18nExtension($translations, $currentLocale));
 // ─────────────────────────────────────────────────────────────────────────────
 
 
+$versionInfo = \App\Config\Config::getVersionInfo();
+
 $baseContext = [
     'app_entity' => [
         'name' => $entityName,
@@ -5133,7 +5135,11 @@ $baseContext = [
     'cart_count' => frontoffice_cart_count(),
     'cart_items_ids' => array_keys(frontoffice_cart_items()),
     'current_locale' => $currentLocale,
-    'app_version' => \App\Config\Config::getVersion(),
+    'app_version' => $versionInfo['version'],
+    'app_commit' => $versionInfo['commit'],
+    'app_version_type' => $versionInfo['version_type'],
+    'app_version_label' => $versionInfo['version_label'],
+    'app_ref_url' => $versionInfo['ref_url'],
 ];
 
 $context = array_merge(

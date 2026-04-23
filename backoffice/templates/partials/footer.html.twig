@@ -6,19 +6,18 @@
           {{ app_entity.full }}
         </div>
         <div class="py-2 col-12 col-md-4 text-center d-none d-md-block">
-          {% if app_version starts with 'v' %}
-            {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases/tag/' ~ app_version %}
-            {% set gh_label = app_version %}
+          {% if app_ref_url %}
+            <a href="{{ app_ref_url }}"
+               target="_blank" rel="noopener noreferrer"
+               class="text-white text-decoration-none small opacity-75"
+               title="Vai al repository GitHub">
+              <i class="fab fa-github me-1"></i>GovPayInteractionLayer {{ app_version_label }}
+            </a>
           {% else %}
-            {% set gh_url = 'https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/commit/' ~ app_commit %}
-            {% set gh_label = app_version ~ '@' ~ app_commit|slice(0, 7) %}
+            <span class="text-white small opacity-75">
+              <i class="fab fa-github me-1"></i>GovPayInteractionLayer {{ app_version_label }}
+            </span>
           {% endif %}
-          <a href="{{ gh_url }}"
-             target="_blank" rel="noopener noreferrer"
-             class="text-white text-decoration-none small opacity-75"
-             title="Vai al repository GitHub">
-            <i class="fab fa-github me-1"></i>GovPayInteractionLayer {{ gh_label }}
-          </a>
         </div>
         <div class="py-2 col-12 col-md-4 text-end d-none d-md-block">
           <img src="/img/logo-pagopa-bianco.svg" alt="PagoPA" style="height:30px" />
