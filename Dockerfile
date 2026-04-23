@@ -121,17 +121,17 @@ WORKDIR /var/www/html
 # ----------------------------------------------------------------------
 
 RUN mkdir -p public/assets/bootstrap-italia public/assets/fontawesome
-COPY --chown=www-app:www-data --link --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
 
 # 2. Copia Font Awesome (Asset scaricati dalla Fase 1)
 ENV FA_DEST="/var/www/html/public/assets/fontawesome"
-COPY --chown=www-app:www-data --link --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
-COPY --chown=www-app:www-data --link --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
-COPY --chown=www-app:www-data --link --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
+COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
+COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
+COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
 RUN chmod -R 755 public/assets
 
 # (Documentativo) composer gestito nello stage vendor_builder
-COPY --chown=www-app:www-data --link composer.json composer.lock* /var/www/html/
+COPY --chown=www-app:www-data composer.json composer.lock* /var/www/html/
 
 # ----------------------------------------------------------------------
 # Configurazione Finale
@@ -139,11 +139,11 @@ COPY --chown=www-app:www-data --link composer.json composer.lock* /var/www/html/
 
 # Copia i certificati SSL
 RUN mkdir -p /ssl
-COPY --chown=www-app:www-data --link ssl/ /ssl/
+COPY --chown=www-app:www-data ssl/ /ssl/
 
 #Copia i certificati di govpay se esistono
 RUN mkdir -p /certificate
-COPY --chown=www-app:www-data --link certificate/ /var/www/certificate/
+COPY --chown=www-app:www-data certificate/ /var/www/certificate/
 
 # Copia lo script di setup nel container e rendilo eseguibile
 COPY --link docker-setup.sh /usr/local/bin/docker-setup.sh
@@ -154,15 +154,15 @@ RUN rm /etc/apache2/sites-enabled/000-default.conf
 COPY --chown=root:root --link apache/000-default-ssl.conf /etc/apache2/sites-available/000-default.conf
 RUN a2ensite 000-default.conf
 
-COPY --chown=www-app:www-data --link img /var/www/html/public/img
-COPY --chown=www-app:www-data --link assets /var/www/html/public/assets
-COPY --chown=www-app:www-data --link public.htaccess /var/www/html/public/.htaccess
-COPY --chown=www-app:www-data --link app/ /var/www/html/app/
-COPY --chown=www-app:www-data --link migrations/ /var/www/html/migrations/
+COPY --chown=www-app:www-data img /var/www/html/public/img
+COPY --chown=www-app:www-data assets /var/www/html/public/assets
+COPY --chown=www-app:www-data public.htaccess /var/www/html/public/.htaccess
+COPY --chown=www-app:www-data app/ /var/www/html/app/
+COPY --chown=www-app:www-data migrations/ /var/www/html/migrations/
 
 # Copia la sorgente dei client generati (necessario se Composer ha creato symlink per path repositories)
-COPY --chown=www-app:www-data --link govpay-clients/ /var/www/html/govpay-clients/
-COPY --chown=www-app:www-data --link pagopa-clients/ /var/www/html/pagopa-clients/
+COPY --chown=www-app:www-data govpay-clients/ /var/www/html/govpay-clients/
+COPY --chown=www-app:www-data pagopa-clients/ /var/www/html/pagopa-clients/
 
 # Hardening Apache: rimuove Indexes e aggiunge security headers
 RUN sed -i 's/Options Indexes FollowSymLinks/Options FollowSymLinks/g' /etc/apache2/apache2.conf && \
@@ -178,14 +178,14 @@ EXPOSE 443
 CMD ["apache2-foreground"]
 
 FROM runtime-base AS runtime-backoffice
-COPY --chown=www-app:www-data --link backoffice/ /var/www/html/backoffice/
-COPY --chown=www-app:www-data --link backoffice/bin/ /var/www/html/bin/
+COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
+COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
     && ln -s /var/www/html/backoffice/templates /var/www/html/templates \
     && mkdir -p /var/www/html/backoffice/storage/logs \
     && chown www-data:www-data /var/www/html/backoffice/storage/logs
-COPY --chown=www-app:www-data --link --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
+COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 # Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
 # Docker inizializza i named volumes copiando il contenuto del path dell'immagine,
@@ -196,7 +196,7 @@ RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
     && chmod 775 /backups
 
 FROM runtime-base AS runtime-frontoffice
-COPY --chown=www-app:www-data --link frontoffice/ /var/www/html/frontoffice/
+COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs \
     && chown www-data:www-data /var/www/html/frontoffice/storage/logs
 
