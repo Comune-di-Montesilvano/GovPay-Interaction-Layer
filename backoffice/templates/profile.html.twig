@@ -148,7 +148,7 @@
         <div class="alert alert-info">
           {% if current_user is defined and current_user.role in ['admin', 'superadmin'] %}
             Nessun template è assegnato al tuo account. Puoi gestire i template e le loro assegnazioni dalla
-            <a href="/configurazione?tab=templates">pagina di configurazione</a>.
+            <a href="/impostazioni?tab=templates">pagina di configurazione</a>.
           {% else %}
             Nessun template è assegnato al tuo account. Contatta un amministratore per richiedere l'accesso ai template di tuo interesse.
           {% endif %}
