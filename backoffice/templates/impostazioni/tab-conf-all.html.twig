@@ -214,7 +214,7 @@
                 </div>
                 <div class="col-12 mt-2">
                   <button type="submit" class="btn btn-sm btn-primary">Salva dominio</button>
-                  <a href="/configurazione?tab=dominio" class="btn btn-sm btn-outline-secondary">Annulla</a>
+                  <a href="/impostazioni?tab=dominio" class="btn btn-sm btn-outline-secondary">Annulla</a>
                 </div>
               </form>
             </div>
@@ -380,7 +380,7 @@
                           </div>
                         </div>
                         {% else %}
-                        <div class="text-muted small mt-2"><i class="fas fa-mobile-alt me-1"></i>Nessun servizio App IO configurato. <a href="/configurazione?tab=servizi_io">Aggiungi un servizio</a>.</div>
+                        <div class="text-muted small mt-2"><i class="fas fa-mobile-alt me-1"></i>Nessun servizio App IO configurato. <a href="/impostazioni?tab=servizi_io">Aggiungi un servizio</a>.</div>
                         {% endif %}
                         {# URL esterna (spostato sopra i pulsanti azione) #}
                         <div class="row g-2 small mt-2">
@@ -586,7 +586,7 @@
               </div>
               {% if tassonomie_search %}
                 <div class="col-auto">
-                  <a class="btn btn-sm btn-outline-secondary" href="/configurazione?tab=tassonomie">Azzera</a>
+                  <a class="btn btn-sm btn-outline-secondary" href="/impostazioni?tab=tassonomie">Azzera</a>
                 </div>
               {% endif %}
             </form>
