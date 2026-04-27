@@ -1396,7 +1396,7 @@ class ConfigurazioneController
 
         // ── Template pendenze ─────────────────────────────────────────────
         $pendenzaTemplates = []; $tipologiePendenze = [];
-        if ($tab === 'templates' && $canManageUsers) {
+        if (in_array($tab, ['templates', 'gruppi-utenti'], true) && $canManageUsers) {
             try {
                 $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
                 if ($idDominioEnv !== '') {
@@ -1411,6 +1411,25 @@ class ConfigurazioneController
                 if (empty($usersList)) { $usersList = $this->userRepository->listAll(); }
             } catch (\Throwable $e) {
                 $errors[] = 'Errore caricamento template pendenze: ' . $e->getMessage();
+            }
+        }
+
+        // ── Gruppi Utenti ─────────────────────────────────────────────────
+        $userGroups = []; $allUsersForGroups = [];
+        if ($tab === 'gruppi-utenti' && $canManageUsers) {
+            try {
+                $groupRepo  = new \App\Database\UserGroupRepository();
+                $userGroups = $groupRepo->listAll();
+                $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
+                foreach ($userGroups as &$grp) {
+                    $grp['member_ids']    = $groupRepo->getMemberIds((int)$grp['id']);
+                    $grp['tipologie_ids'] = $idDominioEnv ? $groupRepo->getTipologie((int)$grp['id'], $idDominioEnv) : [];
+                    $grp['template_ids']  = $groupRepo->getTemplateIds((int)$grp['id']);
+                }
+                unset($grp);
+                $allUsersForGroups = $this->userRepository->listAll();
+            } catch (\Throwable $e) {
+                $errors[] = 'Errore caricamento gruppi: ' . $e->getMessage();
             }
         }
 
@@ -1459,6 +1478,8 @@ class ConfigurazioneController
             'tassonomie_url'            => $tassonomieUrl,
             'tassonomie_search'         => $tassonomieSearch,
             'tassonomie_raw'            => $tassonomieRaw,
+            'user_groups'               => $userGroups,
+            'all_users_for_groups'      => $allUsersForGroups,
         ];
     }
 
@@ -2645,6 +2666,12 @@ class ConfigurazioneController
         return $u && ($u['role'] ?? '') === 'superadmin';
     }
 
+    private function isAdminOrAbove(): bool
+    {
+        $role = $_SESSION['user']['role'] ?? '';
+        return in_array($role, ['admin', 'superadmin'], true);
+    }
+
     public function addPendenzaTemplate(Request $request, Response $response): Response
     {
         if (!$this->isSuperadmin() && !in_array($_SESSION['user']['role'] ?? '', ['admin'], true)) {
@@ -2786,5 +2813,124 @@ class ConfigurazioneController
         }
 
         return $this->redirectToTab($response, 'templates');
+    }
+
+    // ── Gruppi Utenti ────────────────────────────────────────────────────────
+
+    public function addUserGroup(Request $request, Response $response): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $data = (array)($request->getParsedBody() ?? []);
+        $nome = trim((string)($data['nome'] ?? ''));
+        if ($nome === '') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Nome gruppo obbligatorio'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        try {
+            $repo = new \App\Database\UserGroupRepository();
+            $repo->create($nome, $data['descrizione'] ?? null, ($data['default_id_entrata'] ?? '') ?: null);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => "Gruppo \"{$nome}\" creato"];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore creazione gruppo: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
+    }
+
+    public function updateUserGroup(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $id   = (int)($args['id'] ?? 0);
+        $data = (array)($request->getParsedBody() ?? []);
+        $nome = trim((string)($data['nome'] ?? ''));
+        if ($nome === '') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Nome gruppo obbligatorio'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        try {
+            $repo = new \App\Database\UserGroupRepository();
+            $repo->update($id, $nome, $data['descrizione'] ?? null, ($data['default_id_entrata'] ?? '') ?: null);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Gruppo aggiornato'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore aggiornamento: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
+    }
+
+    public function deleteUserGroup(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $id = (int)($args['id'] ?? 0);
+        try {
+            $repo = new \App\Database\UserGroupRepository();
+            $repo->delete($id);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Gruppo eliminato'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore eliminazione: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
+    }
+
+    public function setGroupMembers(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $id      = (int)($args['id'] ?? 0);
+        $data    = (array)($request->getParsedBody() ?? []);
+        $userIds = (array)($data['user_ids'] ?? []);
+        try {
+            (new \App\Database\UserGroupRepository())->setMembers($id, $userIds);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Membri aggiornati'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
+    }
+
+    public function setGroupTipologie(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $id        = (int)($args['id'] ?? 0);
+        $data      = (array)($request->getParsedBody() ?? []);
+        $entrate   = (array)($data['tipologie_ids'] ?? []);
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        try {
+            (new \App\Database\UserGroupRepository())->setTipologie($id, $idDominio, $entrate);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Tipologie gruppo aggiornate'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
+    }
+
+    public function setGroupTemplates(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $id          = (int)($args['id'] ?? 0);
+        $data        = (array)($request->getParsedBody() ?? []);
+        $templateIds = (array)($data['template_ids'] ?? []);
+        try {
+            (new \App\Database\UserGroupRepository())->setTemplates($id, $templateIds);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Template gruppo aggiornati'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
     }
 }
