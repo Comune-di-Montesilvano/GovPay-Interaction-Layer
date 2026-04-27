@@ -1,188 +1,142 @@
 {% extends 'base.html.twig' %}
 
 {% block head %}
-  <style>
-    body { background: #f4f6fb; }
-    .hero-banner {
-      background: linear-gradient(135deg, #05193d 0%, #003a6d 50%, #0062b8 100%);
-      color: #fff;
-    }
-    .hero-banner .btn { font-weight: 600; border-radius: 999px; }
-    .service-section { padding: 4rem 0; }
-    .action-card {
-      display: block; height: 100%; padding: 2rem; border-radius: 24px;
-      border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1);
-      color: #fff; text-decoration: none;
-      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-    }
-    .action-card:hover { transform: translateY(-6px); box-shadow: 0 20px 50px rgba(5,25,61,0.2); background: rgba(255,255,255,0.18); }
-    .action-card h3 { color: #fff; margin-bottom: 0.75rem; }
-    .action-card p { color: rgba(255,255,255,0.85); margin-bottom: 1.25rem; }
-    .service-card { border-radius: 24px; border: none; box-shadow: 0 25px 60px rgba(9,26,62,0.08); padding: 2.5rem; height: 100%; }
-    .service-card .icon-wrapper {
-      width: 60px; height: 60px; border-radius: 16px; background: rgba(0,95,204,0.1);
-      display: inline-flex; align-items: center; justify-content: center; margin-bottom: 1.5rem;
-    }
-    .service-card .icon-wrapper svg { width: 28px; height: 28px; fill: #005fcc; }
-    .cta-list li { margin-bottom: 0.5rem; padding-left: 1.25rem; position: relative; }
-    .cta-list li::before { content: '\2022'; position: absolute; left: 0; color: #005fcc; font-weight: bold; }
-    .cart-card {
-      border-radius: 24px; border: 2px solid #f5a623;
-      background: linear-gradient(135deg, #05193d, #004a96);
-      color: #fff; padding: 2.5rem; height: 100%;
-    }
-    footer.it-footer { background: #05193d; }
-  </style>
+<style>
+  body { background: #f0f4fa; }
+
+  .home-hero {
+    background: linear-gradient(135deg, #05193d 0%, #003a6d 60%, #0062b8 100%);
+    color: #fff;
+    padding: 2rem 0 1.75rem;
+    text-align: center;
+  }
+  .home-hero .hero-entity {
+    font-size: .8rem; letter-spacing: .08em; text-transform: uppercase;
+    opacity: .65; margin-bottom: .5rem;
+  }
+  .home-hero h1 { font-size: clamp(1.2rem, 4vw, 1.6rem); font-weight: 700; margin-bottom: 0; }
+
+  /* ── Tile base ── */
+  .action-tile {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 1.1rem 1.25rem; border-radius: 16px;
+    background: #fff; border: 1.5px solid #e2e8f0;
+    text-decoration: none; color: #1a2a4a;
+    height: 100%;
+    transition: box-shadow .15s ease, transform .15s ease;
+    animation: tileIn .35s ease both;
+  }
+  .action-tile:hover { box-shadow: 0 8px 28px rgba(5,25,61,.12); transform: translateY(-2px); color: #1a2a4a; text-decoration: none; }
+
+  /* ── CTA primary tile ── */
+  .action-tile.tile-primary { background: #0062b8; color: #fff; border-color: #0062b8; }
+  .action-tile.tile-primary:hover { background: #004d99; color: #fff; }
+  .action-tile.tile-primary .tile-icon { background: rgba(255,255,255,.18); color: #fff; }
+  .action-tile.tile-primary .tile-sub { opacity: .8; }
+
+  /* ── Icon wrapper ── */
+  .tile-icon {
+    width: 46px; height: 46px; border-radius: 12px;
+    background: rgba(0,95,204,.08); color: #0062b8;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.15rem;
+  }
+  .tile-label { font-weight: 600; font-size: .95rem; line-height: 1.2; }
+  .tile-sub { font-size: .78rem; margin-top: .15rem; color: #6c757d; line-height: 1.3; }
+  .action-tile.tile-primary .tile-sub { color: inherit; }
+
+  /* ── Stagger animation ── */
+  @keyframes tileIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .tile-delay-1 { animation-delay: .05s; }
+  .tile-delay-2 { animation-delay: .10s; }
+  .tile-delay-3 { animation-delay: .15s; }
+  .tile-delay-4 { animation-delay: .20s; }
+
+  .home-footer-links { font-size: .82rem; }
+</style>
 {% endblock %}
 
 {% block content %}
-  <section class="hero-banner py-4">
-    <div class="container-xxl">
-      <div class="row align-items-center g-3">
-        <div class="col-12">
-          <h1 class="h3 fw-semibold mb-3">{{ 'Sportello digitale PagoPA'|trans }}</h1>
-          <div class="d-flex flex-wrap gap-2">
-            <a class="btn btn-warning text-dark" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
-            <a class="btn btn-outline-light" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
-            <a class="btn btn-outline-light" href="/carrello">
-              <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Carrello'|trans }}
-              {% if cart_count|default(0) > 0 %}
-                <span class="badge bg-warning text-dark ms-1">{{ cart_count }}</span>
-              {% endif %}
-            </a>
-            {% if spid_enabled %}
-              <a class="btn btn-outline-light" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+<section class="home-hero">
+  <div class="container-xxl">
+    <p class="hero-entity">{{ app_entity.name }}</p>
+    <h1>{{ 'Gestisci i pagamenti PagoPA con pochi clic'|trans }}</h1>
+  </div>
+</section>
 
-  <section id="pagamento-avviso" class="service-section">
-    <div class="container-xxl">
-      <div class="row align-items-center g-4">
-        <div class="col-lg-6">
-          <div class="service-card bg-white">
-            <div class="icon-wrapper">
-              <svg aria-hidden="true"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-card"></use></svg>
-            </div>
-            <h2 class="h3 mb-3">{{ 'Paga un avviso ricevuto'|trans }}</h2>
-            <p class="mb-4">{{ 'Inserisci il codice avviso/IUV e il codice fiscale. Puoi pagarlo subito, scaricarlo come PDF o aggiungerlo al carrello per pagare più avvisi insieme.'|trans }}</p>
-            <ul class="cta-list list-unstyled mb-4">
-              <li>{{ 'Verifica importo e scadenza direttamente online'|trans }}</li>
-              <li>{{ 'Scegli: <strong>Paga subito</strong>, <strong>Aggiungi al carrello</strong> o <strong>Stampa PDF</strong>'|trans|raw }}</li>
-              <li>{{ 'Ricevi ricevuta digitale immediata'|trans }}</li>
-            </ul>
-            <div class="d-flex gap-3 flex-wrap">
-              <a class="btn btn-primary" href="/pagamento-avviso" role="button">{{ 'Inserisci codice avviso'|trans }}</a>
-              <a class="btn btn-outline-primary" href="#supporto">{{ 'Serve aiuto?'|trans }}</a>
-            </div>
-          </div>
+<div class="container-xxl py-4">
+  <div class="row g-3">
+
+    {# Paga avviso — CTA primaria, full-width su mobile #}
+    <div class="col-12 col-sm-6">
+      <a href="/pagamento-avviso" class="action-tile tile-primary tile-delay-1">
+        <div class="tile-icon"><i class="fas fa-file-invoice"></i></div>
+        <div>
+          <div class="tile-label">{{ 'Paga un avviso'|trans }}</div>
+          <div class="tile-sub">{{ 'Codice avviso o IUV ricevuto'|trans }}</div>
         </div>
-        <div class="col-lg-6">
-          <div class="p-4 p-lg-5 rounded-4 bg-primary text-white h-100 d-flex flex-column justify-content-center">
-            <h3 class="h4 mb-3">{{ 'Paghi da smartphone o computer'|trans }}</h3>
-            {% if spid_enabled %}
-              <p class="mb-0">{{ 'Accedi con SPID/CIE oppure procedi senza login. Completa il pagamento con carta e wallet digitali: lo stato dell\'avviso si aggiorna automaticamente.'|trans }}</p>
+      </a>
+    </div>
+
+    <div class="col-12 col-sm-6 tile-delay-2">
+      <a href="/pagamento-spontaneo" class="action-tile">
+        <div class="tile-icon"><i class="fas fa-pen"></i></div>
+        <div>
+          <div class="tile-label">{{ 'Pagamento spontaneo'|trans }}</div>
+          <div class="tile-sub">{{ 'Genera un avviso PagoPA'|trans }}</div>
+        </div>
+      </a>
+    </div>
+
+    <div class="col-12 col-sm-6 tile-delay-3">
+      <a href="/carrello" class="action-tile">
+        <div class="tile-icon"><i class="fas fa-shopping-cart"></i></div>
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2">
+            <span class="tile-label">{{ 'Carrello'|trans }}</span>
+            {% if cart_count|default(0) > 0 %}
+              <span class="badge bg-warning text-dark cart-badge">{{ cart_count }}</span>
             {% else %}
-              <p class="mb-0">{{ 'Completa il pagamento con carta e wallet digitali. Lo stato dell\'avviso sarà aggiornato automaticamente senza dover presentare ricevute agli sportelli.'|trans }}</p>
+              <span class="badge bg-warning text-dark cart-badge" style="display:none;">0</span>
             {% endif %}
           </div>
+          <div class="tile-sub">{{ 'Paga fino a 5 avvisi insieme'|trans }}</div>
         </div>
-      </div>
+      </a>
     </div>
-  </section>
 
-  <section id="pagamento-spontaneo" class="service-section bg-white">
-    <div class="container-xxl">
-      <div class="row align-items-center g-4">
-        <div class="col-lg-6 order-lg-2">
-          <div class="service-card bg-light">
-            <div class="icon-wrapper">
-              <svg aria-hidden="true"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-pencil"></use></svg>
-            </div>
-            <h2 class="h3 mb-3">{{ 'Genera un pagamento spontaneo'|trans }}</h2>
-            <p class="mb-4">{{ 'Non hai ricevuto un avviso ma devi pagare un importo all\'ente? Compila il modulo e ottieni subito un codice avviso PagoPA — poi puoi pagarlo o aggiungerlo al carrello.'|trans }}</p>
-            <ul class="cta-list list-unstyled mb-4">
-              <li>{{ 'Seleziona servizio o causale'|trans }}</li>
-              <li>{{ 'Compila i dati anagrafici e l\'importo'|trans }}</li>
-              <li>{{ 'Scegli: <strong>Paga subito</strong>, <strong>Aggiungi al carrello</strong> o <strong>Stampa PDF</strong>'|trans|raw }}</li>
-            </ul>
-            <div class="d-flex gap-3 flex-wrap">
-              <a class="btn btn-primary" href="/pagamento-spontaneo" role="button">{{ 'Genera avviso'|trans }}</a>
-              <a class="btn btn-outline-primary" href="#supporto">{{ 'Informazioni'|trans }}</a>
-            </div>
+    {% if spid_enabled %}
+    <div class="col-12 col-sm-6 tile-delay-4">
+      <a href="/pendenze" class="action-tile">
+        <div class="tile-icon"><i class="fas fa-receipt"></i></div>
+        <div>
+          <div class="tile-label">{{ 'Le mie pendenze'|trans }}</div>
+          <div class="tile-sub">
+            {{ current_user ? 'Le tue posizioni debitorie'|trans : 'Accedi con SPID o CIE'|trans }}
           </div>
         </div>
-        <div class="col-lg-6 order-lg-1">
-          <div class="p-4 p-lg-5 rounded-4 bg-dark text-white h-100 d-flex flex-column justify-content-center">
-            <h3 class="h4 mb-3">{{ 'Servizi più richiesti'|trans }}</h3>
-            <p class="mb-0">{{ 'Mensa scolastica, retta degli asili, concessioni, diritti di segreteria, multe: tutto in un\'unica procedura guidata per ridurre code e tempi allo sportello.'|trans }}</p>
-          </div>
-        </div>
-      </div>
+      </a>
     </div>
-  </section>
+    {% endif %}
 
-  {# ── Sezione Carrello ── #}
-  <section id="carrello" class="service-section">
-    <div class="container-xxl">
-      <div class="row align-items-center g-4">
-        <div class="col-lg-6">
-          <div class="cart-card">
-            <p class="text-uppercase small mb-2" style="color:#f5a623">{{ 'Novità'|trans }}</p>
-            <h2 class="h3 mb-3">
-              <i class="fa-solid fa-cart-shopping me-2"></i>{{ 'Carrello multi-pagamento'|trans }}
-            </h2>
-            <p class="mb-4" style="color:rgba(255,255,255,0.85)">{{ 'Aggiungi fino a <strong>5 avvisi</strong> al carrello — trovati dalla ricerca o generati spontaneamente — e pagali tutti in un\'unica sessione PagoPA.'|trans|raw }}</p>
-            <ul class="cta-list list-unstyled mb-4" style="color:rgba(255,255,255,0.85)">
-              <li>{{ 'nessun login obbligatorio per pagamenti semplici'|trans }}</li>
-              <li>{{ 'badge nella barra di navigazione sempre aggiornato'|trans }}</li>
-              <li>{{ 'un solo redirect a PagoPA per tutti gli avvisi'|trans }}</li>
-            </ul>
-            <a class="btn btn-warning text-dark fw-bold" href="/carrello">
-              {{ 'Vai al carrello'|trans }}
-              {% if cart_count|default(0) > 0 %}
-                <span class="badge bg-dark text-white ms-1">{{ cart_count }}</span>
-              {% endif %}
-            </a>
-          </div>
-        </div>
-        <div class="col-lg-6">
-          <div class="p-4 p-lg-5 rounded-4 bg-white border h-100 d-flex flex-column justify-content-center">
-            <h3 class="h4 mb-3">{{ 'Come funziona il carrello'|trans }}</h3>
-            <ol class="ps-3 mb-0">
-              <li class="mb-2">{{ 'Cerca un avviso o genera un pagamento spontaneo.'|trans }}</li>
-              <li class="mb-2">{{ 'Clicca <strong>Aggiungi al carrello</strong> sul risultato trovato.'|trans|raw }}</li>
-              <li class="mb-2">{{ 'Ripeti per ogni avviso che vuoi pagare (fino a 5).'|trans }}</li>
-              <li>{{ 'Apri il <a href="/carrello">Carrello</a> e clicca <strong>Procedi al pagamento</strong>.'|trans|raw }}</li>
-            </ol>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+  </div>
 
-  <section id="supporto" class="service-section pt-0">
-    <div class="container-xxl">
-      <div class="row g-4">
-        <div class="col-lg-8">
-          <div class="p-4 border rounded-4 bg-white h-100">
-            <h2 class="h4 mb-2">{{ 'Hai bisogno di assistenza?'|trans }}</h2>
-            <p class="mb-0">
-              {{ 'Scrivi a'|trans }} <a href="mailto:{{ support_email }}">{{ support_email }}</a>
-              {{ 'oppure chiama il numero'|trans }} {{ support_phone }} ({{ support_hours }}).
-            </p>
-          </div>
-        </div>
-        <div class="col-lg-4">
-          <div class="p-4 border rounded-4 bg-light h-100">
-            <h3 class="h6 text-uppercase text-muted">{{ 'Orari sportello fisico'|trans }}</h3>
-            <p class="mb-0">{{ support_location|raw }}</p>
-          </div>
-        </div>
-      </div>
+  <div class="mt-4 d-flex flex-column flex-sm-row align-items-center justify-content-between gap-3 home-footer-links text-muted">
+    <div>
+      {% if support_email %}
+        <i class="fas fa-envelope me-1"></i>
+        <a href="mailto:{{ support_email }}" class="text-muted text-decoration-none">{{ support_email }}</a>
+        {% if support_phone %}
+          <span class="mx-2">·</span>
+          <i class="fas fa-phone me-1"></i>{{ support_phone }}
+          {% if support_hours %}<span class="ms-1">({{ support_hours }})</span>{% endif %}
+        {% endif %}
+      {% endif %}
     </div>
-  </section>
+    <a href="/guida" class="text-muted text-decoration-none">
+      <i class="fas fa-question-circle me-1"></i>{{ 'Guida all\'utilizzo'|trans }}
+    </a>
+  </div>
+</div>
 {% endblock %}
