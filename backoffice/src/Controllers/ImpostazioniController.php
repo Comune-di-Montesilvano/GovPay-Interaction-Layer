@@ -937,25 +937,104 @@ class ImpostazioniController
     public function testCheckout(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('pagopa', 'checkout_ec_base_url', ''), 'pagoPA Checkout');
+        $url = SettingsRepository::get('pagopa', 'checkout_ec_base_url', '');
+        $key = SettingsRepository::get('pagopa', 'checkout_subscription_key', '');
+        if (empty($url)) {
+            return $this->jsonError('URL pagoPA Checkout non configurato.');
+        }
+        // L'API Checkout EC non ha endpoint GET: POST /carts con body vuoto è
+        // l'unico modo per verificare raggiungibilità + validità della chiave.
+        // Risposta attesa: 400/422 (dati mancanti) = API su, chiave valida.
+        $ch = curl_init(rtrim($url, '/') . '/carts');
+        if ($ch === false) {
+            return $this->jsonError('URL pagoPA Checkout non valido.');
+        }
+        $headers = ['Content-Type: application/json', 'Accept: application/json'];
+        if (!empty($key)) {
+            $headers[] = "Ocp-Apim-Subscription-Key: {$key}";
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => '{}',
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => $headers,
+        ]);
+        $result   = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        if ($result === false || $curlErr) {
+            return $this->jsonError("pagoPA Checkout: connessione fallita — {$curlErr}");
+        }
+        if ($httpCode === 0) {
+            return $this->jsonError('pagoPA Checkout: nessuna risposta (timeout o host non raggiungibile).');
+        }
+        if ($httpCode === 401 || $httpCode === 403) {
+            return $this->jsonError("pagoPA Checkout: HTTP {$httpCode} — chiave API non valida o mancante.");
+        }
+        if ($httpCode === 400 || $httpCode === 422) {
+            return $this->jsonOk("pagoPA Checkout: API raggiungibile — HTTP {$httpCode} (validità chiave non verificabile su questo endpoint).");
+        }
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return $this->jsonOk("pagoPA Checkout: HTTP {$httpCode} — OK.");
+        }
+        return $this->jsonOk("pagoPA Checkout: HTTP {$httpCode} — server raggiungibile.");
     }
 
     public function testPaymentOptions(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('pagopa', 'payment_options_url', ''), 'Payment Options API');
+        $url = SettingsRepository::get('pagopa', 'payment_options_url', '');
+        $key = SettingsRepository::get('pagopa', 'payment_options_key', '');
+        return $this->pingUrlWithKey($url, 'Payment Options API', $key);
     }
 
     public function testBizEvents(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('pagopa', 'biz_events_host', ''), 'BizEvents');
+        $host = SettingsRepository::get('pagopa', 'biz_events_host', '');
+        $key  = SettingsRepository::get('pagopa', 'biz_events_api_key', '');
+        if (empty($host)) {
+            return $this->jsonError('URL BizEvents non configurato.');
+        }
+        return $this->pingUrlWithKey(rtrim($host, '/') . '/info', 'BizEvents', $key);
     }
 
     public function testTassonomie(Request $request, Response $response): Response
     {
         $this->requireAdminOrAbove();
-        return $this->pingUrl(SettingsRepository::get('pagopa', 'tassonomie_url', ''), 'Tassonomie');
+        $url = SettingsRepository::get('pagopa', 'tassonomie_url', '');
+        if (empty($url)) {
+            return $this->jsonError('URL Tassonomie non configurato.');
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return $this->jsonError('URL Tassonomie non valido.');
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => ['Accept: application/json'],
+        ]);
+        $raw      = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        if ($raw === false || $curlErr) {
+            return $this->jsonError("Tassonomie: connessione fallita — {$curlErr}");
+        }
+        if ($httpCode !== 200) {
+            return $this->jsonError("Tassonomie: HTTP {$httpCode}.");
+        }
+        $data = json_decode((string)$raw, true);
+        if (!is_array($data)) {
+            return $this->jsonError('Tassonomie: risposta non valida (JSON non array).');
+        }
+        $count = count($data);
+        return $this->jsonOk("Tassonomie: {$count} voci caricate — OK.");
     }
 
     public function testEmail(Request $request, Response $response): Response
@@ -2193,7 +2272,6 @@ class ImpostazioniController
                     $detail = $curlErr !== '' ? $curlErr : "HTTP {$httpCode}";
                 }
 
-                curl_close($ch);
             }
 
             if ($publicBaseUrl !== '') {
@@ -2214,7 +2292,6 @@ class ImpostazioniController
                         $publicReachable = false;
                         $publicDetail = $pubErr !== '' ? $pubErr : "HTTP {$pubCode}";
                     }
-                    curl_close($chPub);
                 }
             }
         }
@@ -2423,6 +2500,45 @@ class ImpostazioniController
         return $decoded['descrizione'] ?? $decoded['detail'] ?? $decoded['message'] ?? substr((string)$body, 0, 120);
     }
 
+    private function pingUrlWithKey(string $url, string $label, string $apiKey): Response
+    {
+        if (empty($url)) {
+            return $this->jsonError("URL {$label} non configurato.");
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return $this->jsonError("URL {$label} non valido.");
+        }
+        $headers = ['Accept: application/json'];
+        if (!empty($apiKey)) {
+            $headers[] = "Ocp-Apim-Subscription-Key: {$apiKey}";
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => $headers,
+        ]);
+        $result   = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        if ($result === false || $curlErr) {
+            return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
+        }
+        if ($httpCode === 0) {
+            return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
+        }
+        if ($httpCode === 401 || $httpCode === 403) {
+            return $this->jsonError("Connessione {$label}: HTTP {$httpCode} — chiave API non valida o mancante.");
+        }
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — OK.");
+        }
+        return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile.");
+    }
+
     private function pingUrl(string $url, string $label): Response
     {
         if (empty($url)) {
@@ -2450,10 +2566,16 @@ class ImpostazioniController
         if ($httpCode === 0) {
             return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
         }
-        if ($httpCode === 200) {
-            return $this->jsonOk("Connessione {$label}: HTTP 200 — OK.");
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — OK.");
         }
-        return $this->jsonError("Connessione {$label}: HTTP {$httpCode}.");
+        if ($httpCode >= 300 && $httpCode < 400) {
+            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile (redirect).");
+        }
+        if ($httpCode >= 400 && $httpCode < 500) {
+            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile (risponde con {$httpCode}).");
+        }
+        return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile.");
     }
 
     private function requireAdminOrAbove(): void

@@ -741,14 +741,14 @@
               <tbody>
                 {% for tipo in tipi %}
                   <tr>
-                    <td style="min-width:220px">
+                    <td style="min-width:130px">
                       <form method="post" action="/configurazione/tipologie-esterne/{{ tipo.id }}/update" class="m-0">
                         <input type="text" name="descrizione" value="{{ tipo.descrizione }}" class="form-control form-control-sm" required>
                     </td>
-                    <td style="min-width:240px">
+                    <td style="min-width:140px">
                         <input type="text" name="descrizione_estesa" value="{{ tipo.descrizione_estesa|default('') }}" class="form-control form-control-sm" placeholder="(opzionale)">
                     </td>
-                    <td class="font-monospace small" style="min-width:260px">
+                    <td class="font-monospace small" style="min-width:170px">
                         <input type="url" name="url" value="{{ tipo.url }}" class="form-control form-control-sm" required>
                         <div class="form-text"><a href="{{ tipo.url }}" target="_blank" rel="noopener">Apri</a></div>
                     </td>

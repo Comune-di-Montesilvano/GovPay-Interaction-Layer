@@ -25,13 +25,12 @@
   {% set list = users|default([]) %}
   {% set count_super = count_superadmins|default(0) %}
 
+  <div class="table-responsive">
   <table class="table table-striped" id="usersTable">
     <thead>
       <tr>
         <th>ID</th>
-        <th>Nome</th>
-        <th>Cognome</th>
-        <th>Email</th>
+        <th>Utente</th>
         <th>Ruolo</th>
         <th>Stato</th>
         <th>Azioni</th>
@@ -46,9 +45,10 @@
           {% set is_disabled = u.is_disabled|default(0) %}
           <tr class="{{ is_disabled ? 'table-warning user-row-disabled' : '' }}" data-user-status="{{ is_disabled ? 'disabilitato' : 'attivo' }}">
             <td class="font-monospace">{{ u.id }}</td>
-            <td>{{ u.first_name|default('') }}</td>
-            <td>{{ u.last_name|default('') }}</td>
-            <td>{{ u.email }}</td>
+            <td>
+              <div>{{ u.first_name|default('') }} {{ u.last_name|default('') }}</div>
+              <div class="text-muted small">{{ u.email }}</div>
+            </td>
             <td>
               {% set roleClass = 'bg-secondary' %}
               {% if u.role == 'superadmin' %}
@@ -70,35 +70,35 @@
                 <span class="badge bg-success">Attivo</span>
               {% endif %}
             </td>
-            <td>
+            <td class="text-nowrap">
               {% if not can_manage %}
                 <span class="text-muted small">Permessi insufficienti</span>
               {% else %}
                 {% if is_admin and target_is_super %}
-                  <button class="btn btn-sm btn-outline-primary" disabled title="Non puoi modificare un account superadmin">Modifica</button>
-                  <button class="btn btn-sm btn-outline-danger" disabled title="Non puoi disabilitare un account superadmin">Disabilita</button>
+                  <button class="btn btn-sm btn-outline-primary" disabled title="Non puoi modificare un account superadmin"><i class="fas fa-edit"></i></button>
+                  <button class="btn btn-sm btn-outline-danger" disabled title="Non puoi disabilitare un account superadmin"><i class="fas fa-ban"></i></button>
                 {% elseif is_self %}
-                  <a class="btn btn-sm btn-outline-primary" href="/users/{{ u.id }}/edit">Modifica</a>
-                  <button class="btn btn-sm btn-outline-danger" disabled title="Non puoi disabilitare il tuo account">Disabilita</button>
+                  <a class="btn btn-sm btn-outline-primary" href="/users/{{ u.id }}/edit" title="Modifica"><i class="fas fa-edit"></i></a>
+                  <button class="btn btn-sm btn-outline-danger" disabled title="Non puoi disabilitare il tuo account"><i class="fas fa-ban"></i></button>
                 {% else %}
                   <div class="d-flex gap-1 align-items-center">
-                    <a class="btn btn-sm btn-outline-primary" href="/users/{{ u.id }}/edit">Modifica</a>
-                    
+                    <a class="btn btn-sm btn-outline-primary" href="/users/{{ u.id }}/edit" title="Modifica"><i class="fas fa-edit"></i></a>
+
                     <form method="post" action="/users/{{ u.id }}/send-reset-password" onsubmit="return confirm('Inviare l\'email di reset password a {{ u.email }}?');">
-                      <button class="btn btn-sm btn-outline-info" type="submit" title="Invia link reset password">Reset</button>
+                      <button class="btn btn-sm btn-outline-info" type="submit" title="Invia link reset password"><i class="fas fa-key"></i></button>
                     </form>
 
                     {% if not is_disabled %}
                       {% if target_is_super and count_super <= 1 %}
-                        <button class="btn btn-sm btn-outline-danger" disabled title="Impossibile disabilitare l'ultimo superadmin attivo">Disabilita</button>
+                        <button class="btn btn-sm btn-outline-danger" disabled title="Impossibile disabilitare l'ultimo superadmin attivo"><i class="fas fa-ban"></i></button>
                       {% else %}
                         <form method="post" action="/users/{{ u.id }}/disable" onsubmit="return confirm('Confermi la disabilitazione dell\'utente?');">
-                          <button class="btn btn-sm btn-outline-danger" type="submit">Disabilita</button>
+                          <button class="btn btn-sm btn-outline-danger" type="submit" title="Disabilita"><i class="fas fa-ban"></i></button>
                         </form>
                       {% endif %}
                     {% else %}
                       <form method="post" action="/users/{{ u.id }}/enable" onsubmit="return confirm('Confermi la riattivazione dell\'utente?');">
-                        <button class="btn btn-sm btn-outline-success" type="submit">Riabilita</button>
+                        <button class="btn btn-sm btn-outline-success" type="submit" title="Riabilita"><i class="fas fa-check-circle"></i></button>
                       </form>
                     {% endif %}
                   </div>
@@ -108,11 +108,12 @@
           </tr>
         {% endfor %}
       {% else %}
-        <tr id="noUsersRow"><td colspan="7" class="text-center text-muted">Nessun utente</td></tr>
+        <tr id="noUsersRow"><td colspan="5" class="text-center text-muted">Nessun utente</td></tr>
       {% endif %}
-      <tr id="noUsersMatchRow" class="d-none"><td colspan="7" class="text-center text-muted">Nessun utente corrisponde al filtro</td></tr>
+      <tr id="noUsersMatchRow" class="d-none"><td colspan="5" class="text-center text-muted">Nessun utente corrisponde al filtro</td></tr>
     </tbody>
   </table>
+  </div>
 
   <script src="/assets/js/users-list-filter.js"></script>
 </div>
