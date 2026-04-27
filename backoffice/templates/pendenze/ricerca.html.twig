@@ -338,6 +338,7 @@
   if (statoEl && typeof TomSelect !== 'undefined') {
     new TomSelect(statoEl, {
       create: false,
+      sortField: { field: 'text', direction: 'asc' },
       render: {
         option: function(data, escape) {
           const cfg = stateColors[data.value] || {};
