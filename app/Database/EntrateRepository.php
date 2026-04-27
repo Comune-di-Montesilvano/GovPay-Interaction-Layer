@@ -42,25 +42,41 @@ class EntrateRepository
             return $this->listAbilitateByDominio($idDominio);
         }
 
-        // Controlla se l'utente ha tipologie assegnate
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) as cnt FROM entrate_tipologie_users WHERE user_id = :uid AND id_dominio = :dom');
-        $stmt->execute([':uid' => $userId, ':dom' => $idDominio]);
-        $row = $stmt->fetch();
-        $hasAssignments = $row && (int)($row['cnt'] ?? 0) > 0;
+        // Conta tipologie individuali dell'utente
+        $cntStmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM entrate_tipologie_users WHERE user_id = :uid AND id_dominio = :dom'
+        );
+        $cntStmt->execute([':uid' => $userId, ':dom' => $idDominio]);
+        $individualCount = (int)$cntStmt->fetchColumn();
 
-        if (!$hasAssignments) {
-            // Se nessuna assegnazione: vede tutte
+        // Tipologie abilitate dai gruppi dell'utente
+        $groupRepo = new UserGroupRepository();
+        $groupTipologie = $groupRepo->getTipologieForUser($userId, $idDominio);
+
+        if ($individualCount === 0 && empty($groupTipologie)) {
             return $this->listAbilitateByDominio($idDominio);
         }
 
-        // Ha assegnazioni: filtra solo quelle
-        $sql = 'SELECT et.id_entrata, COALESCE(et.descrizione_locale, et.descrizione) AS descrizione, et.tipo_contabilita
-                FROM entrate_tipologie et
-                INNER JOIN entrate_tipologie_users etu ON et.id_dominio = etu.id_dominio AND et.id_entrata = etu.id_entrata
-                WHERE et.id_dominio = :dom AND etu.user_id = :uid AND et.abilitato_backoffice = 1 AND et.external_url IS NULL
-                ORDER BY COALESCE(et.descrizione_locale, et.descrizione) ASC';
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':dom' => $idDominio, ':uid' => $userId]);
+        // Union: tipologie da gruppi + tipologie individuali
+        $allEntrate = $groupTipologie;
+        if ($individualCount > 0) {
+            $individualTipologie = $this->getEnabledTipologieForUser($userId, $idDominio);
+            $allEntrate = array_unique(array_merge($allEntrate, $individualTipologie));
+        }
+
+        if (empty($allEntrate)) {
+            return $this->listAbilitateByDominio($idDominio);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($allEntrate), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT id_entrata, COALESCE(descrizione_locale, descrizione) AS descrizione, tipo_contabilita
+             FROM entrate_tipologie
+             WHERE id_dominio = ? AND abilitato_backoffice = 1 AND external_url IS NULL
+               AND id_entrata IN ({$placeholders})
+             ORDER BY COALESCE(descrizione_locale, descrizione) ASC"
+        );
+        $stmt->execute(array_merge([$idDominio], $allEntrate));
         return $stmt->fetchAll();
     }
 
