@@ -34,13 +34,15 @@
     </div>
     <div class="card-body">
       <div class="row g-3">
-        <div class="col-md-3">
-          <label for="dataDa" class="form-label">Data da</label>
-          <input type="date" class="form-control" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
-        </div>
-        <div class="col-md-3">
-          <label for="dataA" class="form-label">Data a</label>
-          <input type="date" class="form-control" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        <div class="col-md-6">
+          <label class="form-label">Intervallo date</label>
+          <div class="d-flex gap-1 align-items-center">
+            <input type="text" id="statsDaVis" class="form-control" placeholder="Da" autocomplete="off" readonly style="cursor:pointer;">
+            <span class="text-muted small">–</span>
+            <input type="text" id="statsAVis" class="form-control" placeholder="A" autocomplete="off" readonly style="cursor:pointer;">
+          </div>
+          <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
+          <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
         </div>
         <div class="col-md-3">
           <label for="raggruppamento" class="form-label">Raggruppa per</label>
@@ -328,10 +330,12 @@
               const tbody = table.querySelector('tbody');
               const rows = Array.from(tbody.querySelectorAll('tr'));
               rows.sort((a, b) => {
-                const av = a.cells[col]?.textContent.replace(/[^0-9,.-]/g, '').replace(',', '.') ?? '';
-                const bv = b.cells[col]?.textContent.replace(/[^0-9,.-]/g, '').replace(',', '.') ?? '';
+                const rawA = a.cells[col]?.textContent ?? '';
+                const rawB = b.cells[col]?.textContent ?? '';
+                const norm = s => s.trim().replace(/[^0-9,.]/g, '').replace(/\./g, '').replace(',', '.');
+                const av = norm(rawA), bv = norm(rawB);
                 const an = parseFloat(av), bn = parseFloat(bv);
-                const cmp = isNaN(an) || isNaN(bn) ? av.localeCompare(bv, 'it') : an - bn;
+                const cmp = isNaN(an) || isNaN(bn) ? rawA.localeCompare(rawB, 'it') : an - bn;
                 return sortAsc ? cmp : -cmp;
               });
               rows.forEach(r => tbody.appendChild(r));
@@ -343,4 +347,45 @@
       })();
     </script>
   {% endif %}
+
+{% block scripts %}
+<script>
+(function(){
+  const daEl  = document.getElementById('statsDaVis');
+  const aEl   = document.getElementById('statsAVis');
+  const daHid = document.getElementById('dataDa');
+  const aHid  = document.getElementById('dataA');
+  if (!daEl || !aEl || typeof Litepicker === 'undefined') return;
+
+  const toDisplay = iso => iso ? iso.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1') : '';
+  if (daHid.value) daEl.value = toDisplay(daHid.value);
+  if (aHid.value)  aEl.value  = toDisplay(aHid.value);
+
+  new Litepicker({
+    element: daEl,
+    elementEnd: aEl,
+    singleMode: false,
+    numberOfMonths: 1,
+    numberOfColumns: 1,
+    format: 'DD/MM/YYYY',
+    lang: 'it-IT',
+    tooltipText: { one: 'giorno', other: 'giorni' },
+    autoApply: true,
+    resetButton: true,
+    setup(picker) {
+      picker.on('selected', (d1, d2) => {
+        daHid.value = d1.format('YYYY-MM-DD');
+        aHid.value  = d2.format('YYYY-MM-DD');
+      });
+      picker.on('clear:selection', () => {
+        daHid.value = '';
+        aHid.value  = '';
+        daEl.value  = '';
+        aEl.value   = '';
+      });
+    }
+  });
+})();
+</script>
+{% endblock %}
 {% endblock %}
