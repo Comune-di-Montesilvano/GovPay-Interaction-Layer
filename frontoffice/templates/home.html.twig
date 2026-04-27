@@ -2,141 +2,56 @@
 
 {% block head %}
 <style>
-  body { background: #f0f4fa; }
-
-  .home-hero {
-    background: linear-gradient(135deg, #05193d 0%, #003a6d 60%, #0062b8 100%);
+  body { background: #f6f8fb; }
+  .page-hero {
+    padding: 3.5rem 0 2.5rem;
+    background: linear-gradient(135deg, #0b1431 0%, #0a2c5f 50%, #005fcc 100%);
     color: #fff;
-    padding: 2rem 0 1.75rem;
-    text-align: center;
   }
-  .home-hero .hero-entity {
-    font-size: .8rem; letter-spacing: .08em; text-transform: uppercase;
-    opacity: .65; margin-bottom: .5rem;
-  }
-  .home-hero h1 { font-size: clamp(1.2rem, 4vw, 1.6rem); font-weight: 700; margin-bottom: 0; }
-
-  /* ── Tile base ── */
-  .action-tile {
-    display: flex; align-items: center; gap: 1rem;
-    padding: 1.1rem 1.25rem; border-radius: 16px;
-    background: #fff; border: 1.5px solid #e2e8f0;
-    text-decoration: none; color: #1a2a4a;
-    height: 100%;
-    transition: box-shadow .15s ease, transform .15s ease;
-    animation: tileIn .35s ease both;
-  }
-  .action-tile:hover { box-shadow: 0 8px 28px rgba(5,25,61,.12); transform: translateY(-2px); color: #1a2a4a; text-decoration: none; }
-
-  /* ── CTA primary tile ── */
-  .action-tile.tile-primary { background: #0062b8; color: #fff; border-color: #0062b8; }
-  .action-tile.tile-primary:hover { background: #004d99; color: #fff; }
-  .action-tile.tile-primary .tile-icon { background: rgba(255,255,255,.18); color: #fff; }
-  .action-tile.tile-primary .tile-sub { opacity: .8; }
-
-  /* ── Icon wrapper ── */
-  .tile-icon {
-    width: 46px; height: 46px; border-radius: 12px;
-    background: rgba(0,95,204,.08); color: #0062b8;
-    flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.15rem;
-  }
-  .tile-label { font-weight: 600; font-size: .95rem; line-height: 1.2; }
-  .tile-sub { font-size: .78rem; margin-top: .15rem; color: #6c757d; line-height: 1.3; }
-  .action-tile.tile-primary .tile-sub { color: inherit; }
-
-  /* ── Stagger animation ── */
-  @keyframes tileIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  .tile-delay-1 { animation-delay: .05s; }
-  .tile-delay-2 { animation-delay: .10s; }
-  .tile-delay-3 { animation-delay: .15s; }
-  .tile-delay-4 { animation-delay: .20s; }
-
-  .home-footer-links { font-size: .82rem; }
+  .page-hero .btn { font-weight: 600; border-radius: 999px; }
 </style>
 {% endblock %}
 
 {% block content %}
-<section class="home-hero">
+<section class="page-hero">
   <div class="container-xxl">
-    <h1>{{ 'Gestisci i pagamenti PagoPA con pochi clic'|trans }}</h1>
-    <p class="mt-2 mb-0" style="opacity:.75; font-size:.95rem; max-width:540px; margin-inline:auto;">{{ 'Cerca un avviso, generalo spontaneamente, aggiungilo al carrello e paga fino a 5 pendenze insieme — tutto senza fare code.'|trans }}</p>
+    <div class="row">
+      <div class="col-lg-9 col-xl-8">
+        <h1 class="display-6 fw-semibold mb-3">{{ 'Gestisci i pagamenti PagoPA con pochi clic'|trans }}</h1>
+        <p class="lead mb-4" style="color:rgba(255,255,255,.8)">{{ 'Cerca un avviso, generalo spontaneamente, aggiungilo al carrello e paga fino a 5 pendenze insieme — tutto senza fare code.'|trans }}</p>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-warning text-dark" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
+          <a class="btn btn-outline-light" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+          <a class="btn btn-outline-light" href="/carrello">
+            <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Carrello'|trans }}
+            {% if cart_count|default(0) > 0 %}
+              <span class="badge bg-warning text-dark ms-1 cart-badge">{{ cart_count }}</span>
+            {% else %}
+              <span class="badge bg-warning text-dark ms-1 cart-badge" style="display:none;">0</span>
+            {% endif %}
+          </a>
+          {% if spid_enabled %}
+            <a class="btn btn-outline-light" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
 <div class="container-xxl py-4">
-  <div class="row g-3">
-
-    {# Paga avviso — CTA primaria, full-width su mobile #}
-    <div class="col-12 col-sm-6">
-      <a href="/pagamento-avviso" class="action-tile tile-primary tile-delay-1">
-        <div class="tile-icon"><i class="fas fa-file-invoice"></i></div>
-        <div>
-          <div class="tile-label">{{ 'Paga un avviso'|trans }}</div>
-          <div class="tile-sub">{{ 'Codice avviso o IUV ricevuto'|trans }}</div>
-        </div>
-      </a>
-    </div>
-
-    <div class="col-12 col-sm-6 tile-delay-2">
-      <a href="/pagamento-spontaneo" class="action-tile">
-        <div class="tile-icon"><i class="fas fa-pen"></i></div>
-        <div>
-          <div class="tile-label">{{ 'Pagamento spontaneo'|trans }}</div>
-          <div class="tile-sub">{{ 'Genera un avviso PagoPA'|trans }}</div>
-        </div>
-      </a>
-    </div>
-
-    <div class="col-12 col-sm-6 tile-delay-3">
-      <a href="/carrello" class="action-tile">
-        <div class="tile-icon"><i class="fas fa-shopping-cart"></i></div>
-        <div class="flex-grow-1">
-          <div class="d-flex align-items-center gap-2">
-            <span class="tile-label">{{ 'Carrello'|trans }}</span>
-            {% if cart_count|default(0) > 0 %}
-              <span class="badge bg-warning text-dark cart-badge">{{ cart_count }}</span>
-            {% else %}
-              <span class="badge bg-warning text-dark cart-badge" style="display:none;">0</span>
-            {% endif %}
-          </div>
-          <div class="tile-sub">{{ 'Paga fino a 5 avvisi insieme'|trans }}</div>
-        </div>
-      </a>
-    </div>
-
-    {% if spid_enabled %}
-    <div class="col-12 col-sm-6 tile-delay-4">
-      <a href="/pendenze" class="action-tile">
-        <div class="tile-icon"><i class="fas fa-receipt"></i></div>
-        <div>
-          <div class="tile-label">{{ 'Le mie pendenze'|trans }}</div>
-          <div class="tile-sub">
-            {{ current_user ? 'Le tue posizioni debitorie'|trans : 'Accedi con SPID o CIE'|trans }}
-          </div>
-        </div>
-      </a>
-    </div>
+  {% if support_email %}
+  <div class="p-3 border rounded-3 bg-white text-center small text-muted">
+    <i class="fas fa-envelope me-1"></i>
+    <a href="mailto:{{ support_email }}" class="text-muted">{{ support_email }}</a>
+    {% if support_phone %}
+      <span class="mx-2">·</span>
+      <i class="fas fa-phone me-1"></i>{{ support_phone }}
+      {% if support_hours %}<span class="ms-1">({{ support_hours }})</span>{% endif %}
     {% endif %}
-
+    <span class="mx-2">·</span>
+    <a href="/guida" class="text-muted"><i class="fas fa-question-circle me-1"></i>{{ 'Guida'|trans }}</a>
   </div>
-
-  <div class="mt-4 d-flex flex-column flex-sm-row align-items-center justify-content-between gap-3 home-footer-links text-muted">
-    <div>
-      {% if support_email %}
-        <i class="fas fa-envelope me-1"></i>
-        <a href="mailto:{{ support_email }}" class="text-muted text-decoration-none">{{ support_email }}</a>
-        {% if support_phone %}
-          <span class="mx-2">·</span>
-          <i class="fas fa-phone me-1"></i>{{ support_phone }}
-          {% if support_hours %}<span class="ms-1">({{ support_hours }})</span>{% endif %}
-        {% endif %}
-      {% endif %}
-    </div>
-    <a href="/guida" class="text-muted text-decoration-none">
-      <i class="fas fa-question-circle me-1"></i>{{ 'Guida all\'utilizzo'|trans }}
-    </a>
-  </div>
+  {% endif %}
 </div>
 {% endblock %}
