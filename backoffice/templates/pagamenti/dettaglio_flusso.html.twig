@@ -278,10 +278,12 @@
                                 <dd class="col-sm-7">{{ rata ?: '—' }}</dd>
                                 <dt class="col-sm-5 text-muted">Voce pendenza</dt>
                                 <dd class="col-sm-7">
-                                  {% if voceId %}
-                                    <a href="/pendenze/dettaglio/{{ voceId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">
-                                      {{ voceId }}
-                                    </a>
+                                  {% if pendenzaId %}
+                                    <a href="/pendenze/dettaglio/{{ pendenzaId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">{{ pendenzaId }}</a>
+                                  {% elseif voceId and not isIndexId %}
+                                    <a href="/pendenze/dettaglio/{{ voceId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">{{ voceId }}</a>
+                                  {% elseif voceId and isIndexId %}
+                                    <span class="text-muted small">#{{ voceId }}</span>
                                   {% else %}
                                     <span class="text-muted">—</span>
                                   {% endif %}
