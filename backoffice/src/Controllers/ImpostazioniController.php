@@ -67,7 +67,8 @@ class ImpostazioniController
 
         // Tab che appartengono a /configurazione: carica i dati necessari
         $confTabs = ['dominio','tassonomie','tipologie','tipologie_esterne','gestionali',
-                     'templates','servizi_io','utenti','operatori','applicazioni','confapi','info','logs'];
+                     'templates','servizi_io','utenti','operatori','applicazioni','confapi','info','logs',
+                     'gruppi-utenti'];
         if (in_array($tab, $confTabs, true)) {
             $confCtrl = new ConfigurazioneController($this->twig);
             $data = array_merge($data, $confCtrl->getTabData($tab, $request));
