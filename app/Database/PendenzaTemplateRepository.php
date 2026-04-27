@@ -153,34 +153,77 @@ class PendenzaTemplateRepository
 
     public function findAllByDominioForUser(string $idDominio, int $userId): array
     {
-        // Seleziona i template associati all'utente per quel dominio
-        $sql = "SELECT pt.* 
-                FROM pendenza_template pt
-                INNER JOIN pendenza_template_users ptu ON pt.id = ptu.template_id
-                WHERE pt.id_dominio = :id_dominio AND ptu.user_id = :user_id
-                ORDER BY pt.titolo ASC";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([
-            ':id_dominio' => $idDominio,
-            ':user_id' => $userId
-        ]);
-        return $stmt->fetchAll();
+        $stmt = $this->pdo->prepare(
+            'SELECT pt.* FROM pendenza_template pt
+             INNER JOIN pendenza_template_users ptu ON pt.id = ptu.template_id
+             WHERE pt.id_dominio = :dom AND ptu.user_id = :uid
+             ORDER BY pt.titolo ASC'
+        );
+        $stmt->execute([':dom' => $idDominio, ':uid' => $userId]);
+        $individual = $stmt->fetchAll();
+
+        $groupRepo = new \App\Database\UserGroupRepository();
+        $groupTemplateIds = $groupRepo->getTemplateIdsForUser($userId);
+
+        if (empty($groupTemplateIds)) {
+            return $individual;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($groupTemplateIds), '?'));
+        $stmt2 = $this->pdo->prepare(
+            "SELECT * FROM pendenza_template WHERE id IN ({$placeholders}) AND id_dominio = ?"
+        );
+        $stmt2->execute(array_merge($groupTemplateIds, [$idDominio]));
+        $fromGroups = $stmt2->fetchAll();
+
+        $merged = $individual;
+        $existingIds = array_column($individual, 'id');
+        foreach ($fromGroups as $t) {
+            if (!in_array($t['id'], $existingIds, true)) {
+                $merged[] = $t;
+            }
+        }
+        usort($merged, fn($a, $b) => strcmp($a['titolo'], $b['titolo']));
+        return $merged;
     }
 
     /**
-     * Restituisce tutti i template assegnati a un utente, indipendentemente dal dominio.
+     * Restituisce tutti i template assegnati a un utente (individuali + da gruppi).
      *
      * @return array<int, array<string, mixed>>
      */
     public function getTemplatesForUser(int $userId): array
     {
-        $sql = "SELECT pt.*
-                FROM pendenza_template pt
-                INNER JOIN pendenza_template_users ptu ON pt.id = ptu.template_id
-                WHERE ptu.user_id = :user_id
-                ORDER BY pt.titolo ASC";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':user_id' => $userId]);
-        return $stmt->fetchAll();
+        $stmt = $this->pdo->prepare(
+            'SELECT pt.* FROM pendenza_template pt
+             INNER JOIN pendenza_template_users ptu ON pt.id = ptu.template_id
+             WHERE ptu.user_id = :uid ORDER BY pt.titolo ASC'
+        );
+        $stmt->execute([':uid' => $userId]);
+        $individual = $stmt->fetchAll();
+
+        $groupRepo = new \App\Database\UserGroupRepository();
+        $groupTemplateIds = $groupRepo->getTemplateIdsForUser($userId);
+
+        if (empty($groupTemplateIds)) {
+            return $individual;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($groupTemplateIds), '?'));
+        $stmt2 = $this->pdo->prepare(
+            "SELECT * FROM pendenza_template WHERE id IN ({$placeholders})"
+        );
+        $stmt2->execute($groupTemplateIds);
+        $fromGroups = $stmt2->fetchAll();
+
+        $merged = $individual;
+        $existingIds = array_column($individual, 'id');
+        foreach ($fromGroups as $t) {
+            if (!in_array($t['id'], $existingIds, true)) {
+                $merged[] = $t;
+            }
+        }
+        usort($merged, fn($a, $b) => strcmp($a['titolo'], $b['titolo']));
+        return $merged;
     }
 }
