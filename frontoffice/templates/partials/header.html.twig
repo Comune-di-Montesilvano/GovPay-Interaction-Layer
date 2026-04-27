@@ -5,7 +5,7 @@
       <div class="row">
         <div class="col-12">
           <div class="it-header-slim-wrapper-content">
-            <a class="d-none d-lg-block navbar-brand text-white" href="#">{{ app_entity.name }}</a>
+            <a class="d-none d-lg-block navbar-brand text-white" href="/">{{ app_entity.name }}</a>
             <div class="it-header-slim-right-zone pe-0 w-100 justify-content-between justify-content-lg-end">
               <a class="btn {{ current_path starts with '/carrello' ? 'btn-light text-primary' : 'btn-primary' }} btn-sm me-auto me-lg-3 d-flex align-items-center py-1 px-2" href="/carrello" aria-label="Carrello ({{ cart_count|default(0) }} avvisi)" title="Carrello">
                 <i class="fa-solid fa-cart-shopping"></i>
@@ -109,56 +109,6 @@
                 </a>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="it-header-navbar-wrapper">
-      <div class="container-xxl">
-        <div class="row">
-          <div class="col-12">
-            <nav class="navbar navbar-expand-lg has-megamenu" aria-label="Navigazione principale">
-              <button class="custom-navbar-toggler" type="button" data-bs-toggle="navbarcollapsible" data-bs-target="#navC1" aria-controls="navC1" aria-label="Mostra/Nascondi la navigazione">
-                <svg class="icon">
-                  <use href="/assets/bootstrap-italia/svg/sprites.svg#it-burger"></use>
-                </svg>
-              </button>
-              <div class="navbar-collapsable" id="navC1" tabindex="-1">
-                <div class="close-div">
-                  <button class="btn close-menu" type="button">
-                    <span class="visually-hidden">Nascondi la navigazione</span>
-                    <svg class="icon">
-                      <use href="/assets/bootstrap-italia/svg/sprites.svg#it-close-big"></use>
-                    </svg>
-                  </button>
-                </div>
-                <div class="menu-wrapper">
-                  <ul class="navbar-nav">
-                    <li class="nav-item">
-                      <a class="nav-link {{ current_path == '/' ? 'active' : '' }}" href="/"><span>{{ 'Home'|trans }}</span></a>
-                    </li>
-                    {% set in_pagamento_avviso = current_path starts with '/pagamento-avviso' %}
-                    <li class="nav-item">
-                      <a class="nav-link {{ in_pagamento_avviso ? 'active' : '' }}" href="/pagamento-avviso"><span>{{ 'Paga un avviso'|trans }}</span></a>
-                    </li>
-                    {% set in_pagamento_spontaneo = current_path starts with '/pagamento-spontaneo' %}
-                    <li class="nav-item">
-                      <a class="nav-link {{ in_pagamento_spontaneo ? 'active' : '' }}" href="/pagamento-spontaneo"><span>{{ 'Pagamento spontaneo'|trans }}</span></a>
-                    </li>
-                    <li class="nav-item">
-                      <a class="nav-link {{ current_path == '/guida' ? 'active' : '' }}" href="/guida"><span>{{ 'Guida'|trans }}</span></a>
-                    </li>
-                    {% if spid_enabled and current_user %}
-                      {% set in_pendenze = current_path starts with '/pendenze' %}
-                      <li class="nav-item">
-                        <a class="nav-link {{ in_pendenze ? 'active' : '' }}" href="/pendenze"><span>{{ 'Le mie pendenze'|trans }}</span></a>
-                      </li>
-                    {% endif %}
-
-                  </ul>
-                </div>
-              </div>
-            </nav>
           </div>
         </div>
       </div>
