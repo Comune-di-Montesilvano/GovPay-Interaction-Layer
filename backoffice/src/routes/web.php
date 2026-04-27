@@ -696,29 +696,32 @@ return function (App $app, Twig $twig): void {
             $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
         }
         
-        // Carica tipologie per il dominio
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $allTipologie = [];
         $userTipologie = [];
-        $userGroups = [];
-        if ($idDominio && $editUser) {
+        $allGroups = [];
+        $userGroupIds = [];
+        if ($editUser) {
             try {
-                $entrateRepo = new \App\Database\EntrateRepository();
-                $allTipologie = $entrateRepo->listAbilitateByDominio($idDominio);
+                $groupRepo = new \App\Database\UserGroupRepository();
+                $allGroups = $groupRepo->listAll();
                 $userId = (int)($editUser['id'] ?? 0);
-                if ($userId > 0) {
+                if ($userId > 0 && $idDominio) {
+                    $entrateRepo = new \App\Database\EntrateRepository();
+                    $allTipologie = $entrateRepo->listAbilitateByDominio($idDominio);
                     $userTipologie = $entrateRepo->getEnabledTipologieForUser($userId, $idDominio);
-                    $userGroups = (new \App\Database\UserGroupRepository())->getGroupsForUser($userId);
+                    $userGroupIds = $groupRepo->getMemberGroupIds($userId);
                 }
             } catch (\Throwable $e) {}
         }
 
         return $twig->render($response, 'users/edit.html.twig', [
-            'edit_user' => $editUser,
-            'all_tipologie' => $allTipologie,
+            'edit_user'        => $editUser,
+            'all_tipologie'    => $allTipologie,
             'user_tipologie_ids' => $userTipologie,
-            'user_groups' => $userGroups,
-            'id_dominio' => $idDominio,
+            'all_groups'       => $allGroups,
+            'user_group_ids'   => $userGroupIds,
+            'id_dominio'       => $idDominio,
         ]);
     });
 
@@ -735,30 +738,33 @@ return function (App $app, Twig $twig): void {
                 $twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
             }
             
-            // Ricaricare tipologie in caso di errore
             $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $allTipologie = [];
             $userTipologie = [];
-            $userGroups = [];
-            if ($idDominio && $editUser) {
+            $allGroups = [];
+            $userGroupIds = [];
+            if ($editUser) {
                 try {
-                    $entrateRepo = new \App\Database\EntrateRepository();
-                    $allTipologie = $entrateRepo->listAbilitateByDominio($idDominio);
+                    $groupRepo = new \App\Database\UserGroupRepository();
+                    $allGroups = $groupRepo->listAll();
                     $userId = (int)($editUser['id'] ?? 0);
-                    if ($userId > 0) {
+                    if ($userId > 0 && $idDominio) {
+                        $entrateRepo = new \App\Database\EntrateRepository();
+                        $allTipologie = $entrateRepo->listAbilitateByDominio($idDominio);
                         $userTipologie = $entrateRepo->getEnabledTipologieForUser($userId, $idDominio);
-                        $userGroups = (new \App\Database\UserGroupRepository())->getGroupsForUser($userId);
+                        $userGroupIds = $groupRepo->getMemberGroupIds($userId);
                     }
                 } catch (\Throwable $e) {}
             }
 
             return $twig->render($response, 'users/edit.html.twig', [
-                'error' => $error,
-                'edit_user' => $editUser,
-                'all_tipologie' => $allTipologie,
+                'error'            => $error,
+                'edit_user'        => $editUser,
+                'all_tipologie'    => $allTipologie,
                 'user_tipologie_ids' => $userTipologie,
-                'user_groups' => $userGroups,
-                'id_dominio' => $idDominio,
+                'all_groups'       => $allGroups,
+                'user_group_ids'   => $userGroupIds,
+                'id_dominio'       => $idDominio,
             ]);
         }
         
@@ -781,10 +787,13 @@ return function (App $app, Twig $twig): void {
                 $entrateRepo = new \App\Database\EntrateRepository();
                 $entrateRepo->setEnabledTipologieForUser($userId, $idDominio, $tipologieIds);
             }
+
+            $groupIds = (array)($data['group_ids'] ?? []);
+            (new \App\Database\UserGroupRepository())->setGroupsForUser($userId, $groupIds);
         } catch (\Throwable $e) {
             // Log ma prosegui (non è critico)
         }
-        
+
         $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente aggiornato'];
         return $response->withHeader('Location', '/impostazioni?tab=utenti')->withStatus(302);
     });
