@@ -1396,13 +1396,19 @@ class ConfigurazioneController
 
         // ── Template pendenze ─────────────────────────────────────────────
         $pendenzaTemplates = []; $tipologiePendenze = [];
+        $allGroupsList = [];
         if (in_array($tab, ['templates', 'gruppi-utenti'], true) && $canManageUsers) {
             try {
                 $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
+                $groupRepo2   = new \App\Database\UserGroupRepository();
+                $allGroupsList = $groupRepo2->listAll();
                 if ($idDominioEnv !== '') {
                     $templateRepo      = new \App\Database\PendenzaTemplateRepository();
                     $pendenzaTemplates = $templateRepo->findAllByDominio($idDominioEnv);
-                    foreach ($pendenzaTemplates as &$pt) { $pt['users'] = $templateRepo->getAssignedUserIds((int)$pt['id']); }
+                    foreach ($pendenzaTemplates as &$pt) {
+                        $pt['users']  = $templateRepo->getAssignedUserIds((int)$pt['id']);
+                        $pt['groups'] = $groupRepo2->getGroupIdsForTemplate((int)$pt['id']);
+                    }
                     unset($pt);
                     $tipologiePendenze = (new EntrateRepository())->listAbilitateByDominio($idDominioEnv);
                 } else {
@@ -1480,6 +1486,7 @@ class ConfigurazioneController
             'tassonomie_raw'            => $tassonomieRaw,
             'user_groups'               => $userGroups,
             'all_users_for_groups'      => $allUsersForGroups,
+            'all_groups'                => $allGroupsList,
         ];
     }
 
@@ -2810,6 +2817,32 @@ class ConfigurazioneController
         } catch (\Throwable $e) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore assegnazione utenti: ' . $e->getMessage()];
             Logger::getInstance()->error('Errore assegnazione utenti template', ['error' => $e->getMessage()]);
+        }
+
+        return $this->redirectToTab($response, 'templates');
+    }
+
+    public function assignGroupsToPendenzaTemplate(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'templates');
+        }
+
+        $id = (int)($args['id'] ?? 0);
+        if ($id <= 0) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'ID template non valido'];
+            return $this->redirectToTab($response, 'templates');
+        }
+
+        $data     = (array)($request->getParsedBody() ?? []);
+        $groupIds = array_map('intval', (array)($data['group_ids'] ?? []));
+
+        try {
+            (new \App\Database\UserGroupRepository())->setGroupsForTemplate($id, $groupIds);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Gruppi assegnati al template'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore assegnazione gruppi: ' . $e->getMessage()];
         }
 
         return $this->redirectToTab($response, 'templates');
