@@ -98,21 +98,32 @@
       </div>
     {% endif %}
 
-    {# ── Gruppi di appartenenza (read-only) ── #}
-    {% if user_groups is defined and user_groups|length > 0 %}
+    {# ── Gruppi di appartenenza ── #}
+    {% if current_user is defined and current_user.role in ['admin', 'superadmin']
+          and all_groups is defined and all_groups|length > 0 %}
       <div class="mb-3">
-        <label class="form-label">Gruppi</label>
-        <div class="d-flex flex-wrap gap-1">
-          {% for g in user_groups %}
-            <span class="badge bg-secondary">
-              <i class="fas fa-users-cog me-1"></i>{{ g.nome }}
-            </span>
+        <label class="form-label d-flex align-items-center gap-2">
+          Gruppi
+          {% set grp_count = user_group_ids|default([])|length %}
+          {% if grp_count > 0 %}
+            <span class="badge bg-info">{{ grp_count }} assegnati</span>
+          {% endif %}
+        </label>
+        <div class="border rounded p-2" style="max-height:150px;overflow-y:auto;">
+          {% for g in all_groups %}
+            <div class="form-check form-check-sm">
+              <input class="form-check-input" type="checkbox"
+                     id="grp_{{ g.id }}" name="group_ids[]"
+                     value="{{ g.id }}"
+                     {% if g.id in user_group_ids|default([]) %}checked{% endif %}>
+              <label class="form-check-label small" for="grp_{{ g.id }}">
+                <i class="fas fa-users-cog me-1 text-muted"></i>{{ g.nome }}
+                {% if g.descrizione %}<span class="text-muted">({{ g.descrizione }})</span>{% endif %}
+              </label>
+            </div>
           {% endfor %}
         </div>
-        <div class="form-text">
-          L'assegnazione ai gruppi avviene da
-          <a href="/impostazioni?tab=gruppi-utenti">Impostazioni → Gruppi Utenti</a>.
-        </div>
+        <div class="form-text">I gruppi determinano tipologie e template ereditati dall'utente.</div>
       </div>
     {% endif %}
 

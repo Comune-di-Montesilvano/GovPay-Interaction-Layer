@@ -7,7 +7,7 @@ class UserGroupRepository
 
     public function __construct()
     {
-        $this->pdo = Database::getConnection();
+        $this->pdo = Connection::getPDO();
     }
 
     public function listAll(): array
@@ -174,5 +174,28 @@ class UserGroupRepository
         $stmt->execute([':uid' => $userId]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         return $row ? $row['default_id_entrata'] : null;
+    }
+
+    /** @return int[] group_id values the user belongs to */
+    public function getMemberGroupIds(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT group_id FROM user_group_members WHERE user_id = :uid ORDER BY group_id'
+        );
+        $stmt->execute([':uid' => $userId]);
+        return array_map('intval', array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'group_id'));
+    }
+
+    /** Sets which groups the user belongs to (replaces all memberships for this user). */
+    public function setGroupsForUser(int $userId, array $groupIds): void
+    {
+        $this->pdo->prepare('DELETE FROM user_group_members WHERE user_id = :uid')
+                  ->execute([':uid' => $userId]);
+        $ins = $this->pdo->prepare(
+            'INSERT INTO user_group_members (group_id, user_id) VALUES (:gid, :uid)'
+        );
+        foreach (array_map('intval', $groupIds) as $gid) {
+            $ins->execute([':gid' => $gid, ':uid' => $userId]);
+        }
     }
 }
