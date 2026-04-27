@@ -36,38 +36,23 @@
 {% endblock %}
 
 {% block content %}
-  <section class="hero-banner py-5">
+  <section class="hero-banner py-4">
     <div class="container-xxl">
-      <div class="row align-items-center g-4">
-        <div class="col-lg-7">
-          <p class="text-uppercase small mb-2 text-white-50">{{ 'Sportello digitale'|trans }}</p>
-          <h1 class="display-5 fw-semibold mb-3">{{ 'Gestisci i pagamenti PagoPA con pochi clic'|trans }}</h1>
-          <p class="lead mb-4">{{ 'Cerca un avviso, generalo spontaneamente, aggiungilo al carrello e paga fino a 5 pendenze insieme — tutto senza fare code.'|trans }}</p>
-          <div class="d-flex flex-wrap gap-3">
-            <a class="btn btn-warning btn-lg text-dark" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
-            <a class="btn btn-outline-light btn-lg" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
-            <a class="btn btn-outline-light btn-lg" href="/carrello">
+      <div class="row align-items-center g-3">
+        <div class="col-12">
+          <h1 class="h3 fw-semibold mb-3">{{ 'Sportello digitale PagoPA'|trans }}</h1>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-warning text-dark" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
+            <a class="btn btn-outline-light" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+            <a class="btn btn-outline-light" href="/carrello">
               <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Carrello'|trans }}
               {% if cart_count|default(0) > 0 %}
                 <span class="badge bg-warning text-dark ms-1">{{ cart_count }}</span>
               {% endif %}
             </a>
             {% if spid_enabled %}
-              <a class="btn btn-outline-light btn-lg" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+              <a class="btn btn-outline-light" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
             {% endif %}
-          </div>
-        </div>
-        <div class="col-lg-5">
-          <div class="p-4 rounded-4 bg-white text-dark">
-            <h2 class="h5 text-uppercase text-muted">{{ 'Cosa ti serve'|trans }}</h2>
-            <ul class="cta-list list-unstyled mb-0">
-              <li>{{ 'Codice avviso o IUV riportato sulla comunicazione ricevuta'|trans }}</li>
-              <li>{{ 'Codice fiscale o partita IVA del soggetto intestatario'|trans }}</li>
-              <li>{{ 'Metodo di pagamento PagoPA (carta, conto, app, home banking)'|trans }}</li>
-              {% if spid_enabled %}
-                <li>{{ 'SPID o CIE per accedere alle tue pendenze e ricevute'|trans }}</li>
-              {% endif %}
-            </ul>
           </div>
         </div>
       </div>

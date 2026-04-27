@@ -65,7 +65,7 @@
     "Compila il modulo con i dati del servizio e del soggetto pagatore. Al termine verrà creato subito l'avviso PagoPA e potrai scaricarlo in PDF.": "Füllen Sie das Formular mit den Service- und Zahlerdaten aus. Abschließend wird der PagoPA-Bescheid sofort erstellt und Sie können ihn als PDF herunterladen.",
     "Completa il pagamento con carta e wallet digitali. Lo stato dell'avviso sarà aggiornato automaticamente senza dover presentare ricevute agli sportelli.": "Schließen Sie die Zahlung per Kreditkarte und digitalen Wallets ab. Der Status der Benachrichtigung wird automatisch aktualisiert, ohne dass Sie Quittungen am Schalter vorlegen müssen.",
     "Configurazione checkout non disponibile": "Checkout-Konfiguration nicht verfügbar",
-    "Consultare pendenze e ricevute (richiede SPID)": "Ausstehende Zahlungen und Belege abrufen (erfordert SPID)",
+    "Consultare pendenze e ricevute (richiede accesso SPID/CIE)": "Ausstehende Zahlungen und Belege abrufen (erfordert SPID)",
     "Contatta": "Kontakt",
     "Controlla i dati inseriti": "Überprüfen Sie die eingegebenen Daten",
     "Cosa succede dopo": "Was danach passiert",
