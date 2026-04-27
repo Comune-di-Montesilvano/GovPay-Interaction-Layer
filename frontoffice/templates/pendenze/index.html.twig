@@ -165,10 +165,9 @@
                   <th class="col-sel">
                     <span class="sr-only">{{ 'Seleziona'|trans }}</span>
                   </th>
-                  <th>{{ 'Numero avviso'|trans }}</th>
                   <th>{{ 'Causale'|trans }}</th>
                   <th class="text-end">{{ 'Importo'|trans }}</th>
-                  <th>{{ 'Scadenza'|trans }}</th>
+                  <th class="d-none d-md-table-cell">{{ 'Scadenza'|trans }}</th>
                   <th>{{ 'Stato'|trans }}</th>
                   <th class="text-end">{{ 'Azioni'|trans }}</th>
                 </tr>
@@ -191,23 +190,19 @@
                       {% endif %}
                     </td>
                     <td>
+                      <div class="fw-semibold">{{ p.causale|default('—') }}</div>
                       {% if p.numero_avviso %}
-                        <span class="font-monospace">{{ p.numero_avviso }}</span>
-                      {% else %}
-                        <span class="text-muted">—</span>
+                        <small class="text-muted font-monospace">{{ p.numero_avviso }}</small>
                       {% endif %}
                     </td>
-                    <td>
-                      <div class="fw-semibold">{{ p.causale|default('—') }}</div>
-                    </td>
-                    <td class="text-end">
+                    <td class="text-end text-nowrap">
                       {% if p.importo is not null %}
                         € {{ p.importo|number_format(2, ',', '.') }}
                       {% else %}
                         —
                       {% endif %}
                     </td>
-                    <td>
+                    <td class="d-none d-md-table-cell">
                       {% if p.data_scadenza %}
                         {{ p.data_scadenza|date('d/m/Y') }}
                       {% else %}

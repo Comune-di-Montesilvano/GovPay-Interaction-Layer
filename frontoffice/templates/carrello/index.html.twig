@@ -30,6 +30,8 @@
     padding: 0.75rem 2rem;
     font-size: 1.05rem;
   }
+  .btn-checkout:hover,
+  .btn-checkout:focus { background: #e09420; color: #05193d; }
   .btn-remove { color: #dc3545; border: none; background: transparent; }
   .btn-remove:hover { color: #a71c2a; }
 </style>
@@ -73,8 +75,7 @@
             <thead class="table-light">
               <tr>
                 <th>{{ 'Causale'|trans }}</th>
-                <th>{{ 'N. Avviso'|trans }}</th>
-                <th>{{ 'Scadenza'|trans }}</th>
+                <th class="d-none d-md-table-cell">{{ 'Scadenza'|trans }}</th>
                 <th class="text-end">{{ 'Importo'|trans }}</th>
                 <th class="text-end">{{ 'Rimuovi'|trans }}</th>
               </tr>
@@ -82,16 +83,20 @@
             <tbody id="cart-tbody">
               {% for item in items %}
               <tr id="row-{{ item.id_pendenza }}" data-importo="{{ item.importo_cents }}">
-                <td class="fw-semibold">{{ item.causale|default('—') }}</td>
-                <td><span class="font-monospace text-muted small">{{ item.numero_avviso|default('—') }}</span></td>
                 <td>
+                  <div class="fw-semibold">{{ item.causale|default('—') }}</div>
+                  {% if item.numero_avviso %}
+                    <small class="text-muted font-monospace">{{ item.numero_avviso }}</small>
+                  {% endif %}
+                </td>
+                <td class="d-none d-md-table-cell">
                   {% if item.data_scadenza %}
                     {{ item.data_scadenza|date('d/m/Y') }}
                   {% else %}
                     <span class="text-muted">—</span>
                   {% endif %}
                 </td>
-                <td class="text-end fw-semibold">
+                <td class="text-end fw-semibold text-nowrap">
                   {% if item.importo is not null %}
                     € {{ item.importo|number_format(2, ',', '.') }}
                   {% else %}—{% endif %}
