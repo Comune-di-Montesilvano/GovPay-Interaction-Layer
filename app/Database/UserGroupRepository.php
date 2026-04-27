@@ -176,6 +176,29 @@ class UserGroupRepository
         return $row ? $row['default_id_entrata'] : null;
     }
 
+    /** @return int[] group_id values that have this template assigned */
+    public function getGroupIdsForTemplate(int $templateId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT group_id FROM user_group_templates WHERE template_id = :tid ORDER BY group_id'
+        );
+        $stmt->execute([':tid' => $templateId]);
+        return array_map('intval', array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'group_id'));
+    }
+
+    /** Replaces which groups have this template (from the template side). */
+    public function setGroupsForTemplate(int $templateId, array $groupIds): void
+    {
+        $this->pdo->prepare('DELETE FROM user_group_templates WHERE template_id = :tid')
+                  ->execute([':tid' => $templateId]);
+        $ins = $this->pdo->prepare(
+            'INSERT INTO user_group_templates (group_id, template_id) VALUES (:gid, :tid)'
+        );
+        foreach (array_map('intval', $groupIds) as $gid) {
+            $ins->execute([':gid' => $gid, ':tid' => $templateId]);
+        }
+    }
+
     /** @return int[] group_id values the user belongs to */
     public function getMemberGroupIds(int $userId): array
     {

@@ -564,6 +564,10 @@ return function (App $app, Twig $twig): void {
         $controller = new ConfigurazioneController($twig);
         return $controller->assignUsersToPendenzaTemplate($request, $response, $args);
     });
+    $app->post('/configurazione/templates/{id}/assign-groups', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->assignGroupsToPendenzaTemplate($request, $response, $args);
+    });
 
     // Gruppi Utenti (CRUD)
     $app->post('/configurazione/gruppi/add', function($request, $response) use ($twig) {
