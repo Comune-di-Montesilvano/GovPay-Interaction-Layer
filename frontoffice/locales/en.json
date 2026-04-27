@@ -65,7 +65,7 @@
     "Compila il modulo con i dati del servizio e del soggetto pagatore. Al termine verrà creato subito l'avviso PagoPA e potrai scaricarlo in PDF.": "Fill out the form with the service and payer data. The PagoPA notice will be created immediately and you can download it as a PDF.",
     "Completa il pagamento con carta e wallet digitali. Lo stato dell'avviso sarà aggiornato automaticamente senza dover presentare ricevute agli sportelli.": "Complete the payment with card and digital wallets. The notice status will be updated automatically without needing to present receipts at the desk.",
     "Configurazione checkout non disponibile": "Checkout configuration not available",
-    "Consultare pendenze e ricevute (richiede SPID)": "Consult pending items and receipts (SPID required)",
+    "Consultare pendenze e ricevute (richiede accesso SPID/CIE)": "Consult pending items and receipts (SPID required)",
     "Contatta": "Contact",
     "Controlla i dati inseriti": "Check the entered data",
     "Cosa succede dopo": "What happens next",

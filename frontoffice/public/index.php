@@ -2281,11 +2281,6 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             'datiAllegati' => ['sorgente' => 'Spontaneo'],
         ];
 
-        $note = trim((string)($data['noteRichiedente'] ?? ''));
-        if ($note !== '') {
-            $payload['datiAllegati']['noteRichiedente'] = mb_substr($note, 0, 400);
-        }
-
         $sendResult = frontoffice_send_pendenza_to_backoffice($payload);
         if (!$sendResult['success']) {
             $context['form_errors'] = $sendResult['errors'] ?? ['Invio pendenza non riuscito.'];
@@ -3508,7 +3503,8 @@ $routes = [
             'context' => $baseContext,
         ];
     },
-    '/pagamento-avviso' => static function () use ($method): array {
+    '/pagamento-avviso' => static function () use ($method, $env): array {
+        $payPortalUrl = $env('FRONTOFFICE_PAGOPA_CHECKOUT_URL', 'https://checkout.pagopa.it/');
         if ($method === 'POST') {
             $result = frontoffice_process_avviso_form($_POST);
             if (!empty($result['success'])) {
@@ -3525,6 +3521,7 @@ $routes = [
                             'form_submitted' => true,
                             'form_data' => $result['form_data'] ?? $_POST,
                             'form_errors' => [],
+                            'pay_portal_url' => $payPortalUrl,
                             'form_feedback' => [
                                 'type' => 'warning',
                                 'title' => 'Avviso già pagato',
@@ -3554,6 +3551,7 @@ $routes = [
                     'form_submitted' => true,
                     'form_data' => $result['form_data'] ?? $_POST,
                     'form_errors' => $errors,
+                    'pay_portal_url' => $payPortalUrl,
                     'form_feedback' => [
                         'type' => 'danger',
                         'title' => 'Verifica non riuscita',
@@ -3569,6 +3567,7 @@ $routes = [
                 'form_submitted' => false,
                 'form_data' => [],
                 'form_errors' => [],
+                'pay_portal_url' => $payPortalUrl,
                 'form_feedback' => null,
             ],
         ];
@@ -3741,12 +3740,26 @@ $routes = [
                 'filters' => [
                     'stato' => $statoRaw,
                 ],
-                'pagination' => [
-                    'pagina' => (int)($data['pagina'] ?? $page),
-                    'risultati_per_pagina' => (int)($data['risultatiPerPagina'] ?? $perPage),
-                    'num_risultati' => (int)($data['numRisultati'] ?? 0),
-                    'total_pages' => (int) max(1, (int) ceil(((int)($data['numRisultati'] ?? 0)) / max(1, (int)($data['risultatiPerPagina'] ?? $perPage)))),
-                ],
+                'pagination' => (static function () use ($data, $page, $perPage, $rows): array {
+                    $meta = is_array($data['metadatiPaginazione'] ?? null) ? $data['metadatiPaginazione'] : [];
+                    $numRis = (int)($data['numRisultati'] ?? $meta['numRisultati'] ?? $meta['num_risultati'] ?? 0);
+                    $rpp    = (int)($data['risultatiPerPagina'] ?? $meta['risultatiPerPagina'] ?? $perPage);
+                    $pag    = (int)($data['pagina'] ?? $meta['pagina'] ?? $page);
+                    if ($rpp < 1) { $rpp = $perPage; }
+                    // Euristica: se numRisultati non è disponibile ma la pagina è piena, presumi che ci sia altra pagina
+                    $hasMore = $numRis > 0
+                        ? ($pag * $rpp < $numRis)
+                        : (count($rows) >= $rpp);
+                    $totalPages = $numRis > 0
+                        ? (int) max(1, (int) ceil($numRis / $rpp))
+                        : ($hasMore ? $pag + 1 : $pag);
+                    return [
+                        'pagina'              => $pag,
+                        'risultati_per_pagina' => $rpp,
+                        'num_risultati'       => $numRis,
+                        'total_pages'         => $totalPages,
+                    ];
+                })(),
             ],
         ];
     },
