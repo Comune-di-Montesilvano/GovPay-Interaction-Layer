@@ -249,7 +249,8 @@
     new Litepicker({
       element: elDa, elementEnd: elA,
       singleMode: false, format: 'DD/MM/YYYY', lang: 'it-IT',
-      autoApply: true, resetButton: true, numberOfMonths: 2, numberOfColumns: 2,
+      autoApply: true, resetButton: true, numberOfMonths: 1, numberOfColumns: 1,
+      tooltipText: { one: 'giorno', other: 'giorni' },
       setup(p) {
         p.on('selected', (d1, d2) => { hidDa.value = d1.format('YYYY-MM-DD'); hidA.value = d2.format('YYYY-MM-DD'); });
         p.on('clear:selection', () => { hidDa.value = ''; hidA.value = ''; elDa.value = ''; elA.value = ''; });

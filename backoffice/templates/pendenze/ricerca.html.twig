@@ -50,26 +50,24 @@
           </select>
         </div>
         <div class="form-group col-md-4">
-          <div class="select-wrapper">
-            <label for="stato">Stato</label>
-            {% set allowed = allowed_states|default([]) %}
-            {% set state_map = pendenza_states|default({}) %}
-            {% set order = state_map|keys %}
-            <select id="stato" name="stato">
-              <option value="">-- tutti --</option>
-              {% for s in order %}
-                {% if s in allowed %}
-                  {% set conf = state_map[s] %}
-                  <option value="{{ s }}" {% if f.stato is defined and f.stato == s %}selected{% endif %}>{{ conf.label }}</option>
-                {% endif %}
-              {% endfor %}
-              {% for s in allowed %}
-                {% if s not in order %}
-                  <option value="{{ s }}" {% if f.stato is defined and f.stato == s %}selected{% endif %}>{{ s }}</option>
-                {% endif %}
-              {% endfor %}
-            </select>
-          </div>
+          <label for="stato">Stato</label>
+          {% set allowed = allowed_states|default([]) %}
+          {% set state_map = pendenza_states|default({}) %}
+          {% set order = state_map|keys %}
+          <select id="stato" name="stato">
+            <option value="">-- tutti --</option>
+            {% for s in order %}
+              {% if s in allowed %}
+                {% set conf = state_map[s] %}
+                <option value="{{ s }}" {% if f.stato is defined and f.stato == s %}selected{% endif %}>{{ conf.label }}</option>
+              {% endif %}
+            {% endfor %}
+            {% for s in allowed %}
+              {% if s not in order %}
+                <option value="{{ s }}" {% if f.stato is defined and f.stato == s %}selected{% endif %}>{{ s }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
         </div>
         <div class="form-group col-md-4">
           <label for="dataDaVis">Intervallo date</label>
@@ -334,6 +332,32 @@
     });
   }
 
+  // ── Tom-Select stato con badge colorati ───────────────────────────────────
+  const stateColors = {{ pendenza_states|default({})|json_encode|raw }};
+  const statoEl = document.getElementById('stato');
+  if (statoEl && typeof TomSelect !== 'undefined') {
+    new TomSelect(statoEl, {
+      create: false,
+      render: {
+        option: function(data, escape) {
+          const cfg = stateColors[data.value] || {};
+          const color = escape(cfg.color || 'secondary');
+          if (!data.value) return `<div class="py-1 px-2">${escape(data.text)}</div>`;
+          return `<div class="d-flex align-items-center gap-2 py-1 px-2">
+            <span class="badge rounded-pill text-bg-${color}" style="min-width:10px;padding:4px 6px;">&nbsp;</span>
+            <span>${escape(data.text)}</span>
+          </div>`;
+        },
+        item: function(data, escape) {
+          const cfg = stateColors[data.value] || {};
+          const color = escape(cfg.color || 'secondary');
+          if (!data.value) return `<span>${escape(data.text)}</span>`;
+          return `<span class="badge text-bg-${color}">${escape(data.text)}</span>`;
+        }
+      }
+    });
+  }
+
   // ── Litepicker date range ─────────────────────────────────────────────────
   const elDa  = document.getElementById('dataDaVis');
   const elA   = document.getElementById('dataAVis');
@@ -359,8 +383,9 @@
       lang: 'it-IT',
       autoApply: true,
       resetButton: true,
-      numberOfMonths: 2,
-      numberOfColumns: 2,
+      numberOfMonths: 1,
+      numberOfColumns: 1,
+      tooltipText: { one: 'giorno', other: 'giorni' },
       setup(p) {
         p.on('selected', (d1, d2) => {
           hidDa.value = d1.format('YYYY-MM-DD');
