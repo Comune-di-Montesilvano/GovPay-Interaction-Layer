@@ -1515,6 +1515,244 @@
             } %}
           </div>
         </div>
+      {% elseif currentTab == 'gruppi-utenti' %}
+        <div class="card shadow-sm mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Gruppi Utenti</h2>
+            <button class="btn btn-sm btn-primary" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#collapseNewGroup">
+              <i class="fas fa-plus me-1"></i> Nuovo Gruppo
+            </button>
+          </div>
+          <div class="card-body">
+
+            {# ── Nuovo gruppo ── #}
+            <div class="collapse mb-4" id="collapseNewGroup">
+              <div class="card card-body bg-light border-0">
+                <form method="post" action="/configurazione/gruppi/add" class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label form-label-sm">Nome*</label>
+                    <input type="text" name="nome" class="form-control form-control-sm" required placeholder="Es. Ufficio Tributi">
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label form-label-sm">Descrizione</label>
+                    <input type="text" name="descrizione" class="form-control form-control-sm" placeholder="(opzionale)">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label form-label-sm">Tipologia default</label>
+                    <select name="default_id_entrata" class="form-select form-select-sm">
+                      <option value="">— Nessuna —</option>
+                      {% for tip in tipologie_pendenze|default([]) %}
+                        <option value="{{ tip.id_entrata }}">{{ tip.nome|default(tip.descrizione)|e }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-12 text-end">
+                    <button type="submit" class="btn btn-sm btn-success">Crea Gruppo</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {% set groups = user_groups|default([]) %}
+            {% if groups|length > 0 %}
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Descrizione</th>
+                      <th>Tipol. default</th>
+                      <th>Membri</th>
+                      <th class="text-end">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for g in groups %}
+                      <tr>
+                        <td><strong>{{ g.nome }}</strong></td>
+                        <td class="text-muted small">{{ g.descrizione|default('—') }}</td>
+                        <td class="font-monospace small">{{ g.default_id_entrata|default('—') }}</td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-secondary" type="button"
+                                  data-bs-toggle="collapse" data-bs-target="#groupMembers{{ g.id }}">
+                            <i class="fas fa-users"></i> {{ g.member_count }}
+                          </button>
+                        </td>
+                        <td class="text-end">
+                          <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-primary" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#editGroup{{ g.id }}" title="Modifica">
+                              <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#groupTipologie{{ g.id }}" title="Tipologie">
+                              <i class="fas fa-tags"></i>
+                              {% if g.tipologie_ids|length > 0 %}
+                                <span class="badge bg-info ms-1">{{ g.tipologie_ids|length }}</span>
+                              {% endif %}
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#groupTemplates{{ g.id }}" title="Template">
+                              <i class="fas fa-file-alt"></i>
+                              {% if g.template_ids|length > 0 %}
+                                <span class="badge bg-secondary ms-1">{{ g.template_ids|length }}</span>
+                              {% endif %}
+                            </button>
+                            <form action="/configurazione/gruppi/{{ g.id }}/delete" method="post" class="d-inline"
+                                  onsubmit="return confirm('Eliminare il gruppo &quot;{{ g.nome|e }}&quot;?');">
+                              <button type="submit" class="btn btn-sm btn-outline-danger" title="Elimina">
+                                <i class="fas fa-trash"></i>
+                              </button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {# ── Modifica gruppo ── #}
+                      <tr>
+                        <td colspan="5" class="p-0 border-0">
+                          <div class="collapse" id="editGroup{{ g.id }}">
+                            <div class="card card-body bg-light rounded-0 border-top-0 border-bottom">
+                              <form method="post" action="/configurazione/gruppi/{{ g.id }}/update" class="row g-2">
+                                <div class="col-md-4">
+                                  <label class="form-label form-label-sm">Nome*</label>
+                                  <input type="text" name="nome" class="form-control form-control-sm"
+                                         value="{{ g.nome }}" required>
+                                </div>
+                                <div class="col-md-5">
+                                  <label class="form-label form-label-sm">Descrizione</label>
+                                  <input type="text" name="descrizione" class="form-control form-control-sm"
+                                         value="{{ g.descrizione|default('') }}">
+                                </div>
+                                <div class="col-md-3">
+                                  <label class="form-label form-label-sm">Tipologia default</label>
+                                  <select name="default_id_entrata" class="form-select form-select-sm">
+                                    <option value="">— Nessuna —</option>
+                                    {% for tip in tipologie_pendenze|default([]) %}
+                                      <option value="{{ tip.id_entrata }}"
+                                        {% if g.default_id_entrata == tip.id_entrata %}selected{% endif %}>
+                                        {{ tip.nome|default(tip.descrizione)|e }}
+                                      </option>
+                                    {% endfor %}
+                                  </select>
+                                </div>
+                                <div class="col-12 text-end">
+                                  <button type="submit" class="btn btn-sm btn-primary">Salva</button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {# ── Membri ── #}
+                      <tr>
+                        <td colspan="5" class="p-0 border-0">
+                          <div class="collapse" id="groupMembers{{ g.id }}">
+                            <div class="card card-body bg-white rounded-0 border-top-0 border-bottom">
+                              <form method="post" action="/configurazione/gruppi/{{ g.id }}/set-members">
+                                <p class="small fw-bold mb-2">Utenti nel gruppo:</p>
+                                <div class="row g-2 mb-3" style="max-height:200px;overflow-y:auto;">
+                                  {% for u in all_users_for_groups|default([]) %}
+                                    <div class="col-md-4 col-sm-6">
+                                      <div class="form-check form-check-sm">
+                                        <input class="form-check-input" type="checkbox"
+                                               name="user_ids[]" value="{{ u.id }}"
+                                               id="gm_{{ g.id }}_{{ u.id }}"
+                                               {% if u.id in g.member_ids %}checked{% endif %}>
+                                        <label class="form-check-label small" for="gm_{{ g.id }}_{{ u.id }}">
+                                          {{ u.first_name }} {{ u.last_name }}
+                                          <span class="text-muted">({{ u.email }})</span>
+                                        </label>
+                                      </div>
+                                    </div>
+                                  {% endfor %}
+                                </div>
+                                <div class="text-end">
+                                  <button type="submit" class="btn btn-sm btn-primary">Salva Membri</button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {# ── Tipologie abilitate ── #}
+                      <tr>
+                        <td colspan="5" class="p-0 border-0">
+                          <div class="collapse" id="groupTipologie{{ g.id }}">
+                            <div class="card card-body bg-white rounded-0 border-top-0 border-bottom">
+                              <form method="post" action="/configurazione/gruppi/{{ g.id }}/set-tipologie">
+                                <p class="small fw-bold mb-2">
+                                  Tipologie abilitate per il gruppo:
+                                  <span class="text-muted fw-normal">(se nessuna, i membri vedono tutte le tipologie)</span>
+                                </p>
+                                <div class="row g-2 mb-3" style="max-height:200px;overflow-y:auto;">
+                                  {% for tip in tipologie_pendenze|default([]) %}
+                                    <div class="col-md-4 col-sm-6">
+                                      <div class="form-check form-check-sm">
+                                        <input class="form-check-input" type="checkbox"
+                                               name="tipologie_ids[]" value="{{ tip.id_entrata }}"
+                                               id="gt_{{ g.id }}_{{ tip.id_entrata }}"
+                                               {% if tip.id_entrata in g.tipologie_ids %}checked{% endif %}>
+                                        <label class="form-check-label small" for="gt_{{ g.id }}_{{ tip.id_entrata }}">
+                                          {{ tip.nome|default(tip.descrizione)|e }}
+                                        </label>
+                                      </div>
+                                    </div>
+                                  {% endfor %}
+                                </div>
+                                <div class="text-end">
+                                  <button type="submit" class="btn btn-sm btn-primary">Salva Tipologie</button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {# ── Template ── #}
+                      <tr>
+                        <td colspan="5" class="p-0 border-0">
+                          <div class="collapse" id="groupTemplates{{ g.id }}">
+                            <div class="card card-body bg-white rounded-0 border-top-0 border-bottom">
+                              <form method="post" action="/configurazione/gruppi/{{ g.id }}/set-templates">
+                                <p class="small fw-bold mb-2">Template associati al gruppo:</p>
+                                <div class="row g-2 mb-3" style="max-height:200px;overflow-y:auto;">
+                                  {% for t in pendenza_templates|default([]) %}
+                                    <div class="col-md-4 col-sm-6">
+                                      <div class="form-check form-check-sm">
+                                        <input class="form-check-input" type="checkbox"
+                                               name="template_ids[]" value="{{ t.id }}"
+                                               id="gtt_{{ g.id }}_{{ t.id }}"
+                                               {% if t.id in g.template_ids %}checked{% endif %}>
+                                        <label class="form-check-label small" for="gtt_{{ g.id }}_{{ t.id }}">
+                                          {{ t.titolo }}
+                                        </label>
+                                      </div>
+                                    </div>
+                                  {% endfor %}
+                                </div>
+                                <div class="text-end">
+                                  <button type="submit" class="btn btn-sm btn-primary">Salva Template</button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="alert alert-info py-2 small mb-0">Nessun gruppo configurato.</div>
+            {% endif %}
+
+          </div>
+        </div>
       {% elseif currentTab == 'confapi' %}
         <h2 class="h5">Configurazioni (API Backoffice)</h2>
         {% if app_debug and cfg_json %}
