@@ -131,21 +131,25 @@
     </div>
 
     <div class="card shadow-sm mb-4">
-      <div class="card-header bg-light border-bottom py-3">
+      <div class="card-header bg-light border-bottom py-3 d-flex align-items-center justify-content-between gap-2">
         <h3 class="h6 mb-0">Dettaglio dati</h3>
+        <div id="statsTableFilter" class="d-none">
+          <span class="badge bg-primary" id="statsFilterLabel"></span>
+          <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" id="statsFilterReset" title="Rimuovi filtro"><i class="fas fa-times"></i></button>
+        </div>
       </div>
       <div class="table-responsive">
-        <table class="table table-striped align-middle mb-0">
+        <table id="statsDetailTable" class="table table-striped align-middle mb-0">
           <thead>
             <tr>
-              <th scope="col">Categoria</th>
-              <th scope="col" class="text-end">Numero pagamenti</th>
-              <th scope="col" class="text-end">Importo</th>
+              <th scope="col" class="stats-sort" data-col="0" style="cursor:pointer;" title="Ordina">Categoria <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort text-end" data-col="1" style="cursor:pointer;" title="Ordina">Numero pagamenti <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort text-end" data-col="2" style="cursor:pointer;" title="Ordina">Importo <i class="fas fa-sort text-muted ms-1 small"></i></th>
             </tr>
           </thead>
           <tbody>
             {% for row in stats %}
-              <tr>
+              <tr data-label="{{ row.label|e('html_attr') }}">
                 <td>{{ row.label }}</td>
                 <td class="text-end">{{ row.numero_pagamenti|number_format(0, ',', '.') }}</td>
                 <td class="text-end">€ {{ row.importo|number_format(2, ',', '.') }}</td>
@@ -190,6 +194,35 @@
           return canvas.getContext('2d');
         }
 
+        // ── Drill-down: filtra tabella per label cliccato ──────────────────────
+        function filterTable(label) {
+          const table = document.getElementById('statsDetailTable');
+          const filterBar = document.getElementById('statsTableFilter');
+          const filterLabel = document.getElementById('statsFilterLabel');
+          if (!table) return;
+          table.querySelectorAll('tbody tr').forEach(tr => {
+            tr.style.display = label === null || tr.dataset.label === label ? '' : 'none';
+          });
+          if (filterBar && filterLabel) {
+            if (label) {
+              filterLabel.textContent = label;
+              filterBar.classList.remove('d-none');
+            } else {
+              filterBar.classList.add('d-none');
+            }
+          }
+        }
+
+        const resetBtn = document.getElementById('statsFilterReset');
+        if (resetBtn) resetBtn.addEventListener('click', () => filterTable(null));
+
+        const drillClick = (event, elements) => {
+          if (!elements.length) return;
+          const idx = elements[0].index;
+          filterTable(payload.labels[idx]);
+          document.getElementById('statsDetailTable')?.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+
         function buildChart(canvasId, dataset, label){
           const ctx = getCanvasContext(canvasId);
           if(!ctx){ return; }
@@ -208,6 +241,7 @@
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              onClick: drillClick,
               plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -259,6 +293,7 @@
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              onClick: drillClick,
               plugins: {
                 legend: { display: false },
                 title: { display: true, text: title },
@@ -280,6 +315,31 @@
 
         buildPieChart('statsAmountPie', payload.amounts, 'Totale incassato', true);
         buildPieChart('statsCountPie', payload.counts, 'Totale pagamenti', false);
+
+        // ── Sortable table ────────────────────────────────────────────────────
+        const table = document.getElementById('statsDetailTable');
+        if (table) {
+          let sortCol = -1, sortAsc = true;
+          table.querySelectorAll('th.stats-sort').forEach(th => {
+            th.addEventListener('click', () => {
+              const col = parseInt(th.dataset.col);
+              sortAsc = sortCol === col ? !sortAsc : true;
+              sortCol = col;
+              const tbody = table.querySelector('tbody');
+              const rows = Array.from(tbody.querySelectorAll('tr'));
+              rows.sort((a, b) => {
+                const av = a.cells[col]?.textContent.replace(/[^0-9,.-]/g, '').replace(',', '.') ?? '';
+                const bv = b.cells[col]?.textContent.replace(/[^0-9,.-]/g, '').replace(',', '.') ?? '';
+                const an = parseFloat(av), bn = parseFloat(bv);
+                const cmp = isNaN(an) || isNaN(bn) ? av.localeCompare(bv, 'it') : an - bn;
+                return sortAsc ? cmp : -cmp;
+              });
+              rows.forEach(r => tbody.appendChild(r));
+              table.querySelectorAll('th.stats-sort i').forEach(i => { i.className = 'fas fa-sort text-muted ms-1 small'; });
+              th.querySelector('i').className = `fas fa-sort-${sortAsc ? 'up' : 'down'} text-primary ms-1 small`;
+            });
+          });
+        }
       })();
     </script>
   {% endif %}

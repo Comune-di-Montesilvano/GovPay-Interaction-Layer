@@ -83,6 +83,14 @@
                   <h3 class="h6 mb-1">{{ form_feedback.title|trans }}</h3>
                   <p class="mb-0">{{ form_feedback.message|trans }}</p>
                 </div>
+                {% if form_feedback.type == 'danger' %}
+                  <div class="mb-3">
+                    <p class="small text-muted mb-1">{{ 'Se l\'avviso è stato emesso da un altro ente, puoi provare direttamente sul portale pagoPA:'|trans }}</p>
+                    <a href="{{ pay_portal_url|default('https://checkout.pagopa.it/') }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
+                      <i class="fas fa-external-link-alt me-1"></i>{{ 'Prova su pagoPA Checkout'|trans }}
+                    </a>
+                  </div>
+                {% endif %}
               {% endif %}
 
               <div class="row g-4">
