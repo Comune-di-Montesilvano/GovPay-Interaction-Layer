@@ -1,4 +1,4 @@
-[ ] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi. I gruppi devono avere la stessa logica di assegnazione degli utenti: tipologie predefinite, tipologie abilitate, template associati. Permettere assegnazione utenti a uno o più gruppi, ereditarietà permessi/template/tipologie dal gruppo.
+[X] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi. I gruppi devono avere la stessa logica di assegnazione degli utenti: tipologie predefinite, tipologie abilitate, template associati. Permettere assegnazione utenti a uno o più gruppi, ereditarietà permessi/template/tipologie dal gruppo.
 
 ### UI & API Fix
 - [X] Tabella utenti in `impostazioni?tab=utenti` troppo estesa orizzontalmente: compattare i tasti azione e ottimizzare layout.
@@ -39,7 +39,7 @@
     - [X] Possibilità di associare template all'utente.
     - [X] Associare agli utenti una tipologia di pendenza di default.
     - [X] Sistema per limitare la visibilità delle tipologie per utente (filtro tipologie abilitate).
-- [ ] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi.
+- [X] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi.
 
 ### Autenticazione e Identity
 - [X] **IAM Proxy**: Sistemazione integrazione proxy IAM.
