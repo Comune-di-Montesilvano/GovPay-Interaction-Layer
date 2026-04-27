@@ -4917,6 +4917,12 @@ if ($method === 'POST' && $normalizedPath === '/carrello/aggiungi') {
         return;
     }
 
+    // Fast-path: reject before any API call if cart already full
+    if (count(frontoffice_cart_items()) >= 5) {
+        echo json_encode(['error' => 'Puoi aggiungere al massimo 5 avvisi al carrello.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
     // Whitelist check: idPendenza must have been served to this session
     $whitelistKeys = ['frontoffice_pendenze_whitelist', 'frontoffice_avviso_pendenze', 'frontoffice_spontaneo_pendenze'];
     $whitelist = [];
