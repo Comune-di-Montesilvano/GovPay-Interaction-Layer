@@ -40,18 +40,51 @@
 </section>
 
 <div class="container-xxl py-4">
-  {% if support_email %}
-  <div class="p-3 border rounded-3 bg-white text-center small text-muted">
-    <i class="fas fa-envelope me-1"></i>
-    <a href="mailto:{{ support_email }}" class="text-muted">{{ support_email }}</a>
-    {% if support_phone %}
-      <span class="mx-2">·</span>
-      <i class="fas fa-phone me-1"></i>{{ support_phone }}
-      {% if support_hours %}<span class="ms-1">({{ support_hours }})</span>{% endif %}
-    {% endif %}
-    <span class="mx-2">·</span>
-    <a href="/guida" class="text-muted"><i class="fas fa-question-circle me-1"></i>{{ 'Guida'|trans }}</a>
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+    <div class="row g-0">
+
+      <div class="col-md-7 p-4 p-lg-5">
+        <h2 class="h5 fw-semibold mb-3">{{ 'Come funziona'|trans }}</h2>
+        <ul class="list-unstyled mb-0 d-flex flex-column gap-2">
+          <li class="d-flex gap-3 align-items-start">
+            <span class="badge rounded-pill bg-primary mt-1 flex-shrink-0">1</span>
+            <span>{{ 'Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.'|trans|raw }}</span>
+          </li>
+          <li class="d-flex gap-3 align-items-start">
+            <span class="badge rounded-pill bg-primary mt-1 flex-shrink-0">2</span>
+            <span>{{ 'Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.'|trans|raw }}</span>
+          </li>
+          <li class="d-flex gap-3 align-items-start">
+            <span class="badge rounded-pill bg-primary mt-1 flex-shrink-0">3</span>
+            <span>{{ 'Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.'|trans|raw }}</span>
+          </li>
+        </ul>
+        <a href="/guida" class="btn btn-link px-0 mt-3 small">
+          <i class="fas fa-question-circle me-1"></i>{{ 'Guida completa'|trans }}
+        </a>
+      </div>
+
+      <div class="col-md-5 p-4 p-lg-5 bg-light border-start d-flex flex-column justify-content-center">
+        <h2 class="h5 fw-semibold mb-3">{{ 'Assistenza'|trans }}</h2>
+        {% if support_email %}
+        <p class="mb-2 small">
+          <i class="fas fa-envelope text-primary me-2"></i>
+          <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+        </p>
+        {% endif %}
+        {% if support_phone %}
+        <p class="mb-2 small">
+          <i class="fas fa-phone text-primary me-2"></i>
+          {{ support_phone }}
+          {% if support_hours %}<span class="text-muted ms-1">({{ support_hours }})</span>{% endif %}
+        </p>
+        {% endif %}
+        {% if support_location %}
+        <p class="mb-0 small text-muted">{{ support_location|raw }}</p>
+        {% endif %}
+      </div>
+
+    </div>
   </div>
-  {% endif %}
 </div>
 {% endblock %}
