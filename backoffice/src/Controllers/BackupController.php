@@ -38,6 +38,7 @@ class BackupController
         'templates',
         'io_services',
         'utenti',
+        'gruppi-utenti',
     ];
 
     public function __construct(private readonly Twig $twig)
@@ -422,6 +423,45 @@ class BackupController
                 }
                 $stats['govpay_sections']++;
             }
+            if (!empty($sections['gruppi-utenti'])) {
+                $groupRepo = new \App\Database\UserGroupRepository();
+                // email→id map
+                $emailToId = [];
+                foreach ($pdo->query('SELECT id, email FROM users')->fetchAll() as $u) {
+                    $emailToId[strtolower($u['email'])] = (int)$u['id'];
+                }
+                // titolo→id map
+                $titToId = [];
+                foreach ($pdo->query('SELECT id, titolo FROM pendenza_template')->fetchAll() as $t) {
+                    $titToId[strtolower($t['titolo'])] = (int)$t['id'];
+                }
+                foreach ($sections['gruppi-utenti'] as $g) {
+                    if (empty($g['nome'])) {
+                        continue;
+                    }
+                    // UPSERT by nome: check existing
+                    $existingRow = $pdo->prepare('SELECT id FROM user_groups WHERE nome = ?');
+                    $existingRow->execute([$g['nome']]);
+                    $existing = $existingRow->fetchColumn();
+                    if ($existing !== false) {
+                        $groupRepo->update((int)$existing, $g['nome'], $g['descrizione'] ?? null, $g['default_id_entrata'] ?? null);
+                        $gid = (int)$existing;
+                    } else {
+                        $gid = $groupRepo->create($g['nome'], $g['descrizione'] ?? null, $g['default_id_entrata'] ?? null);
+                    }
+                    // members by email
+                    $memberIds = array_values(array_filter(array_map(fn($e) => $emailToId[strtolower((string)$e)] ?? null, $g['members'] ?? [])));
+                    $groupRepo->setMembers($gid, $memberIds);
+                    // tipologie by id_entrata
+                    if ($idDominio) {
+                        $groupRepo->setTipologie($gid, $idDominio, array_values(array_filter($g['tipologie'] ?? [])));
+                    }
+                    // templates by titolo
+                    $tplIds = array_values(array_filter(array_map(fn($title) => $titToId[strtolower((string)$title)] ?? null, $g['templates'] ?? [])));
+                    $groupRepo->setTemplates($gid, $tplIds);
+                }
+                $stats['govpay_sections']++;
+            }
         }
 
         // 3. DB restore
@@ -628,6 +668,34 @@ class BackupController
 
         if (in_array('utenti', $sections, true)) {
             $resultSections['utenti'] = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash FROM users ORDER BY email ASC')->fetchAll();
+        }
+
+        if (in_array('gruppi-utenti', $sections, true)) {
+            $groupRepo = new \App\Database\UserGroupRepository();
+            $groups    = $groupRepo->listAll();
+            // Risolvi email membri
+            $userEmailStmt = $pdo->query('SELECT id, email FROM users');
+            $idToEmail = [];
+            foreach ($userEmailStmt->fetchAll() as $u) {
+                $idToEmail[(int)$u['id']] = $u['email'];
+            }
+            // Risolvi titoli template
+            $tplTitleStmt = $pdo->query('SELECT id, titolo FROM pendenza_template');
+            $idToTitle = [];
+            foreach ($tplTitleStmt->fetchAll() as $t) {
+                $idToTitle[(int)$t['id']] = $t['titolo'];
+            }
+            foreach ($groups as &$g) {
+                $gid = (int)$g['id'];
+                $memberIds = $groupRepo->getMemberIds($gid);
+                $g['members'] = array_values(array_filter(array_map(fn($uid) => $idToEmail[$uid] ?? null, $memberIds)));
+                $g['tipologie'] = $idDominio ? $groupRepo->getTipologie($gid, $idDominio) : [];
+                $tplIds = $groupRepo->getTemplateIds($gid);
+                $g['templates'] = array_values(array_filter(array_map(fn($tid) => $idToTitle[$tid] ?? null, $tplIds)));
+                unset($g['id'], $g['created_at'], $g['updated_at'], $g['member_count']);
+            }
+            unset($g);
+            $resultSections['gruppi-utenti'] = $groups;
         }
 
         return [
