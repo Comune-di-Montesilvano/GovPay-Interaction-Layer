@@ -102,6 +102,9 @@ class FlussiController
                     $url = rtrim($backofficeUrl, '/') . '/flussiRendicontazione';
                     if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' && $filters['q']) {
                         error_log('[FlussiController] GET ' . $url . '?' . http_build_query($query));
+                        if ($filters['statoFlusso']) {
+                            error_log('[FlussiController] statoFlussoRendicontazione filter = ' . $filters['statoFlusso']);
+                        }
                     }
 
                     $resp = $http->request('GET', $url, $options);

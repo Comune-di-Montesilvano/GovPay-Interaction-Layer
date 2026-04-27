@@ -32,24 +32,22 @@
         </div>
         <div class="form-group col-md-4">
           <label for="idPendenza">ID pendenza</label>
-          <input type="text" class="form-control" id="idPendenza" name="idPendenza" value="{{ f.idPendenza|default('') }}" placeholder="ID pendenza">
+          <input type="text" class="form-control" id="idPendenza" name="idPendenza" value="{{ f.idPendenza|default('') }}" placeholder="Es. 2024-001234 (ID interno)">
         </div>
         <div class="form-group col-md-4">
           <label for="iuv">IUV</label>
-          <input type="text" class="form-control" id="iuv" name="iuv" value="{{ f.iuv|default('') }}" placeholder="IUV">
+          <input type="text" class="form-control" id="iuv" name="iuv" value="{{ f.iuv|default('') }}" placeholder="Es. 012345678901234 (IUV pagoPA, 15 cifre)">
         </div>
       </div>
       <div class="row">
         <div class="form-group col-md-4">
-          <div class="select-wrapper">
-            <label for="tipologiaPendenza">Tipologia pendenza</label>
-            <select id="tipologiaPendenza" name="tipologiaPendenza">
-              <option value="">-- tutte --</option>
-              {% for t in tipologie_pendenze %}
-                <option value="{{ t.id_entrata }}" {% if f.tipologiaPendenza is defined and f.tipologiaPendenza == t.id_entrata %}selected{% endif %}>{{ t.descrizione }}</option>
-              {% endfor %}
-            </select>
-          </div>
+          <label for="tipologiaPendenza">Tipologia pendenza</label>
+          <select id="tipologiaPendenza" name="tipologiaPendenza">
+            <option value="">-- tutte --</option>
+            {% for t in tipologie_pendenze %}
+              <option value="{{ t.id_entrata }}" {% if f.tipologiaPendenza is defined and f.tipologiaPendenza == t.id_entrata %}selected{% endif %}>{{ t.descrizione }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="form-group col-md-4">
           <div class="select-wrapper">
@@ -74,32 +72,14 @@
           </div>
         </div>
         <div class="form-group col-md-4">
-          <label for="dateRangeInput">Intervallo date</label>
-          <input type="text" id="dateRangeInput" class="form-control" placeholder="Seleziona intervallo" autocomplete="off" inputmode="none" data-has-query="{{ query_made ? '1' : '0' }}">
+          <label for="dataDaVis">Intervallo date</label>
+          <div class="d-flex gap-1 align-items-center">
+            <input type="text" id="dataDaVis" class="form-control form-control-sm" placeholder="Da" autocomplete="off" readonly style="cursor:pointer;">
+            <span class="text-muted small">–</span>
+            <input type="text" id="dataAVis" class="form-control form-control-sm" placeholder="A" autocomplete="off" readonly style="cursor:pointer;">
+          </div>
           <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
           <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
-          <div id="dateRangePanel" class="card shadow-sm date-range-panel d-none">
-            <div class="card-body p-3">
-              <div class="row g-2 align-items-center">
-                <div class="col-6">
-                  <label for="dateStart" class="form-label mb-1">Da</label>
-                  <input type="date" id="dateStart" class="form-control">
-                </div>
-                <div class="col-6">
-                  <label for="dateEnd" class="form-label mb-1">A</label>
-                  <input type="date" id="dateEnd" class="form-control">
-                </div>
-              </div>
-              <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-                <span class="small text-muted fw-semibold">Periodo:</span>
-                <button type="button" class="btn btn-outline-primary btn-xs" data-range="week">Settimana</button>
-                <button type="button" class="btn btn-outline-primary btn-xs" data-range="month">Mese</button>
-                <button type="button" class="btn btn-outline-primary btn-xs" data-range="year">Anno</button>
-                <button type="button" class="btn btn-outline-secondary btn-xs" data-range="all">Azzera</button>
-                <button type="button" class="btn btn-primary btn-xs ms-auto" data-action="apply">Applica</button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -339,4 +319,62 @@
   {% elseif query_made %}
     <div class="alert alert-warning">Nessun risultato trovato.</div>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // ── Tom-Select tipologia ──────────────────────────────────────────────────
+  const tipSel = document.getElementById('tipologiaPendenza');
+  if (tipSel && typeof TomSelect !== 'undefined') {
+    new TomSelect(tipSel, {
+      create: false,
+      sortField: { field: 'text', direction: 'asc' },
+      placeholder: 'Cerca tipologia…',
+    });
+  }
+
+  // ── Litepicker date range ─────────────────────────────────────────────────
+  const elDa  = document.getElementById('dataDaVis');
+  const elA   = document.getElementById('dataAVis');
+  const hidDa = document.getElementById('dataDa');
+  const hidA  = document.getElementById('dataA');
+
+  if (elDa && elA && hidDa && hidA && typeof Litepicker !== 'undefined') {
+    const toIt = (iso) => {
+      if (!iso) return '';
+      const [y, m, d] = iso.split('-');
+      return d && m && y ? `${d}/${m}/${y}` : iso;
+    };
+
+    // Pre-popola le date se presenti
+    if (hidDa.value) elDa.value = toIt(hidDa.value);
+    if (hidA.value)  elA.value  = toIt(hidA.value);
+
+    const picker = new Litepicker({
+      element: elDa,
+      elementEnd: elA,
+      singleMode: false,
+      format: 'DD/MM/YYYY',
+      lang: 'it-IT',
+      autoApply: true,
+      resetButton: true,
+      numberOfMonths: 2,
+      numberOfColumns: 2,
+      setup(p) {
+        p.on('selected', (d1, d2) => {
+          hidDa.value = d1.format('YYYY-MM-DD');
+          hidA.value  = d2.format('YYYY-MM-DD');
+        });
+        p.on('clear:selection', () => {
+          hidDa.value = '';
+          hidA.value  = '';
+          elDa.value  = '';
+          elA.value   = '';
+        });
+      },
+    });
+  }
+})();
+</script>
 {% endblock %}

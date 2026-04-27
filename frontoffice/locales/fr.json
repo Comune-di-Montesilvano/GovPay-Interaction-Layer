@@ -65,7 +65,7 @@
     "Compila il modulo con i dati del servizio e del soggetto pagatore. Al termine verrà creato subito l'avviso PagoPA e potrai scaricarlo in PDF.": "Remplissez le formulaire avec les données du service et du payeur. À la fin, l'avis PagoPA sera créé immédiatement et vous pourrez le télécharger en PDF.",
     "Completa il pagamento con carta e wallet digitali. Lo stato dell'avviso sarà aggiornato automaticamente senza dover presentare ricevute agli sportelli.": "Effectuez le paiement par carte et portefeuilles numériques. Le statut de l'avis sera mis à jour automatiquement sans avoir à présenter les reçus aux guichets.",
     "Configurazione checkout non disponibile": "Configuration de paiement non disponible",
-    "Consultare pendenze e ricevute (richiede SPID)": "Consulter les dettes et les reçus (SPID requis)",
+    "Consultare pendenze e ricevute (richiede accesso SPID/CIE)": "Consulter les dettes et les reçus (SPID requis)",
     "Contatta": "Contact",
     "Controlla i dati inseriti": "Vérifiez les données saisies",
     "Cosa succede dopo": "Ce qui se passe après",

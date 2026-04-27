@@ -65,7 +65,7 @@
     "Compila il modulo con i dati del servizio e del soggetto pagatore. Al termine verrà creato subito l'avviso PagoPA e potrai scaricarlo in PDF.": "Compila il modulo con i dati del servizio e del soggetto pagatore. Al termine verrà creato subito l'avviso PagoPA e potrai scaricarlo in PDF.",
     "Completa il pagamento con carta e wallet digitali. Lo stato dell'avviso sarà aggiornato automaticamente senza dover presentare ricevute agli sportelli.": "Completa il pagamento con carta e wallet digitali. Lo stato dell'avviso sarà aggiornato automaticamente senza dover presentare ricevute agli sportelli.",
     "Configurazione checkout non disponibile": "Configurazione checkout non disponibile",
-    "Consultare pendenze e ricevute (richiede SPID)": "Consultare pendenze e ricevute (richiede SPID)",
+    "Consultare pendenze e ricevute (richiede accesso SPID/CIE)": "Consultare pendenze e ricevute (richiede accesso SPID/CIE)",
     "Contatta": "Contatta",
     "Controlla i dati inseriti": "Controlla i dati inseriti",
     "Cosa succede dopo": "Cosa succede dopo",
