@@ -700,6 +700,7 @@ return function (App $app, Twig $twig): void {
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $allTipologie = [];
         $userTipologie = [];
+        $userGroups = [];
         if ($idDominio && $editUser) {
             try {
                 $entrateRepo = new \App\Database\EntrateRepository();
@@ -707,14 +708,16 @@ return function (App $app, Twig $twig): void {
                 $userId = (int)($editUser['id'] ?? 0);
                 if ($userId > 0) {
                     $userTipologie = $entrateRepo->getEnabledTipologieForUser($userId, $idDominio);
+                    $userGroups = (new \App\Database\UserGroupRepository())->getGroupsForUser($userId);
                 }
             } catch (\Throwable $e) {}
         }
-        
+
         return $twig->render($response, 'users/edit.html.twig', [
             'edit_user' => $editUser,
             'all_tipologie' => $allTipologie,
             'user_tipologie_ids' => $userTipologie,
+            'user_groups' => $userGroups,
             'id_dominio' => $idDominio,
         ]);
     });
@@ -736,6 +739,7 @@ return function (App $app, Twig $twig): void {
             $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
             $allTipologie = [];
             $userTipologie = [];
+            $userGroups = [];
             if ($idDominio && $editUser) {
                 try {
                     $entrateRepo = new \App\Database\EntrateRepository();
@@ -743,15 +747,17 @@ return function (App $app, Twig $twig): void {
                     $userId = (int)($editUser['id'] ?? 0);
                     if ($userId > 0) {
                         $userTipologie = $entrateRepo->getEnabledTipologieForUser($userId, $idDominio);
+                        $userGroups = (new \App\Database\UserGroupRepository())->getGroupsForUser($userId);
                     }
                 } catch (\Throwable $e) {}
             }
-            
+
             return $twig->render($response, 'users/edit.html.twig', [
                 'error' => $error,
                 'edit_user' => $editUser,
                 'all_tipologie' => $allTipologie,
                 'user_tipologie_ids' => $userTipologie,
+                'user_groups' => $userGroups,
                 'id_dominio' => $idDominio,
             ]);
         }

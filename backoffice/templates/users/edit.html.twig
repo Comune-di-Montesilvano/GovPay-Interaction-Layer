@@ -1,87 +1,125 @@
 {% extends 'base.html.twig' %}
 {% block content %}
-<div class="container my-5" style="max-width:640px;">
+<div class="container my-5" style="max-width:720px;">
   <h1 class="h4 mb-3">Modifica utente</h1>
   {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
   {% if edit_user.is_disabled %}
-    <div class="alert alert-warning">Questo utente è attualmente disabilitato. Usa l'elenco utenti per riabilitarlo se necessario.</div>
+    <div class="alert alert-warning py-2 small">
+      Utente disabilitato. Usa l'elenco utenti per riabilitarlo.
+    </div>
   {% endif %}
+
   <form method="post" action="/users/{{ edit_user.id }}/edit" autocomplete="off">
-    {# Hidden dummy fields to discourage browser autofill of credentials #}
-    <input type="text" name="fakeusernameremembered" autocomplete="username" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true" tabindex="-1">
-    <input type="password" name="fakepasswordremembered" autocomplete="current-password" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true" tabindex="-1">
-    <div class="mb-3">
-      <label class="form-label">Email</label>
-  <input class="form-control" type="email" name="email" value="{{ edit_user.email }}" required autocomplete="off" readonly onfocus="this.removeAttribute('readonly')">
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Nome</label>
-      <input class="form-control" type="text" name="first_name" value="{{ edit_user.first_name|default('') }}">
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Cognome</label>
-      <input class="form-control" type="text" name="last_name" value="{{ edit_user.last_name|default('') }}">
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Ruolo</label>
-      {# If current user is admin and editing self, disallow changing role to prevent privilege escalation/demotion #}
-      {% set is_self = current_user is defined and current_user.id == edit_user.id %}
-      {% set is_admin = current_user is defined and current_user.role == 'admin' %}
-        {% set self_edit = current_user is defined and current_user.id == edit_user.id %}
+    <input type="text" name="fakeusernameremembered" autocomplete="username"
+           style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
+           aria-hidden="true" tabindex="-1">
+    <input type="password" name="fakepasswordremembered" autocomplete="current-password"
+           style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
+           aria-hidden="true" tabindex="-1">
+
+    <div class="row g-3 mb-3">
+      <div class="col-12">
+        <label class="form-label">Email</label>
+        <input class="form-control" type="email" name="email"
+               value="{{ edit_user.email }}" required autocomplete="off"
+               readonly onfocus="this.removeAttribute('readonly')">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Nome</label>
+        <input class="form-control" type="text" name="first_name"
+               value="{{ edit_user.first_name|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Cognome</label>
+        <input class="form-control" type="text" name="last_name"
+               value="{{ edit_user.last_name|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Ruolo</label>
+        {% set is_self = current_user is defined and current_user.id == edit_user.id %}
         {% set can_demote_self = attribute(_context, 'can_demote_self') is defined ? can_demote_self : true %}
-        <select name="role" id="role" class="form-control" {% if current_user.role == 'admin' and self_edit %}disabled{% endif %}>
-            <option value="user" {% if edit_user.role == 'user' %}selected{% endif %} {% if self_edit and not can_demote_self %}disabled title="Non puoi declassarti: ci deve essere almeno un altro superadmin"{% endif %}>User</option>
-            <option value="admin" {% if edit_user.role == 'admin' %}selected{% endif %} {% if self_edit and not can_demote_self %}disabled title="Non puoi declassarti: ci deve essere almeno un altro superadmin"{% endif %}>Admin</option>
-            <option value="superadmin" {% if edit_user.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
+        <select name="role" class="form-control"
+                {% if current_user.role == 'admin' and is_self %}disabled{% endif %}>
+          <option value="user" {% if edit_user.role == 'user' %}selected{% endif %}
+                  {% if is_self and not can_demote_self %}disabled{% endif %}>User</option>
+          <option value="admin" {% if edit_user.role == 'admin' %}selected{% endif %}
+                  {% if is_self and not can_demote_self %}disabled{% endif %}>Admin</option>
+          <option value="superadmin" {% if edit_user.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
         </select>
-
-        {% if self_edit and not can_demote_self %}
-            <div class="alert alert-warning mt-2">Non puoi declassarti: ci deve essere almeno un altro superadmin nel sistema.</div>
+        {% if is_self and not can_demote_self %}
+          <div class="form-text text-warning">Almeno un altro superadmin richiesto prima di declassarti.</div>
         {% endif %}
-    </div>
+      </div>
 
-    {# ── Tipologia di default ────────────────────────────────── #}
-    {% if all_tipologie is defined and all_tipologie|length > 0 %}
-    <div class="mb-3">
-      <label for="default_id_entrata" class="form-label">Tipologia di default</label>
-      <select class="form-select" id="default_id_entrata" name="default_id_entrata">
-        <option value="">— Nessuna —</option>
-        {% for tip in all_tipologie %}
-          <option value="{{ tip.id_entrata }}" {% if edit_user.default_id_entrata == tip.id_entrata %}selected{% endif %}>
-            {{ tip.descrizione }}
-          </option>
-        {% endfor %}
-      </select>
-      <div class="form-text">La tipologia di default sarà pre-selezionata nei form di creazione pendenze.</div>
-    </div>
-    {% endif %}
-
-    {# ── Tipologie abilitate (filtro) ────────────────────────── #}
-    {% if current_user is defined and current_user.role in ['admin', 'superadmin'] and all_tipologie is defined and all_tipologie|length > 0 %}
-    <div class="mb-3">
-      <label class="form-label">Tipologie abilitate</label>
-      <div class="border rounded p-3" style="max-height:250px;overflow-y:auto;">
-        {% if all_tipologie|length == 0 %}
-          <p class="text-muted small">Nessuna tipologia disponibile nel dominio.</p>
-        {% else %}
+      {% if all_tipologie is defined and all_tipologie|length > 0 %}
+      <div class="col-md-6">
+        <label for="default_id_entrata" class="form-label">Tipologia di default</label>
+        <select class="form-select" id="default_id_entrata" name="default_id_entrata">
+          <option value="">— Nessuna —</option>
           {% for tip in all_tipologie %}
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="tip_{{ tip.id_entrata }}" 
-                     name="enabled_tipologie[]" value="{{ tip.id_entrata }}"
-                     {% if tip.id_entrata in user_tipologie_ids %}checked{% endif %}>
-              <label class="form-check-label" for="tip_{{ tip.id_entrata }}">
+            <option value="{{ tip.id_entrata }}"
+                    {% if edit_user.default_id_entrata == tip.id_entrata %}selected{% endif %}>
+              {{ tip.descrizione }}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Pre-selezionata nei form di creazione pendenze.</div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── Tipologie abilitate ── #}
+    {% if current_user is defined and current_user.role in ['admin', 'superadmin']
+          and all_tipologie is defined and all_tipologie|length > 0 %}
+      {% set active_count = user_tipologie_ids|default([])|length %}
+      <div class="mb-3">
+        <label class="form-label d-flex align-items-center gap-2">
+          Tipologie abilitate
+          {% if active_count > 0 %}
+            <span class="badge bg-primary">{{ active_count }} attive</span>
+          {% else %}
+            <span class="badge bg-secondary">tutte visibili</span>
+          {% endif %}
+        </label>
+        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;">
+          {% for tip in all_tipologie %}
+            <div class="form-check form-check-sm">
+              <input class="form-check-input" type="checkbox"
+                     id="tip_{{ tip.id_entrata }}" name="enabled_tipologie[]"
+                     value="{{ tip.id_entrata }}"
+                     {% if tip.id_entrata in user_tipologie_ids|default([]) %}checked{% endif %}>
+              <label class="form-check-label small" for="tip_{{ tip.id_entrata }}">
                 {{ tip.descrizione }}
               </label>
             </div>
           {% endfor %}
-        {% endif %}
+        </div>
+        <div class="form-text">Se nessuna selezionata, l'utente vede tutte le tipologie del dominio.</div>
       </div>
-      <div class="form-text mt-2">Se nessuna è selezionata, l'utente vedrà tutte le tipologie disponibili nel dominio.</div>
-    </div>
     {% endif %}
 
-    <button class="btn btn-primary" type="submit">Salva</button>
-    <a class="btn btn-outline-secondary" href="/impostazioni?tab=utenti">Annulla</a>
+    {# ── Gruppi di appartenenza (read-only) ── #}
+    {% if user_groups is defined and user_groups|length > 0 %}
+      <div class="mb-3">
+        <label class="form-label">Gruppi</label>
+        <div class="d-flex flex-wrap gap-1">
+          {% for g in user_groups %}
+            <span class="badge bg-secondary">
+              <i class="fas fa-users-cog me-1"></i>{{ g.nome }}
+            </span>
+          {% endfor %}
+        </div>
+        <div class="form-text">
+          L'assegnazione ai gruppi avviene da
+          <a href="/impostazioni?tab=gruppi-utenti">Impostazioni → Gruppi Utenti</a>.
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="d-flex gap-2">
+      <button class="btn btn-primary" type="submit">Salva</button>
+      <a class="btn btn-outline-secondary" href="/impostazioni?tab=utenti">Annulla</a>
+    </div>
   </form>
-  </div>
+</div>
 {% endblock %}
