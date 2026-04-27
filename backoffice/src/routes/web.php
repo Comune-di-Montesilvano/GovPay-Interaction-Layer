@@ -565,6 +565,32 @@ return function (App $app, Twig $twig): void {
         return $controller->assignUsersToPendenzaTemplate($request, $response, $args);
     });
 
+    // Gruppi Utenti (CRUD)
+    $app->post('/configurazione/gruppi/add', function($request, $response) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->addUserGroup($request, $response);
+    });
+    $app->post('/configurazione/gruppi/{id}/update', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->updateUserGroup($request, $response, $args);
+    });
+    $app->post('/configurazione/gruppi/{id}/delete', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->deleteUserGroup($request, $response, $args);
+    });
+    $app->post('/configurazione/gruppi/{id}/set-members', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setGroupMembers($request, $response, $args);
+    });
+    $app->post('/configurazione/gruppi/{id}/set-tipologie', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setGroupTipologie($request, $response, $args);
+    });
+    $app->post('/configurazione/gruppi/{id}/set-templates', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setGroupTemplates($request, $response, $args);
+    });
+
     // Endpoint per attivare/disattivare la tipologia direttamente su GovPay (solo superadmin)
     $app->post('/configurazione/tipologie/{idEntrata}/govpay', function($request, $response, $args) use ($twig) {
         $controller = new ConfigurazioneController($twig);
