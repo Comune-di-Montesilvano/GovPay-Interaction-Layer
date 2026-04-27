@@ -139,6 +139,9 @@
       <a class="nav-link {{ active_tab == 'utenti' ? 'active' : '' }}" href="/impostazioni?tab=utenti">
         <i class="fas fa-users me-2"></i>Utenti GIL
       </a>
+      <a class="nav-link {{ active_tab == 'gruppi-utenti' ? 'active' : '' }}" href="/impostazioni?tab=gruppi-utenti">
+        <i class="fas fa-users-cog me-2"></i>Gruppi Utenti
+      </a>
       <a class="nav-link {{ active_tab == 'operatori' ? 'active' : '' }}" href="/impostazioni?tab=operatori">
         <i class="fas fa-user-cog me-2"></i>Operatori GovPay
       </a>
@@ -185,7 +188,7 @@
       {% include 'impostazioni/tab-backup.html.twig' %}
     {% elseif active_tab == 'info-gil' %}
       {% include 'impostazioni/tab-info-gil.html.twig' %}
-    {% elseif active_tab in ['dominio','tassonomie','tipologie','tipologie_esterne','gestionali','templates','servizi_io','utenti','operatori','applicazioni','confapi','info','logs'] %}
+    {% elseif active_tab in ['dominio','tassonomie','tipologie','tipologie_esterne','gestionali','templates','servizi_io','utenti','operatori','applicazioni','confapi','info','logs','gruppi-utenti'] %}
       {% include 'impostazioni/tab-conf-all.html.twig' %}
     {% else %}
       {% include 'impostazioni/tab-govpay.html.twig' %}
