@@ -1,3 +1,10 @@
+[X] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi. I gruppi devono avere la stessa logica di assegnazione degli utenti: tipologie predefinite, tipologie abilitate, template associati. Permettere assegnazione utenti a uno o più gruppi, ereditarietà permessi/template/tipologie dal gruppo.
+
+### UI & API Fix
+- [X] Tabella utenti in `impostazioni?tab=utenti` troppo estesa orizzontalmente: compattare i tasti azione e ottimizzare layout.
+- [X] API Esterne: il test connessione restituisce errore 404, gestire fallback e messaggi d'errore.
+- [X] Tipologie esterne: tabella con errori grafici di impaginazione, poco ottimizzata per layout responsive.
+- [X] Errore PHP: Function curl_close() is deprecated since 8.5 (ImpostazioniController.php, riga 2196, endpoint /api/auth-proxy/status) — rimuovere chiamata obsoleta.
 # Progetto GovPay Interaction Layer - TODO List
 
 ### Notifiche Pendenze
@@ -32,7 +39,7 @@
     - [X] Possibilità di associare template all'utente.
     - [X] Associare agli utenti una tipologia di pendenza di default.
     - [X] Sistema per limitare la visibilità delle tipologie per utente (filtro tipologie abilitate).
-- [ ] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi.
+- [X] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi.
 
 ### Autenticazione e Identity
 - [X] **IAM Proxy**: Sistemazione integrazione proxy IAM.
