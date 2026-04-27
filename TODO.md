@@ -1,10 +1,22 @@
-[X] **Gruppi Utenti**: Implementazione gruppi per gestire centralmente template, tipologie e permessi. I gruppi devono avere la stessa logica di assegnazione degli utenti: tipologie predefinite, tipologie abilitate, template associati. Permettere assegnazione utenti a uno o più gruppi, ereditarietà permessi/template/tipologie dal gruppo.
 
-### UI & API Fix
-- [X] Tabella utenti in `impostazioni?tab=utenti` troppo estesa orizzontalmente: compattare i tasti azione e ottimizzare layout.
-- [X] API Esterne: il test connessione restituisce errore 404, gestire fallback e messaggi d'errore.
-- [X] Tipologie esterne: tabella con errori grafici di impaginazione, poco ottimizzata per layout responsive.
-- [X] Errore PHP: Function curl_close() is deprecated since 8.5 (ImpostazioniController.php, riga 2196, endpoint /api/auth-proxy/status) — rimuovere chiamata obsoleta.
+
+### UI Fix & optimization Backoffice
+- [X] Tipologia pendenze select, renderla ricercabile, in ricerca e inserimento pendenze
+- [X] Maschera campi avanzati, si sovrappone Iban accredito su Campi avanzati (API), rimuovere suffisso (API), test della funzionalità
+- [X] Intervallo date, veramente brutto il popup di scelta, cercare qualcosa di integrato bootstrap italia o anche terzo, semplice, leggero, funzionale e bello
+- [X] Chiarire meglio la differenza tra id pendenza e iuv, usare placeholder più esplicativi
+- [X] Coerenza grafica negli stati pendenze, se possibile usare una select con gli stati già con i badge dello stesso colore.
+- [X] Stato Flusso in ricerca flussi sembra non fare effetto, fare debug ed eventualmente eliminarlo.
+- [X] dettaglio flusso, alcune pendenze govpay vengono mostrate come IUV /Voce 1, invece dello IUV (o id pendenza) corretto
+- [X] Statistiche, rendere le tabelle ordinabili con datatable. Migliorare i grafici rendondoli interattivi con click drill-down
+### UI Fix & optimization Frontoffice
+- [X] Nelle mie pendenze manca la navigazione tra le pendenze, vedo solo la prima paginazione restituita dalle api
+- [X] Home page con troppi riquadri/informazioni
+- [X] Pagamento avviso, aggiungere il richiamo a checkout.pagopa.it se la pendenza non esiste in govpay così da tentare direttamente sul portale nel caso sia una pendenze terza
+- [X] Pagamento spontaneo. Rimuovi campo note.
+- [X] Guida punto 4, richiede spid->richiede accesso (SPID/CIE)
+
+
 # Progetto GovPay Interaction Layer - TODO List
 
 ### Notifiche Pendenze

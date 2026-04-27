@@ -190,17 +190,27 @@
                 <tr{% if loop.index is even %} class="table-light"{% endif %}>
                   <td class="text-center small text-muted">{{ idx }}</td>
                   <td class="align-middle">
-                    {% if voceId %}
+                    {% set pendenzaId = voce.pendenza.idPendenza|default(voce.pendenza.id_pendenza|default('')) %}
+                    {% set isIndexId = voceId and voceId matches '/^\\d{1,3}$/' %}
+                    {% if pendenzaId %}
+                      <div class="fw-semibold text-nowrap">
+                        <a href="/pendenze/dettaglio/{{ pendenzaId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-underline-opacity-0 link-underline-opacity-100-hover">
+                          {{ pendenzaId }}
+                        </a>
+                      </div>
+                    {% elseif voceId and not isIndexId %}
                       <div class="fw-semibold text-nowrap">
                         <a href="/pendenze/dettaglio/{{ voceId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-underline-opacity-0 link-underline-opacity-100-hover">
                           {{ voceId }}
                         </a>
                       </div>
+                    {% elseif voceId and isIndexId %}
+                      <span class="text-muted small">#{{ voceId }}</span>
                     {% endif %}
                     {% if iuv %}
                       <div class="small text-muted text-break">{{ iuv }}</div>
                     {% endif %}
-                    {% if not iuv and not voceId %}
+                    {% if not iuv and not voceId and not pendenzaId %}
                       <span class="text-muted">—</span>
                     {% endif %}
                   </td>
@@ -268,10 +278,12 @@
                                 <dd class="col-sm-7">{{ rata ?: '—' }}</dd>
                                 <dt class="col-sm-5 text-muted">Voce pendenza</dt>
                                 <dd class="col-sm-7">
-                                  {% if voceId %}
-                                    <a href="/pendenze/dettaglio/{{ voceId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">
-                                      {{ voceId }}
-                                    </a>
+                                  {% if pendenzaId %}
+                                    <a href="/pendenze/dettaglio/{{ pendenzaId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">{{ pendenzaId }}</a>
+                                  {% elseif voceId and not isIndexId %}
+                                    <a href="/pendenze/dettaglio/{{ voceId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">{{ voceId }}</a>
+                                  {% elseif voceId and isIndexId %}
+                                    <span class="text-muted small">#{{ voceId }}</span>
                                   {% else %}
                                     <span class="text-muted">—</span>
                                   {% endif %}

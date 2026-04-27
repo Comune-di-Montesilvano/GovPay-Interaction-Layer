@@ -76,3 +76,18 @@
     </div>
   </form>
 {% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const tipSel = document.getElementById('idTipoPendenza');
+  if (tipSel && typeof TomSelect !== 'undefined') {
+    new TomSelect(tipSel, {
+      create: false,
+      sortField: { field: 'text', direction: 'asc' },
+      placeholder: 'Cerca tipologia…',
+    });
+  }
+})();
+</script>
+{% endblock %}
