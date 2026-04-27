@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="/assets/bootstrap-italia/css/bootstrap-italia.min.css">
   <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/litepicker/litepicker.css">
+  <link rel="stylesheet" href="/assets/tom-select/tom-select.bootstrap5.min.css">
     {% block head %}{% endblock %}
   </head>
   <body>
@@ -25,5 +27,8 @@
     {% include 'partials/footer.html.twig' %}
   <script src="/assets/bootstrap-italia/js/bootstrap-italia.bundle.min.js"></script>
   <script src="/assets/js/app.js"></script>
+  <script src="/assets/litepicker/litepicker.js"></script>
+  <script src="/assets/tom-select/tom-select.complete.min.js"></script>
+  {% block scripts %}{% endblock %}
   </body>
 </html>
