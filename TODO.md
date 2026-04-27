@@ -5,7 +5,7 @@
 - [X] Maschera campi avanzati, si sovrappone Iban accredito su Campi avanzati (API), rimuovere suffisso (API), test della funzionalità
 - [X] Intervallo date, veramente brutto il popup di scelta, cercare qualcosa di integrato bootstrap italia o anche terzo, semplice, leggero, funzionale e bello
 - [X] Chiarire meglio la differenza tra id pendenza e iuv, usare placeholder più esplicativi
-- [ ] Coerenza grafica negli stati pendenze, se possibile usare una select con gli stati già con i badge dello stesso colore.
+- [X] Coerenza grafica negli stati pendenze, se possibile usare una select con gli stati già con i badge dello stesso colore.
 - [X] Stato Flusso in ricerca flussi sembra non fare effetto, fare debug ed eventualmente eliminarlo.
 - [X] dettaglio flusso, alcune pendenze govpay vengono mostrate come IUV /Voce 1, invece dello IUV (o id pendenza) corretto
 - [X] Statistiche, rendere le tabelle ordinabili con datatable. Migliorare i grafici rendondoli interattivi con click drill-down
