@@ -17,7 +17,9 @@ use App\Controllers\PendenzeController;
 use App\Controllers\SetupController;
 use App\Controllers\StatisticheController;
 use App\Controllers\UsersController;
+use App\Database\EntrateRepository;
 use App\Database\PendenzaTemplateRepository;
+use App\Database\UserGroupRepository;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
@@ -399,12 +401,18 @@ return function (App $app, Twig $twig): void {
         $profileUser = $userId > 0 ? $userRepo->findById($userId) : $sessionUser;
         $templateRepo = new PendenzaTemplateRepository();
         $userTemplates = $userId > 0 ? $templateRepo->getTemplatesForUser($userId) : [];
+        $directTemplateIds = $userId > 0 ? $templateRepo->getDirectTemplateIdsForUser($userId) : [];
+        $groupRepo = new UserGroupRepository();
+        $groupTemplateIds = $userId > 0 ? $groupRepo->getTemplateIdsForUser($userId) : [];
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $availableTemplates = $idDominio !== '' ? $templateRepo->findAllByDominio($idDominio) : [];
+        $tipologiePendenze = $idDominio !== '' ? (new EntrateRepository())->listAbilitateByDominio($idDominio) : [];
         
         // Load default tipologia description
         $userDefaultTipologiaDesc = null;
         if (!empty($profileUser['default_id_entrata'])) {
             $entrateRepo = new EntrateRepository();
-            $tipologia = $entrateRepo->findById($profileUser['default_id_entrata']);
+            $tipologia = $entrateRepo->findDetails($idDominio, $profileUser['default_id_entrata']);
             $userDefaultTipologiaDesc = $tipologia ? $tipologia['descrizione'] : null;
         }
         
@@ -415,11 +423,67 @@ return function (App $app, Twig $twig): void {
         return $twig->render($response, 'profile.html.twig', [
             'profile_user'               => $profileUser,
             'user_templates'             => $userTemplates,
+            'direct_template_ids'        => $directTemplateIds,
+            'group_template_ids'         => $groupTemplateIds,
+            'available_templates'        => $availableTemplates,
+            'tipologie_pendenze'         => $tipologiePendenze,
             'user_default_tipologia_desc' => $userDefaultTipologiaDesc,
             'tab'                        => $tab,
             'flash_profile'              => null,
             'error_profile'              => null,
         ]);
+    });
+
+    $app->post('/profile/templates/preferences', function($request, $response) {
+        $sessionUser = $_SESSION['user'] ?? null;
+        if (!$sessionUser) {
+            return $response->withHeader('Location', '/login')->withStatus(302);
+        }
+
+        $userId = (int)($sessionUser['id'] ?? 0);
+        $templateRepo = new PendenzaTemplateRepository();
+        $groupRepo = new UserGroupRepository();
+        $groupTemplateIds = $groupRepo->getTemplateIdsForUser($userId);
+        $requestedIds = array_map('intval', (array)(($request->getParsedBody() ?? [])['template_ids'] ?? []));
+        $finalIds = array_values(array_unique(array_merge($requestedIds, $groupTemplateIds)));
+        $templateRepo->setDirectAssignmentsForUser($userId, $finalIds);
+        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Template personali aggiornati'];
+        return $response->withHeader('Location', '/profile?tab=templates')->withStatus(302);
+    });
+
+    $app->post('/profile/templates/create', function($request, $response) {
+        $sessionUser = $_SESSION['user'] ?? null;
+        if (!$sessionUser) {
+            return $response->withHeader('Location', '/login')->withStatus(302);
+        }
+
+        $userId = (int)($sessionUser['id'] ?? 0);
+        $data = (array)($request->getParsedBody() ?? []);
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $titolo = trim((string)($data['titolo'] ?? ''));
+        $idTipoPendenza = trim((string)($data['id_tipo_pendenza'] ?? ''));
+        $causale = trim((string)($data['causale'] ?? ''));
+        $importo = (float)($data['importo'] ?? 0);
+
+        if ($idDominio === '' || $titolo === '' || $idTipoPendenza === '' || $causale === '') {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Compila tutti i campi del template personale'];
+            return $response->withHeader('Location', '/profile?tab=templates')->withStatus(302);
+        }
+
+        $templateRepo = new PendenzaTemplateRepository();
+        $newId = $templateRepo->create([
+            'id_dominio' => $idDominio,
+            'titolo' => $titolo,
+            'id_tipo_pendenza' => $idTipoPendenza,
+            'causale' => $causale,
+            'importo' => $importo,
+        ]);
+
+        $directIds = $templateRepo->getDirectTemplateIdsForUser($userId);
+        $directIds[] = $newId;
+        $templateRepo->setDirectAssignmentsForUser($userId, array_values(array_unique($directIds)));
+        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Template personale creato'];
+        return $response->withHeader('Location', '/profile?tab=templates')->withStatus(302);
     });
 
     // Profile - cambio password
@@ -839,6 +903,8 @@ return function (App $app, Twig $twig): void {
                     'last_email' => $email,
                 ]);
             }
+            $repo->updateLastLoginAt((int)$user['id']);
+            $user = $repo->findById((int)$user['id']) ?? $user;
             // Set session user (include name fields for templates)
             $_SESSION['user'] = [
                 'id' => $user['id'],

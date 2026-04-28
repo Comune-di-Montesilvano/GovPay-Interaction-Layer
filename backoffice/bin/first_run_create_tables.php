@@ -27,7 +27,9 @@ $statements = [
         is_disabled TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
-        disabled_at DATETIME NULL
+        disabled_at DATETIME NULL,
+        last_login_at DATETIME NULL,
+        last_password_change_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
     // entrate_tipologie
@@ -225,6 +227,28 @@ try {
     if (!$has) {
         $pdo->exec("ALTER TABLE users ADD COLUMN default_id_entrata VARCHAR(128) NULL AFTER disabled_at");
         echo "Added column default_id_entrata to users\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'last_login_at'");
+    $has = $stmt ? $stmt->fetch() : false;
+    if (!$has) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL AFTER disabled_at");
+        echo "Added column last_login_at to users\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'last_password_change_at'");
+    $has = $stmt ? $stmt->fetch() : false;
+    if (!$has) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN last_password_change_at DATETIME NULL AFTER last_login_at");
+        echo "Added column last_password_change_at to users\n";
     }
 } catch (Throwable $e) {
     // non fatale

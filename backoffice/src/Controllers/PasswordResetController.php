@@ -172,7 +172,8 @@ class PasswordResetController
 
     private function renderTokenError(Response $response, string $message): Response
     {
-        return $this->twig->render($response->withStatus(400), 'auth/reset_password.html.twig', [
+        // Restituisce sempre 200 per evitare che il reverse proxy intercetti errori
+        return $this->twig->render($response->withStatus(200), 'auth/reset_password.html.twig', [
             'token'       => '',
             'error'       => $message,
             'token_error' => true,

@@ -151,6 +151,33 @@ class PendenzaTemplateRepository
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
+    /** @return int[] */
+    public function getDirectTemplateIdsForUser(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT template_id FROM pendenza_template_users WHERE user_id = :uid ORDER BY template_id'
+        );
+        $stmt->execute([':uid' => $userId]);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    public function setDirectAssignmentsForUser(int $userId, array $templateIds): void
+    {
+        $this->pdo->prepare('DELETE FROM pendenza_template_users WHERE user_id = :uid')
+            ->execute([':uid' => $userId]);
+
+        if ($templateIds === []) {
+            return;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO pendenza_template_users (template_id, user_id) VALUES (:tid, :uid)'
+        );
+        foreach (array_map('intval', $templateIds) as $templateId) {
+            $stmt->execute([':tid' => $templateId, ':uid' => $userId]);
+        }
+    }
+
     public function findAllByDominioForUser(string $idDominio, int $userId): array
     {
         $stmt = $this->pdo->prepare(

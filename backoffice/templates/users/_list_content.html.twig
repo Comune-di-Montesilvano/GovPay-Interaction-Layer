@@ -33,6 +33,7 @@
         <th>Utente</th>
         <th>Ruolo</th>
         <th>Stato</th>
+        <!-- Rimossa colonna Ultimi eventi -->
         <th>Azioni</th>
       </tr>
     </thead>
@@ -47,7 +48,24 @@
             <td class="font-monospace">{{ u.id }}</td>
             <td>
               <div>{{ u.first_name|default('') }} {{ u.last_name|default('') }}</div>
-              <div class="text-muted small">{{ u.email }}</div>
+              <div class="text-muted small">
+                {{ u.email }}
+                <span class="ms-2">
+                  <span class="text-muted">Accesso:</span>
+                  {% if u.last_login_at is defined and u.last_login_at %}
+                    {{ u.last_login_at|date('d/m/Y H:i') }}
+                  {% else %}
+                    <span class="text-muted">mai</span>
+                  {% endif %}
+                  <span class="mx-1">|</span>
+                  <span class="text-muted">Password:</span>
+                  {% if u.last_password_change_at is defined and u.last_password_change_at %}
+                    {{ u.last_password_change_at|date('d/m/Y H:i') }}
+                  {% else %}
+                    <span class="text-muted">mai</span>
+                  {% endif %}
+                </span>
+              </div>
             </td>
             <td>
               {% set roleClass = 'bg-secondary' %}
@@ -70,6 +88,7 @@
                 <span class="badge bg-success">Attivo</span>
               {% endif %}
             </td>
+            <!-- Rimossa cella Ultimi eventi -->
             <td class="text-nowrap">
               {% if not can_manage %}
                 <span class="text-muted small">Permessi insufficienti</span>

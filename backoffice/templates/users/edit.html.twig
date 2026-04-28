@@ -55,7 +55,7 @@
       <div class="col-md-6">
         <label for="default_id_entrata" class="form-label">Tipologia di default</label>
         <select class="form-select" id="default_id_entrata" name="default_id_entrata">
-          <option value="">— Nessuna —</option>
+          <option value="">-- Nessuna --</option>
           {% for tip in all_tipologie %}
             <option value="{{ tip.id_entrata }}"
                     {% if edit_user.default_id_entrata == tip.id_entrata %}selected{% endif %}>
@@ -68,7 +68,33 @@
       {% endif %}
     </div>
 
-    {# ── Tipologie abilitate ── #}
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <div class="border rounded p-3 h-100 bg-light">
+          <div class="small text-muted mb-1">Ultimo accesso</div>
+          <div class="fw-semibold">
+            {% if edit_user.last_login_at|default(null) %}
+              {{ edit_user.last_login_at|date('d/m/Y H:i') }}
+            {% else %}
+              Mai registrato
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="border rounded p-3 h-100 bg-light">
+          <div class="small text-muted mb-1">Ultimo cambio password</div>
+          <div class="fw-semibold">
+            {% if edit_user.last_password_change_at|default(null) %}
+              {{ edit_user.last_password_change_at|date('d/m/Y H:i') }}
+            {% else %}
+              Mai registrato
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
     {% if current_user is defined and current_user.role in ['admin', 'superadmin']
           and all_tipologie is defined and all_tipologie|length > 0 %}
       {% set active_count = user_tipologie_ids|default([])|length %}
@@ -98,7 +124,6 @@
       </div>
     {% endif %}
 
-    {# ── Gruppi di appartenenza ── #}
     {% if current_user is defined and current_user.role in ['admin', 'superadmin']
           and all_groups is defined and all_groups|length > 0 %}
       <div class="mb-3">
