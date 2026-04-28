@@ -1242,7 +1242,6 @@
                   <thead>
                     <tr>
                       <th>Titolo</th>
-                      <th>Tipo Pendenza</th>
                       <th>Causale</th>
                       <th>Importo</th>
                       <th>Utenti</th>
@@ -1254,7 +1253,6 @@
                     {% for t in pendenza_templates %}
                       <tr>
                         <td><strong>{{ t.titolo }}</strong></td>
-                        <td class="font-monospace small">{{ t.id_tipo_pendenza }}</td>
                         <td>{{ t.causale }}</td>
                         <td>{{ t.importo|number_format(2, ',', '.') }} €</td>
                         <td>
@@ -1630,16 +1628,16 @@
                             <button class="btn btn-sm btn-outline-info" type="button"
                                     data-bs-toggle="collapse" data-bs-target="#groupTipologie{{ g.id }}" title="Tipologie">
                               <i class="fas fa-tags"></i>
-                              {% if g.tipologie_ids|length > 0 %}
+                              {% if g.tipologie_ids|length == 0 %}
+                                <span class="badge bg-info ms-1">*</span>
+                              {% else %}
                                 <span class="badge bg-info ms-1">{{ g.tipologie_ids|length }}</span>
                               {% endif %}
                             </button>
                             <button class="btn btn-sm btn-outline-secondary" type="button"
                                     data-bs-toggle="collapse" data-bs-target="#groupTemplates{{ g.id }}" title="Template">
                               <i class="fas fa-file-alt"></i>
-                              {% if g.template_ids|length > 0 %}
-                                <span class="badge bg-secondary ms-1">{{ g.template_ids|length }}</span>
-                              {% endif %}
+                              <span class="badge bg-secondary ms-1">{{ g.template_ids|length }}</span>
                             </button>
                             <form action="/configurazione/gruppi/{{ g.id }}/delete" method="post" class="d-inline"
                                   onsubmit="return confirm('Eliminare il gruppo &quot;{{ g.nome|e }}&quot;?');">
