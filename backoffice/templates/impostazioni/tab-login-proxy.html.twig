@@ -62,7 +62,7 @@
 
             <hr class="my-3">
             <p class="text-muted small mb-2">Metodi di autenticazione abilitati:</p>
-            <div class="d-flex gap-4 flex-wrap">
+            <div class="d-flex gap-4 flex-wrap align-items-baseline">
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" name="enable_spid" id="en-spid" value="true"
                   {{ iam_proxy.enable_spid|default('false') == 'true' ? 'checked' : '' }}
@@ -88,33 +88,35 @@
                 <i class="fas fa-caret-right me-1"></i>Opzioni avanzate (test / pre-produzione)
               </summary>
               <div class="d-flex gap-4 flex-wrap mt-3">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
-                    onclick="if(this.checked){var el=document.getElementById('spid-validator');if(el){el.checked=false;}}"
-                    {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
-                  <label class="form-check-label" for="demo-spid">
-                    Demo SPID IdP
-                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Solo sviluppo</span>
-                  </label>
-                </div>
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
-                    onclick="if(this.checked){var el=document.getElementById('demo-spid');if(el){el.checked=false;}}"
-                    {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
-                  <label class="form-check-label" for="spid-validator">
-                    SPID Validator (AgID)
-                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Pre-produzione</span>
-                  </label>
-                </div>
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
-                    {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }}>
-                  <label class="form-check-label" for="en-idem">IDEM</label>
-                </div>
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
-                    {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }}>
-                  <label class="form-check-label" for="en-eidas">eIDAS</label>
+                <div class="d-flex flex-column gap-2 w-100">
+                  <div class="form-check form-switch align-items-center d-flex" style="min-height: 38px;">
+                    <input class="form-check-input" type="checkbox" name="satosa_use_demo_spid_idp" id="demo-spid" value="true"
+                      onclick="if(this.checked){var el=document.getElementById('spid-validator');if(el){el.checked=false;}}"
+                      {{ iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' ? 'checked' : '' }}>
+                    <label class="form-check-label ms-2" for="demo-spid">
+                      Demo SPID IdP
+                      <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Solo sviluppo</span>
+                    </label>
+                  </div>
+                  <div class="form-check form-switch align-items-center d-flex" style="min-height: 38px;">
+                    <input class="form-check-input" type="checkbox" name="satosa_use_spid_validator" id="spid-validator" value="true"
+                      onclick="if(this.checked){var el=document.getElementById('demo-spid');if(el){el.checked=false;}}"
+                      {{ iam_proxy.satosa_use_spid_validator|default('false') == 'true' ? 'checked' : '' }}>
+                    <label class="form-check-label ms-2" for="spid-validator">
+                      SPID Validator (AgID)
+                      <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1 fw-normal">Pre-produzione</span>
+                    </label>
+                  </div>
+                  <div class="form-check form-switch align-items-center d-flex" style="min-height: 38px;">
+                    <input class="form-check-input" type="checkbox" name="enable_idem" id="en-idem" value="true"
+                      {{ iam_proxy.enable_idem|default('false') == 'true' ? 'checked' : '' }} disabled>
+                    <label class="form-check-label ms-2" for="en-idem">IDEM</label>
+                  </div>
+                  <div class="form-check form-switch align-items-center d-flex" style="min-height: 38px;">
+                    <input class="form-check-input" type="checkbox" name="enable_eidas" id="en-eidas" value="true"
+                      {{ iam_proxy.enable_eidas|default('false') == 'true' ? 'checked' : '' }} disabled>
+                    <label class="form-check-label ms-2" for="en-eidas">eIDAS</label>
+                  </div>
                 </div>
               </div>
               {% if iam_proxy.satosa_use_demo_spid_idp|default('false') == 'true' or iam_proxy.satosa_use_spid_validator|default('false') == 'true' %}
@@ -154,7 +156,7 @@
               in UI viene esposto solo l'endpoint pubblico calcolato dall'URL del proxy.
             </div>
             <div class="row g-3 mb-4">
-              <div class="col-md-8">
+              <div class="col-md-10">
                 <label class="form-label">URL metadata SATOSA IdP (pubblico)</label>
                 <div class="input-group">
                   <input type="url" class="form-control font-monospace" name="saml2_idp_metadata_url"
@@ -202,7 +204,7 @@
                 </div>
                 <div class="form-text">Formato: <code>PA:IT-{codice IPA}</code> — es. <code>PA:IT-c_f646</code>.</div>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-8">
                 <label class="form-label">Entity ID</label>
                 <div class="input-group">
                   <input type="url" class="form-control font-monospace" name="spid_cert_entity_id"
@@ -220,75 +222,76 @@
               </div>
               {# spid_cert_locality_name derivato da entity.city — non mostrato nel form #}
               <input type="hidden" name="spid_cert_locality_name" value="{{ iam_proxy.spid_cert_locality_name|default('') }}">
-              <div class="col-md-3">
-                <label class="form-label">Key size (bit)</label>
-                <select class="form-select" name="spid_cert_key_size" {{ not is_superadmin ? 'disabled' : '' }}>
-                  <option value="2048" {{ iam_proxy.spid_cert_key_size|default('2048') == '2048' ? 'selected' : '' }}>2048</option>
-                  <option value="4096" {{ iam_proxy.spid_cert_key_size|default('') == '4096' ? 'selected' : '' }}>4096</option>
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Validità (giorni)</label>
-                <input type="number" class="form-control" name="spid_cert_days"
-                  value="{{ iam_proxy.spid_cert_days|default('730') }}" min="30" max="3650"
-                  {{ not is_superadmin ? 'readonly' : '' }}>
+              <div class="col-md-6 d-flex align-items-end gap-3">
+                <div class="flex-grow-1">
+                  <label class="form-label">Validità (giorni)</label>
+                  <input type="number" class="form-control" name="spid_cert_days"
+                    value="{{ iam_proxy.spid_cert_days|default('730') }}" min="30" max="3650"
+                    {{ not is_superadmin ? 'readonly' : '' }}>
+                </div>
+                <div style="min-width:160px;">
+                  <label class="form-label">Key size (bit)</label>
+                  <select class="form-select" name="spid_cert_key_size" {{ not is_superadmin ? 'disabled' : '' }}>
+                    <option value="2048" {{ iam_proxy.spid_cert_key_size|default('2048') == '2048' ? 'selected' : '' }}>2048</option>
+                    <option value="4096" {{ iam_proxy.spid_cert_key_size|default('') == '4096' ? 'selected' : '' }}>4096</option>
+                  </select>
+                </div>
               </div>
             </div>
           
             {# Cards Gestione SPID #}
-            <div class="row g-3 mt-4">
-              <div class="col-md-6" id="lp-cert-spid-card"
-      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-certificate me-2 text-success"></i>Certificato SPID</h6>
-          <span class="badge bg-success-subtle text-success border border-success-subtle">SPID</span>
-        </div>
-        <div class="card-body" id="spid-cert-info-body">
-          <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare il certificato attuale.</p>
-        </div>
-        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadSpidCertInfo(this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt me-1"></i>Stato
-          </button>
-          {% if is_superadmin %}
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm btn-outline-success" type="button"
-              data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
-              <i class="fas fa-certificate me-1"></i>Genera
-            </button>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-              <div class="col-md-6" id="lp-meta-spid-card"
-      style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-        </div>
-        <div class="card-body" id="spid-metadata-body">
-          <p class="text-muted small mb-0">Usa <i class="fas fa-sync-alt"></i> per verificare lo stato. Il metadata viene generato automaticamente all&apos;avvio del proxy e salvato nel volume.</p>
-        </div>
-        {% if is_superadmin %}
-        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
-            <i class="fas fa-download me-1"></i>Scarica XML
-          </button>
-          <button class="btn btn-sm btn-outline-success" type="button"
-                  data-bs-toggle="modal" data-bs-target="#spidMetaExportModal">
-            <i class="fas fa-sync-alt me-1"></i>Rigenera
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-
-  </div>
+            <div class="row g-3 mt-4 flex-column">
+              <div class="col-8" id="lp-cert-spid-card"
+                style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
+                <div class="card border-0 shadow-sm h-100">
+                  <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+                    <h6 class="mb-0"><i class="fas fa-certificate me-2 text-success"></i>Certificato SPID</h6>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">SPID</span>
+                  </div>
+                  <div class="card-body" id="spid-cert-info-body">
+                    <p class="text-muted small mb-0">Clicca <strong>Stato</strong> per verificare il certificato attuale.</p>
+                  </div>
+                  <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadSpidCertInfo(this)" title="Aggiorna info">
+                      <i class="fas fa-sync-alt me-1"></i>Stato
+                    </button>
+                    {% if is_superadmin %}
+                    <div class="d-flex gap-2 flex-wrap">
+                      <button class="btn btn-sm btn-outline-success" type="button"
+                        data-bs-toggle="modal" data-bs-target="#spidCertGeneraModal">
+                        <i class="fas fa-certificate me-1"></i>Genera
+                      </button>
+                    </div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              <div class="col-8" id="lp-meta-spid-card"
+                style="{{ iam_proxy.enable_spid|default('false') != 'true' ? 'display:none' : '' }}">
+                <div class="card border-0 shadow-sm h-100">
+                  <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+                    <h6 class="mb-0"><i class="fas fa-id-card me-2 text-success"></i>Metadata pubblico SPID (AgID)</h6>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('spid', this)" title="Aggiorna info">
+                      <i class="fas fa-sync-alt"></i>
+                    </button>
+                  </div>
+                  <div class="card-body" id="spid-metadata-body">
+                    <p class="text-muted small mb-0">Usa <i class="fas fa-sync-alt"></i> per verificare lo stato. Il metadata viene generato automaticamente all'avvio del proxy e salvato nel volume.</p>
+                  </div>
+                  {% if is_superadmin %}
+                  <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="downloadSpidMetadata(this)">
+                      <i class="fas fa-download me-1"></i>Scarica XML
+                    </button>
+                    <button class="btn btn-sm btn-outline-success" type="button"
+                            data-bs-toggle="modal" data-bs-target="#spidMetaExportModal">
+                      <i class="fas fa-sync-alt me-1"></i>Rigenera
+                    </button>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
             </div>
           </div>
         </div>
@@ -347,61 +350,62 @@
 
           
             {# Cards Gestione CIE OIDC #}
-            <div class="row g-3 mt-4">
-              <div class="col-md-6" id="lp-cert-cie-card"
-      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-key me-2 text-info"></i>Chiavi JWK CIE OIDC</h6>
-          <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
-        </div>
-        <div class="card-body" id="cie-keys-info-body">
-          <p class="text-muted small mb-2">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
-          <div class="alert alert-secondary py-2 px-3 small mb-0">
-            Sezione tecnica per la gestione delle chiavi locali. Per la federazione usa solo il tasto copia nella card "Federazione CIE".
-          </div>
-        </div>
-        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt me-1"></i>Stato
-          </button>
-          {% if is_superadmin %}
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
-              <i class="fas fa-key me-1"></i>Genera
-            </button>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-              <div class="col-md-6" id="lp-meta-cie-card"
-      style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
-          <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Federazione CIE: Entity Configuration</h6>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-        </div>
-        <div class="card-body" id="cie-metadata-body">
-          <p class="text-muted small mb-2">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
-          <div class="alert alert-info py-2 px-3 small mb-0">
-            Questo pulsante copia il payload nel formato <code>{"keys":[...]}</code> richiesto dal portale federazione.
-          </div>
-        </div>
-        {% if is_superadmin %}
-        <div class="card-footer bg-white d-flex justify-content-end gap-2 flex-wrap">
-          <button class="btn btn-sm btn-primary" type="button" onclick="copyCieFederationJson(this)">
-            <i class="fas fa-copy me-1"></i>Copia dati Federazione CIE
-          </button>
-          <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
-            <i class="fas fa-sync-alt me-1"></i>Rigenera artefatti CIE
-          </button>
-        </div>
-        {% endif %}
-      </div>
-    </div>
+            <div class="row g-3 mt-4 flex-column">
+              <div class="col-8" id="lp-cert-cie-card"
+                style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
+                <div class="card border-0 shadow-sm h-100">
+                  <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+                    <h6 class="mb-0"><i class="fas fa-key me-2 text-info"></i>Chiavi JWK CIE OIDC</h6>
+                    <span class="badge bg-info-subtle text-info border border-info-subtle">CIE OIDC</span>
+                  </div>
+                  <div class="card-body" id="cie-keys-info-body">
+                    <p class="text-muted small mb-2">Clicca <strong>Stato</strong> per verificare le chiavi attuali.</p>
+                    <div class="alert alert-secondary py-2 px-3 small mb-0">
+                      Sezione tecnica per la gestione delle chiavi locali. Per la federazione usa solo il tasto copia nella card "Federazione CIE".
+                    </div>
+                  </div>
+                  <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadCieKeysInfo(this)" title="Aggiorna info">
+                      <i class="fas fa-sync-alt me-1"></i>Stato
+                    </button>
+                    {% if is_superadmin %}
+                    <div class="d-flex gap-2 flex-wrap">
+                      <button class="btn btn-sm btn-outline-info" type="button" onclick="generaCieKeys(this)">
+                        <i class="fas fa-key me-1"></i>Genera
+                      </button>
+                    </div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              <div class="col-8" id="lp-meta-cie-card"
+                style="{{ iam_proxy.enable_cie_oidc|default('false') != 'true' ? 'display:none' : '' }}">
+                <div class="card border-0 shadow-sm h-100">
+                  <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+                    <h6 class="mb-0"><i class="fas fa-address-card me-2 text-info"></i>Federazione CIE: Entity Configuration</h6>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadMetadataInfo('cie', this)" title="Aggiorna info">
+                      <i class="fas fa-sync-alt"></i>
+                    </button>
+                  </div>
+                  <div class="card-body" id="cie-metadata-body">
+                    <p class="text-muted small mb-2">Clicca <i class="fas fa-sync-alt"></i> per caricare le informazioni.</p>
+                    <div class="alert alert-info py-2 px-3 small mb-0">
+                      Questo pulsante copia il payload nel formato <code>{"keys":[...]}</code> richiesto dal portale federazione.
+                    </div>
+                  </div>
+                  {% if is_superadmin %}
+                  <div class="card-footer bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-info" type="button" onclick="exportCieOidc(this)">
+                      <i class="fas fa-sync-alt me-1"></i>Rigenera CIE
+                    </button>
+                    <button class="btn btn-sm btn-primary" type="button" onclick="copyCieFederationJson(this)">
+                      <i class="fas fa-copy me-1"></i>Copia dati Federazione CIE
+                    </button>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
   </div>
             </div>
           </div>
@@ -604,14 +608,14 @@
                     value="{{ iam_proxy.satosa_ui_accessibility_url_en|default('') }}"
                     {{ not is_superadmin ? 'readonly' : '' }}>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
                   <label class="form-label">Larghezza logo (px)</label>
                   <input type="number" class="form-control" name="satosa_ui_logo_width"
                     value="{{ iam_proxy.satosa_ui_logo_width|default('200') }}"
                     min="1" max="9999"
                     {{ not is_superadmin ? 'readonly' : '' }}>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
                   <label class="form-label">Altezza logo (px)</label>
                   <input type="number" class="form-control" name="satosa_ui_logo_height"
                     value="{{ iam_proxy.satosa_ui_logo_height|default('60') }}"

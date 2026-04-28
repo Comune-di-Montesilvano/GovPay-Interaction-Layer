@@ -25,17 +25,6 @@
         </div>
       </div>
 
-      <div class="alert alert-light border mb-4" role="alert">
-        <i class="fas fa-envelope me-1 text-primary"></i>
-        La configurazione email si trova nella scheda <a href="/impostazioni?tab=smtp" class="alert-link">Generale → SMTP</a>.
-      </div>
-
-      <div class="alert alert-light border mb-4" role="alert">
-        <i class="fas fa-bug me-1 text-warning"></i>
-        I flag di debug sono disponibili nella scheda
-        <a href="/impostazioni?tab=debug" class="alert-link">Sistema → Debug</a>.
-      </div>
-
       {% if is_superadmin %}
       <div class="d-flex justify-content-end border-top pt-3">
         <button type="button" class="btn btn-primary" onclick="impSaveForm('form-backoffice', '/impostazioni/backoffice/save', this)">

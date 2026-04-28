@@ -142,16 +142,28 @@
         <td class="small">${fmtSize(f.size)}</td>
         <td class="small">${f.created}</td>
         <td class="text-nowrap">
-          <a href="/backup/sistema/download?file=${encodeURIComponent(f.name)}" class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2 me-1">
-            <i class="fas fa-download me-1"></i>Scarica</a>
-          <button class="btn btn-xs btn-outline-primary btn-sm py-0 px-2 me-1" onclick="backupRipristinaFile(this, '${f.name.replace(/'/g,"\\'")}')">
-            <i class="fas fa-undo me-1"></i>Ripristina</button>
-          <button class="btn btn-xs btn-outline-danger btn-sm py-0 px-2" onclick="backupEliminaFile(this, '${f.name.replace(/'/g,"\\'")}')">
-            <i class="fas fa-trash-alt me-1"></i>Elimina</button>
+          <a href="/backup/sistema/download?file=${encodeURIComponent(f.name)}" class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2 me-1" tabindex="0" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-content="Scarica backup">
+            <i class="fas fa-download me-1"></i>
+          </a>
+          <button class="btn btn-xs btn-outline-primary btn-sm py-0 px-2 me-1" onclick="backupRipristinaFile(this, '${f.name.replace(/'/g,"\\'")}')" tabindex="0" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-content="Ripristina backup">
+            <i class="fas fa-undo me-1"></i>
+          </button>
+          <button class="btn btn-xs btn-outline-danger btn-sm py-0 px-2" onclick="backupEliminaFile(this, '${f.name.replace(/'/g,"\\'")}')" tabindex="0" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-content="Elimina backup">
+            <i class="fas fa-trash-alt me-1"></i>
+          </button>
         </td></tr>`;
     }
     html += '</tbody></table></div>';
     el.innerHTML = html;
+    // Attiva popover Bootstrap
+    setTimeout(() => {
+      const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+      popoverTriggerList.forEach(function (popoverTriggerEl) {
+        if (!popoverTriggerEl._popoverInstance) {
+          new bootstrap.Popover(popoverTriggerEl);
+        }
+      });
+    }, 0);
   }
 
   async function parseJsonOrThrow(res) {

@@ -1,13 +1,9 @@
 
 
 ### UI Fix & optimization Backoffice
-- [ ] Togli richiesta password alla creazione utente, ma invia una mail per il reset scrivendo nella mail ti hanno creato utenza ecc...
-- [ ] Nella mail di test il logo non è embedded e la grafica è da rivedere
-- [ ] Dare la possibilità all'user di crearsi dei template o associarsene alcune o dissociarsene. Vince però la logica del gruppo, ovvero se eredita dal gruppo non può togliersele. Mettere come domanda, crei sempre le stesse pendenze? Creati il tuo template o qualcosa di simile.
-- [ ] Funzione di ricerca in impostazioni
-- [ ] Configurazione smtp in un tab separato sotto generale
-- [ ] Riordinare i gruppi tab sotto impostazioni:
-        Generale: il figlio generale diventa Dati di Base, Applicazione->rimosso i figli vanno sotto generale, Autenticazione rimosso: loginproxy diventa Login frontoffice e finisce nel gruppo generale(occhio al link in frontoffice), Govpay, Pagamenti che diventa Tassonomie, Utenti, Api Esterne, Backup, Sistema
+- [ ] vista twig tab-conf-all.html.twig è un duplicato? Va spezzettato?
+- [ ] Rendere importo template non obbligatorio
+- [ ] L'utente può associarsi e dissociarsi dei template, e può crearne di nuovi.
 ### UI Fix & optimization Frontoffice
 
 

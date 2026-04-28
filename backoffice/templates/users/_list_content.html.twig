@@ -25,6 +25,26 @@
   {% set list = users|default([]) %}
   {% set count_super = count_superadmins|default(0) %}
 
+  <style>
+    #usersTable td {
+      overflow: visible;
+      position: relative;
+      padding-bottom: 1.2rem;
+    }
+    #usersTable tr {
+      position: relative;
+    }
+    #usersTable .user-details-row {
+      position: absolute;
+      left: 0.75rem;
+      bottom: 2px;
+      white-space: nowrap;
+      pointer-events: none;
+      width: calc(100% - 1.5rem);
+      font-size: 0.85em;
+      color: #6c757d;
+    }
+  </style>
   <div class="table-responsive">
   <table class="table table-striped" id="usersTable">
     <thead>
@@ -46,9 +66,9 @@
           {% set is_disabled = u.is_disabled|default(0) %}
           <tr class="{{ is_disabled ? 'table-warning user-row-disabled' : '' }}" data-user-status="{{ is_disabled ? 'disabilitato' : 'attivo' }}">
             <td class="font-monospace">{{ u.id }}</td>
-            <td>
+            <td style="overflow: visible;">
               <div>{{ u.first_name|default('') }} {{ u.last_name|default('') }}</div>
-              <div class="text-muted small">
+              <div class="user-details-row">
                 {{ u.email }}
                 <span class="ms-2">
                   <span class="text-muted">Accesso:</span>
@@ -63,6 +83,10 @@
                     {{ u.last_password_change_at|date('d/m/Y H:i') }}
                   {% else %}
                     <span class="text-muted">mai</span>
+                  {% endif %}
+                  {% if is_disabled and u.disabled_at is defined and u.disabled_at %}
+                    <span class="mx-1">|</span>
+                    <span class="text-muted">Disabilitato dal:</span> {{ u.disabled_at|date('d/m/Y H:i') }}
                   {% endif %}
                 </span>
               </div>
@@ -81,9 +105,6 @@
             <td>
               {% if is_disabled %}
                 <span class="badge bg-secondary">Disabilitato</span>
-                {% if u.disabled_at is defined and u.disabled_at %}
-                  <div class="text-muted small">dal {{ u.disabled_at|date('d/m/Y H:i') }}</div>
-                {% endif %}
               {% else %}
                 <span class="badge bg-success">Attivo</span>
               {% endif %}
