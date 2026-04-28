@@ -1050,6 +1050,8 @@ class ImpostazioniController
         try {
             $mailerService = \App\Services\MailerService::forSuite('backoffice');
             $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+            $mailerService->sendTestEmail($recipient, $appName);
+            return $this->jsonOk("Email di test inviata a {$recipient}.");
             $email = (new \Symfony\Component\Mime\Email())
                 ->to(new \Symfony\Component\Mime\Address($recipient))
                 ->subject("[{$appName}] Email di test")

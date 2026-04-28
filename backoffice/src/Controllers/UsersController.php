@@ -50,18 +50,43 @@ class UsersController
         $this->assertAdmin();
         $data = (array)($request->getParsedBody() ?? []);
         $email = trim($data['email'] ?? '');
-        $password = trim($data['password'] ?? '');
         $firstName = trim($data['first_name'] ?? '');
         $lastName = trim($data['last_name'] ?? '');
         $role = in_array(($data['role'] ?? 'user'), ['user','admin','superadmin'], true) ? $data['role'] : 'user';
-        if ($email === '' || $password === '') {
-            return $request->withAttribute('error', 'Email e password sono obbligatorie');
+        if ($email === '') {
+            return $request->withAttribute('error', 'Email obbligatoria');
         }
         if ($this->users->findByEmail($email)) {
             return $request->withAttribute('error', 'Email già in uso');
         }
-        $this->users->insertUser($email, $password, $role, $firstName, $lastName);
-        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente creato con successo'];
+        $temporaryPassword = bin2hex(random_bytes(16));
+        $this->users->insertUser($email, $temporaryPassword, $role, $firstName, $lastName);
+
+        try {
+            $token = $this->users->createPasswordResetToken($email, 60);
+            $baseUrl = SettingsRepository::get('backoffice', 'public_base_url', '');
+            if ($baseUrl !== '') {
+                $baseUrl = rtrim($baseUrl, '/');
+            } else {
+                $uri = $request->getUri();
+                $scheme = $request->getHeaderLine('X-Forwarded-Proto') ?: $uri->getScheme();
+                $host = $request->getHeaderLine('X-Forwarded-Host') ?: $uri->getHost();
+                $port = $uri->getPort();
+                $baseUrl = $scheme . '://' . $host;
+                if ($port && !in_array($port, ($scheme === 'https' ? [443] : [80]), true)) {
+                    $baseUrl .= ':' . $port;
+                }
+            }
+
+            $resetUrl = $baseUrl . '/reset-password?token=' . urlencode($token);
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL Backoffice';
+            $mailer = \App\Services\MailerService::forSuite('backoffice');
+            $mailer->sendUserInvitation($email, trim($firstName . ' ' . $lastName), $resetUrl, $appName, 60);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente creato e email di attivazione inviata'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('User created but invitation email failed', ['email' => $email, 'error' => $e->getMessage()]);
+            $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Utente creato, ma invio email di attivazione non riuscito'];
+        }
         return $response->withHeader('Location', $this->usersHome())->withStatus(302);
     }
 
