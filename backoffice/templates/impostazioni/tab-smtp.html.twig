@@ -1,0 +1,131 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3">
+    <h2 class="h5 mb-0"><i class="fas fa-envelope me-2 text-primary"></i>SMTP</h2>
+  </div>
+  <div class="card-body">
+    <form id="form-smtp" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="row g-3 mb-3">
+        <div class="col-12">
+          <label class="form-label">Mailer DSN</label>
+          <div class="input-group">
+            <input type="text" class="form-control font-monospace" name="mailer_dsn" id="mailer-dsn"
+              value="{{ backoffice.mailer_dsn|default('null://null') }}" autocomplete="off"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            {% if is_superadmin %}
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#smtp-builder">
+              <i class="fas fa-tools me-1"></i>Builder
+            </button>
+            {% endif %}
+          </div>
+          <div class="form-text">Formato Symfony Mailer: <code>smtp://user:pass@host:port</code> · <code>null://null</code> per disabilitare.</div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="collapse mb-3" id="smtp-builder">
+        <div class="card card-body bg-light border">
+          <p class="small text-muted mb-2">Compila i campi e genera il DSN.</p>
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="form-label small">Schema</label>
+              <select class="form-select form-select-sm" id="smtp-schema">
+                <option value="smtp">smtp</option>
+                <option value="smtps">smtps</option>
+                <option value="sendmail">sendmail</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Host</label>
+              <input type="text" class="form-control form-control-sm" id="smtp-host" placeholder="smtp.gmail.com">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small">Porta</label>
+              <input type="number" class="form-control form-control-sm" id="smtp-port" placeholder="587">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Username</label>
+              <input type="text" class="form-control form-control-sm" id="smtp-user">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Password</label>
+              <input type="password" class="form-control form-control-sm" id="smtp-pass">
+            </div>
+            <div class="col-auto align-self-end">
+              <button type="button" class="btn btn-sm btn-primary" onclick="buildSmtpDsn()">Genera DSN</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-5">
+          <label class="form-label">Indirizzo mittente</label>
+          <input type="email" class="form-control" name="mailer_from_address"
+            value="{{ backoffice.mailer_from_address|default('') }}" placeholder="noreply@comune.example.it"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label">Nome mittente</label>
+          <input type="text" class="form-control" name="mailer_from_name"
+            value="{{ backoffice.mailer_from_name|default('') }}" placeholder="Comune di Esempio"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+        </div>
+        {% if is_superadmin %}
+        <div class="col-md-2 d-flex align-items-end">
+          <button type="button" class="btn btn-outline-secondary w-100" onclick="impTestEmail(this)">
+            <i class="fas fa-paper-plane me-1"></i>Test
+          </button>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3">
+        <button type="button" class="btn btn-primary" onclick="impSaveForm('form-smtp', '/impostazioni/backoffice/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<script>
+function buildSmtpDsn() {
+  const schema = document.getElementById('smtp-schema').value;
+  const host = document.getElementById('smtp-host').value.trim();
+  const port = document.getElementById('smtp-port').value.trim();
+  const user = document.getElementById('smtp-user').value.trim();
+  const pass = document.getElementById('smtp-pass').value;
+  if (!host) { impToast('Inserisci il host SMTP.', false); return; }
+  let dsn = schema + '://';
+  if (user) {
+    dsn += encodeURIComponent(user);
+    if (pass) dsn += ':' + encodeURIComponent(pass);
+    dsn += '@';
+  }
+  dsn += host;
+  if (port) dsn += ':' + port;
+  document.getElementById('mailer-dsn').value = dsn;
+  impToast('DSN generato.', true);
+}
+
+async function impTestEmail(btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Invio...';
+  try {
+    const res = await fetch('/impostazioni/backoffice/test-email', { method: 'POST' });
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'Inviata.' : 'Fallito.'), !!json.success);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+</script>

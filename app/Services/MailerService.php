@@ -82,15 +82,142 @@ class MailerService
             $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
         }
 
-        $htmlBody = $this->renderResetTemplate($toName, $resetUrl, $appName, $expiresMinutes);
-        $textBody = $this->renderResetTemplatePlain($toName, $resetUrl, $appName, $expiresMinutes);
+        $safeAppName = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $safeUrl = htmlspecialchars($resetUrl, ENT_QUOTES, 'UTF-8');
+        $safeName = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
+        $greeting = $safeName !== '' ? 'Ciao, <strong>' . $safeName . '</strong>,' : 'Ciao,';
+        $logoPath = $this->resolveLogoPath();
+
+        $fromName = $this->from->getName();
+        $htmlIntro = "<div style=\"font-size:13px;color:#6b7280;margin-bottom:10px;\">Questa email è stata inviata da: <strong>" . htmlspecialchars($fromName, ENT_QUOTES, 'UTF-8') . "</strong></div>";
+        $plainIntro = "Mittente: $fromName\n\n";
+        $htmlBody = $htmlIntro . $this->renderAccountAccessEmail(
+          $safeAppName,
+          $greeting,
+          'Reimposta la tua password',
+          'Abbiamo ricevuto una richiesta di reset password per il tuo account. Usa il pulsante qui sotto per impostare una nuova password.',
+          'Reimposta password',
+          $safeUrl,
+          "Il link e valido per {$expiresMinutes} minuti ed e monouso. Se non hai richiesto il reset, puoi ignorare questa email."
+        );
+        $textBody = $plainIntro . $this->renderAccountAccessEmailPlain(
+          $toName,
+          $appName,
+          "Abbiamo ricevuto una richiesta di reset password per il tuo account su {$appName}.",
+          'Usa il link qui sotto per impostare una nuova password',
+          $resetUrl,
+          $expiresMinutes
+        );
 
         $email = (new Email())
+          ->from($this->from)
+          ->to(new Address($toEmail, $toName))
+          ->subject("[$appName] Reimposta la tua password")
+          ->html($htmlBody)
+          ->text($textBody);
+
+        if ($logoPath !== '' && is_file($logoPath)) {
+            $email->embedFromPath($logoPath, 'logo');
+        }
+
+        $this->mailer->send($email);
+    }
+
+    public function sendUserInvitation(
+        string $toEmail,
+        string $toName,
+        string $resetUrl,
+        string $appName = '',
+        int $expiresMinutes = 60
+    ): void {
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $safeAppName = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $safeUrl = htmlspecialchars($resetUrl, ENT_QUOTES, 'UTF-8');
+        $safeName = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
+        $greeting = $safeName !== '' ? 'Ciao, <strong>' . $safeName . '</strong>,' : 'Ciao,';
+        $logoPath = $this->resolveLogoPath();
+
+        $fromName = $this->from->getName();
+        $htmlIntro = "<div style=\"font-size:13px;color:#6b7280;margin-bottom:10px;\">Questa email è stata inviata da: <strong>" . htmlspecialchars($fromName, ENT_QUOTES, 'UTF-8') . "</strong></div>";
+        $plainIntro = "Mittente: $fromName\n\n";
+        $email = (new Email())
+          ->from($this->from)
+          ->to(new Address($toEmail, $toName))
+          ->subject("[{$appName}] Il tuo account e pronto")
+          ->html($htmlIntro . $this->renderAccountAccessEmail(
+            $safeAppName,
+            $greeting,
+            'Il tuo account e pronto',
+            "Ti hanno creato un'utenza su {$safeAppName}. Per completare l'attivazione, imposta la tua password dal pulsante qui sotto.",
+            'Imposta password',
+            $safeUrl,
+            "Il link e valido per {$expiresMinutes} minuti ed e monouso."
+          ))
+          ->text($plainIntro . $this->renderAccountAccessEmailPlain(
+            $toName,
+            $appName,
+            "Ti hanno creato un'utenza su {$appName}.",
+            'Usa il link qui sotto per impostare la tua password',
+            $resetUrl,
+            $expiresMinutes
+          ));
+
+        if ($logoPath !== '' && is_file($logoPath)) {
+            $email->embedFromPath($logoPath, 'logo');
+        }
+
+        $this->mailer->send($email);
+    }
+
+    public function sendTestEmail(string $toEmail, string $appName = ''): void
+    {
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $safeAppName = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $logoPath = $this->resolveLogoPath();
+        $email = (new Email())
             ->from($this->from)
-            ->to(new Address($toEmail, $toName))
-            ->subject("[$appName] Reimposta la tua password")
-            ->html($htmlBody)
-            ->text($textBody);
+            ->to(new Address($toEmail))
+            ->subject("[{$appName}] Verifica configurazione email")
+            ->html(<<<HTML
+            <!DOCTYPE html>
+            <html lang="it">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="margin:0;padding:24px;background:#f4f7fa;font-family:Arial,sans-serif;color:#1f2937;">
+              <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #dbe3ec;border-radius:10px;overflow:hidden;">
+                <div style="background:#0b3d91;padding:28px 32px;text-align:center;">
+                  <img src="cid:logo" alt="{$safeAppName}" style="max-height:56px;max-width:220px;display:block;margin:0 auto 16px;" onerror="this.style.display='none'">
+                  <h1 style="margin:0;color:#fff;font-size:22px;">{$safeAppName}</h1>
+                </div>
+                <div style="padding:32px;">
+                  <p style="margin:0 0 14px;">Questa e una email di test inviata dal backoffice.</p>
+                  <p style="margin:0 0 14px;">Se la ricevi correttamente, la configurazione SMTP e il mittente sono operativi.</p>
+                  <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-top:20px;">
+                    <p style="margin:0 0 8px;font-weight:bold;">Controlli consigliati</p>
+                    <ul style="margin:0;padding-left:18px;">
+                      <li>logo visibile nell'intestazione</li>
+                      <li>mittente corretto</li>
+                      <li>layout leggibile</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </body>
+            </html>
+            HTML)
+            ->text("Questa e una email di test inviata dal backoffice di {$appName}.");
+
+        if ($logoPath !== '' && is_file($logoPath)) {
+            $email->embedFromPath($logoPath, 'logo');
+        }
 
         $this->mailer->send($email);
     }
@@ -241,6 +368,71 @@ class MailerService
         {$resetUrl}
 
         Se non hai richiesto il reset, ignora questa email.
+
+        -- {$appName}
+        TEXT;
+    }
+
+    private function renderAccountAccessEmail(
+        string $safeAppName,
+        string $greeting,
+        string $title,
+        string $intro,
+        string $buttonLabel,
+        string $safeUrl,
+        string $notice
+    ): string {
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>{$title} - {$safeAppName}</title>
+        </head>
+        <body style="margin:0;padding:24px;background:#eef3f8;font-family:Arial,sans-serif;color:#1f2937;">
+          <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #dbe3ec;border-radius:12px;overflow:hidden;">
+            <div style="background:#0b3d91;padding:28px 32px;text-align:center;">
+              <img src="cid:logo" alt="{$safeAppName}" style="max-height:56px;max-width:220px;display:block;margin:0 auto 16px;" onerror="this.style.display='none'">
+              <div style="color:#ffffff;font-size:22px;font-weight:700;">{$safeAppName}</div>
+            </div>
+            <div style="padding:32px;">
+              <div style="font-size:22px;line-height:1.25;font-weight:700;color:#111827;margin:0 0 18px;">{$title}</div>
+              <p style="margin:0 0 14px;line-height:1.6;">{$greeting}</p>
+              <p style="margin:0 0 18px;line-height:1.6;color:#374151;">{$intro}</p>
+              <div style="text-align:center;margin:28px 0;">
+                <a href="{$safeUrl}" style="display:inline-block;padding:14px 28px;background:#0b3d91;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;">{$buttonLabel}</a>
+              </div>
+              <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:0 0 18px;">
+                <div style="font-size:13px;font-weight:700;color:#111827;margin:0 0 8px;">Link diretto</div>
+                <div style="word-break:break-all;font-size:13px;color:#475569;">{$safeUrl}</div>
+              </div>
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">{$notice}</p>
+            </div>
+          </div>
+        </body>
+        </html>
+        HTML;
+    }
+
+    private function renderAccountAccessEmailPlain(
+        string $toName,
+        string $appName,
+        string $intro,
+        string $cta,
+        string $resetUrl,
+        int $expiresMinutes
+    ): string {
+        $greeting = $toName !== '' ? "Ciao, {$toName}," : 'Ciao,';
+
+        return <<<TEXT
+        {$greeting}
+
+        {$intro}
+
+        {$cta} (valido {$expiresMinutes} minuti):
+
+        {$resetUrl}
 
         -- {$appName}
         TEXT;
@@ -644,6 +836,21 @@ HTML;
           $normalized = trim($value);
           if ($normalized !== '') {
             return $normalized;
+          }
+        }
+
+        return '';
+      }
+
+      private function resolveLogoPath(): string
+      {
+        foreach ([
+          '/var/www/html/public/img/stemma_ente.png',
+          '/var/www/html/public/img/stemma_ente.jpg',
+          '/var/www/html/public/img/stemma_ente.jpeg',
+        ] as $candidate) {
+          if (is_file($candidate)) {
+            return $candidate;
           }
         }
 
