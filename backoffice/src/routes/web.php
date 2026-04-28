@@ -1,10 +1,9 @@
 <?php
+declare(strict_types=1);
 /**
  * SPDX-License-Identifier: EUPL-1.2
  * License: European Union Public Licence v1.2 (EUPL-1.2)
  */
-
-declare(strict_types=1);
 
 use App\Auth\UserRepository;
 use App\Config\SettingsRepository;
