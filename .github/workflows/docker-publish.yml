@@ -71,6 +71,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Disabilitati per risparmiare tempo di esecuzione e spazio registry
+          provenance: false
+          sbom: false
           build-args: |
             GIL_IMAGE_TAG=${{ steps.version-info.outputs.version }}
             GIL_VERSION_TYPE=${{ steps.version-info.outputs.version_type }}
@@ -80,6 +83,7 @@ jobs:
           cache-from: |
             type=gha,scope=${{ matrix.scope }}
             ${{ matrix.scope == 'frontoffice' && 'type=gha,scope=backoffice' || '' }}
+          # Manteniamo mode=max qui per proteggere le cache di composer e npm (stage intermedi)
           cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
 
   # ── Independent services: parallel matrix ─────────────────────────────────
@@ -144,6 +148,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Disabilitati per risparmiare tempo di esecuzione e spazio registry
+          provenance: false
+          sbom: false
           build-args: |
             GIL_IMAGE_TAG=${{ steps.version-info.outputs.version }}
             GIL_VERSION_TYPE=${{ steps.version-info.outputs.version_type }}
@@ -151,4 +158,5 @@ jobs:
             GIL_REF_URL=${{ steps.version-info.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.scope }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
+          # Cambiato in mode=min per prevenire l'esaurimento dei 10GB di limite della cache di GitHub
+          cache-to: type=gha,mode=min,scope=${{ matrix.scope }}
