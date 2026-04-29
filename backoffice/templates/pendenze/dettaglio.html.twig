@@ -189,35 +189,36 @@
       <div class="card-body">
         {# Prepara dominio e identificativi per i bottoni in alto #}
         {% set idDom = id_dominio|default(pendenza.idDominio|default('')) %}
-        {% set topIuv = '' %}
-        {% set topCcp = '' %}
-        {% if r.rpp is defined and (r.rpp is iterable) and (r.rpp|length > 0) %}
+        {# Link ricevuta in alto: cerca il primo RPP con esito OK, poi trova riscossione corrispondente per iur #}
+        {% set topRppPath = '' %}
+        {% if r.rpp is defined and r.rpp is iterable and r.voci is defined and r.voci is iterable %}
           {% for rr in r.rpp %}
-            {% set selectedRt = null %}
-            {% if rr.rt is defined and rr.rt[0] is defined %}
-              {% set selectedRt = rr.rt|last %}
-            {% elseif rr.rt is defined and rr.rt %}
-              {% set selectedRt = rr.rt %}
-            {% endif %}
-            {% set ok = false %}
-            {% if selectedRt and selectedRt.datiPagamento is defined %}
-              {% if selectedRt.datiPagamento.codiceEsitoPagamento is defined and selectedRt.datiPagamento.codiceEsitoPagamento == '0' %}
-                {% set ok = true %}
-              {% elseif selectedRt.datiPagamento.datiSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento|length > 0 and selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento == 'ESEGUITO' %}
-                {% set ok = true %}
+            {% if topRppPath == '' %}
+              {% set rt = rr.rt is defined ? rr.rt : null %}
+              {# Esito OK: struttura piatta (outcome) o annidato (codiceEsitoPagamento/esitoSingoloPagamento) #}
+              {% set rrOk = false %}
+              {% if rt and rt.outcome is defined and rt.outcome == 'OK' %}
+                {% set rrOk = true %}
+              {% elseif rt and rt.datiPagamento is defined %}
+                {% if rt.datiPagamento.codiceEsitoPagamento is defined and rt.datiPagamento.codiceEsitoPagamento == '0' %}
+                  {% set rrOk = true %}
+                {% elseif rt.datiPagamento.datiSingoloPagamento is defined and rt.datiPagamento.datiSingoloPagamento|length > 0 and rt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento is defined and rt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento == 'ESEGUITO' %}
+                  {% set rrOk = true %}
+                {% endif %}
               {% endif %}
-            {% endif %}
-            {% if ok %}
-              {% set ccpTop = (rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.codiceContestoPagamento is defined) ? rr.rpt.datiVersamento.codiceContestoPagamento : '' %}
-              {% set iuvTop = '' %}
-              {% if selectedRt and selectedRt.datiPagamento is defined and selectedRt.datiPagamento.identificativoUnivocoVersamento is defined and selectedRt.datiPagamento.identificativoUnivocoVersamento %}
-                {% set iuvTop = selectedRt.datiPagamento.identificativoUnivocoVersamento %}
-              {% elseif rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.identificativoUnivocoVersamento is defined %}
-                {% set iuvTop = rr.rpt.datiVersamento.identificativoUnivocoVersamento %}
-              {% endif %}
-              {% if ccpTop and iuvTop %}
-                {% set topIuv = iuvTop %}
-                {% set topCcp = ccpTop %}
+              {% if rrOk %}
+                {% set matchId = (rt and rt.receiptId is defined and rt.receiptId) ? rt.receiptId : (rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.codiceContestoPagamento is defined ? rr.rpt.datiVersamento.codiceContestoPagamento : '') %}
+                {% if matchId %}
+                  {% for voce in r.voci %}
+                    {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+                      {% for risc in voce.riscossioni %}
+                        {% if topRppPath == '' and risc.rpp is defined and risc.rpp and risc.iur is defined and risc.iur == matchId %}
+                          {% set topRppPath = risc.rpp %}
+                        {% endif %}
+                      {% endfor %}
+                    {% endif %}
+                  {% endfor %}
+                {% endif %}
               {% endif %}
             {% endif %}
           {% endfor %}
@@ -253,15 +254,15 @@
             <div class="mb-0">{{ dp ? (dp|date('d/m/Y')) : '—' }}</div>
           </div>
           {# Bottoni in alto, accanto alla zona pagamento #}
-          {% if idDom and (r.numeroAvviso or (topIuv and topCcp) or (displayed_rates|length > 0)) %}
+          {% if idDom and (r.numeroAvviso or topRppPath or (displayed_rates|length > 0)) %}
           <div class="d-flex align-items-center gap-2 ms-auto">
             {% if idDom and r.numeroAvviso %}
               <a class="btn btn-primary btn-sm" href="/avvisi/{{ idDom|url_encode }}/{{ r.numeroAvviso|url_encode }}" target="_blank" rel="noopener" title="Scarica avviso (PDF)">
                 <i class="fas fa-file-pdf me-1"></i> Avviso
               </a>
             {% endif %}
-            {% if idDom and topIuv and topCcp %}
-              <a class="btn btn-outline-success btn-sm" href="/pendenze/rpp/{{ idDom|url_encode }}/{{ topIuv|url_encode }}/{{ topCcp|url_encode }}/rt" target="_blank" rel="noopener" title="Scarica ricevuta (IUV {{ topIuv }}, CCP {{ topCcp }})">
+            {% if topRppPath %}
+              <a class="btn btn-outline-success btn-sm" href="/pendenze{{ topRppPath }}/rt" target="_blank" rel="noopener" title="Scarica ricevuta">
                 <i class="fas fa-file-invoice-dollar me-1"></i> Ricevuta
               </a>
             {% endif %}
@@ -715,14 +716,20 @@
                     {% if selectedRt and selectedRt.datiPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento|length > 0 and selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento is defined %}
                       {% set stato = selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento %}
                     {% endif %}
-                    {# IUV: preferisci da RT.datiPagamento.identificativoUnivocoVersamento; fallback RPT.datiVersamento.identificativoUnivocoVersamento #}
+                    {# IUV: rt.datiPagamento.identificativoUnivocoVersamento -> rt.noticeNumber -> rt.creditorReferenceId -> rpt.datiVersamento.identificativoUnivocoVersamento -> r.iuvPagamento -> r.numeroAvviso #}
                     {% set iuv = '' %}
                     {% if selectedRt and selectedRt.datiPagamento is defined and selectedRt.datiPagamento.identificativoUnivocoVersamento is defined and selectedRt.datiPagamento.identificativoUnivocoVersamento %}
                       {% set iuv = selectedRt.datiPagamento.identificativoUnivocoVersamento %}
-                    {% elseif rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.identificativoUnivocoVersamento is defined %}
+                    {% elseif selectedRt and selectedRt.noticeNumber is defined and selectedRt.noticeNumber %}
+                      {% set iuv = selectedRt.noticeNumber %}
+                    {% elseif selectedRt and selectedRt.creditorReferenceId is defined and selectedRt.creditorReferenceId %}
+                      {% set iuv = selectedRt.creditorReferenceId %}
+                    {% elseif rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.identificativoUnivocoVersamento is defined and rr.rpt.datiVersamento.identificativoUnivocoVersamento %}
                       {% set iuv = rr.rpt.datiVersamento.identificativoUnivocoVersamento %}
-                    {% else %}
-                      {% set iuv = r.iuv|default('') %}
+                    {% elseif r.iuvPagamento is defined and r.iuvPagamento %}
+                      {% set iuv = r.iuvPagamento %}
+                    {% elseif r.numeroAvviso is defined and r.numeroAvviso %}
+                      {% set iuv = r.numeroAvviso %}
                     {% endif %}
                     {# idDominio: preferisci quello dalla RPT; fallback al dominio nella pendenza; infine ENV passato come id_dominio #}
                     {% set idDom = '' %}
@@ -733,16 +740,19 @@
                     {% else %}
                       {% set idDom = id_dominio|default('') %}
                     {% endif %}
-                    {# CCP per RT via Pendenze: preferisci codiceContestoPagamento #}
-                    {% set ccp = idPago %}
-                    {# Mostra bottone ricevuta solo se esito positivo #}
-                    {% set esitoOk = false %}
-                    {% if selectedRt and selectedRt.datiPagamento is defined %}
-                      {% if selectedRt.datiPagamento.codiceEsitoPagamento is defined and selectedRt.datiPagamento.codiceEsitoPagamento == '0' %}
-                        {% set esitoOk = true %}
-                      {% elseif selectedRt.datiPagamento.datiSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento|length > 0 and selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento == 'ESEGUITO' %}
-                        {% set esitoOk = true %}
-                      {% endif %}
+                    {# Link ricevuta: match esatto iur==receiptId (nuova struttura) o iur==idPago (vecchia struttura); nessun fallback per non mostrare link errati su tentativi falliti #}
+                    {% set receiptMatchId = (selectedRt and selectedRt.receiptId is defined and selectedRt.receiptId) ? selectedRt.receiptId : idPago %}
+                    {% set rppPath = '' %}
+                    {% if receiptMatchId and r.voci is defined and r.voci is iterable %}
+                      {% for voce in r.voci %}
+                        {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+                          {% for risc in voce.riscossioni %}
+                            {% if rppPath == '' and risc.rpp is defined and risc.rpp and risc.iur is defined and risc.iur == receiptMatchId %}
+                              {% set rppPath = risc.rpp %}
+                            {% endif %}
+                          {% endfor %}
+                        {% endif %}
+                      {% endfor %}
                     {% endif %}
                     {% set displayId = idPago ?: iuv %}
                     <tr>
@@ -759,16 +769,16 @@
                       <td>{{ abi ?: '—' }}</td>
                       <td>{{ istituto ?: '—' }}</td>
                       <td class="text-center">
-                        {% set hasLink = idDom and iuv and ccp %}
-                        {% set btnClass = esitoOk ? 'btn-success' : 'btn-outline-secondary' %}
-                        {% if hasLink %}
-                          <a class="btn {{ btnClass }} btn-sm px-2 py-0" href="/pendenze/rpp/{{ idDom|url_encode }}/{{ iuv|url_encode }}/{{ ccp|url_encode }}/rt" title="Scarica ricevuta (IUV {{ iuv }}, CCP {{ ccp }})" aria-label="Scarica ricevuta">
+                        {% if rppPath %}
+                          <a class="btn btn-success btn-sm px-2 py-0" href="/pendenze{{ rppPath }}/rt" title="Scarica ricevuta" aria-label="Scarica ricevuta">
+                            <i class="fas fa-file-pdf"></i>
+                          </a>
+                        {% elseif idDom and iuv and idPago %}
+                          <a class="btn btn-outline-secondary btn-sm px-2 py-0" href="/pendenze/rpp/{{ idDom|url_encode }}/{{ iuv|url_encode }}/{{ idPago|url_encode }}/rt" title="Scarica ricevuta" aria-label="Scarica ricevuta">
                             <i class="fas fa-file-pdf"></i>
                           </a>
                         {% else %}
-                          <button class="btn btn-outline-secondary btn-sm px-2 py-0" type="button" disabled title="Ricevuta non disponibile">
-                            <i class="fas fa-file-pdf"></i>
-                          </button>
+                          —
                         {% endif %}
                       </td>
                     </tr>
