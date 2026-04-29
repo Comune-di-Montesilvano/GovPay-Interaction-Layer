@@ -4,6 +4,7 @@
 - [ ] vista twig tab-conf-all.html.twig è un duplicato? Va spezzettato?
 - [ ] Rendere importo template non obbligatorio
 - [ ] L'utente può associarsi e dissociarsi dei template, e può crearne di nuovi.
+- [ ] Tassonomie API è sostanzialmente inutile. Si può inserire direttamente in Tassonomie Ufficiale, in una vista si configura e si usa direttamente.
 ### UI Fix & optimization Frontoffice
 
 
