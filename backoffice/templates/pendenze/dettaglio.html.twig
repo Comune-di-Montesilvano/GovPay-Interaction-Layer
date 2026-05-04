@@ -754,7 +754,14 @@
                         {% endif %}
                       {% endfor %}
                     {% endif %}
-                    {% set displayId = idPago ?: iuv %}
+                    {# Identificativo mostrato: preferisci IUR (receiptId o identificativoUnivocoRiscossione), poi CCP, infine IUV #}
+                    {% set iur = '' %}
+                    {% if selectedRt and selectedRt.receiptId is defined and selectedRt.receiptId %}
+                      {% set iur = selectedRt.receiptId %}
+                    {% elseif selectedRt and selectedRt.datiPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento|length > 0 and selectedRt.datiPagamento.datiSingoloPagamento[0].identificativoUnivocoRiscossione is defined and selectedRt.datiPagamento.datiSingoloPagamento[0].identificativoUnivocoRiscossione and selectedRt.datiPagamento.datiSingoloPagamento[0].identificativoUnivocoRiscossione != '0' %}
+                      {% set iur = selectedRt.datiPagamento.datiSingoloPagamento[0].identificativoUnivocoRiscossione %}
+                    {% endif %}
+                    {% set displayId = iur ?: idPago ?: iuv %}
                     <tr>
                       <td>{{ displayId ?: '—' }}</td>
                       <td class="text-nowrap">{% if combinedTs %}{{ combinedTs|date('d/m/Y H:i:s') }}{% else %}—{% endif %}</td>
