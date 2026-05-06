@@ -82,6 +82,8 @@
     <label for="dataScadenza" class="active">Data scadenza (opzionale)</label>
     <input id="dataScadenza" name="dataScadenza" type="date" class="form-control" value="{{ old.dataScadenza|default('') }}">
   </div>
+  <input type="hidden" id="giorniValiditaTemplate" name="giorniValiditaTemplate" value="{{ old.giorniValiditaTemplate|default('') }}">
+  <input type="hidden" id="giorniScadenzaTemplate" name="giorniScadenzaTemplate" value="{{ old.giorniScadenzaTemplate|default('') }}">
 </div>
 
 {# ── Sezione 2: Soggetto Pagatore ──────────────────────────── #}
@@ -166,8 +168,11 @@
   const causaleInput = document.getElementById('causale');
   const importoInput = document.getElementById('importo');
   const idTipoPendenzaInput = document.getElementById('idTipoPendenza');
-  const annoRiferimentoInput = document.getElementById('annoRiferimento');
   const causaleCounter = document.getElementById('causaleCounter');
+  const dataValiditaInput = document.getElementById('dataValidita');
+  const dataScadenzaInput = document.getElementById('dataScadenza');
+  const giorniValiditaTemplateInput = document.getElementById('giorniValiditaTemplate');
+  const giorniScadenzaTemplateInput = document.getElementById('giorniScadenzaTemplate');
 
   let rawTemplateCausale = ''; // Stores the causale string with placeholders from the template
 
@@ -189,6 +194,16 @@
     causaleInput.dispatchEvent(new Event('input'));
   }
 
+  function formatDateFromTodayOffset(days) {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + days);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   if (templateSelector) {
     templateSelector.addEventListener('change', function() {
       const selectedOption = templateSelector.options[templateSelector.selectedIndex];
@@ -196,15 +211,43 @@
       
       if (!selectedOption.value) {
         rawTemplateCausale = '';
+        if (giorniValiditaTemplateInput) giorniValiditaTemplateInput.value = '';
+        if (giorniScadenzaTemplateInput) giorniScadenzaTemplateInput.value = '';
         if (helpBox) helpBox.classList.add('d-none');
         return; // No template selected, leave fields as they are
       }
 
       // Populate basic fields
-      if (idTipoPendenzaInput) idTipoPendenzaInput.value = selectedOption.getAttribute('data-tipo');
+      if (idTipoPendenzaInput) {
+        const tipoValue = selectedOption.getAttribute('data-tipo') || '';
+        if (idTipoPendenzaInput.tomselect) {
+          idTipoPendenzaInput.tomselect.setValue(tipoValue, true);
+        } else {
+          idTipoPendenzaInput.value = tipoValue;
+          idTipoPendenzaInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
       if (importoInput) {
         importoInput.value = selectedOption.getAttribute('data-importo');
         importoInput.dispatchEvent(new Event('input'));
+      }
+
+      const giorniValiditaRaw = selectedOption.getAttribute('data-giorni-validita') || '';
+      const giorniScadenzaRaw = selectedOption.getAttribute('data-giorni-scadenza') || '';
+      const giorniValidita = parseInt(giorniValiditaRaw, 10);
+      const giorniScadenza = parseInt(giorniScadenzaRaw, 10);
+
+      if (giorniValiditaTemplateInput) {
+        giorniValiditaTemplateInput.value = Number.isInteger(giorniValidita) && giorniValidita > 0 ? String(giorniValidita) : '';
+      }
+      if (giorniScadenzaTemplateInput) {
+        giorniScadenzaTemplateInput.value = Number.isInteger(giorniScadenza) && giorniScadenza > 0 ? String(giorniScadenza) : '';
+      }
+      if (dataValiditaInput && Number.isInteger(giorniValidita) && giorniValidita > 0) {
+        dataValiditaInput.value = formatDateFromTodayOffset(giorniValidita);
+      }
+      if (dataScadenzaInput && Number.isInteger(giorniScadenza) && giorniScadenza > 0) {
+        dataScadenzaInput.value = formatDateFromTodayOffset(giorniScadenza);
       }
       
       // Store raw causale pattern and trigger initial update

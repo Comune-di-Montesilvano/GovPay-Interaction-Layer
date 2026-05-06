@@ -129,6 +129,10 @@ class PendenzeController
     $params = (array)($request->getParsedBody() ?? []);
     $errors = [];
     $warnings = [];
+        $giorniValiditaTemplate = $this->parseOptionalPositiveDays($params['giorniValiditaTemplate'] ?? null, 'Giorni validita template', $errors);
+        $giorniScadenzaTemplate = $this->parseOptionalPositiveDays($params['giorniScadenzaTemplate'] ?? null, 'Giorni scadenza template', $errors);
+        $dataValidita = trim((string)($params['dataValidita'] ?? ''));
+        $dataScadenza = trim((string)($params['dataScadenza'] ?? ''));
 
         // idA2A: deve essere preso esclusivamente dalla variabile d'ambiente
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
@@ -158,6 +162,25 @@ class PendenzeController
             $errors[] = 'Anno di riferimento non valido';
         } else {
             $anno = (int)$anno;
+        }
+
+        if ($dataValidita !== '' && !$this->isValidIsoDate($dataValidita)) {
+            $errors[] = 'Data validita non valida';
+        }
+        if ($dataScadenza !== '' && !$this->isValidIsoDate($dataScadenza)) {
+            $errors[] = 'Data scadenza non valida';
+        }
+        if ($dataValidita === '' && $giorniValiditaTemplate !== null) {
+            $dataValidita = $this->formatDateFromTodayOffset($giorniValiditaTemplate);
+            $params['dataValidita'] = $dataValidita;
+        }
+        // Override manuale: se dataScadenza e' valorizzata manualmente, non viene sovrascritta.
+        if ($dataScadenza === '' && $giorniScadenzaTemplate !== null) {
+            $dataScadenza = $this->formatDateFromTodayOffset($giorniScadenzaTemplate);
+            $params['dataScadenza'] = $dataScadenza;
+        }
+        if ($dataValidita !== '' && $dataScadenza !== '' && strcmp($dataScadenza, $dataValidita) < 0) {
+            $errors[] = 'La data scadenza non puo essere precedente alla data validita';
         }
 
         // Soggetto
@@ -293,8 +316,8 @@ class PendenzeController
         if ($identificativo !== '') {
             $payload['soggettoPagatore']['identificativo'] = $identificativo;
         }
-        if (!empty($params['dataValidita'])) $payload['dataValidita'] = $params['dataValidita'];
-        if (!empty($params['dataScadenza'])) $payload['dataScadenza'] = $params['dataScadenza'];
+        if ($dataValidita !== '') $payload['dataValidita'] = $dataValidita;
+        if ($dataScadenza !== '') $payload['dataScadenza'] = $dataScadenza;
         foreach (['direzione', 'divisione', 'cartellaPagamento'] as $f) {
             if (!empty($params[$f])) $payload[$f] = $params[$f];
         }
@@ -2106,6 +2129,30 @@ class PendenzeController
         $stringValue = (string)$value;
         $normalized = str_replace(',', '.', $stringValue);
         return is_numeric($normalized) ? (float)$normalized : 0.0;
+    }
+
+    private function parseOptionalPositiveDays(mixed $value, string $label, array &$errors): ?int
+    {
+        $raw = trim((string)($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+        if (!ctype_digit($raw) || (int)$raw <= 0) {
+            $errors[] = $label . ' non valido: usare un intero maggiore di 0';
+            return null;
+        }
+        return (int)$raw;
+    }
+
+    private function isValidIsoDate(string $value): bool
+    {
+        $date = \DateTimeImmutable::createFromFormat('Y-m-d', $value);
+        return $date instanceof \DateTimeImmutable && $date->format('Y-m-d') === $value;
+    }
+
+    private function formatDateFromTodayOffset(int $days): string
+    {
+        return (new \DateTimeImmutable('today'))->modify('+' . $days . ' days')->format('Y-m-d');
     }
 
     private function extractAccountingDefaultsFromPendenza(?array $pendenza): array

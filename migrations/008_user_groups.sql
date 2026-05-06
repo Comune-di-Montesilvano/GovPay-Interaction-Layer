@@ -1,5 +1,5 @@
 -- 008_user_groups.sql
-CREATE TABLE user_groups (
+CREATE TABLE IF NOT EXISTS user_groups (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     nome VARCHAR(255) NOT NULL,
     descrizione TEXT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE user_groups (
     UNIQUE KEY uniq_nome (nome)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE user_group_members (
+CREATE TABLE IF NOT EXISTS user_group_members (
     group_id INT UNSIGNED NOT NULL,
     user_id  INT UNSIGNED NOT NULL,
     PRIMARY KEY (group_id, user_id),
@@ -17,7 +17,7 @@ CREATE TABLE user_group_members (
     FOREIGN KEY (user_id)  REFERENCES users(id)        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE user_group_tipologie (
+CREATE TABLE IF NOT EXISTS user_group_tipologie (
     group_id   INT UNSIGNED  NOT NULL,
     id_dominio VARCHAR(64)   NOT NULL,
     id_entrata VARCHAR(128)  NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE user_group_tipologie (
     FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE user_group_templates (
+CREATE TABLE IF NOT EXISTS user_group_templates (
     group_id    INT UNSIGNED NOT NULL,
     template_id INT UNSIGNED NOT NULL,
     PRIMARY KEY (group_id, template_id),

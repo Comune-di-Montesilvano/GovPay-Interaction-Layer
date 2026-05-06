@@ -45,7 +45,9 @@
               <option value="{{ t.id }}" 
                       data-tipo="{{ t.id_tipo_pendenza }}" 
                       data-causale="{{ t.causale|e('html_attr') }}"
-                      data-importo="{{ t.importo }}">
+                      data-importo="{{ t.importo }}"
+                      data-giorni-validita="{{ t.giorni_validita|default('') }}"
+                      data-giorni-scadenza="{{ t.giorni_scadenza|default('') }}">
                 {{ t.titolo }} ({{ t.importo|number_format(2, ',', '.') }} €)
               </option>
             {% endfor %}
