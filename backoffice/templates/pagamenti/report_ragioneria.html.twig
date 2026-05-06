@@ -1,0 +1,209 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Report Ragioneria{% endblock %}
+
+{% block content %}
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+    <div>
+      <h1 class="h4 mb-1">Report ragioneria</h1>
+      <p class="text-muted mb-0">Incassi reali da flussi di rendicontazione pagoPA, per tipologia e data flusso</p>
+    </div>
+    <div class="d-flex gap-2">
+      {% if csv_link %}
+        <a href="{{ csv_link }}" class="btn btn-outline-primary">Export CSV</a>
+      {% endif %}
+      <a href="/" class="btn btn-outline-secondary">Home</a>
+    </div>
+  </div>
+
+  {% if errors is defined and errors %}
+    <div class="alert alert-danger" role="alert">
+      <ul class="mb-0">
+        {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {# ── Filtri ──────────────────────────────────────────────────────────── #}
+  {% set f = filters ?? {} %}
+  <form method="get" action="/pagamenti/report-ragioneria" class="card shadow-sm mb-4">
+    <div class="card-header bg-light border-bottom py-3">
+      <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-2">
+        <div>
+          <h2 class="h6 mb-0">Filtri</h2>
+          <p class="small text-muted mb-0">Il periodo si riferisce alla <strong>data flusso</strong> (data emissione flusso bancario)</p>
+        </div>
+        <button type="submit" class="btn btn-primary">Aggiorna</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label for="dataDa" class="form-label">Data flusso da</label>
+          <input type="date" class="form-control" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
+        </div>
+        <div class="col-md-3">
+          <label for="dataA" class="form-label">Data flusso a</label>
+          <input type="date" class="form-control" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        </div>
+        <div class="col-md-3">
+          <label for="idDominio" class="form-label">ID Dominio</label>
+          <input type="text" class="form-control" id="idDominio" name="idDominio" value="{{ f.idDominio|default('') }}" placeholder="(opzionale)">
+        </div>
+        <div class="col-md-3">
+          <label for="tassonomie" class="form-label">Tipologie (lascia vuoto = tutte)</label>
+          <select class="form-select" id="tassonomie" name="tassonomie[]" multiple size="6" aria-label="Seleziona tassonomie">
+            {% for tipo in tipologie_censite|default([]) %}
+              {% set tid = tipo.id_entrata|default('') %}
+              <option value="{{ tid }}" {% if tid in (f.tassonomie|default([])) %}selected{% endif %}>{{ tid }} – {{ tipo.descrizione|default(tid) }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Selezione multipla con Ctrl/Cmd.</div>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  {# ── KPI ──────────────────────────────────────────────────────────────── #}
+  {% set has_data = rows is defined and rows %}
+  {% if has_data %}
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-muted text-uppercase small mb-1">Importo totale rendicontato</div>
+            <div class="display-6 fw-bold">€ {{ totals.amount|default(0)|number_format(2, ',', '.') }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-muted text-uppercase small mb-1">Rendicontazioni</div>
+            <div class="display-6 fw-bold">{{ totals.count|default(0)|number_format(0, ',', '.') }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-muted text-uppercase small mb-1">Flussi processati</div>
+            <div class="display-6 fw-bold">{{ meta.flussi_processati|default(0) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Riepilogo per tipologia ───────────────────────────────────────── #}
+    {% if by_tipologia is defined and by_tipologia %}
+      <h3 class="h6 mb-2">Riepilogo per tipologia</h3>
+      <div class="card shadow-sm mb-4">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">Tipologia (cod. entrata)</th>
+                <th scope="col" class="text-end">N. rendicontazioni</th>
+                <th scope="col" class="text-end">Importo totale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for agg in by_tipologia %}
+                <tr>
+                  <td><strong>{{ agg.tassonomia }}</strong></td>
+                  <td class="text-end">{{ agg.count|number_format(0, ',', '.') }}</td>
+                  <td class="text-end">€ {{ agg.amount|number_format(2, ',', '.') }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+    {# ── Dettaglio righe ──────────────────────────────────────────────── #}
+    <h3 class="h6 mb-2">Dettaglio rendicontazioni</h3>
+    <div class="card shadow-sm mb-4">
+      <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0 small">
+          <thead>
+            <tr>
+              <th scope="col">Data flusso</th>
+              <th scope="col">Data regolamento</th>
+              <th scope="col">Tipologia</th>
+              <th scope="col">IUV</th>
+              <th scope="col">IUR</th>
+              <th scope="col">Stato</th>
+              <th scope="col" title="0=pagato, 3=revocato, 9=senza RPT">Esito</th>
+              <th scope="col" class="text-end">Importo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>{{ row.data_flusso|default('')|slice(0, 10) }}</td>
+                <td>{{ row.data_regolamento|default('')|slice(0, 10) }}</td>
+                <td>{{ row.tassonomia|default('N/D') }}</td>
+                <td>{{ row.iuv|default('') }}</td>
+                <td>{{ row.iur|default('') }}</td>
+                <td>{{ row.stato_rend|default('') }}</td>
+                <td>
+                  {% if row.esito == 0 %}
+                    <span class="badge bg-success">Pagato</span>
+                  {% elseif row.esito == 3 %}
+                    <span class="badge bg-warning text-dark">Revocato</span>
+                  {% elseif row.esito == 9 %}
+                    <span class="badge bg-secondary">Senza RPT</span>
+                  {% else %}
+                    {{ row.esito }}
+                  {% endif %}
+                </td>
+                <td class="text-end">€ {{ row.importo|default(0)|number_format(2, ',', '.') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  {% elseif errors is not defined or not errors %}
+    <div class="alert alert-info">Nessun risultato trovato per i filtri selezionati.</div>
+  {% endif %}
+
+  {# ── Debug ────────────────────────────────────────────────────────────── #}
+  {% if app_debug and meta %}
+    <div class="card shadow-sm mb-4 border-warning">
+      <div class="card-header bg-warning bg-opacity-10 py-2">
+        <span class="badge bg-warning text-dark me-2">Debug</span>Metadati chiamata
+      </div>
+      <div class="card-body small">
+        <ul class="mb-0">
+          <li>Flussi processati: {{ meta.flussi_processati|default(0) }}</li>
+          <li>Rendicontazioni totali (post-filtro): {{ meta.rendicontazioni_totali|default(0) }}</li>
+          <li>Tassonomie filtrate: {{ (meta.tassonomie_filtrate|default([]))|join(', ') ?: '(tutte)' }}</li>
+        </ul>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if app_debug %}
+    <div class="card shadow-sm mb-4 border-warning">
+      <div class="card-header bg-warning bg-opacity-10 py-2 d-flex align-items-center gap-2">
+        <span class="badge bg-warning text-dark">Debug</span>
+        <span>Raw payload API</span>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" type="button"
+                data-bs-toggle="collapse" data-bs-target="#rawPayload"
+                aria-expanded="false" aria-controls="rawPayload">Mostra/Nascondi</button>
+      </div>
+      <div id="rawPayload" class="collapse">
+        <div class="card-body">
+          {% if raw_payload_json %}
+            <pre class="small text-break mb-0" style="max-height:400px;overflow-y:auto">{{ raw_payload_json }}</pre>
+          {% else %}
+            <div class="small text-muted">Dati raw non disponibili.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
