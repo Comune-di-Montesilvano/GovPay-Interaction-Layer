@@ -20,13 +20,13 @@ class PendenzaTemplateRepository
     }
 
     /**
-     * @param array{id_dominio: string, titolo: string, id_tipo_pendenza: string, causale: string, importo: float} $data
+     * @param array{id_dominio: string, titolo: string, id_tipo_pendenza: string, causale: string, importo: float, giorni_validita?: int|null, giorni_scadenza?: int|null} $data
      * @return int
      */
     public function create(array $data): int
     {
-        $sql = "INSERT INTO pendenza_template (id_dominio, titolo, id_tipo_pendenza, causale, importo, created_at, updated_at)
-                VALUES (:id_dominio, :titolo, :id_tipo_pendenza, :causale, :importo, NOW(), NOW())";
+        $sql = "INSERT INTO pendenza_template (id_dominio, titolo, id_tipo_pendenza, causale, importo, giorni_validita, giorni_scadenza, created_at, updated_at)
+                VALUES (:id_dominio, :titolo, :id_tipo_pendenza, :causale, :importo, :giorni_validita, :giorni_scadenza, NOW(), NOW())";
         
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
@@ -34,24 +34,24 @@ class PendenzaTemplateRepository
             ':titolo' => $data['titolo'],
             ':id_tipo_pendenza' => $data['id_tipo_pendenza'],
             ':causale' => $data['causale'],
-            ':importo' => $data['importo']
+            ':importo' => $data['importo'],
+            ':giorni_validita' => $data['giorni_validita'] ?? null,
+            ':giorni_scadenza' => $data['giorni_scadenza'] ?? null,
         ]);
-
-        return (int)$this->pdo->lastInsertId();
 
         return (int)$this->pdo->lastInsertId();
     }
 
     /**
      * @param int $id
-     * @param array{titolo: string, id_tipo_pendenza: string, causale: string, importo: float} $data
+     * @param array{titolo: string, id_tipo_pendenza: string, causale: string, importo: float, giorni_validita?: int|null, giorni_scadenza?: int|null} $data
      * @return bool
      */
     public function update(int $id, array $data): bool
     {
         $sql = "UPDATE pendenza_template 
                 SET titolo = :titolo, id_tipo_pendenza = :id_tipo_pendenza, causale = :causale, 
-                    importo = :importo, updated_at = NOW()
+                    importo = :importo, giorni_validita = :giorni_validita, giorni_scadenza = :giorni_scadenza, updated_at = NOW()
                 WHERE id = :id";
         
         $stmt = $this->pdo->prepare($sql);
@@ -60,7 +60,9 @@ class PendenzaTemplateRepository
             ':titolo' => $data['titolo'],
             ':id_tipo_pendenza' => $data['id_tipo_pendenza'],
             ':causale' => $data['causale'],
-            ':importo' => $data['importo']
+            ':importo' => $data['importo'],
+            ':giorni_validita' => $data['giorni_validita'] ?? null,
+            ':giorni_scadenza' => $data['giorni_scadenza'] ?? null,
         ]);
     }
 

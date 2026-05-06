@@ -811,52 +811,7 @@ class ConfigurazioneController
             }
         }
 
-        return $this->twig->render($response, 'configurazione.html.twig', [
-            'errors' => $errors,
-            'cfg_json' => $cfgJson,
-            'cfg' => $cfgArr,
-            'apps_json' => $appsJson,
-            'apps' => $appsArr,
-            'app_json' => $appJson,
-            'app' => $appArr,
-            'ruoli_api_json' => $ruoliApiJson,
-            'ruoli_api_status' => $ruoliApiStatus,
-            'ruoli_api_error' => $ruoliApiError,
-            'ruoli_api_count' => $ruoliApiCount,
-            'idA2A' => SettingsRepository::get('entity', 'id_a2a') ?: null,
-            'profilo_json' => $profiloJson,
-            'entrate_json' => $entrateJson,
-            'entrate' => $entrateArr,
-            'entrate_source' => $entrateSource ?? '/entrate',
-            'pagamenti_profilo_json' => $pagamentiProfiloJson,
-            'info' => $infoArr,
-            'info_json' => $infoJson,
-            'dominio' => $dominioArr,
-            'operatori_json' => $operatoriJson,
-            'operatori' => $operatoriArr,
-            'operatori_pagination' => $operatoriPagination,
-            'dominio_json' => $dominioJson,
-            'tipologie_esterne' => $externalTypes,
-            'io_services' => $ioServices,
-            'io_services_tipologie' => $ioServicesTipologie,
-            'backoffice_base' => rtrim($backofficeUrl, '/'),
-            'tab' => $tab,
-            'logs_lines' => $logsLines,
-            'query_params' => $params,
-            'users' => $usersList,
-            'pendenza_templates' => $pendenzaTemplates,
-            'tipologie_pendenze' => $tipologiePendenze,
-            'count_superadmins' => $countSuperadmins,
-            'config_readonly' => !$canEditConfig,
-            'can_manage_users' => $canManageUsers,
-            'tassonomie_tree' => $tassonomieTree,
-            'tassonomie_stats' => $tassonomieStats,
-            'tassonomie_filtered_stats' => $tassonomieFilteredStats,
-            'tassonomie_error' => $tassonomieError,
-            'tassonomie_url' => $tassonomieUrl,
-            'tassonomie_search' => $tassonomieSearch,
-            'tassonomie_raw' => $tassonomieRaw,
-        ]);
+        return $response->withHeader('Location', '/impostazioni?tab=' . $tab)->withStatus(302);
     }
 
     /**
@@ -2679,6 +2634,21 @@ class ConfigurazioneController
         return in_array($role, ['admin', 'superadmin'], true);
     }
 
+    private function normalizeOptionalPositiveInt(mixed $value, string $label, array &$errors): ?int
+    {
+        $raw = trim((string)($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        if (!ctype_digit($raw) || (int)$raw <= 0) {
+            $errors[] = $label . ' deve essere un numero intero maggiore di 0';
+            return null;
+        }
+
+        return (int)$raw;
+    }
+
     public function addPendenzaTemplate(Request $request, Response $response): Response
     {
         if (!$this->isSuperadmin() && !in_array($_SESSION['user']['role'] ?? '', ['admin'], true)) {
@@ -2697,9 +2667,16 @@ class ConfigurazioneController
         $idTipoPendenza = trim((string)($data['id_tipo_pendenza'] ?? ''));
         $causale = trim((string)($data['causale'] ?? ''));
         $importo = (float)($data['importo'] ?? 0);
+        $templateErrors = [];
+        $giorniValidita = $this->normalizeOptionalPositiveInt($data['giorni_validita'] ?? null, 'Giorni validita', $templateErrors);
+        $giorniScadenza = $this->normalizeOptionalPositiveInt($data['giorni_scadenza'] ?? null, 'Giorni scadenza', $templateErrors);
 
         if ($titolo === '' || $idTipoPendenza === '' || $causale === '' || $importo <= 0) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Compila tutti i campi obbligatori del template'];
+            return $this->redirectToTab($response, 'templates');
+        }
+        if ($templateErrors !== []) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => implode(' ', $templateErrors)];
             return $this->redirectToTab($response, 'templates');
         }
 
@@ -2710,7 +2687,9 @@ class ConfigurazioneController
                 'titolo' => $titolo,
                 'id_tipo_pendenza' => $idTipoPendenza,
                 'causale' => $causale,
-                'importo' => $importo
+                'importo' => $importo,
+                'giorni_validita' => $giorniValidita,
+                'giorni_scadenza' => $giorniScadenza,
             ]);
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Template creato con successo'];
             Logger::getInstance()->info('PendenzaTemplate created', ['titolo' => $titolo, 'user' => $_SESSION['user']['id'] ?? '']);
@@ -2740,9 +2719,16 @@ class ConfigurazioneController
         $idTipoPendenza = trim((string)($data['id_tipo_pendenza'] ?? ''));
         $causale = trim((string)($data['causale'] ?? ''));
         $importo = (float)($data['importo'] ?? 0);
+        $templateErrors = [];
+        $giorniValidita = $this->normalizeOptionalPositiveInt($data['giorni_validita'] ?? null, 'Giorni validita', $templateErrors);
+        $giorniScadenza = $this->normalizeOptionalPositiveInt($data['giorni_scadenza'] ?? null, 'Giorni scadenza', $templateErrors);
 
         if ($titolo === '' || $idTipoPendenza === '' || $causale === '' || $importo <= 0) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Compila tutti i campi obbligatori del template'];
+            return $this->redirectToTab($response, 'templates');
+        }
+        if ($templateErrors !== []) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => implode(' ', $templateErrors)];
             return $this->redirectToTab($response, 'templates');
         }
 
@@ -2752,7 +2738,9 @@ class ConfigurazioneController
                 'titolo' => $titolo,
                 'id_tipo_pendenza' => $idTipoPendenza,
                 'causale' => $causale,
-                'importo' => $importo
+                'importo' => $importo,
+                'giorni_validita' => $giorniValidita,
+                'giorni_scadenza' => $giorniScadenza,
             ]);
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Template aggiornato con successo'];
             Logger::getInstance()->info('PendenzaTemplate updated', ['id' => $id, 'user' => $_SESSION['user']['id'] ?? '']);

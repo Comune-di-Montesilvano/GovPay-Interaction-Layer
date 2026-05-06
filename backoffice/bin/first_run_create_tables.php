@@ -72,6 +72,8 @@ $statements = [
         id_tipo_pendenza VARCHAR(128) NOT NULL,
         causale VARCHAR(140) NOT NULL,
         importo DECIMAL(10,2) NOT NULL,
+        giorni_validita INT UNSIGNED NULL,
+        giorni_scadenza INT UNSIGNED NULL,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
@@ -157,6 +159,29 @@ try {
     if (!$has) {
         $pdo->exec("ALTER TABLE entrate_tipologie ADD COLUMN tipo_contabilita VARCHAR(16) NULL AFTER tipo_bollo");
         echo "Added column tipo_contabilita to entrate_tipologie\n";
+    }
+} catch (Throwable $e) {
+    // non fatale: proseguiamo
+}
+
+// Assicura colonne offset giorni sui template pendenza
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM pendenza_template LIKE 'giorni_validita'");
+    $has = $stmt ? $stmt->fetch() : false;
+    if (!$has) {
+        $pdo->exec("ALTER TABLE pendenza_template ADD COLUMN giorni_validita INT UNSIGNED NULL AFTER importo");
+        echo "Added column giorni_validita to pendenza_template\n";
+    }
+} catch (Throwable $e) {
+    // non fatale: proseguiamo
+}
+
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM pendenza_template LIKE 'giorni_scadenza'");
+    $has = $stmt ? $stmt->fetch() : false;
+    if (!$has) {
+        $pdo->exec("ALTER TABLE pendenza_template ADD COLUMN giorni_scadenza INT UNSIGNED NULL AFTER giorni_validita");
+        echo "Added column giorni_scadenza to pendenza_template\n";
     }
 } catch (Throwable $e) {
     // non fatale: proseguiamo
