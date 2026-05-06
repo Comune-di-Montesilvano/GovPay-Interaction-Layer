@@ -10,7 +10,9 @@ use App\Config\SettingsRepository;
 use App\Controllers\BackupController;
 use App\Controllers\ConfigurazioneController;
 use App\Controllers\HomeController;
+use App\Controllers\IncassiTassonomiaController;
 use App\Controllers\FlussiController;
+use App\Controllers\ReportRagioneriaController;
 use App\Controllers\ImpostazioniController;
 use App\Controllers\PendenzeController;
 use App\Controllers\SetupController;
@@ -224,6 +226,18 @@ return function (App $app, Twig $twig): void {
     // Statistiche
     $app->get('/statistiche', function(Request $request, Response $response) use ($twig): Response {
         $controller = new StatisticheController($twig);
+        return $controller->index($request, $response);
+    });
+
+    // Report incassi per tassonomia (sezione Pagamenti)
+    $app->get('/pagamenti/incassi-tassonomia', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new IncassiTassonomiaController($twig);
+        return $controller->index($request, $response);
+    });
+
+    // Report ragioneria (sezione Pagamenti)
+    $app->get('/pagamenti/report-ragioneria', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new ReportRagioneriaController($twig);
         return $controller->index($request, $response);
     });
 
