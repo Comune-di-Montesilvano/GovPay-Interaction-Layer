@@ -240,6 +240,10 @@ return function (App $app, Twig $twig): void {
         $controller = new ReportRagioneriaController($twig);
         return $controller->index($request, $response);
     });
+    $app->get('/pagamenti/report-ragioneria/status', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new ReportRagioneriaController($twig);
+        return $controller->status($request, $response);
+    });
 
     // Pendenze
     $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {

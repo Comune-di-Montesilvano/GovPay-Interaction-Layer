@@ -42,6 +42,21 @@ class GovPayRendicontazioniService
         $dataA       = $filters['dataA'] ?? null;
         $tassonomie  = $this->normalizeStringArray($filters['tassonomie'] ?? []);
         $collectRaw  = (bool)($filters['collectRaw'] ?? false);
+        $excludeNd   = (bool)($filters['excludeNd'] ?? true);
+        $taxonomyLabels = is_array($filters['taxonomyLabels'] ?? null) ? $filters['taxonomyLabels'] : [];
+        $maxFlussiPages = (int)($filters['maxFlussiPages'] ?? self::MAX_FLUSSI_PAGES);
+        if ($maxFlussiPages <= 0) {
+            $maxFlussiPages = self::MAX_FLUSSI_PAGES;
+        }
+        $resultsPerPage = (int)($filters['resultsPerPage'] ?? self::RESULTS_PER_PAGE);
+        if ($resultsPerPage <= 0) {
+            $resultsPerPage = self::RESULTS_PER_PAGE;
+        }
+        $metadatiPaginazione = (bool)($filters['metadatiPaginazione'] ?? true);
+        $maxRisultati = (bool)($filters['maxRisultati'] ?? true);
+        $progressCallback = isset($filters['progressCallback']) && is_callable($filters['progressCallback'])
+            ? $filters['progressCallback']
+            : null;
 
         $baseUrl    = rtrim($backofficeUrl, '/');
         $clientOpts = array_merge($guzzleOptions, [
@@ -62,9 +77,9 @@ class GovPayRendicontazioniService
         do {
             $query = [
                 'pagina'               => $page,
-                'risultatiPerPagina'   => self::RESULTS_PER_PAGE,
-                'metadatiPaginazione'  => 'true',
-                'maxRisultati'         => 'true',
+                'risultatiPerPagina'   => $resultsPerPage,
+                'metadatiPaginazione'  => $metadatiPaginazione ? 'true' : 'false',
+                'maxRisultati'         => $maxRisultati ? 'true' : 'false',
             ];
             if ($idDominio !== '') {
                 $query['idDominio'] = $idDominio;
@@ -102,19 +117,29 @@ class GovPayRendicontazioniService
                 }
             }
 
+            if ($progressCallback !== null) {
+                $progressCallback([
+                    'phase' => 'fetch_flussi',
+                    'current_page' => $page,
+                    'flussi_indexed' => count($flussiIndex),
+                ]);
+            }
+
             $prossimiRisultati = (string)($payload['prossimiRisultati'] ?? '');
             $nextPage          = $this->extractNextPage($prossimiRisultati);
             if ($nextPage === null || $nextPage <= $page) {
                 break;
             }
             $page = $nextPage;
-        } while ($page <= self::MAX_FLUSSI_PAGES);
+        } while ($page <= $maxFlussiPages);
 
         // ── Step 2: apri ogni flusso e spacchetta le rendicontazioni ────────────
         /** @var array<int,array<string,mixed>> $rows */
         $rows     = [];
         $seenKeys = [];
 
+        $totalFlussi = count($flussiIndex);
+        $processedFlussi = 0;
         foreach ($flussiIndex as $flussoItem) {
             $idFlusso       = (string)($flussoItem['idFlusso'] ?? '');
             $domainId       = (string)($flussoItem['dominio']['idDominio'] ?? $flussoItem['idDominio'] ?? $idDominio);
@@ -124,7 +149,17 @@ class GovPayRendicontazioniService
             $idPsp          = (string)($flussoItem['idPsp'] ?? '');
 
             if ($idFlusso === '' || $domainId === '') {
+                $processedFlussi++;
                 continue;
+            }
+
+            if ($progressCallback !== null) {
+                $progressCallback([
+                    'phase' => 'fetch_dettagli',
+                    'current_flow_id' => $idFlusso,
+                    'processed_flussi' => $processedFlussi,
+                    'total_flussi' => $totalFlussi,
+                ]);
             }
 
             try {
@@ -168,15 +203,36 @@ class GovPayRendicontazioniService
                     ? $risc['vocePendenza']
                     : null;
                 $codEntrata   = ($vocePendenza !== null) ? (string)($vocePendenza['codEntrata'] ?? '') : '';
+                if ($excludeNd && $codEntrata === '') {
+                    continue;
+                }
 
                 // Filtro tassonomia: se l'utente ha selezionato specifiche tipologie, escludi le altre
                 if ($tassonomie !== [] && !in_array($codEntrata, $tassonomie, true)) {
                     continue;
                 }
 
+                $taxonomyDescription = '';
+                if ($codEntrata !== '' && isset($taxonomyLabels[$codEntrata])) {
+                    $taxonomyDescription = (string)$taxonomyLabels[$codEntrata];
+                }
+                $taxonomyLabel = $codEntrata !== ''
+                    ? ($taxonomyDescription !== '' ? $taxonomyDescription : $codEntrata)
+                    : 'N/D';
+
                 $iuv    = (string)($rend['iuv'] ?? '');
                 $iur    = (string)($rend['iur'] ?? '');
                 $indice = (int)($rend['indice'] ?? 0);
+                $idPendenza = '';
+                if ($vocePendenza !== null) {
+                    $idPendenza = (string)($vocePendenza['idPendenza'] ?? '');
+                    if ($idPendenza === '' && is_array($vocePendenza['pendenza'] ?? null)) {
+                        $idPendenza = (string)($vocePendenza['pendenza']['idPendenza'] ?? '');
+                    }
+                }
+                if ($idPendenza === '' && is_array($rend['pendenza'] ?? null)) {
+                    $idPendenza = (string)($rend['pendenza']['idPendenza'] ?? '');
+                }
 
                 $key = $domainId . '|' . $idFlusso . '|' . $iuv . '|' . $iur . '|' . $indice;
                 if (isset($seenKeys[$key])) {
@@ -192,6 +248,9 @@ class GovPayRendicontazioniService
                     'id_psp'           => $idPsp,
                     'id_dominio'       => $domainId,
                     'tassonomia'       => $codEntrata !== '' ? $codEntrata : 'N/D',
+                    'tassonomia_descrizione' => $taxonomyDescription,
+                    'tassonomia_label' => $taxonomyLabel,
+                    'id_pendenza'      => $idPendenza,
                     'iuv'              => $iuv,
                     'iur'              => $iur,
                     'indice'           => $indice,
@@ -202,6 +261,7 @@ class GovPayRendicontazioniService
                     'descrizione_voce' => ($vocePendenza !== null) ? (string)($vocePendenza['descrizione'] ?? '') : '',
                 ];
             }
+            $processedFlussi++;
         }
 
         // Ordina per data_flusso DESC
@@ -217,11 +277,25 @@ class GovPayRendicontazioniService
         }
 
         // Aggregazione per tipologia
+        if ($progressCallback !== null) {
+            $progressCallback([
+                'phase' => 'aggregazione',
+                'processed_flussi' => $processedFlussi,
+                'total_flussi' => $totalFlussi,
+            ]);
+        }
         $byTipologia = [];
         foreach ($rows as $row) {
             $t = (string)($row['tassonomia'] ?? 'N/D');
+            $td = (string)($row['tassonomia_descrizione'] ?? '');
             if (!isset($byTipologia[$t])) {
-                $byTipologia[$t] = ['tassonomia' => $t, 'count' => 0, 'amount' => 0.0];
+                $byTipologia[$t] = [
+                    'tassonomia' => $t,
+                    'tassonomia_descrizione' => $td,
+                    'tassonomia_label' => $td !== '' ? $td : $t,
+                    'count' => 0,
+                    'amount' => 0.0,
+                ];
             }
             $byTipologia[$t]['count']++;
             $byTipologia[$t]['amount'] += (float)($row['importo'] ?? 0);
@@ -235,6 +309,9 @@ class GovPayRendicontazioniService
                 'flussi_processati'      => count($flussiIndex),
                 'rendicontazioni_totali' => count($rows),
                 'tassonomie_filtrate'    => $tassonomie,
+                'exclude_nd'             => $excludeNd,
+                'max_flussi_pages'       => $maxFlussiPages,
+                'results_per_page'       => $resultsPerPage,
             ],
             'raw' => $collectRaw ? $rawPayloads : null,
         ];

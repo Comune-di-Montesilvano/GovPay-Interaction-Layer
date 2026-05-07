@@ -533,6 +533,25 @@ WantedBy=timers.target
 
 Dashboard con grafici e indicatori.
 
+### Report Pagamenti
+
+#### Report Ragioneria (`/pagamenti/report-ragioneria`)
+
+- Primo accesso senza esecuzione automatica: il report parte solo dopo click su `Aggiorna`.
+- Filtri con UX avanzata: intervallo date con datepicker, multi-selezione tipologie con ricerca, filtri avanzati (parametri GovPay).
+- Esecuzione asincrona con barra di avanzamento e stato backend.
+- Cache persistente su volume Docker con pulsante `Rigenera cache`.
+- Riepilogo per tipologia ordinabile lato client.
+- Dettaglio rendicontazioni paginato (50 righe/pagina) con export CSV.
+- Link rapido alla pendenza: apre direttamente il dettaglio (se `id_pendenza` disponibile) o la ricerca per IUV.
+
+#### Report Incassi (`/pagamenti/incassi-tassonomia`)
+
+- Primo accesso senza ricerca automatica (coerente con Report Ragioneria).
+- Maschera filtri allineata al Report Ragioneria: datepicker range, selettore tipologie con ricerca (TomSelect), filtri avanzati.
+- Tabella dettaglio con descrizione tipologia (`tassonomia_label`) in luogo del valore tecnico raw.
+- Link rapido alla pendenza nella griglia dettaglio con stessa logica del Report Ragioneria.
+
 ---
 
 ## Workflow di sviluppo
