@@ -26,6 +26,7 @@ class IncassiTassonomiaController
         $this->exposeCurrentUser();
 
         $params = (array)($request->getQueryParams() ?? []);
+        $queryMade = isset($params['q']) && trim((string)$params['q']) !== '';
         $errors = [];
         $sessionUser = $_SESSION['user'] ?? [];
 
@@ -58,67 +59,92 @@ class IncassiTassonomiaController
         $dataDa = $this->parseStartDate($filters['dataDa']);
         $dataA = $this->parseEndDate($filters['dataA']);
 
-        if ($dataDa && $dataA && $dataDa > $dataA) {
-            $errors[] = 'Intervallo date non valido: la data iniziale supera la data finale.';
-        }
-
-        if (!$filters['tassonomie']) {
-            $errors[] = 'Selezionare almeno una tassonomia tra le tipologie censite.';
-        }
-
         $rows = [];
         $totals = ['amount' => 0.0, 'count' => 0];
         $meta = null;
         $rawPayloadJson = null;
         $csvLink = null;
 
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        if ($backofficeUrl === '') {
-            $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
-        }
+        if ($queryMade) {
+            if ($dataDa && $dataA && $dataDa > $dataA) {
+                $errors[] = 'Intervallo date non valido: la data iniziale supera la data finale.';
+            }
 
-        if (!class_exists('GovPay\\Backoffice\\Api\\RiscossioniApi')) {
-            $errors[] = 'Client Backoffice Riscossioni non disponibile';
-        }
+            if (!$filters['tassonomie']) {
+                $errors[] = 'Selezionare almeno una tassonomia tra le tipologie censite.';
+            }
 
-        if (!$errors) {
-            try {
-                $service = new GovPayTaxonomyCollectionsService();
+            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+            if ($backofficeUrl === '') {
+                $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
+            }
 
-                $result = $service->findByTaxonomy(
-                    $backofficeUrl,
-                    (string)SettingsRepository::get('govpay', 'user', ''),
-                    (string)SettingsRepository::get('govpay', 'password', ''),
-                    $this->buildTlsOptions(),
-                    [
-                        'idDominio' => $filters['idDominio'],
-                        'dataDa' => $this->formatDateForQuery($dataDa),
-                        'dataA' => $this->formatDateForQuery($dataA),
-                        'tassonomie' => $filters['tassonomie'],
-                        'collectRaw' => $this->isAppDebug(),
-                    ]
-                );
+            if (!class_exists('GovPay\\Backoffice\\Api\\RiscossioniApi')) {
+                $errors[] = 'Client Backoffice Riscossioni non disponibile';
+            }
 
-                $rows = is_array($result['rows'] ?? null) ? $result['rows'] : [];
-                $totals = is_array($result['totals'] ?? null) ? $result['totals'] : $totals;
-                $meta = is_array($result['meta'] ?? null) ? $result['meta'] : null;
-                if ($this->isAppDebug() && isset($result['raw'])) {
-                    $rawPayloadJson = json_encode($result['raw'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            if (!$errors) {
+                try {
+                    $service = new GovPayTaxonomyCollectionsService();
+
+                    $result = $service->findByTaxonomy(
+                        $backofficeUrl,
+                        (string)SettingsRepository::get('govpay', 'user', ''),
+                        (string)SettingsRepository::get('govpay', 'password', ''),
+                        $this->buildTlsOptions(),
+                        [
+                            'idDominio' => $filters['idDominio'],
+                            'dataDa' => $this->formatDateForQuery($dataDa),
+                            'dataA' => $this->formatDateForQuery($dataA),
+                            'tassonomie' => $filters['tassonomie'],
+                            'collectRaw' => $this->isAppDebug(),
+                        ]
+                    );
+
+                    $rows = is_array($result['rows'] ?? null) ? $result['rows'] : [];
+                    $taxonomyLabels = [];
+                    foreach ($tipologieCensite as $tipo) {
+                        if (!is_array($tipo)) {
+                            continue;
+                        }
+                        $tid = (string)($tipo['id_entrata'] ?? '');
+                        if ($tid === '') {
+                            continue;
+                        }
+                        $taxonomyLabels[$tid] = (string)($tipo['descrizione'] ?? $tid);
+                    }
+                    foreach ($rows as &$row) {
+                        if (!is_array($row)) {
+                            continue;
+                        }
+                        $tassonomia = (string)($row['tassonomia'] ?? '');
+                        $row['tassonomia_label'] = $tassonomia !== '' && isset($taxonomyLabels[$tassonomia])
+                            ? (string)$taxonomyLabels[$tassonomia]
+                            : ($tassonomia !== '' ? $tassonomia : 'N/D');
+                        $row['id_pendenza'] = (string)($row['id_pendenza'] ?? ($row['idPendenza'] ?? ''));
+                    }
+                    unset($row);
+                    $totals = is_array($result['totals'] ?? null) ? $result['totals'] : $totals;
+                    $meta = is_array($result['meta'] ?? null) ? $result['meta'] : null;
+                    if ($this->isAppDebug() && isset($result['raw'])) {
+                        $rawPayloadJson = json_encode($result['raw'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                    }
+
+                    $query = array_merge($filters, ['q' => '1', 'export' => 'csv']);
+                    $csvLink = '/pagamenti/incassi-tassonomia?' . http_build_query($query);
+
+                    if (($params['export'] ?? null) === 'csv') {
+                        return $this->exportCsv($response, $rows, $filters);
+                    }
+                } catch (\Throwable $e) {
+                    $errors[] = 'Errore chiamata riscossioni: ' . $e->getMessage();
                 }
-
-                $query = array_merge($filters, ['export' => 'csv']);
-                $csvLink = '/pagamenti/incassi-tassonomia?' . http_build_query($query);
-
-                if (($params['export'] ?? null) === 'csv') {
-                    return $this->exportCsv($response, $rows, $filters);
-                }
-            } catch (\Throwable $e) {
-                $errors[] = 'Errore chiamata riscossioni: ' . $e->getMessage();
             }
         }
 
         return $this->twig->render($response, 'pagamenti/incassi_tassonomia.html.twig', [
             'filters' => $filters,
+            'query_made' => $queryMade,
             'errors' => $errors,
             'rows' => $rows,
             'totals' => $totals,
