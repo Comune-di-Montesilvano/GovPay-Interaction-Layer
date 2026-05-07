@@ -7,6 +7,7 @@ services:
     volumes:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
+      - cache:/var/www/cache
       - gil_certs:/var/www/certificate
       - gil_images:/var/www/html/public/img
       - gil_backups:/backups
@@ -195,6 +196,7 @@ networks:
     driver: bridge
 
 volumes:
+  cache:
   db_data:
   satosa_mongo_data:
   frontoffice_sp_metadata:
