@@ -240,7 +240,7 @@
                   {% if r.idPendenza is defined and r.idPendenza %}
                     {% set back = return_url|default('/pendenze/ricerca') %}
                     {% set back_with_anchor = back ~ '#row-' ~ r.idPendenza %}
-                    <a class="btn btn-outline-primary btn-sm px-2" href="/pendenze/dettaglio/{{ r.idPendenza|url_encode }}?return={{ back_with_anchor|url_encode }}&highlight={{ r.idPendenza|url_encode }}" title="Dettaglio" aria-label="Apri dettaglio della pendenza">
+                    <a class="btn btn-outline-primary btn-sm px-2" href="/pendenze/dettaglio/{{ r.idPendenza|url_encode }}?return={{ back_with_anchor|url_encode }}&highlight={{ r.idPendenza|url_encode }}{% if r.idA2A is defined and r.idA2A %}&idA2A={{ r.idA2A|url_encode }}{% endif %}" title="Dettaglio" aria-label="Apri dettaglio della pendenza">
                       <i class="fas fa-eye"></i>
                     </a>
                   {% else %}
