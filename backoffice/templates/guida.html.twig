@@ -44,6 +44,26 @@
       </div>
     </div>
 
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h3 class="h5"><i class="fas fa-chart-line me-2"></i> Report pagamenti</h3>
+          <ul class="mb-0">
+            <li><strong>Report Ragioneria:</strong> analizza gli incassi reali dai flussi di rendicontazione per intervallo data flusso e tipologia.</li>
+            <li><strong>Esecuzione guidata:</strong> al primo accesso non parte nessuna ricerca; dopo <em>Aggiorna</em> vedi stato avanzamento elaborazione.</li>
+            <li><strong>Filtri avanzati:</strong> selezione multipla tipologie con ricerca, intervallo date e parametri GovPay.</li>
+            <li><strong>Dettaglio righe:</strong> dal risultato puoi aprire rapidamente la pendenza collegata (dettaglio o ricerca IUV).</li>
+            <li><strong>Report Incassi:</strong> vista per tassonomia con filtri allineati al report ragioneria e tabella dettaglio con link pendenza.</li>
+            <li><strong>Export:</strong> entrambi i report supportano export CSV dei risultati.</li>
+          </ul>
+          <div class="mt-3">
+            <a href="/pagamenti/report-ragioneria" class="btn btn-outline-primary btn-sm">Apri Report Ragioneria</a>
+            <a href="/pagamenti/incassi-tassonomia" class="btn btn-outline-secondary btn-sm ms-2">Apri Report Incassi</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
     {% if current_user and current_user.role in ['admin','superadmin'] %}
     <div class="col-12 col-lg-6">
       <div class="card shadow-sm h-100">
@@ -113,6 +133,12 @@
                 </tr>
                 <tr>
                   <td>Download Avviso / RT</td>
+                  <td class="text-center">✔</td>
+                  <td class="text-center">✔</td>
+                  <td class="text-center">✔</td>
+                </tr>
+                <tr>
+                  <td>Report pagamenti (Ragioneria/Incassi)</td>
                   <td class="text-center">✔</td>
                   <td class="text-center">✔</td>
                   <td class="text-center">✔</td>
