@@ -2557,7 +2557,9 @@ class PendenzeController
         $pendenza = null;
 
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
+        $idA2A = (isset($queryParams['idA2A']) && is_string($queryParams['idA2A']) && $queryParams['idA2A'] !== '')
+            ? $queryParams['idA2A']
+            : SettingsRepository::get('entity', 'id_a2a', '');
         if ($idPendenza === '') {
             $error = 'ID pendenza non specificato';
         } elseif (empty($backofficeUrl)) {
@@ -2966,9 +2968,10 @@ class PendenzeController
             return $response->withStatus(400);
         }
 
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $pendenzeUrl = SettingsRepository::get('govpay', 'pendenze_url', '');
-        if (empty($pendenzeUrl)) {
-            $response->getBody()->write('GOVPAY_PENDENZE_URL non impostata');
+        if (empty($backofficeUrl) && empty($pendenzeUrl)) {
+            $response->getBody()->write('GOVPAY_BACKOFFICE_URL e GOVPAY_PENDENZE_URL non impostati');
             return $response->withStatus(500);
         }
 
@@ -2996,19 +2999,50 @@ class PendenzeController
             }
 
             $http = new Client($guzzleOptions);
-            $url = rtrim($pendenzeUrl, '/') . '/rpp/'
-                . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
-            $resp = $http->request('GET', $url);
-            $contentType = $resp->getHeaderLine('Content-Type') ?: 'application/pdf';
-            $pdf = (string)$resp->getBody();
             $filename = 'rt-' . $iuv . '-' . $ccp . '.pdf';
 
-            $response = $response
-                ->withHeader('Content-Type', $contentType)
-                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
-                ->withHeader('Cache-Control', 'no-store');
-            $response->getBody()->write($pdf);
-            return $response;
+            // Prova prima Backoffice v1 /rpp/{idDominio}/{iuv}/{ccp}/rt (non filtra per idA2A)
+            // Fallback a Pendenze v2 se Backoffice non disponibile o 403/404
+            $lastError = null;
+            if (!empty($backofficeUrl)) {
+                try {
+                    $url = rtrim($backofficeUrl, '/') . '/rpp/'
+                        . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
+                    $resp = $http->request('GET', $url);
+                    $contentType = $resp->getHeaderLine('Content-Type') ?: 'application/pdf';
+                    $pdf = (string)$resp->getBody();
+                    $response = $response
+                        ->withHeader('Content-Type', $contentType)
+                        ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                        ->withHeader('Cache-Control', 'no-store');
+                    $response->getBody()->write($pdf);
+                    return $response;
+                } catch (ClientException $ce) {
+                    $lastError = $ce;
+                    // 403 o 404: proviamo Pendenze v2
+                }
+            }
+
+            if (!empty($pendenzeUrl)) {
+                $url = rtrim($pendenzeUrl, '/') . '/rpp/'
+                    . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
+                $resp = $http->request('GET', $url);
+                $contentType = $resp->getHeaderLine('Content-Type') ?: 'application/pdf';
+                $pdf = (string)$resp->getBody();
+                $response = $response
+                    ->withHeader('Content-Type', $contentType)
+                    ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                    ->withHeader('Cache-Control', 'no-store');
+                $response->getBody()->write($pdf);
+                return $response;
+            }
+
+            // Entrambi falliti
+            if ($lastError !== null) {
+                throw $lastError;
+            }
+            $response->getBody()->write('Nessun endpoint disponibile per il download della ricevuta');
+            return $response->withStatus(500);
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
             $msg = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . $ce->getMessage());
@@ -3206,7 +3240,9 @@ class PendenzeController
 
         // Recupera i dati della pendenza esistente
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
+        $idA2A = (isset($queryParams['idA2A']) && is_string($queryParams['idA2A']) && $queryParams['idA2A'] !== '')
+            ? $queryParams['idA2A']
+            : SettingsRepository::get('entity', 'id_a2a', '');
         if ($idPendenza === '') {
             $error = 'ID pendenza non specificato';
         } elseif (empty($backofficeUrl)) {
