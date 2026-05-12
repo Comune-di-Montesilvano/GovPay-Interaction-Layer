@@ -191,7 +191,6 @@
     "Puoi rimuovere singoli avvisi dal carrello prima di pagare.": "You can remove individual notices from the cart before paying.",
     "Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.": "You can select multiple payable pending items directly from the list and click <strong>Pay selected</strong>.",
     "Questo avviso risulta": "This notice is",
-    "Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.": "This notice is already paid. To download the receipt, log in with SPID/CIE.",
     "Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un'unica sessione PagoPA.": "Here you will find the notices you have added. You can remove them or proceed to payment in a single PagoPA session.",
     "Ragione sociale *": "Company name *",
     "Reset": "Reset",
@@ -292,5 +291,16 @@
     "Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.": "Enter the <strong>notice code</strong> you received (or generate a spontaneous payment) to find your debt.",
     "Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.": "You can <strong>pay immediately</strong>, add to the <strong>cart</strong> (up to 5 notices) or <strong>print the PDF</strong> to pay at a bank.",
     "Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.": "Payment is made on the official <strong>PagoPA</strong> portal: secure, tracked, with an immediate digital receipt.",
-    "Guida completa": "Full guide"
+    "Guida completa": "Full guide",
+    "La ricevuta del pagamento è disponibile per il download.": "The payment receipt is available for download.",
+    "Scarica la ricevuta": "Download the receipt",
+    "Hai già pagato? Inserisci numero avviso e codice fiscale debitore nel form <a href=\"/pagamento-avviso\">Paga un avviso</a> per <strong>scaricare la ricevuta</strong> senza bisogno di SPID/CIE.": "Already paid? Enter the notice number and the debtor's tax code in the <a href=\"/pagamento-avviso\">Pay a notice</a> form to <strong>download the receipt</strong> without needing SPID/CIE.",
+    "Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)": "Download the receipt for a notice already paid (no SPID/CIE required)",
+    "Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.": "If you have paid a notice and want to retrieve the <strong>receipt</strong>, no SPID/CIE login is required: just have the notice number and the debtor's tax code.",
+    "Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.": "Enter the <strong>notice number</strong> and the <strong>debtor's tax code</strong> and submit the check.",
+    "Se il pagamento risulta già effettuato, comparirà l'anteprima dell'avviso con il bottone <strong>Scarica la ricevuta</strong>.": "If the payment has already been made, the notice preview will appear with a <strong>Download the receipt</strong> button.",
+    "Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.": "The download link is valid for a few minutes for security reasons: if it expires, repeat the search.",
+    "Troppi tentativi": "Too many attempts",
+    "Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.": "For your security we have temporarily limited requests from this connection.",
+    "Riprova tra qualche minuto.": "Please try again in a few minutes."
 }

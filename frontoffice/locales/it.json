@@ -191,7 +191,6 @@
     "Puoi rimuovere singoli avvisi dal carrello prima di pagare.": "Puoi rimuovere singoli avvisi dal carrello prima di pagare.",
     "Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.": "Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.",
     "Questo avviso risulta": "Questo avviso risulta",
-    "Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.": "Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.",
     "Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un'unica sessione PagoPA.": "Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un'unica sessione PagoPA.",
     "Ragione sociale *": "Ragione sociale *",
     "Reset": "Reset",
@@ -292,5 +291,16 @@
     "Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.": "Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.",
     "Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.": "Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.",
     "Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.": "Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.",
-    "Guida completa": "Guida completa"
+    "Guida completa": "Guida completa",
+    "La ricevuta del pagamento è disponibile per il download.": "La ricevuta del pagamento è disponibile per il download.",
+    "Scarica la ricevuta": "Scarica la ricevuta",
+    "Hai già pagato? Inserisci numero avviso e codice fiscale debitore nel form <a href=\"/pagamento-avviso\">Paga un avviso</a> per <strong>scaricare la ricevuta</strong> senza bisogno di SPID/CIE.": "Hai già pagato? Inserisci numero avviso e codice fiscale debitore nel form <a href=\"/pagamento-avviso\">Paga un avviso</a> per <strong>scaricare la ricevuta</strong> senza bisogno di SPID/CIE.",
+    "Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)": "Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)",
+    "Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.": "Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.",
+    "Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.": "Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.",
+    "Se il pagamento risulta già effettuato, comparirà l'anteprima dell'avviso con il bottone <strong>Scarica la ricevuta</strong>.": "Se il pagamento risulta già effettuato, comparirà l'anteprima dell'avviso con il bottone <strong>Scarica la ricevuta</strong>.",
+    "Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.": "Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.",
+    "Troppi tentativi": "Troppi tentativi",
+    "Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.": "Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.",
+    "Riprova tra qualche minuto.": "Riprova tra qualche minuto."
 }

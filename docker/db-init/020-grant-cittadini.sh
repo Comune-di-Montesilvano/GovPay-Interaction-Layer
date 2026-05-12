@@ -33,6 +33,9 @@ $MYSQL_CLIENT -uroot -p"$MYSQL_ROOT_PASSWORD" <<-EOSQL
   CREATE USER IF NOT EXISTS '${CITTADINI_USER}'@'%' IDENTIFIED BY '${ESCAPED_PASS}';
   ALTER USER '${CITTADINI_USER}'@'%' IDENTIFIED BY '${ESCAPED_PASS}';
   GRANT SELECT ON \`${DB_NAME}\`.* TO '${CITTADINI_USER}'@'%';
+  -- Eccezione: tabella di rate limit (sliding window) richiede INSERT/UPDATE/DELETE
+  -- per consentire al frontoffice di registrare e ripulire i bucket lato cittadino.
+  GRANT SELECT, INSERT, UPDATE, DELETE ON \`${DB_NAME}\`.\`rate_limit_buckets\` TO '${CITTADINI_USER}'@'%';
   FLUSH PRIVILEGES;
 EOSQL
 
