@@ -137,8 +137,9 @@
             </div>
 
             {% if avviso.is_paid %}
-              <div class="alert alert-info" role="status">
-                {{ 'Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.'|trans }}
+              <div class="alert alert-success" role="status">
+                <i class="fa-solid fa-circle-check me-1"></i>
+                {{ 'La ricevuta del pagamento è disponibile per il download.'|trans }}
               </div>
             {% elseif not avviso.is_payable %}
               <div class="alert alert-warning" role="status">
@@ -184,12 +185,14 @@
                 <button class="btn btn-outline-primary btn-lg" type="button" disabled>{{ 'PDF non disponibile'|trans }}</button>
               {% endif %}
 
-              {% if avviso.is_paid and spid_enabled %}
-                {% if not current_user %}
-                  <a class="btn btn-outline-secondary btn-lg" href="/login?return_to={{ '/pendenze?stato=ESEGUITA'|url_encode }}">{{ 'Accedi per scaricare la ricevuta'|trans }}</a>
-                {% else %}
-                  <a class="btn btn-outline-secondary btn-lg" href="/pendenze?stato=ESEGUITA">{{ 'Vai alle ricevute'|trans }}</a>
-                {% endif %}
+              {% if avviso.is_paid and avviso.receipt_download_url %}
+                <a class="btn btn-primary btn-lg" href="{{ avviso.receipt_download_url }}" rel="noopener">
+                  <i class="fa-solid fa-file-arrow-down me-1"></i>{{ 'Scarica la ricevuta'|trans }}
+                </a>
+              {% endif %}
+
+              {% if avviso.is_paid and spid_enabled and current_user %}
+                <a class="btn btn-outline-secondary btn-lg" href="/pendenze?stato=ESEGUITA">{{ 'Vai alle ricevute'|trans }}</a>
               {% endif %}
 
               {% if back_url|default('') %}

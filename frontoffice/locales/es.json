@@ -191,7 +191,6 @@
     "Puoi rimuovere singoli avvisi dal carrello prima di pagare.": "Puedes eliminar avisos individuales del carrito antes de pagar.",
     "Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.": "Puedes seleccionar múltiples trámites pendientes a pagar directamente desde la lista y hacer clic en <strong>Pagar las seleccionadas</strong>.",
     "Questo avviso risulta": "Este aviso está",
-    "Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.": "Aviso ya pagado. Inicia sesión para descargar el recibo.",
     "Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un'unica sessione PagoPA.": "Aquí encuentras los avisos que has añadido. Puedes eliminarlos o proceder al pago en una única sesión de PagoPA.",
     "Ragione sociale *": "Razón social *",
     "Reset": "Restablecer",
@@ -292,5 +291,16 @@
     "Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.": "Introduce el <strong>codigo de aviso</strong> recibido (o genera un pago espontaneo) para encontrar tu deuda.",
     "Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.": "Puedes <strong>pagar de inmediato</strong>, anadir al <strong>carrito</strong> (hasta 5) o <strong>imprimir el PDF</strong> para pagar en el banco.",
     "Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.": "El pago se realiza en el portal oficial <strong>PagoPA</strong>: seguro, rastreable, con recibo digital inmediato.",
-    "Guida completa": "Guia completa"
+    "Guida completa": "Guia completa",
+    "La ricevuta del pagamento è disponibile per il download.": "El recibo del pago está disponible para la descarga.",
+    "Scarica la ricevuta": "Descargar el recibo",
+    "Hai già pagato? Inserisci numero avviso e codice fiscale debitore nel form <a href=\"/pagamento-avviso\">Paga un avviso</a> per <strong>scaricare la ricevuta</strong> senza bisogno di SPID/CIE.": "¿Ya has pagado? Introduce el número de aviso y el código fiscal del deudor en el formulario <a href=\"/pagamento-avviso\">Pagar un aviso</a> para <strong>descargar el recibo</strong> sin necesidad de SPID/CIE.",
+    "Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)": "Descargar el recibo de un aviso ya pagado (sin SPID/CIE)",
+    "Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.": "Si has pagado un aviso y quieres recuperar el <strong>recibo</strong>, no es necesario iniciar sesión con SPID/CIE: basta con tener el número de aviso y el código fiscal del deudor.",
+    "Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.": "Introduce el <strong>número de aviso</strong> y el <strong>código fiscal del deudor</strong> y envía la verificación.",
+    "Se il pagamento risulta già effettuato, comparirà l'anteprima dell'avviso con il bottone <strong>Scarica la ricevuta</strong>.": "Si el pago ya se ha realizado, aparecerá la vista previa del aviso con el botón <strong>Descargar el recibo</strong>.",
+    "Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.": "El enlace de descarga es válido durante unos minutos por razones de seguridad: si caduca, repite la búsqueda.",
+    "Troppi tentativi": "Demasiados intentos",
+    "Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.": "Por tu seguridad hemos limitado temporalmente las solicitudes desde esta conexión.",
+    "Riprova tra qualche minuto.": "Inténtalo de nuevo en unos minutos."
 }

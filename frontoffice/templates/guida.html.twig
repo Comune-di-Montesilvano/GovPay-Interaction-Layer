@@ -62,9 +62,20 @@
           </ol>
         </div>
 
+        <div class="p-4 border rounded-4 bg-success bg-opacity-10 border-success mb-4">
+          <h2 class="h4 mb-3"><span class="badge bg-success me-2">4</span>{{ 'Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)'|trans }}</h2>
+          <p class="mb-3">{{ 'Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.'|trans|raw }}</p>
+          <ol class="mb-3">
+            <li class="mb-2">{{ 'Apri <a href="/pagamento-avviso">Paga un avviso</a>.'|trans|raw }}</li>
+            <li class="mb-2">{{ 'Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.'|trans|raw }}</li>
+            <li class="mb-2">{{ 'Se il pagamento risulta già effettuato, comparirà l\'anteprima dell\'avviso con il bottone <strong>Scarica la ricevuta</strong>.'|trans|raw }}</li>
+            <li>{{ 'Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.'|trans }}</li>
+          </ol>
+        </div>
+
         {% if spid_enabled %}
         <div class="p-4 border rounded-4 bg-white mb-4">
-          <h2 class="h4 mb-3"><span class="badge bg-primary me-2">4</span>{{ 'Consultare pendenze e ricevute (richiede accesso SPID/CIE)'|trans }}</h2>
+          <h2 class="h4 mb-3"><span class="badge bg-primary me-2">5</span>{{ 'Consultare pendenze e ricevute (richiede accesso SPID/CIE)'|trans }}</h2>
           <p class="mb-3">{{ 'La sezione <a href="/pendenze">Le mie pendenze</a> mostra le posizioni debitorie associate al tuo profilo.'|trans|raw }}</p>
           <ul class="mb-0">
             <li class="mb-2">{{ 'Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.'|trans|raw }}</li>

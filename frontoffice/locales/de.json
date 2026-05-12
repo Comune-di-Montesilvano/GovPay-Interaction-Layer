@@ -191,7 +191,6 @@
     "Puoi rimuovere singoli avvisi dal carrello prima di pagare.": "Sie können einzelne Bescheide vor der Zahlung aus dem Warenkorb entfernen.",
     "Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.": "Sie können mehrere zu zahlende ausstehende Beträge direkt in der Liste auswählen und auf <strong>Ausgewählte bezahlen</strong> klicken.",
     "Questo avviso risulta": "Dieser Bescheid ist",
-    "Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.": "Bescheid bereits bezahlt. Anmelden zum Herunterladen.",
     "Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un'unica sessione PagoPA.": "Hier finden Sie die hinzugefügten Bescheide. Sie können sie entfernen oder die Zahlung in einer einzigen PagoPA-Sitzung vornehmen.",
     "Ragione sociale *": "Firmenname *",
     "Reset": "Zurücksetzen",
@@ -292,5 +291,16 @@
     "Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.": "Gib den erhaltenen <strong>Avvisokode</strong> ein (oder erstelle eine Spontanzahlung), um deine Schuld zu finden.",
     "Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.": "Du kannst <strong>sofort zahlen</strong>, zum <strong>Warenkorb</strong> hinzufugen (bis zu 5) oder das <strong>PDF drucken</strong>, um bei einer Bank zu zahlen.",
     "Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.": "Die Zahlung erfolgt uber das offizielle <strong>PagoPA</strong>-Portal: sicher, nachverfolgbar, mit sofortiger digitaler Quittung.",
-    "Guida completa": "Vollstandige Anleitung"
+    "Guida completa": "Vollstandige Anleitung",
+    "La ricevuta del pagamento è disponibile per il download.": "Die Zahlungsquittung steht zum Herunterladen bereit.",
+    "Scarica la ricevuta": "Quittung herunterladen",
+    "Hai già pagato? Inserisci numero avviso e codice fiscale debitore nel form <a href=\"/pagamento-avviso\">Paga un avviso</a> per <strong>scaricare la ricevuta</strong> senza bisogno di SPID/CIE.": "Schon bezahlt? Geben Sie die Bescheidnummer und die Steuernummer des Schuldners im Formular <a href=\"/pagamento-avviso\">Bescheid bezahlen</a> ein, um die <strong>Quittung</strong> ohne SPID/CIE herunterzuladen.",
+    "Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)": "Quittung eines bereits bezahlten Bescheids herunterladen (ohne SPID/CIE)",
+    "Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.": "Wenn Sie einen Bescheid bezahlt haben und die <strong>Quittung</strong> abrufen möchten, ist keine SPID/CIE-Anmeldung erforderlich: Bescheidnummer und Steuernummer des Schuldners genügen.",
+    "Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.": "Geben Sie <strong>Bescheidnummer</strong> und <strong>Steuernummer des Schuldners</strong> ein und senden Sie die Prüfung ab.",
+    "Se il pagamento risulta già effettuato, comparirà l'anteprima dell'avviso con il bottone <strong>Scarica la ricevuta</strong>.": "Wenn die Zahlung bereits erfolgt ist, erscheint die Vorschau des Bescheids mit der Schaltfläche <strong>Quittung herunterladen</strong>.",
+    "Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.": "Der Download-Link ist aus Sicherheitsgründen nur wenige Minuten gültig: Wenn er abläuft, wiederholen Sie die Suche.",
+    "Troppi tentativi": "Zu viele Versuche",
+    "Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.": "Aus Sicherheitsgründen haben wir die Anfragen über diese Verbindung vorübergehend eingeschränkt.",
+    "Riprova tra qualche minuto.": "Bitte versuchen Sie es in wenigen Minuten erneut."
 }

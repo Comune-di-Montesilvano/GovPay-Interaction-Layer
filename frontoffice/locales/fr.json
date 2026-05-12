@@ -191,7 +191,6 @@
     "Puoi rimuovere singoli avvisi dal carrello prima di pagare.": "Vous pouvez retirer des avis individuels du panier avant de payer.",
     "Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.": "Vous pouvez sélectionner plusieurs dettes payables directement depuis la liste et cliquer sur <strong>Payer les sélectionnées</strong>.",
     "Questo avviso risulta": "Cet avis est",
-    "Questo avviso risulta già pagato. Per scaricare la ricevuta accedi con SPID/CIE.": "Cet avis est déjà payé. Connectez-vous pour le reçu.",
     "Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un'unica sessione PagoPA.": "Ici vous trouverez les avis que vous avez ajoutés. Vous pouvez les retirer ou procéder au paiement lors d'une seule session PagoPA.",
     "Ragione sociale *": "Raison sociale *",
     "Reset": "Réinitialiser",
@@ -292,5 +291,16 @@
     "Inserisci il <strong>codice avviso</strong> ricevuto (o genera un pagamento spontaneo) per trovare la tua pendenza.": "Saisissez le <strong>code avis</strong> recu (ou generez un paiement spontane) pour trouver votre dette.",
     "Puoi <strong>pagare subito</strong>, aggiungere al <strong>carrello</strong> (fino a 5 avvisi) o <strong>stampare il PDF</strong> per pagare in banca o tabaccheria.": "Vous pouvez <strong>payer immediatement</strong>, ajouter au <strong>panier</strong> (jusqu a 5) ou <strong>imprimer le PDF</strong> pour payer en banque.",
     "Il pagamento avviene sul portale ufficiale <strong>PagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.": "Le paiement s effectue sur le portail officiel <strong>PagoPA</strong>: securise, tracable, avec recu numerique immediat.",
-    "Guida completa": "Guide complet"
+    "Guida completa": "Guide complet",
+    "La ricevuta del pagamento è disponibile per il download.": "Le reçu du paiement est disponible au téléchargement.",
+    "Scarica la ricevuta": "Télécharger le reçu",
+    "Hai già pagato? Inserisci numero avviso e codice fiscale debitore nel form <a href=\"/pagamento-avviso\">Paga un avviso</a> per <strong>scaricare la ricevuta</strong> senza bisogno di SPID/CIE.": "Déjà payé ? Saisissez le numéro d'avis et le code fiscal du débiteur dans le formulaire <a href=\"/pagamento-avviso\">Payer un avis</a> pour <strong>télécharger le reçu</strong> sans besoin de SPID/CIE.",
+    "Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)": "Télécharger le reçu d'un avis déjà payé (sans SPID/CIE)",
+    "Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.": "Si vous avez payé un avis et souhaitez récupérer le <strong>reçu</strong>, aucune connexion SPID/CIE n'est nécessaire : il suffit d'avoir le numéro d'avis et le code fiscal du débiteur.",
+    "Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.": "Saisissez le <strong>numéro d'avis</strong> et le <strong>code fiscal du débiteur</strong>, puis envoyez la vérification.",
+    "Se il pagamento risulta già effettuato, comparirà l'anteprima dell'avviso con il bottone <strong>Scarica la ricevuta</strong>.": "Si le paiement est déjà effectué, l'aperçu de l'avis s'affichera avec le bouton <strong>Télécharger le reçu</strong>.",
+    "Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.": "Le lien de téléchargement est valable quelques minutes pour des raisons de sécurité : s'il expire, répétez la recherche.",
+    "Troppi tentativi": "Trop de tentatives",
+    "Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.": "Pour votre sécurité, nous avons temporairement limité les requêtes provenant de cette connexion.",
+    "Riprova tra qualche minuto.": "Veuillez réessayer dans quelques minutes."
 }

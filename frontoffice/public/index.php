@@ -1755,6 +1755,16 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
             );
         }
 
+        $isPaid = frontoffice_is_pendenza_paid($state);
+
+        $publicReceiptUrl = null;
+        if ($isPaid && $idPendenza !== '' && $idDominio !== '') {
+            $cfDebitore = frontoffice_extract_pendenza_debtor_cf($pendenza);
+            if ($cfDebitore !== '') {
+                $publicReceiptUrl = frontoffice_build_public_receipt_url($idDominio, $idPendenza, $cfDebitore, 300);
+            }
+        }
+
         return [
             'numero_avviso' => $numeroAvviso,
             'iuv' => $iuv,
@@ -1770,11 +1780,12 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
                 'label' => frontoffice_map_pendenza_state($state),
             ],
             'is_payable' => frontoffice_is_pendenza_payable($state),
-            'is_paid' => frontoffice_is_pendenza_paid($state),
+            'is_paid' => $isPaid,
             'download_url' => $downloadUrl,
-            'receipt_url' => (frontoffice_is_pendenza_paid($state) && (string)($pendenza['idPendenza'] ?? '') !== '')
-                ? '/pendenze/' . rawurlencode((string)$pendenza['idPendenza']) . '/ricevuta'
+            'receipt_url' => ($isPaid && $idPendenza !== '')
+                ? '/pendenze/' . rawurlencode($idPendenza) . '/ricevuta'
                 : null,
+            'receipt_download_url' => $publicReceiptUrl,
             'voci' => $pendenza['voci'] ?? [],
             'id_dominio' => $idDominio,
             'checkout_url' => $checkoutUrl,
@@ -1786,6 +1797,192 @@ if (!function_exists('frontoffice_amount_to_cents')) {
     function frontoffice_amount_to_cents(float $amount): int
     {
         return (int)max(0, (int)round($amount * 100));
+    }
+}
+
+// ─── Rate limit (MariaDB sliding window) ─────────────────────────────────────
+
+if (!function_exists('frontoffice_client_ip')) {
+    function frontoffice_client_ip(): string
+    {
+        $forwarded = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+        if ($forwarded !== '') {
+            $first = trim((string)(explode(',', $forwarded)[0] ?? ''));
+            if ($first !== '') {
+                return substr($first, 0, 45);
+            }
+        }
+        return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+    }
+}
+
+if (!function_exists('frontoffice_rate_limit_check')) {
+    /**
+     * Sliding-window rate limit DB-backed. Ritorna true se entro soglia, false se la supera.
+     * Fail-open su errori DB (log warning).
+     */
+    function frontoffice_rate_limit_check(string $key, int $limit, int $windowSec = 60): bool
+    {
+        if ($key === '' || $limit <= 0) {
+            return true;
+        }
+        $bucketKey = substr($key, 0, 190);
+        try {
+            $pdo = \App\Database\Connection::getPDO();
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('Rate limit: connessione DB non disponibile, fail-open', [
+                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
+            ]);
+            return true;
+        }
+        $now = time();
+        $threshold = $now - $windowSec;
+        try {
+            $stmt = $pdo->prepare(
+                'INSERT INTO rate_limit_buckets (bucket_key, window_start, count) VALUES (:k, :w, 1) '
+                . 'ON DUPLICATE KEY UPDATE '
+                . 'count = IF(window_start < :t, 1, count + 1), '
+                . 'window_start = IF(window_start < :t2, :w2, window_start)'
+            );
+            $stmt->execute([
+                ':k' => $bucketKey,
+                ':w' => $now,
+                ':w2' => $now,
+                ':t' => $threshold,
+                ':t2' => $threshold,
+            ]);
+            $sel = $pdo->prepare('SELECT count FROM rate_limit_buckets WHERE bucket_key = :k LIMIT 1');
+            $sel->execute([':k' => $bucketKey]);
+            $row = $sel->fetch(\PDO::FETCH_ASSOC);
+            $count = is_array($row) ? (int)($row['count'] ?? 0) : 0;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('Rate limit: errore bucket, fail-open', [
+                'bucket' => $bucketKey,
+                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
+            ]);
+            return true;
+        }
+
+        if (mt_rand(1, 100) === 1) {
+            try {
+                $gc = $pdo->prepare('DELETE FROM rate_limit_buckets WHERE window_start < :t');
+                $gc->execute([':t' => $now - max(600, $windowSec * 10)]);
+            } catch (\Throwable) {
+                // silent: garbage collection best-effort
+            }
+        }
+
+        return $count <= $limit;
+    }
+}
+
+if (!function_exists('frontoffice_rate_limit_response')) {
+    function frontoffice_rate_limit_response(): array
+    {
+        header('Retry-After: 60');
+        return [
+            'template' => 'pagamenti/rate-limited.html.twig',
+            'context' => [],
+        ];
+    }
+}
+
+// ─── HMAC firmato per download ricevuta pubblico ─────────────────────────────
+
+if (!function_exists('frontoffice_public_receipt_secret')) {
+    function frontoffice_public_receipt_secret(): string
+    {
+        $base = frontoffice_env_value('APP_ENCRYPTION_KEY', '');
+        if ($base === '') {
+            return '';
+        }
+        return hash('sha256', $base . '|public-receipt');
+    }
+}
+
+if (!function_exists('frontoffice_normalize_cf_key')) {
+    function frontoffice_normalize_cf_key(string $cf): string
+    {
+        return strtoupper(preg_replace('/\s+/', '', trim($cf)) ?? '');
+    }
+}
+
+if (!function_exists('frontoffice_sign_receipt_token')) {
+    function frontoffice_sign_receipt_token(string $idDominio, string $idPendenza, string $cf, int $exp): string
+    {
+        $secret = frontoffice_public_receipt_secret();
+        if ($secret === '') {
+            return '';
+        }
+        $payload = $idDominio . '|' . $idPendenza . '|' . frontoffice_normalize_cf_key($cf) . '|' . $exp;
+        return hash_hmac('sha256', $payload, $secret);
+    }
+}
+
+if (!function_exists('frontoffice_verify_receipt_token')) {
+    function frontoffice_verify_receipt_token(string $idDominio, string $idPendenza, string $cf, int $exp, string $token): bool
+    {
+        if ($idDominio === '' || $idPendenza === '' || $cf === '' || $exp <= 0 || $token === '') {
+            return false;
+        }
+        if ($exp < time()) {
+            return false;
+        }
+        $expected = frontoffice_sign_receipt_token($idDominio, $idPendenza, $cf, $exp);
+        if ($expected === '' || strlen($expected) !== strlen($token)) {
+            return false;
+        }
+        return hash_equals($expected, $token);
+    }
+}
+
+if (!function_exists('frontoffice_build_public_receipt_url')) {
+    function frontoffice_build_public_receipt_url(string $idDominio, string $idPendenza, string $cf, int $ttl = 300): ?string
+    {
+        if ($idDominio === '' || $idPendenza === '' || $cf === '') {
+            return null;
+        }
+        $exp = time() + max(60, $ttl);
+        $token = frontoffice_sign_receipt_token($idDominio, $idPendenza, $cf, $exp);
+        if ($token === '') {
+            return null;
+        }
+        return '/ricevuta/pubblica?id=' . rawurlencode($idPendenza)
+            . '&exp=' . $exp
+            . '&t=' . $token;
+    }
+}
+
+if (!function_exists('frontoffice_extract_pendenza_debtor_cf')) {
+    function frontoffice_extract_pendenza_debtor_cf(array $pendenza): string
+    {
+        $candidates = [];
+        foreach (['idDebitore', 'codiceFiscaleDebitore', 'id_debitore'] as $k) {
+            if (isset($pendenza[$k]) && is_string($pendenza[$k])) {
+                $candidates[] = $pendenza[$k];
+            }
+        }
+        if (isset($pendenza['soggettoPagatore']) && is_array($pendenza['soggettoPagatore'])) {
+            foreach (['identificativo', 'identificativoUnivoco', 'codiceFiscale', 'fiscalNumber'] as $k) {
+                if (isset($pendenza['soggettoPagatore'][$k]) && is_string($pendenza['soggettoPagatore'][$k])) {
+                    $candidates[] = $pendenza['soggettoPagatore'][$k];
+                }
+            }
+        }
+        if (isset($pendenza['soggettoVersante']) && is_array($pendenza['soggettoVersante'])) {
+            foreach (['identificativo', 'identificativoUnivoco', 'codiceFiscale', 'fiscalNumber'] as $k) {
+                if (isset($pendenza['soggettoVersante'][$k]) && is_string($pendenza['soggettoVersante'][$k])) {
+                    $candidates[] = $pendenza['soggettoVersante'][$k];
+                }
+            }
+        }
+        foreach ($candidates as $value) {
+            $norm = frontoffice_normalize_cf_key((string)$value);
+            if ($norm !== '') {
+                return $norm;
+            }
+        }
+        return '';
     }
 }
 
@@ -3506,31 +3703,27 @@ $routes = [
     '/pagamento-avviso' => static function () use ($method, $env): array {
         $payPortalUrl = $env('FRONTOFFICE_PAGOPA_CHECKOUT_URL', 'https://checkout.pagopa.it/');
         if ($method === 'POST') {
+            // Rate limit per IP sul form pubblico.
+            $clientIp = frontoffice_client_ip();
+            if (!frontoffice_rate_limit_check('ip:' . $clientIp . ':pagamento-avviso', 10, 60)) {
+                Logger::getInstance()->info('Rate limit superato su /pagamento-avviso', ['ip' => $clientIp]);
+                return frontoffice_rate_limit_response();
+            }
+
+            // Rate limit per coppia CF+numeroAvviso (anti enumerazione).
+            $cfRaw = strtoupper(preg_replace('/\s+/', '', (string)($_POST['codiceFiscale'] ?? '')) ?? '');
+            $avvisoRaw = frontoffice_normalize_avviso_code((string)($_POST['codiceAvviso'] ?? ''));
+            if ($cfRaw !== '' && $avvisoRaw !== '') {
+                $pairKey = 'pair:' . hash('sha256', $cfRaw . '|' . $avvisoRaw);
+                if (!frontoffice_rate_limit_check($pairKey, 5, 60)) {
+                    Logger::getInstance()->info('Rate limit superato su coppia CF+avviso', ['ip' => $clientIp]);
+                    return frontoffice_rate_limit_response();
+                }
+            }
+
             $result = frontoffice_process_avviso_form($_POST);
             if (!empty($result['success'])) {
                 $preview = is_array($result['preview'] ?? null) ? $result['preview'] : [];
-                $isPaid = !empty($preview['is_paid']);
-                $loggedUser = frontoffice_get_logged_user();
-
-                // Avviso già pagato: se l'utente non è autenticato non mostriamo dettagli.
-                // Manteniamo la pagina del form (come "avviso non trovato") e cambiamo solo il messaggio con un warning.
-                if ($isPaid && $loggedUser === null) {
-                    return [
-                        'template' => 'pagamenti/avviso.html.twig',
-                        'context' => [
-                            'form_submitted' => true,
-                            'form_data' => $result['form_data'] ?? $_POST,
-                            'form_errors' => [],
-                            'pay_portal_url' => $payPortalUrl,
-                            'form_feedback' => [
-                                'type' => 'warning',
-                                'title' => 'Avviso già pagato',
-                                'message' => 'L\'avviso inserito risulta già pagato. Per scaricare la ricevuta è necessario effettuare l\'accesso.',
-                            ],
-                        ],
-                    ];
-                }
-
                 return [
                     'template' => 'pagamenti/avviso-preview.html.twig',
                     'context' => [
@@ -4681,6 +4874,118 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+if ($method === 'GET' && $normalizedPath === '/ricevuta/pubblica') {
+    // Rate limit per IP sull'endpoint pubblico ricevuta.
+    $clientIp = frontoffice_client_ip();
+    if (!frontoffice_rate_limit_check('ip:' . $clientIp . ':ricevuta', 10, 60)) {
+        Logger::getInstance()->info('Rate limit superato su /ricevuta/pubblica', ['ip' => $clientIp]);
+        header('Retry-After: 60');
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!doctype html><html><head><meta charset="utf-8"><title>Troppi tentativi</title>'
+            . '<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:4rem auto;padding:0 1rem;color:#1a1a1a}</style>'
+            . '</head><body><h1>Troppi tentativi</h1>'
+            . '<p>Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione. '
+            . 'Riprova tra qualche minuto.</p></body></html>';
+        return;
+    }
+
+    $idPendenzaParam = trim((string)($_GET['id'] ?? ''));
+    $expParam = (int)($_GET['exp'] ?? 0);
+    $tokenParam = trim((string)($_GET['t'] ?? ''));
+
+    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    if ($idDominio === '' || $idPendenzaParam === '' || $expParam <= 0 || $tokenParam === '') {
+        http_response_code(404);
+        echo 'Not found';
+        return;
+    }
+
+    if ($expParam < time()) {
+        http_response_code(410);
+        echo 'Link scaduto.';
+        return;
+    }
+
+    $detail = frontoffice_fetch_pagamenti_detail($idPendenzaParam);
+    if (!$detail) {
+        http_response_code(404);
+        echo 'Not found';
+        return;
+    }
+
+    $cfDebitore = frontoffice_extract_pendenza_debtor_cf($detail);
+    if ($cfDebitore === '' || !frontoffice_verify_receipt_token($idDominio, $idPendenzaParam, $cfDebitore, $expParam, $tokenParam)) {
+        http_response_code(404);
+        echo 'Not found';
+        return;
+    }
+
+    $state = strtoupper((string)($detail['stato'] ?? ''));
+    if (!frontoffice_is_pendenza_paid($state)) {
+        http_response_code(404);
+        echo 'Ricevuta non disponibile.';
+        return;
+    }
+
+    $ids = frontoffice_extract_ricevuta_identifiers_from_pendenza_detail($detail);
+    $iuv = trim((string)($ids['iuv'] ?? ''));
+    $ccp = trim((string)($ids['ccp'] ?? ''));
+    $idRicevuta = trim((string)($ids['idRicevuta'] ?? ''));
+
+    $idA2AFromDetail = trim((string)($detail['idA2A'] ?? $detail['id_a2a'] ?? ''));
+    if (($iuv === '' || $ccp === '')) {
+        $rpp = frontoffice_find_paid_rpp_for_pendenza($idDominio, $idPendenzaParam, ($idA2AFromDetail !== '' ? $idA2AFromDetail : null));
+        if (is_array($rpp)) {
+            if ($iuv === '') {
+                $iuv = trim((string)($rpp['iuv'] ?? ''));
+            }
+            if ($ccp === '') {
+                $ccp = trim((string)($rpp['ccp'] ?? ''));
+            }
+        }
+    }
+
+    if ($iuv === '') {
+        http_response_code(404);
+        echo 'Ricevuta non disponibile.';
+        return;
+    }
+
+    if ($ccp !== '') {
+        frontoffice_stream_rt_pdf($idDominio, $iuv, $ccp);
+        return;
+    }
+
+    $ricevute = frontoffice_fetch_ricevute_for_iuv($idDominio, $iuv);
+    $risultati = is_array($ricevute['risultati'] ?? null) ? $ricevute['risultati'] : [];
+    if ($risultati !== []) {
+        $first = $risultati[0] ?? null;
+        $iuvFromApi = is_array($first) ? trim((string)($first['iuv'] ?? $iuv)) : $iuv;
+        $ccpFromApi = '';
+        if (is_array($first)) {
+            foreach (['ccp', 'codiceContestoPagamento', 'codice_contesto_pagamento'] as $k) {
+                if (isset($first[$k]) && is_scalar($first[$k])) {
+                    $ccpFromApi = trim((string)$first[$k]);
+                    if ($ccpFromApi !== '') {
+                        break;
+                    }
+                }
+            }
+        }
+        if ($ccpFromApi !== '' && $iuvFromApi !== '') {
+            frontoffice_stream_rt_pdf($idDominio, $iuvFromApi, $ccpFromApi);
+            return;
+        }
+        if ($idRicevuta !== '') {
+            frontoffice_stream_ricevuta_pdf($idDominio, $iuv, $idRicevuta);
+            return;
+        }
+    }
+    http_response_code(404);
+    echo 'Ricevuta non disponibile.';
+    return;
+}
 
 if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/ricevuta$#', $normalizedPath, $match)) {
     if (!frontoffice_spid_enabled()) {
