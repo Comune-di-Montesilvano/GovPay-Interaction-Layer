@@ -397,6 +397,18 @@ In Portainer puoi popolare il volume prima del deploy tramite un container helpe
 
 I certificati in `gil_certs` sono distinti: servono per l'autenticazione client verso GovPay (mTLS app → GovPay). Vedi [certificate/README.md](certificate/README.md).
 
+### Screenshots
+
+Esempi dell'interfaccia (usate come riferimento visivo). Copiare gli screenshot nella cartella `docs/images` con i nomi mostrati qui sotto.
+
+- **Backoffice (admin settings)**  
+   ![Backoffice - Impostazioni di sistema](docs/images/backoffice-settings.png)
+
+- **Frontoffice (home page)**  
+   ![Frontoffice - Home PagoPA](docs/images/frontoffice-home.png)
+
+Se preferisci altri nomi file, aggiorna i riferimenti qui sopra. Per aggiungere gli screenshot al repository copia i file in `docs/images/` e fai commit/push.
+
 ### Reverse proxy
 
 Pattern consigliato: reverse proxy pubblico (porta 443) → container interno.
