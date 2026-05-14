@@ -399,15 +399,13 @@ I certificati in `gil_certs` sono distinti: servono per l'autenticazione client 
 
 ### Screenshots
 
-Esempi dell'interfaccia (usate come riferimento visivo). Copiare gli screenshot nella cartella `docs/images` con i nomi mostrati qui sotto.
+Esempi dell'interfaccia.
 
 - **Backoffice (admin settings)**  
    ![Backoffice - Impostazioni di sistema](docs/images/BackOffice.png)
 
 - **Frontoffice (home page)**  
    ![Frontoffice - Home PagoPA](docs/images/FrontOffice.png)
-
-Se preferisci altri nomi file, aggiorna i riferimenti qui sopra. Per aggiungere gli screenshot al repository copia i file in `docs/images/` e fai commit/push.
 
 ### Reverse proxy
 
