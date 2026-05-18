@@ -447,14 +447,17 @@ if is_true "${SATOSA_USE_SPID_VALIDATOR:-}"; then
   fi
 fi
 
-# ── cieoidc_backend.yaml ─────────────────────────────────────────────────────
-echo "[startup] Generazione cieoidc_backend.yaml..."
+# ── CIE OIDC: funzioni trust mark ────────────────────────────────────────────
 
-# Auto-fetch trust mark se non già impostato
-if [ -z "${CIE_OIDC_TRUST_MARK:-}" ]; then
-  echo "[startup] Auto-fetch CIE OIDC trust mark dalla registry..."
-  _FETCH_URL="https://oidc.registry.servizicie.interno.gov.it/fetch?iss=https://oidc.registry.servizicie.interno.gov.it&sub=${CIE_OIDC_CLIENT_ID:-}"
-  _TM_RAW=$(curl -sf --max-time 15 "$_FETCH_URL" 2>/dev/null | python3 -c "
+fetch_cie_trust_mark() {
+  local _attempts="${CIE_TRUST_MARK_FETCH_ATTEMPTS:-5}"
+  local _delay=5
+  local _raw=""
+  local _i
+  for _i in $(seq 1 "$_attempts"); do
+    _raw=$(curl -sf --max-time 15 \
+      "https://oidc.registry.servizicie.interno.gov.it/fetch?iss=https://oidc.registry.servizicie.interno.gov.it&sub=${CIE_OIDC_CLIENT_ID:-}" \
+      2>/dev/null | python3 -c "
 import sys, base64, json
 jws = sys.stdin.read().strip()
 parts = jws.split('.')
@@ -472,49 +475,34 @@ else:
     tm_id = d2.get('id', ''); tm_jwt = tm
 if tm_id and tm_jwt: print(tm_id + '|' + tm_jwt)
 " 2>/dev/null) || true
-  if [ -n "${_TM_RAW:-}" ]; then
-    CIE_OIDC_TRUST_MARK_ID="${_TM_RAW%%|*}"
-    CIE_OIDC_TRUST_MARK="${_TM_RAW##*|}"
-    echo "[startup] Trust mark ottenuto (id: $CIE_OIDC_TRUST_MARK_ID)"
-  else
-    echo "[startup] WARNING: impossibile ottenere trust mark dalla registry"
-    CIE_OIDC_TRUST_MARK_ID="${CIE_OIDC_TRUST_MARK_ID:-}"
-    CIE_OIDC_TRUST_MARK="${CIE_OIDC_TRUST_MARK:-}"
-  fi
-else
-  CIE_OIDC_TRUST_MARK_ID=$(python3 -c "
-import sys, base64, json
-tm = '''${CIE_OIDC_TRUST_MARK}'''
-p = tm.split('.'); pl = p[1] + '==' * (-len(p[1]) % 4)
-d = json.loads(base64.urlsafe_b64decode(pl)); print(d.get('id', ''))
-" 2>/dev/null) || CIE_OIDC_TRUST_MARK_ID=""
-  echo "[startup] Usando trust mark configurato manualmente (id: $CIE_OIDC_TRUST_MARK_ID)"
-fi
-export CIE_OIDC_TRUST_MARK CIE_OIDC_TRUST_MARK_ID
+    if [ -n "${_raw:-}" ]; then
+      CIE_OIDC_TRUST_MARK_ID="${_raw%%|*}"
+      CIE_OIDC_TRUST_MARK="${_raw##*|}"
+      export CIE_OIDC_TRUST_MARK CIE_OIDC_TRUST_MARK_ID
+      echo "[startup] Trust mark ottenuto al tentativo $_i (id: $CIE_OIDC_TRUST_MARK_ID)"
+      return 0
+    fi
+    if [ "$_i" -lt "$_attempts" ]; then
+      echo "[startup] Trust mark fetch fallito (tentativo $_i/$_attempts) — retry in ${_delay}s..."
+      sleep "$_delay"
+      _delay=$((_delay * 2))
+    else
+      echo "[startup] WARNING: trust mark non ottenuto dopo $_attempts tentativi"
+    fi
+  done
+  return 1
+}
 
-# Default CIE OIDC values
-: "${CIE_OIDC_CLIENT_NAME:=${APP_ENTITY_NAME:-}}"
-: "${CIE_OIDC_ORGANIZATION_NAME:=${APP_ENTITY_NAME:-}}"
-: "${CIE_OIDC_HOMEPAGE_URI:=${APP_ENTITY_URL:-}}"
-: "${CIE_OIDC_POLICY_URI:=${SATOSA_UI_LEGAL_URL_IT:-}}"
-: "${CIE_OIDC_LOGO_URI:=${SATOSA_UI_LOGO_URL:-}}"
-# logo_uri è obbligatorio in federation_entity per la spec CIE; se non configurato usa homepage_uri come fallback
-: "${CIE_OIDC_LOGO_URI:=${CIE_OIDC_HOMEPAGE_URI:-}}"
-: "${CIE_OIDC_CONTACT_EMAIL:=${SATOSA_CONTACT_PERSON_EMAIL_ADDRESS:-}}"
-export CIE_OIDC_CLIENT_NAME CIE_OIDC_ORGANIZATION_NAME CIE_OIDC_HOMEPAGE_URI
-export CIE_OIDC_POLICY_URI CIE_OIDC_LOGO_URI CIE_OIDC_CONTACT_EMAIL
-
-mkdir -p "$SATOSA_PROXY/conf/backends"
-envsubst < "$TEMPLATES/cieoidc_backend.override.yaml.template" > "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml"
-
-# Se trust mark non disponibile, evita di pubblicare un oggetto trust_marks vuoto
-# (id/trust_mark="") che puo' rompere la validazione lato onboarding.
-if [ -z "${CIE_OIDC_TRUST_MARK:-}" ] || [ -z "${CIE_OIDC_TRUST_MARK_ID:-}" ]; then
-  echo "[startup] Trust mark assente: normalizzazione trust_marks nel metadata CIE OIDC"
-  python3 - "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml" <<'PY'
+generate_cieoidc_yaml() {
+  mkdir -p "$SATOSA_PROXY/conf/backends"
+  envsubst < "$TEMPLATES/cieoidc_backend.override.yaml.template" > "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml"
+  # Se trust mark non disponibile, evita di pubblicare un oggetto trust_marks vuoto
+  # (id/trust_mark="") che puo' rompere la validazione lato onboarding.
+  if [ -z "${CIE_OIDC_TRUST_MARK:-}" ] || [ -z "${CIE_OIDC_TRUST_MARK_ID:-}" ]; then
+    echo "[startup] Trust mark assente: normalizzazione trust_marks nel metadata CIE OIDC"
+    python3 - "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml" <<'PY'
 import sys
 from pathlib import Path
-
 p = Path(sys.argv[1])
 text = p.read_text(encoding="utf-8")
 text = text.replace(
@@ -525,16 +513,13 @@ text = text.replace(
 )
 p.write_text(text, encoding="utf-8")
 PY
-fi
-
-# Inject JWK keys
-JWK_FED="$CIEOIDC_KEYS/jwk-federation.json"
-JWK_SIG="$CIEOIDC_KEYS/jwk-core-sig.json"
-JWK_ENC="$CIEOIDC_KEYS/jwk-core-enc.json"
-
-if [ -f "$JWK_FED" ] && [ -f "$JWK_SIG" ] && [ -f "$JWK_ENC" ]; then
-  echo "[startup] Iniezione chiavi JWK CIE OIDC..."
-  python3 - "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml" "$JWK_FED" "$JWK_SIG" "$JWK_ENC" <<'PY'
+  fi
+  local _JWK_FED="$CIEOIDC_KEYS/jwk-federation.json"
+  local _JWK_SIG="$CIEOIDC_KEYS/jwk-core-sig.json"
+  local _JWK_ENC="$CIEOIDC_KEYS/jwk-core-enc.json"
+  if [ -f "$_JWK_FED" ] && [ -f "$_JWK_SIG" ] && [ -f "$_JWK_ENC" ]; then
+    echo "[startup] Iniezione chiavi JWK CIE OIDC..."
+    python3 - "$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml" "$_JWK_FED" "$_JWK_SIG" "$_JWK_ENC" <<'PY'
 import sys, json
 from pathlib import Path
 
@@ -575,9 +560,48 @@ if remaining:
 yaml_path.write_text(content + "\n", encoding="utf-8")
 print(f"[OK] JWKS iniettati in {yaml_path}")
 PY
+  else
+    echo "[startup] WARNING: chiavi JWK CIE OIDC non trovate in $CIEOIDC_KEYS — configurazione CIE OIDC incompleta"
+    return 1
+  fi
+}
+
+cieoidc_trust_mark_ok() {
+  local _yaml="$SATOSA_PROXY/conf/backends/cieoidc_backend.yaml"
+  [ -f "$_yaml" ] && grep -q 'trust_mark: "ey' "$_yaml"
+}
+
+# ── cieoidc_backend.yaml ─────────────────────────────────────────────────────
+echo "[startup] Generazione cieoidc_backend.yaml..."
+
+# Auto-fetch trust mark (con retry) se non già impostato
+if [ -z "${CIE_OIDC_TRUST_MARK:-}" ]; then
+  echo "[startup] Auto-fetch CIE OIDC trust mark dalla registry..."
+  fetch_cie_trust_mark || echo "[startup] WARNING: CIE OIDC partirà senza trust mark"
 else
-  echo "[startup] WARNING: chiavi JWK CIE OIDC non trovate in $CIEOIDC_KEYS — configurazione CIE OIDC incompleta"
+  CIE_OIDC_TRUST_MARK_ID=$(python3 -c "
+import sys, base64, json
+tm = '''${CIE_OIDC_TRUST_MARK}'''
+p = tm.split('.'); pl = p[1] + '==' * (-len(p[1]) % 4)
+d = json.loads(base64.urlsafe_b64decode(pl)); print(d.get('id', ''))
+" 2>/dev/null) || CIE_OIDC_TRUST_MARK_ID=""
+  echo "[startup] Usando trust mark configurato manualmente (id: $CIE_OIDC_TRUST_MARK_ID)"
 fi
+export CIE_OIDC_TRUST_MARK CIE_OIDC_TRUST_MARK_ID
+
+# Default CIE OIDC values
+: "${CIE_OIDC_CLIENT_NAME:=${APP_ENTITY_NAME:-}}"
+: "${CIE_OIDC_ORGANIZATION_NAME:=${APP_ENTITY_NAME:-}}"
+: "${CIE_OIDC_HOMEPAGE_URI:=${APP_ENTITY_URL:-}}"
+: "${CIE_OIDC_POLICY_URI:=${SATOSA_UI_LEGAL_URL_IT:-}}"
+: "${CIE_OIDC_LOGO_URI:=${SATOSA_UI_LOGO_URL:-}}"
+# logo_uri è obbligatorio in federation_entity per la spec CIE; se non configurato usa homepage_uri come fallback
+: "${CIE_OIDC_LOGO_URI:=${CIE_OIDC_HOMEPAGE_URI:-}}"
+: "${CIE_OIDC_CONTACT_EMAIL:=${SATOSA_CONTACT_PERSON_EMAIL_ADDRESS:-}}"
+export CIE_OIDC_CLIENT_NAME CIE_OIDC_ORGANIZATION_NAME CIE_OIDC_HOMEPAGE_URI
+export CIE_OIDC_POLICY_URI CIE_OIDC_LOGO_URI CIE_OIDC_CONTACT_EMAIL
+
+generate_cieoidc_yaml
 
 # ── patch proxy_conf.yaml ────────────────────────────────────────────────────
 PROXY_CONF="$SATOSA_PROXY/proxy_conf.yaml"
@@ -1065,8 +1089,27 @@ for k,v in json.load(sys.stdin).items():
 ")"
         start_satosa || true
       else
-        echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
-        emit_status_json
+        # ── Watchdog CIE OIDC trust mark ─────────────────────────────────────
+        if is_true "${ENABLE_CIE_OIDC:-false}" && ! cieoidc_trust_mark_ok; then
+          echo "[watchdog] Trust mark CIE mancante — tentativo re-fetch..."
+          if fetch_cie_trust_mark; then
+            if generate_cieoidc_yaml; then
+              echo "[watchdog] Trust mark recuperato — riavvio SATOSA"
+              stop_satosa
+              setup_satosa && start_satosa || true
+              mark_status_event "trust_mark_recovered"
+            else
+              echo "[watchdog] generate_cieoidc_yaml fallito — riprovo al prossimo ciclo"
+              emit_status_json
+            fi
+          else
+            echo "[watchdog] Re-fetch trust mark ancora fallito — riprovo al prossimo ciclo"
+            emit_status_json
+          fi
+        else
+          echo "[watchdog] Auth OK, SATOSA in esecuzione (PID=$_SATOSA_PID)"
+          emit_status_json
+        fi
       fi
     fi
   else
