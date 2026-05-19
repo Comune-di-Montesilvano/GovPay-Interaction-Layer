@@ -447,6 +447,7 @@ if is_true "${SATOSA_USE_SPID_VALIDATOR:-}"; then
   if curl -sSL --max-time 30 "$VALIDATOR_URL" -o "$VALIDATOR_TMP" 2>/dev/null; then
     if grep -q 'validator.spid.gov.it' "$VALIDATOR_TMP"; then
       mv "$VALIDATOR_TMP" "$VALIDATOR_FILE"
+      chmod 644 "$VALIDATOR_FILE"
       echo "[startup] Metadata SPID validator scaricati"
     else
       echo "[startup] WARNING: metadata SPID validator scaricato ma non valido (entityID atteso non trovato)"
@@ -480,6 +481,7 @@ if entity is None:
 ET.ElementTree(copy.deepcopy(entity)).write(dst, encoding="utf-8", xml_declaration=True)
 print("[startup] Metadata validator estratto dal catalogo locale")
 PY
+    chmod 644 "$VALIDATOR_FILE" 2>/dev/null || true
   fi
 
   # Fallback 2: prova il registry AgID e ricava l'entity validator dal catalogo remoto.
@@ -506,6 +508,7 @@ if entity is None:
 ET.ElementTree(copy.deepcopy(entity)).write(dst, encoding="utf-8", xml_declaration=True)
 print("[startup] Metadata validator estratto dal registry SPID")
 PY
+      chmod 644 "$VALIDATOR_FILE" 2>/dev/null || true
       echo "[startup] Fallback validator completato via registry"
     else
       echo "[startup] WARNING: fallback registry SPID non disponibile o privo di validator"
@@ -579,7 +582,7 @@ fi
 # ── CIE OIDC: funzioni trust mark ────────────────────────────────────────────
 
 fetch_cie_trust_mark() {
-  local _attempts="${CIE_TRUST_MARK_FETCH_ATTEMPTS:-5}"
+  local _attempts="${CIE_TRUST_MARK_FETCH_ATTEMPTS:-1}"
   local _delay=5
   local _raw=""
   local _i
@@ -616,7 +619,10 @@ if tm_id and tm_jwt: print(tm_id + '|' + tm_jwt)
       sleep "$_delay"
       _delay=$((_delay * 2))
     else
-      echo "[startup] WARNING: trust mark non ottenuto dopo $_attempts tentativi"
+      echo "[startup] WARNING: trust mark non ottenuto dopo $_attempts tentativi."
+      echo "[startup]   Cause comuni: CIE_OIDC_CLIENT_ID non registrato nel registry CIE, rete non raggiungibile."
+      echo "[startup]   Per ambienti non ancora onboarded: imposta CIE_OIDC_TRUST_MARK manualmente oppure ignora questo avviso."
+      echo "[startup]   Per abilitare i retry: CIE_TRUST_MARK_FETCH_ATTEMPTS=5"
     fi
   done
   return 1
@@ -705,8 +711,12 @@ echo "[startup] Generazione cieoidc_backend.yaml..."
 
 # Auto-fetch trust mark (con retry) se non già impostato
 if [ -z "${CIE_OIDC_TRUST_MARK:-}" ]; then
-  echo "[startup] Auto-fetch CIE OIDC trust mark dalla registry..."
-  fetch_cie_trust_mark || echo "[startup] WARNING: CIE OIDC partirà senza trust mark"
+  if [ -z "${CIE_OIDC_CLIENT_ID:-}" ]; then
+    echo "[startup] CIE_OIDC_CLIENT_ID non impostato — skip auto-fetch trust mark"
+  else
+    echo "[startup] Auto-fetch CIE OIDC trust mark dalla registry (sub=${CIE_OIDC_CLIENT_ID})..."
+    fetch_cie_trust_mark || echo "[startup] WARNING: CIE OIDC partirà senza trust mark (usa CIE_TRUST_MARK_FETCH_ATTEMPTS per abilitare retry)"
+  fi
 else
   CIE_OIDC_TRUST_MARK_ID=$(python3 -c "
 import sys, base64, json
