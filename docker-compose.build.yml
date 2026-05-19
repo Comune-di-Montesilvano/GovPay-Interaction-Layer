@@ -16,6 +16,8 @@ services:
     build:
       context: .
       dockerfile: auth-proxy/Dockerfile
+      args:
+        IAM_PROXY_REF: ${IAM_PROXY_REF:-v3.3}
 
   auth-proxy-nginx:
     build:

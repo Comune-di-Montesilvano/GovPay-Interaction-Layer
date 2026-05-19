@@ -480,7 +480,6 @@ class ImpostazioniController
 
         $ok = curl_exec($ch) !== false;
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         return $ok && $httpCode >= 200 && $httpCode < 300;
     }

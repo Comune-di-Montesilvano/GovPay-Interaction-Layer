@@ -97,12 +97,20 @@ JWKS_RP_JOSE_URL="$INTERNAL_COMPONENT_IDENTIFIER/openid_relying_party/jwks.jose"
 
 for i in $(seq 1 40); do
   if fetch_internal "$ENTITY_CONFIG_URL" "$OUTPUT_DIR/entity-configuration.jwt"; then
-    break
+    # Verifica che il file scaricato sia un JWT valido (deve iniziare con 'eyJ' = base64url di '{').
+    # Se SATOSA è ancora in inizializzazione, l'endpoint può rispondere con dati binari o non-JWT.
+    jwt_start="$(head -c 3 "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null || true)"
+    if [[ "$jwt_start" == "eyJ" ]]; then
+      break
+    fi
+    echo "[WARN] L'endpoint ha risposto ma il contenuto non è un JWT valido (SATOSA in inizializzazione?) — hex: $(od -A n -t x1 -N 4 "$OUTPUT_DIR/entity-configuration.jwt" 2>/dev/null | tr -d ' \n' || echo '?')" >&2
   fi
   echo "  Tentativo $i/40 (3s)..."
   sleep 3
   if [[ $i -eq 40 ]]; then
-    echo "[ERROR] ${SATOSA_HOSTNAME} non risponde. Verificare che il servizio auth-proxy sia avviato." >&2
+    echo "[ERROR] ${SATOSA_HOSTNAME} non ha restituito un Entity Configuration JWT valido dopo 40 tentativi (120s)." >&2
+    echo "[ERROR] Cause possibili: SATOSA non avviato, backend CIE OIDC in errore, chiavi JWK mancanti." >&2
+    echo "[ERROR] Controllare i log del container auth-proxy per dettagli." >&2
     exit 1
   fi
 done
@@ -131,15 +139,37 @@ json_path  = Path(sys.argv[2])
 jwks_path  = Path(sys.argv[3])
 public_id  = sys.argv[4]
 
-jwt = jwt_path.read_text(encoding='utf-8').strip()
+try:
+    jwt = jwt_path.read_text(encoding='utf-8').strip()
+except UnicodeDecodeError as e:
+    raw = jwt_path.read_bytes()
+    raise SystemExit(
+        f'Il file JWT scaricato contiene byte non UTF-8: {e}\n'
+        f'Primi 8 byte (hex): {raw[:8].hex()}\n'
+        f'Causa probabile: SATOSA non ancora inizializzato al momento del download.\n'
+        f'Soluzione: attendere qualche secondo e riprovare.'
+    )
 parts = jwt.split('.')
-if len(parts) < 2:
-    raise SystemExit('JWT entity statement non valido')
+if len(parts) < 3:
+    raise SystemExit(
+        f'JWT entity statement non valido: attesi 3 segmenti (header.payload.signature), trovati {len(parts)}.\n'
+        f'Contenuto (primi 120 char): {jwt[:120]}'
+    )
 
 payload = parts[1]
 payload += '=' * ((4 - len(payload) % 4) % 4)
 payload = payload.replace('-', '+').replace('_', '/')
-obj = json.loads(base64.b64decode(payload).decode('utf-8'))
+raw_payload = base64.b64decode(payload)
+try:
+    # json.loads accetta bytes in Python 3.6+ e decodifica come UTF-8 internamente
+    obj = json.loads(raw_payload)
+except (UnicodeDecodeError, json.JSONDecodeError) as e:
+    raise SystemExit(
+        f'Payload JWT non è JSON valido: {e}\n'
+        f'Primi 20 byte del payload decodificato (hex): {raw_payload[:20].hex()}\n'
+        f'Causa probabile: SATOSA in stato di inizializzazione, risposta non standard.\n'
+        f'Soluzione: attendere che SATOSA sia completamente avviato e riprovare.'
+    )
 
 json_path.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding='utf-8')
 keys = obj.get('jwks', {}).get('keys', [])
