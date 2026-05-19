@@ -11,7 +11,7 @@ USER root
 RUN apk add --no-cache gettext curl git
 
 # Bake-in il progetto SATOSA dal repo upstream (versione fissa a build time → riproducibile)
-ARG IAM_PROXY_REF=master
+ARG IAM_PROXY_REF=v3.3
 ARG GIL_IMAGE_TAG=development
 ARG GIL_VERSION_TYPE=development
 ARG GIL_VERSION_LABEL=development
@@ -52,6 +52,19 @@ RUN chmod +x /builder/startup.sh \
     && cp -r /builder/cieoidc-models/.    /satosa_proxy/backends/cieoidc/models/ \
     && cp -r /builder/static-overrides/.  /satosa_proxy/static/ \
     && cp    /builder/patch_saml2.py      /satosa_proxy/patch_saml2.py \
+    # Scarica asset SPID rimossi dal git upstream in v3.3 ("clean unused asset").
+    # Sono necessari per la disco page: loghi IdP + icona bottone SPID + logo AgID.
+    && cd /satosa_proxy/static \
+    && bash scripts/update-spid-idp-assets.sh \
+    && curl -sLf -o spid/spid-ico-circle-bb.svg \
+         "https://raw.githubusercontent.com/italia/spid-sp-access-button/master/src/production/img/spid-ico-circle-bb.svg" \
+    && curl -sLf -o spid/spid-ico-circle-bb.png \
+         "https://raw.githubusercontent.com/italia/spid-sp-access-button/master/src/production/img/spid-ico-circle-bb.png" \
+    && curl -sLf -o spid/spid-agid-logo-lb.png \
+         "https://raw.githubusercontent.com/italia/spid-graphics/master/spid-logos/spid-agid-logo-lb.png" \
+    # Fail-fast: verifica asset obbligatori scaricati correttamente
+    && test -f /satosa_proxy/static/spid/spid-ico-circle-bb.svg \
+    && test -f /satosa_proxy/static/spid/spid-agid-logo-lb.png \
     # Directory necessarie a SATOSA (logs, metadata)
     && mkdir -p /satosa_proxy/logs /satosa_proxy/metadata/idp /satosa_proxy/metadata/sp \
     && chmod -R 777 /satosa_proxy/logs /satosa_proxy/metadata

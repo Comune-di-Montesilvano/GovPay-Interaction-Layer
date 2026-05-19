@@ -437,13 +437,142 @@ fi
 
 # ── SPID validator metadata ──────────────────────────────────────────────────
 if is_true "${SATOSA_USE_SPID_VALIDATOR:-}"; then
+  mkdir -p "$SATOSA_PROXY/metadata/idp"
   VALIDATOR_FILE="$SATOSA_PROXY/metadata/idp/spid-validator.xml"
-  if [ ! -f "$VALIDATOR_FILE" ]; then
-    echo "[startup] Scaricamento metadata SPID validator..."
-    VALIDATOR_URL="${SATOSA_SPID_VALIDATOR_METADATA_URL:-https://validator.spid.gov.it/metadata.xml}"
-    curl -sSL --max-time 30 "$VALIDATOR_URL" -o "$VALIDATOR_FILE" 2>/dev/null \
-      && echo "[startup] Metadata SPID validator scaricati" \
-      || echo "[startup] WARNING: impossibile scaricare metadata SPID validator"
+  SPID_IDPS_FILE="$SATOSA_PROXY/metadata/idp/spid-entities-idps.xml"
+  REGISTRY_URL="${SATOSA_SPID_IDPS_REGISTRY_URL:-https://registry.spid.gov.it/entities-idp}"
+  VALIDATOR_URL="${SATOSA_SPID_VALIDATOR_METADATA_URL:-https://validator.spid.gov.it/metadata.xml}"
+  VALIDATOR_TMP="$(mktemp)"
+  echo "[startup] Scaricamento metadata SPID validator..."
+  if curl -sSL --max-time 30 "$VALIDATOR_URL" -o "$VALIDATOR_TMP" 2>/dev/null; then
+    if grep -q 'validator.spid.gov.it' "$VALIDATOR_TMP"; then
+      mv "$VALIDATOR_TMP" "$VALIDATOR_FILE"
+      echo "[startup] Metadata SPID validator scaricati"
+    else
+      echo "[startup] WARNING: metadata SPID validator scaricato ma non valido (entityID atteso non trovato)"
+      rm -f "$VALIDATOR_TMP"
+    fi
+  else
+    echo "[startup] WARNING: impossibile scaricare metadata SPID validator"
+    rm -f "$VALIDATOR_TMP"
+  fi
+
+  # Fallback 1: se il catalogo SPID locale contiene gia' l'entity validator,
+  # estrai un metadata dedicato dal catalogo senza dipendere dall'endpoint validator.
+  if { [ ! -s "$VALIDATOR_FILE" ] || ! grep -q 'validator.spid.gov.it' "$VALIDATOR_FILE"; } \
+    && [ -s "$SPID_IDPS_FILE" ] && grep -q 'validator.spid.gov.it' "$SPID_IDPS_FILE"; then
+    echo "[startup] Fallback validator: estraggo entity dal catalogo SPID locale"
+    python3 - "$SPID_IDPS_FILE" "$VALIDATOR_FILE" <<'PY'
+import copy
+import sys
+import xml.etree.ElementTree as ET
+
+src = sys.argv[1]
+dst = sys.argv[2]
+MD_NS = "urn:oasis:names:tc:SAML:2.0:metadata"
+ET.register_namespace("md", MD_NS)
+
+root = ET.parse(src).getroot()
+entity = root.find(f".//{{{MD_NS}}}EntityDescriptor[@entityID='https://validator.spid.gov.it']")
+if entity is None:
+    sys.exit(1)
+
+ET.ElementTree(copy.deepcopy(entity)).write(dst, encoding="utf-8", xml_declaration=True)
+print("[startup] Metadata validator estratto dal catalogo locale")
+PY
+  fi
+
+  # Fallback 2: prova il registry AgID e ricava l'entity validator dal catalogo remoto.
+  if [ ! -s "$VALIDATOR_FILE" ] || ! grep -q 'validator.spid.gov.it' "$VALIDATOR_FILE"; then
+    REGISTRY_TMP="$(mktemp)"
+    echo "[startup] Fallback validator: download catalogo SPID da registry..."
+    if curl -sSL --max-time 30 "$REGISTRY_URL" -o "$REGISTRY_TMP" 2>/dev/null \
+      && grep -q 'validator.spid.gov.it' "$REGISTRY_TMP"; then
+      python3 - "$REGISTRY_TMP" "$VALIDATOR_FILE" <<'PY'
+import copy
+import sys
+import xml.etree.ElementTree as ET
+
+src = sys.argv[1]
+dst = sys.argv[2]
+MD_NS = "urn:oasis:names:tc:SAML:2.0:metadata"
+ET.register_namespace("md", MD_NS)
+
+root = ET.parse(src).getroot()
+entity = root.find(f".//{{{MD_NS}}}EntityDescriptor[@entityID='https://validator.spid.gov.it']")
+if entity is None:
+    sys.exit(1)
+
+ET.ElementTree(copy.deepcopy(entity)).write(dst, encoding="utf-8", xml_declaration=True)
+print("[startup] Metadata validator estratto dal registry SPID")
+PY
+      echo "[startup] Fallback validator completato via registry"
+    else
+      echo "[startup] WARNING: fallback registry SPID non disponibile o privo di validator"
+    fi
+    rm -f "$REGISTRY_TMP"
+  fi
+
+  if [ -s "$VALIDATOR_FILE" ] && grep -q 'validator.spid.gov.it' "$VALIDATOR_FILE" && [ -s "$SPID_IDPS_FILE" ]; then
+    echo "[startup] Integrazione metadata validator nel catalogo SPID IdP..."
+    python3 - "$SPID_IDPS_FILE" "$VALIDATOR_FILE" <<'PY'
+import copy
+import sys
+import xml.etree.ElementTree as ET
+
+dst_path = sys.argv[1]
+val_path = sys.argv[2]
+MD_NS = "urn:oasis:names:tc:SAML:2.0:metadata"
+ET.register_namespace("md", MD_NS)
+
+def local_name(tag):
+    return tag.split("}", 1)[-1] if "}" in tag else tag
+
+def first_entity(root):
+    if local_name(root.tag) == "EntityDescriptor":
+        return root
+    return root.find(f".//{{{MD_NS}}}EntityDescriptor")
+
+dst_tree = ET.parse(dst_path)
+dst_root = dst_tree.getroot()
+val_root = ET.parse(val_path).getroot()
+val_entity = first_entity(val_root)
+
+if val_entity is None:
+    print("[startup] WARNING: metadata validator senza EntityDescriptor; merge saltato")
+    sys.exit(0)
+
+entity_id = (val_entity.get("entityID") or "").strip()
+if not entity_id:
+    print("[startup] WARNING: metadata validator senza entityID; merge saltato")
+    sys.exit(0)
+
+if dst_root.find(f".//{{{MD_NS}}}EntityDescriptor[@entityID='{entity_id}']") is not None:
+    print(f"[startup] Metadata validator già presente nel catalogo SPID ({entity_id})")
+    sys.exit(0)
+
+if local_name(dst_root.tag) == "EntityDescriptor":
+    wrapper = ET.Element(f"{{{MD_NS}}}EntitiesDescriptor")
+    wrapper.append(copy.deepcopy(dst_root))
+    wrapper.append(copy.deepcopy(val_entity))
+    dst_root = wrapper
+    dst_tree = ET.ElementTree(dst_root)
+else:
+    dst_root.append(copy.deepcopy(val_entity))
+
+dst_tree.write(dst_path, encoding="utf-8", xml_declaration=True)
+print(f"[startup] Metadata validator aggiunto nel catalogo SPID ({entity_id})")
+PY
+  fi
+
+  # Evita di esporre il pulsante validator e il relativo routing se i metadata
+  # non sono disponibili/corretti: pysaml2 altrimenti solleva UnknownSystemEntity.
+  if { [ ! -s "$VALIDATOR_FILE" ] || ! grep -q 'validator.spid.gov.it' "$VALIDATOR_FILE"; } \
+    && { [ ! -s "$SPID_IDPS_FILE" ] || ! grep -q 'validator.spid.gov.it' "$SPID_IDPS_FILE"; }; then
+    echo "[startup] WARNING: metadata SPID validator assenti/non validi — disabilito SATOSA_USE_SPID_VALIDATOR"
+    SATOSA_USE_SPID_VALIDATOR="false"
+    export SATOSA_USE_SPID_VALIDATOR
+    sed -i '/SPID_VALIDATOR_START/,/SPID_VALIDATOR_END/d' "$SATOSA_PROXY/static/disco.html"
   fi
 fi
 
