@@ -549,7 +549,9 @@ class ImpostazioniController
                 $decrypt = $this->decryptValueForKeyRotation($value, $oldKey);
 
                 if (!($decrypt['ok'] ?? false)) {
-                    $pdo->rollBack();
+                    if (!$dryRun && $pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
                     $settingPath = (string)($row['section'] ?? '') . '.' . (string)($row['key_name'] ?? '');
                     return $this->jsonError(
                         "Rotazione interrotta: impossibile decifrare {$settingPath} con la old key (chiave errata o dato corrotto).",
@@ -568,7 +570,9 @@ class ImpostazioniController
 
                 $reEncrypted = $this->encryptValueForKeyRotation((string)$decrypt['plaintext'], $newKey);
                 if ($reEncrypted === null) {
-                    $pdo->rollBack();
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
                     return $this->jsonError('Rotazione interrotta: errore durante la cifratura con la nuova chiave.', 500);
                 }
 
@@ -625,19 +629,43 @@ class ImpostazioniController
         try {
             $pdo = Connection::getPDO();
             $stmt = $pdo->query(
-                "SELECT section, key_name,
-                        CASE WHEN value IS NULL OR value = '' THEN 0 ELSE 1 END AS has_value
+                "SELECT section, key_name, value
                  FROM settings
                  WHERE encrypted = 1
                  ORDER BY section ASC, key_name ASC"
             );
 
-            $rows = $stmt ? $stmt->fetchAll(\PDO::FETCH_ASSOC) : [];
+            $rawRows = $stmt ? $stmt->fetchAll(\PDO::FETCH_ASSOC) : [];
+            $runtimeKey = $this->getRuntimeEncryptionKey();
+
+            $rows = [];
+            foreach ($rawRows as $row) {
+                $value = (string)($row['value'] ?? '');
+                if ($value === '') {
+                    $status = 'empty';
+                } elseif ($runtimeKey === '') {
+                    $status = 'no_key';
+                } else {
+                    $result = $this->decryptValueForKeyRotation($value, $runtimeKey);
+                    if (!$result['ok']) {
+                        $status = 'error';
+                    } elseif (($result['source'] ?? '') === 'plaintext') {
+                        $status = 'plaintext';
+                    } else {
+                        $status = 'ok';
+                    }
+                }
+                $rows[] = [
+                    'section'  => $row['section'],
+                    'key_name' => $row['key_name'],
+                    'status'   => $status,
+                ];
+            }
 
             return $this->jsonResponse([
                 'success' => true,
-                'count' => count($rows),
-                'items' => $rows,
+                'count'   => count($rows),
+                'items'   => $rows,
             ]);
         } catch (\Throwable $e) {
             Logger::getInstance()->error('Lettura chiavi encrypted=1 fallita', ['error' => $e->getMessage()]);
@@ -645,15 +673,49 @@ class ImpostazioniController
         }
     }
 
-    private function triggerAuthProxyReload(): bool
+    /**
+     * Verifica la password dell'utente corrente (per sblocco UI sezioni sensibili).
+     *
+     * POST /impostazioni/sicurezza/verify-password
+     */
+    public function verifyPassword(Request $request, Response $response): Response
     {
-        return $this->callAuthProxyControlEndpoint('reload');
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token CSRF non valido.', 403);
+        }
+
+        $password = (string)($body['password'] ?? '');
+        if ($password === '') {
+            return $this->jsonError('Password obbligatoria.', 400);
+        }
+
+        try {
+            $email = $_SESSION['user']['email'] ?? '';
+            if ($email === '') {
+                return $this->jsonError('Sessione non valida.', 401);
+            }
+
+            $pdo = Connection::getPDO();
+            $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE email = :email AND is_disabled = 0 LIMIT 1');
+            $stmt->execute([':email' => $email]);
+            $hash = $stmt->fetchColumn();
+
+            if (!$hash || !password_verify($password, (string)$hash)) {
+                return $this->jsonError('Password errata.', 401);
+            }
+
+            return $this->jsonOk('Password verificata.');
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Verifica password fallita', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore interno.', 500);
+        }
     }
 
-    private function triggerAuthProxyRestart(): bool
-    {
-        return $this->callAuthProxyControlEndpoint('restart');
-    }
 
     private function callAuthProxyControlEndpoint(string $action): bool
     {
@@ -2771,73 +2833,65 @@ class ImpostazioniController
         return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile.");
     }
 
-    private function requireAdminOrAbove(): void
+    /**
+     * Restituisce la APP_ENCRYPTION_KEY attiva dopo verifica password.
+     *
+     * POST /impostazioni/sicurezza/show-encryption-key
+     */
+    public function showEncryptionKey(Request $request, Response $response): Response
     {
-        $role = $_SESSION['user']['role'] ?? '';
-        if (!in_array($role, ['admin', 'superadmin'], true)) {
-            http_response_code(403);
-            exit('Accesso non autorizzato');
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token CSRF non valido.', 403);
+        }
+
+        $password = (string)($body['password'] ?? '');
+        if ($password === '') {
+            return $this->jsonError('Password obbligatoria.', 400);
+        }
+
+        try {
+            $email = $_SESSION['user']['email'] ?? '';
+            if ($email === '') {
+                return $this->jsonError('Sessione non valida.', 401);
+            }
+
+            $pdo = Connection::getPDO();
+            $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE email = :email AND is_disabled = 0 LIMIT 1');
+            $stmt->execute([':email' => $email]);
+            $hash = $stmt->fetchColumn();
+
+            if (!$hash || !password_verify($password, (string)$hash)) {
+                return $this->jsonError('Password errata.', 401);
+            }
+
+            $key = $this->getRuntimeEncryptionKey();
+            if ($key === '') {
+                return $this->jsonError('APP_ENCRYPTION_KEY non configurata nel runtime.', 404);
+            }
+
+            Logger::getInstance()->info('APP_ENCRYPTION_KEY visualizzata', ['user' => $email]);
+
+            return $this->jsonResponse(['success' => true, 'key' => $key]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('showEncryptionKey fallito', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore interno.', 500);
         }
     }
 
-    private function requireSuperadmin(): void
+    private function triggerAuthProxyReload(): bool
     {
-        if (($_SESSION['user']['role'] ?? '') !== 'superadmin') {
-            http_response_code(403);
-            exit('Accesso riservato al superadmin');
-        }
+        return $this->callAuthProxyControlEndpoint('reload');
     }
 
-    private function isSuperadmin(): bool
+    private function triggerAuthProxyRestart(): bool
     {
-        return ($_SESSION['user']['role'] ?? '') === 'superadmin';
+        return $this->callAuthProxyControlEndpoint('restart');
     }
-
-    private function currentUser(): string
-    {
-        return $_SESSION['user']['email'] ?? 'system';
-    }
-
-    private function generateCsrf(): string
-    {
-        if (empty($_SESSION['impostazioni_csrf'])) {
-            $_SESSION['impostazioni_csrf'] = bin2hex(random_bytes(32));
-        }
-        return $_SESSION['impostazioni_csrf'];
-    }
-
-    private function validateCsrf(array $body): bool
-    {
-        $expected = $_SESSION['impostazioni_csrf'] ?? '';
-        $provided = $body['csrf_token'] ?? '';
-        return $expected !== '' && hash_equals($expected, $provided);
-    }
-
-    private function parseBody(Request $request): array
-    {
-        $contentType = $request->getHeaderLine('Content-Type');
-        if (str_contains($contentType, 'application/json')) {
-            $raw     = (string) $request->getBody();
-            $decoded = json_decode($raw, true);
-            return is_array($decoded) ? $decoded : [];
-        }
-        return (array)($request->getParsedBody() ?? []);
-    }
-
-    private function requestForce(Request $request, array $body): bool
-    {
-        if (!empty($body['force'])) {
-            return true;
-        }
-
-        $q = $request->getQueryParams()['force'] ?? '';
-        if (!is_string($q)) {
-            return false;
-        }
-
-        return in_array(strtolower(trim($q)), ['1', 'true', 'yes', 'on'], true);
-    }
-
     private function getRuntimeEncryptionKey(): string
     {
         $fromConfig = (string)(ConfigLoader::get('app.encryption_key') ?? '');
@@ -2895,6 +2949,60 @@ class ImpostazioniController
         }
 
         return base64_encode($iv . $ciphertext);
+    }
+
+    private function generateCsrf(): string
+    {
+        if (empty($_SESSION['impostazioni_csrf'])) {
+            $_SESSION['impostazioni_csrf'] = bin2hex(random_bytes(32));
+        }
+        return (string) $_SESSION['impostazioni_csrf'];
+    }
+
+    private function validateCsrf(array $body): bool
+    {
+        $expected = (string) ($_SESSION['impostazioni_csrf'] ?? '');
+        $provided = (string) ($body['csrf_token'] ?? '');
+        return $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
+    }
+
+    private function parseBody(Request $request): array
+    {
+        $ct = $request->getHeaderLine('Content-Type');
+        if (str_contains($ct, 'application/json')) {
+            $decoded = json_decode((string) $request->getBody(), true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        return (array) ($request->getParsedBody() ?? []);
+    }
+
+    private function isSuperadmin(): bool
+    {
+        return ($_SESSION['user']['role'] ?? '') === 'superadmin';
+    }
+
+    private function currentUser(): string
+    {
+        return $_SESSION['user']['email'] ?? 'system';
+    }
+
+    private function requireAdminOrAbove(): void
+    {
+        $role = $_SESSION['user']['role'] ?? '';
+        if (!in_array($role, ['admin', 'superadmin'], true)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato: permessi insufficienti'];
+            header('Location: /');
+            exit;
+        }
+    }
+
+    private function requireSuperadmin(): void
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso riservato al superadmin.'];
+            header('Location: /impostazioni');
+            exit;
+        }
     }
 
     private function jsonOk(string $message, array $extra = []): Response
