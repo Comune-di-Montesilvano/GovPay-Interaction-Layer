@@ -686,10 +686,13 @@
                       {% set selectedRt = rr.rt %}
                     {% endif %}
 
-                    {# Identificativo: da RPT -> datiVersamento -> codiceContestoPagamento #}
+                    {# Identificativo: da RPT -> datiVersamento -> codiceContestoPagamento; fallback struttura flat: rt.receiptId #}
                     {% set idPago = rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.codiceContestoPagamento is defined 
                       ? rr.rpt.datiVersamento.codiceContestoPagamento 
                       : '' %}
+                    {% if not idPago and selectedRt and selectedRt.receiptId is defined and selectedRt.receiptId %}
+                      {% set idPago = selectedRt.receiptId %}
+                    {% endif %}
                     {# Data e ora: dataEsecuzionePagamento (data) + ora di dataOraMessaggioRichiesta #}
                     {% set dataExec = rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.dataEsecuzionePagamento is defined ? rr.rpt.datiVersamento.dataEsecuzionePagamento : '' %}
                     {% set oraMsg = rr.rpt is defined and rr.rpt.dataOraMessaggioRichiesta is defined ? rr.rpt.dataOraMessaggioRichiesta : '' %}
@@ -700,21 +703,41 @@
                       {% set timeStr = oraMsg ? (oraMsg|date('H:i:s')) : '00:00:00' %}
                       {% set combinedTs = dataExecStr ~ ' ' ~ timeStr %}
                     {% endif %}
+                    {# Fallback struttura flat: rt.paymentDateTime #}
+                    {% if not combinedTs and selectedRt and selectedRt.paymentDateTime is defined and selectedRt.paymentDateTime %}
+                      {% set combinedTs = selectedRt.paymentDateTime %}
+                    {% endif %}
                     {# Importo: da RPT -> datiVersamento -> datiSingoloVersamento[0] -> importoSingoloVersamento #}
                     {% set importo = (rr.rpt is defined and rr.rpt.datiVersamento is defined and rr.rpt.datiVersamento.datiSingoloVersamento is defined and rr.rpt.datiVersamento.datiSingoloVersamento|length > 0 and rr.rpt.datiVersamento.datiSingoloVersamento[0].importoSingoloVersamento is defined)
                       ? rr.rpt.datiVersamento.datiSingoloVersamento[0].importoSingoloVersamento
                       : null %}
+                    {# Fallback struttura flat: rt.paymentAmount #}
+                    {% if importo is null and selectedRt and selectedRt.paymentAmount is defined and selectedRt.paymentAmount is not null %}
+                      {% set importo = selectedRt.paymentAmount %}
+                    {% endif %}
                     {# ABI/Istituto: da selectedRt -> istitutoAttestante #}
                     {% set abi = (selectedRt and selectedRt.istitutoAttestante is defined and selectedRt.istitutoAttestante.identificativoUnivocoAttestante is defined)
                       ? (selectedRt.istitutoAttestante.identificativoUnivocoAttestante.codiceIdentificativoUnivoco|default(''))
                       : '' %}
+                    {# Fallback struttura flat: rt.idPSP #}
+                    {% if not abi and selectedRt and selectedRt.idPSP is defined and selectedRt.idPSP %}
+                      {% set abi = selectedRt.idPSP %}
+                    {% endif %}
                     {% set istituto = (selectedRt and selectedRt.istitutoAttestante is defined)
                       ? (selectedRt.istitutoAttestante.denominazioneAttestante|default(''))
                       : '' %}
+                    {# Fallback struttura flat: rt.PSPCompanyName #}
+                    {% if not istituto and selectedRt and selectedRt.PSPCompanyName is defined and selectedRt.PSPCompanyName %}
+                      {% set istituto = selectedRt.PSPCompanyName %}
+                    {% endif %}
                     {# Stato: da selectedRt -> datiPagamento -> datiSingoloPagamento[0] -> esitoSingoloPagamento #}
                     {% set stato = '' %}
                     {% if selectedRt and selectedRt.datiPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento is defined and selectedRt.datiPagamento.datiSingoloPagamento|length > 0 and selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento is defined %}
                       {% set stato = selectedRt.datiPagamento.datiSingoloPagamento[0].esitoSingoloPagamento %}
+                    {% endif %}
+                    {# Fallback struttura flat: rt.outcome #}
+                    {% if not stato and selectedRt and selectedRt.outcome is defined and selectedRt.outcome %}
+                      {% set stato = selectedRt.outcome %}
                     {% endif %}
                     {# IUV: rt.datiPagamento.identificativoUnivocoVersamento -> rt.noticeNumber -> rt.creditorReferenceId -> rpt.datiVersamento.identificativoUnivocoVersamento -> r.iuvPagamento -> r.numeroAvviso #}
                     {% set iuv = '' %}
