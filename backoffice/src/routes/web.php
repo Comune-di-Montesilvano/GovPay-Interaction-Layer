@@ -104,6 +104,12 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni/sicurezza/encrypted-keys', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getEncryptedSettingsKeys($request, $response);
     });
+    $app->post('/impostazioni/sicurezza/verify-password', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->verifyPassword($request, $response);
+    });
+    $app->post('/impostazioni/sicurezza/show-encryption-key', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->showEncryptionKey($request, $response);
+    });
     $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
     });

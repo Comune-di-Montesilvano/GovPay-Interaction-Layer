@@ -1,6 +1,15 @@
 <div id="backup-wrap">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
+  {# ─── AVVISO CHIAVE CIFRATURA ────────────────────────────────────────────── #}
+  {% if is_superadmin %}
+  <div class="alert alert-warning small py-2 mb-3">
+    <i class="fas fa-exclamation-triangle me-1"></i>
+    Il backup ZIP include il dump del database con i valori cifrati. Senza la <strong>APP_ENCRYPTION_KEY originale</strong>, i dati cifrati nel backup sono inutilizzabili.
+    Conserva la chiave separatamente — usa la card <strong>"Visualizza APP_ENCRYPTION_KEY"</strong> in fondo a questa pagina.
+  </div>
+  {% endif %}
+
   {# ─── Backup completo di sistema ─────────────────────────────────────────── #}
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
@@ -122,7 +131,7 @@
   {% if is_superadmin %}
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
-      <h2 class="h6 mb-0"><i class="fas fa-lock me-2 text-primary"></i>Chiavi cifrate nel DB (encrypted=1)</h2>
+      <h2 class="h6 mb-0"><i class="fas fa-lock me-2 text-primary"></i>Chiavi cifrate nel DB</h2>
       <button class="btn btn-outline-secondary btn-sm" type="button" onclick="loadEncryptedKeys(this)">
         <i class="fas fa-sync-alt me-1"></i>Aggiorna
       </button>
@@ -197,6 +206,27 @@
       <div class="mt-3">
         <button class="btn btn-warning btn-sm" onclick="rotateEncryptionKey(this)">
           <i class="fas fa-key me-1"></i>Ruota chiave
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  {# ─── Visualizza APP_ENCRYPTION_KEY ──────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
+      <h2 class="h6 mb-0"><i class="fas fa-eye me-2 text-secondary"></i>Visualizza APP_ENCRYPTION_KEY attiva</h2>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Mostra la chiave di cifratura correntemente in uso dall'applicazione.
+        <strong>Conserva questa chiave in un archivio sicuro separato dal backup</strong> — senza di essa i dati cifrati nel backup sono inutilizzabili.
+      </p>
+      <div id="show-key-result" class="mb-3" style="display:none;"></div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <input type="password" id="show-key-password" class="form-control form-control-sm" placeholder="Inserisci la tua password per visualizzare la chiave" style="max-width:320px;" autocomplete="current-password">
+        <button class="btn btn-outline-secondary btn-sm" onclick="showEncryptionKey(this)">
+          <i class="fas fa-eye me-1"></i>Mostra chiave
         </button>
       </div>
     </div>
@@ -337,16 +367,27 @@
     const el = document.getElementById('encrypted-keys-list');
     if (!el) return;
     if (!Array.isArray(items) || items.length === 0) {
-      el.innerHTML = '<span class="text-muted">Nessuna chiave marcata encrypted=1.</span>';
+      el.innerHTML = '<span class="text-muted">Nessuna chiave marcata come cifrata.</span>';
       return;
     }
 
+    const statusBadge = (s) => {
+      switch (s) {
+        case 'ok':        return '<span class="badge bg-success">Decifrata correttamente</span>';
+        case 'empty':     return '<span class="badge bg-secondary">Vuoto</span>';
+        case 'plaintext': return '<span class="badge bg-warning text-dark">In chiaro (non cifrata)</span>';
+        case 'no_key':    return '<span class="badge bg-danger">APP_ENCRYPTION_KEY assente</span>';
+        case 'error':     return '<span class="badge bg-danger">Errore decifratura</span>';
+        default:          return '<span class="badge bg-light text-dark">Sconosciuto</span>';
+      }
+    };
+
     let html = '<div class="table-responsive"><table class="table table-sm table-striped mb-0">'
-      + '<thead><tr><th>Sezione</th><th>Chiave</th><th>Valore presente</th></tr></thead><tbody>';
+      + '<thead><tr><th>Sezione</th><th>Chiave</th><th>Stato</th></tr></thead><tbody>';
     for (const row of items) {
       html += `<tr><td class="font-monospace">${row.section || ''}</td>`
            + `<td class="font-monospace">${row.key_name || ''}</td>`
-           + `<td>${Number(row.has_value || 0) === 1 ? 'Si' : 'No'}</td></tr>`;
+           + `<td>${statusBadge(row.status)}</td></tr>`;
     }
     html += '</tbody></table></div>';
     el.innerHTML = html;
@@ -509,6 +550,46 @@
       }
     } finally {
       if (btn) btn.disabled = false;
+    }
+  };
+
+  window.showEncryptionKey = async function (btn) {
+    const password = document.getElementById('show-key-password')?.value || '';
+    if (!password) {
+      impToast('Inserisci la password per visualizzare la chiave.', false);
+      return;
+    }
+    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+    const el = document.getElementById('show-key-result');
+    try {
+      const res = await fetch('/impostazioni/sicurezza/show-encryption-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, csrf_token: csrf }),
+      });
+      const json = await parseJsonOrThrow(res);
+      if (!json.success) throw new Error(json.message || 'Errore');
+      const key = json.key || '';
+      el.innerHTML = `<div class="alert alert-success py-2 mb-0 small">
+        <div class="mb-1 fw-semibold">APP_ENCRYPTION_KEY attiva:</div>
+        <code id="enc-key-value" class="user-select-all fs-6">${key}</code>
+        <button type="button" class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2 ms-2"
+          onclick="navigator.clipboard.writeText(document.getElementById('enc-key-value').textContent).then(()=>impToast('Chiave copiata.',true))">
+          <i class="fas fa-copy"></i>
+        </button>
+        <div class="mt-1 text-muted">Lunghezza: ${key.length} caratteri. Conservala in un archivio sicuro offline separato dal backup.</div>
+      </div>`;
+      el.style.display = '';
+      document.getElementById('show-key-password').value = '';
+    } catch (e) {
+      el.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">${e.message}</div>`;
+      el.style.display = '';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
     }
   };
 
