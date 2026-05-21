@@ -98,6 +98,12 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/debug/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveDebug($request, $response);
     });
+    $app->post('/impostazioni/sicurezza/rotate-encryption-key', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->rotateEncryptionKey($request, $response);
+    });
+    $app->get('/impostazioni/sicurezza/encrypted-keys', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->getEncryptedSettingsKeys($request, $response);
+    });
     $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
     });
