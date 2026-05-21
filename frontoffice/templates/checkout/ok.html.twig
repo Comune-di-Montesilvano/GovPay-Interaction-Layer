@@ -22,11 +22,26 @@
         <div class="d-flex flex-wrap gap-3 mt-4">
           {% if numero_avvisi is defined and numero_avvisi > 1 %}
             <a class="btn btn-primary" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+            {% for item in receipt_items|default([]) %}
+              <a class="btn btn-outline-success" href="{{ item.receipt_url }}" target="_blank" rel="noopener">
+                <i class="fa-solid fa-receipt me-1" aria-hidden="true"></i>
+                {% if (receipt_items|default([]))|length > 1 %}
+                  {{ 'Scarica ricevuta'|trans }} {{ item.numero_avviso }}
+                {% else %}
+                  {{ 'Scarica ricevuta'|trans }}
+                {% endif %}
+              </a>
+            {% endfor %}
           {% else %}
             {% if spid_enabled and (not is_logged_in) %}
               <a class="btn btn-primary" href="{{ login_path }}">{{ 'Accedi per vedere lo stato'|trans }}</a>
             {% else %}
               <a class="btn btn-primary" href="{{ detail_path }}">{{ 'Vai alla pendenza'|trans }}</a>
+            {% endif %}
+            {% if receipt_url is defined and receipt_url %}
+              <a class="btn btn-outline-success" href="{{ receipt_url }}" target="_blank" rel="noopener">
+                <i class="fa-solid fa-receipt me-1" aria-hidden="true"></i>{{ 'Scarica ricevuta'|trans }}
+              </a>
             {% endif %}
             <a class="btn btn-outline-primary" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
           {% endif %}
@@ -34,6 +49,9 @@
         </div>
 
         <div class="mt-4">
+          {% if receipt_items|default([])|length > 0 or (receipt_url is defined and receipt_url) %}
+            <p class="text-muted small mb-1">{{ 'La ricevuta potrebbe non essere disponibile immediatamente dopo il pagamento.'|trans }}</p>
+          {% endif %}
           <p class="mb-0">{{ 'Se riscontri anomalie puoi contattarci a'|trans }} <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
         </div>
       </div>

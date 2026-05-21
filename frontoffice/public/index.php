@@ -2820,13 +2820,36 @@ $routes = [
                 : [];
             $numeroAvvisi = max(count($cartIds), 1);
 
+            $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+            $receiptItems = [];
+            foreach (array_slice($cartIds, 0, 5) as $pid) {
+                $detail = frontoffice_fetch_pagamenti_detail((string)$pid);
+                if (!is_array($detail)) {
+                    continue;
+                }
+                $nav = preg_replace('/\D+/', '', trim((string)($detail['numeroAvviso'] ?? '')));
+                if ($nav === '' || $idDominio === '') {
+                    continue;
+                }
+                $cf = frontoffice_extract_pendenza_debtor_cf($detail);
+                if ($cf === '') {
+                    continue;
+                }
+                $url = frontoffice_build_public_receipt_url($idDominio, (string)$pid, $cf, 3600);
+                if ($url === null) {
+                    continue;
+                }
+                $receiptItems[] = ['numero_avviso' => $nav, 'receipt_url' => $url];
+            }
+
             return [
                 'template' => 'checkout/ok.html.twig',
                 'context' => [
-                    'numero_avvisi' => $numeroAvvisi,
-                    'detail_path' => '/pendenze',
-                    'login_path' => '/login?return_to=%2Fpendenze',
-                    'is_logged_in' => frontoffice_get_logged_user() !== null,
+                    'numero_avvisi'  => $numeroAvvisi,
+                    'receipt_items'  => $receiptItems,
+                    'detail_path'    => '/pendenze',
+                    'login_path'     => '/login?return_to=%2Fpendenze',
+                    'is_logged_in'   => frontoffice_get_logged_user() !== null,
                 ],
             ];
         }
@@ -2835,6 +2858,7 @@ $routes = [
         $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
 
         $numeroAvviso = null;
+        $receiptUrl   = null;
         if ($idPendenza !== '') {
             $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
             if (is_array($detail)) {
@@ -2842,6 +2866,11 @@ $routes = [
                 $tmp = preg_replace('/\D+/', '', $tmp);
                 if (is_string($tmp) && $tmp !== '') {
                     $numeroAvviso = $tmp;
+                }
+                $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+                $cf = frontoffice_extract_pendenza_debtor_cf($detail);
+                if ($cf !== '' && $idDominio !== '') {
+                    $receiptUrl = frontoffice_build_public_receipt_url($idDominio, $idPendenza, $cf, 3600);
                 }
             }
         }
@@ -2850,62 +2879,101 @@ $routes = [
             'template' => 'checkout/ok.html.twig',
             'context' => [
                 'numero_avviso' => $numeroAvviso,
-                'detail_path' => $detailPath,
-                'login_path' => '/login?return_to=' . rawurlencode($detailPath),
-                'is_logged_in' => frontoffice_get_logged_user() !== null,
+                'receipt_url'   => $receiptUrl,
+                'detail_path'   => $detailPath,
+                'login_path'    => '/login?return_to=' . rawurlencode($detailPath),
+                'is_logged_in'  => frontoffice_get_logged_user() !== null,
             ],
         ];
     },
 
     '/checkout/cancel' => static function (): array {
         $idPendenza = trim((string)($_GET['idPendenza'] ?? $_GET['id_pendenza'] ?? ''));
+        $idCart     = trim((string)($_GET['idCart'] ?? ''));
         $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
 
-        $numeroAvviso = null;
+        // Collect IDs to process (single pendenza or cart)
+        $pendenzaIds = [];
         if ($idPendenza !== '') {
-            $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
-            if (is_array($detail)) {
-                $tmp = trim((string)($detail['numeroAvviso'] ?? ''));
-                $tmp = preg_replace('/\D+/', '', $tmp);
-                if (is_string($tmp) && $tmp !== '') {
-                    $numeroAvviso = $tmp;
-                }
+            $pendenzaIds = [$idPendenza];
+        } elseif ($idCart !== '' && session_status() === PHP_SESSION_ACTIVE) {
+            $pendenzaIds = (array)($_SESSION['frontoffice_carrello'][$idCart] ?? []);
+        }
+
+        $numeroAvviso = null;
+        $pdfItems     = [];
+        foreach (array_slice($pendenzaIds, 0, 5) as $pid) {
+            $detail = frontoffice_fetch_pagamenti_detail((string)$pid);
+            if (!is_array($detail)) {
+                continue;
             }
+            $nav = preg_replace('/\D+/', '', trim((string)($detail['numeroAvviso'] ?? '')));
+            if ($nav === '') {
+                continue;
+            }
+            if ($numeroAvviso === null) {
+                $numeroAvviso = $nav;
+            }
+            $cf = trim((string)($detail['soggettoPagatore']['identificativo'] ?? ''));
+            if ($cf === '') {
+                continue;
+            }
+            $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => frontoffice_generate_pdf_link($cf, $nav)];
         }
 
         return [
             'template' => 'checkout/cancel.html.twig',
             'context' => [
                 'numero_avviso' => $numeroAvviso,
-                'detail_path' => $detailPath,
-                'login_path' => '/login?return_to=' . rawurlencode($detailPath),
-                'is_logged_in' => frontoffice_get_logged_user() !== null,
+                'pdf_items'     => $pdfItems,
+                'detail_path'   => $detailPath,
+                'login_path'    => '/login?return_to=' . rawurlencode($detailPath),
+                'is_logged_in'  => frontoffice_get_logged_user() !== null,
             ],
         ];
     },
     '/checkout/error' => static function (): array {
         $idPendenza = trim((string)($_GET['idPendenza'] ?? $_GET['id_pendenza'] ?? ''));
+        $idCart     = trim((string)($_GET['idCart'] ?? ''));
         $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
 
-        $numeroAvviso = null;
+        // Collect IDs to process (single pendenza or cart)
+        $pendenzaIds = [];
         if ($idPendenza !== '') {
-            $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
-            if (is_array($detail)) {
-                $tmp = trim((string)($detail['numeroAvviso'] ?? ''));
-                $tmp = preg_replace('/\D+/', '', $tmp);
-                if (is_string($tmp) && $tmp !== '') {
-                    $numeroAvviso = $tmp;
-                }
+            $pendenzaIds = [$idPendenza];
+        } elseif ($idCart !== '' && session_status() === PHP_SESSION_ACTIVE) {
+            $pendenzaIds = (array)($_SESSION['frontoffice_carrello'][$idCart] ?? []);
+        }
+
+        $numeroAvviso = null;
+        $pdfItems     = [];
+        foreach (array_slice($pendenzaIds, 0, 5) as $pid) {
+            $detail = frontoffice_fetch_pagamenti_detail((string)$pid);
+            if (!is_array($detail)) {
+                continue;
             }
+            $nav = preg_replace('/\D+/', '', trim((string)($detail['numeroAvviso'] ?? '')));
+            if ($nav === '') {
+                continue;
+            }
+            if ($numeroAvviso === null) {
+                $numeroAvviso = $nav;
+            }
+            $cf = trim((string)($detail['soggettoPagatore']['identificativo'] ?? ''));
+            if ($cf === '') {
+                continue;
+            }
+            $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => frontoffice_generate_pdf_link($cf, $nav)];
         }
 
         return [
             'template' => 'checkout/error.html.twig',
             'context' => [
                 'numero_avviso' => $numeroAvviso,
-                'detail_path' => $detailPath,
-                'login_path' => '/login?return_to=' . rawurlencode($detailPath),
-                'is_logged_in' => frontoffice_get_logged_user() !== null,
+                'pdf_items'     => $pdfItems,
+                'detail_path'   => $detailPath,
+                'login_path'    => '/login?return_to=' . rawurlencode($detailPath),
+                'is_logged_in'  => frontoffice_get_logged_user() !== null,
             ],
         ];
     },

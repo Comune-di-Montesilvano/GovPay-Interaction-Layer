@@ -504,6 +504,10 @@ class BackupController
         }
 
         $zip->close();
+
+        // 5. Check decryption status of all encrypted=1 settings
+        $stats['decrypt_failures'] = $this->checkEncryptedKeysDecryption();
+
         return $stats;
     }
 
@@ -724,6 +728,43 @@ class BackupController
             }
         }
         return $normalized;
+    }
+
+    private function checkEncryptedKeysDecryption(): array
+    {
+        $failures = [];
+        try {
+            $runtimeKey = (string)(\App\Config\ConfigLoader::get('app.encryption_key') ?? '');
+            if ($runtimeKey === '') {
+                $runtimeKey = (string)($_ENV['APP_ENCRYPTION_KEY'] ?? getenv('APP_ENCRYPTION_KEY') ?: '');
+            }
+            if ($runtimeKey === '') {
+                return [['section' => '—', 'key_name' => 'APP_ENCRYPTION_KEY non configurata nel runtime']];
+            }
+
+            $pdo = Connection::getPDO();
+            $stmt = $pdo->query(
+                "SELECT section, key_name, value FROM settings WHERE encrypted = 1 AND value IS NOT NULL AND value != ''"
+            );
+            $rows = $stmt ? $stmt->fetchAll(\PDO::FETCH_ASSOC) : [];
+
+            $ivLength = openssl_cipher_iv_length('aes-256-cbc');
+            foreach ($rows as $row) {
+                $decoded = base64_decode((string)$row['value'], true);
+                if ($decoded === false || strlen($decoded) <= $ivLength) {
+                    continue; // valore in chiaro, non cifrato
+                }
+                $iv = substr($decoded, 0, $ivLength);
+                $ciphertext = substr($decoded, $ivLength);
+                $cleartext = openssl_decrypt($ciphertext, 'aes-256-cbc', $runtimeKey, OPENSSL_RAW_DATA, $iv);
+                if ($cleartext === false) {
+                    $failures[] = ['section' => (string)$row['section'], 'key_name' => (string)$row['key_name']];
+                }
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('checkEncryptedKeysDecryption fallito', ['error' => $e->getMessage()]);
+        }
+        return $failures;
     }
 
     private function validateImpostazioniCsrf(array $payload): bool

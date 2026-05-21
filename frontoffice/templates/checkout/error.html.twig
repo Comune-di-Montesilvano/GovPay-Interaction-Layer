@@ -21,6 +21,16 @@
           {% else %}
             <a class="btn btn-primary" href="{{ detail_path }}">{{ 'Torna alla pendenza'|trans }}</a>
           {% endif %}
+          {% for item in pdf_items|default([]) %}
+            <a class="btn btn-outline-secondary" href="{{ item.pdf_url }}" target="_blank" rel="noopener">
+              <i class="fa-solid fa-file-pdf me-1" aria-hidden="true"></i>
+              {% if (pdf_items|default([]))|length > 1 %}
+                {{ 'Scarica PDF avviso'|trans }} {{ item.numero_avviso }}
+              {% else %}
+                {{ 'Scarica PDF avviso'|trans }}
+              {% endif %}
+            </a>
+          {% endfor %}
           <a class="btn btn-outline-primary" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
           <a class="btn btn-outline-secondary" href="/">{{ 'Torna alla home'|trans }}</a>
         </div>

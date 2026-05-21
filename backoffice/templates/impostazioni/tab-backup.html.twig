@@ -346,6 +346,20 @@
       html += '</span>';
     }
     html += '</div>';
+
+    const failures = detail?.decrypt_failures ?? [];
+    if (ok && failures.length > 0) {
+      html += '<div class="alert alert-danger py-2 mt-2 mb-0 small">'
+        + '<strong><i class="fas fa-exclamation-triangle me-1"></i>Errore decifratura — le seguenti chiavi non sono decifrabili con la APP_ENCRYPTION_KEY attiva:</strong>'
+        + '<ul class="mb-0 mt-1 ps-3">';
+      for (const f of failures) {
+        html += `<li class="font-monospace">${f.section}.${f.key_name}</li>`;
+      }
+      html += '</ul>'
+        + '<div class="mt-1">Ripristina la chiave corretta nel <code>.env</code> e riavvia il container, oppure esegui la rotazione chiave.</div>'
+        + '</div>';
+    }
+
     el.innerHTML = html;
     el.style.display = '';
   }
