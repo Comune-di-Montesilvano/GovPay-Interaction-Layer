@@ -383,13 +383,16 @@ class FlussiController
                 $config
             );
 
-            // Call API
+            // Use the IUR-only endpoint directly: it works for both primary creditors
+            // and secondary transfer beneficiaries (e.g. Provincia di Pescara for TEFA
+            // in a multi-transfer TARI+TEFA payment), and avoids a double API call
+            // (which would consume rate limit quota twice for secondary beneficiaries).
             try {
-                $receipt = $apiInstance->getOrganizationReceiptIuvIur($fc, $iur, $iuv);
+                $receipt = $apiInstance->getOrganizationReceiptIur($fc, $iur);
             } catch (\PagoPA\BizEvents\ApiException $e) {
                 $statusCode = $e->getCode();
                 if ($statusCode === 404) {
-                    return $this->jsonResponse($response, ['error' => 'Ricevuta non trovata per questo IUV/IUR.'], 404);
+                    return $this->jsonResponse($response, ['error' => 'Ricevuta non trovata per questo IUR.'], 404);
                 }
                 if ($statusCode === 429) {
                     return $this->jsonResponse($response, ['error' => 'Rate limit superato. Riprova tra qualche secondo.', 'retry' => true], 429);
