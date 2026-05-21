@@ -13,6 +13,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\Response as SlimResponse;
 use Slim\Views\Twig;
 use App\Config\SettingsRepository;
+use App\Config\ConfigLoader;
+use App\Database\Connection;
 use App\Logger;
 use App\Controllers\ConfigurazioneController;
 
@@ -452,6 +454,195 @@ class ImpostazioniController
 
         $this->triggerAuthProxyReload();
         return $this->jsonOk('Flag debug salvati con successo.');
+    }
+
+    /**
+     * Rotazione chiave cifratura applicativa (APP_ENCRYPTION_KEY) con re-cifratura
+     * di tutti i record settings.encrypted=1.
+     *
+     * POST /impostazioni/sicurezza/rotate-encryption-key
+     */
+    public function rotateEncryptionKey(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        $oldKey = (string)($body['old_key'] ?? '');
+        $newKey = (string)($body['new_key'] ?? '');
+        $confirmNewKey = (string)($body['confirm_new_key'] ?? '');
+        $dryRun = in_array(
+            strtolower(trim((string)($body['dry_run'] ?? 'false'))),
+            ['1', 'true', 'yes', 'on'],
+            true
+        );
+        $forceRuntimeMismatch = in_array(
+            strtolower(trim((string)($body['force_runtime_mismatch'] ?? 'false'))),
+            ['1', 'true', 'yes', 'on'],
+            true
+        );
+
+        if ($oldKey === '' || $newKey === '' || $confirmNewKey === '') {
+            return $this->jsonError('Compila old key, new key e conferma.');
+        }
+
+        if (!hash_equals($newKey, $confirmNewKey)) {
+            return $this->jsonError('La conferma della nuova chiave non coincide.');
+        }
+
+        if (hash_equals($oldKey, $newKey)) {
+            return $this->jsonError('La nuova chiave deve essere diversa da quella attuale.');
+        }
+
+        if (strlen($newKey) !== 32) {
+            return $this->jsonError('La nuova chiave deve essere esattamente di 32 caratteri.');
+        }
+
+        $runtimeKey = $this->getRuntimeEncryptionKey();
+        if ($runtimeKey !== '' && !hash_equals($runtimeKey, $newKey) && !$forceRuntimeMismatch) {
+            return $this->jsonError(
+                'La chiave runtime corrente non corrisponde alla nuova chiave. ' .
+                'Aggiorna prima APP_ENCRYPTION_KEY su tutte le istanze oppure abilita la conferma esplicita.',
+                409
+            );
+        }
+
+        try {
+            $pdo = Connection::getPDO();
+            $rows = $pdo->query(
+                "SELECT id, section, key_name, value
+                 FROM settings
+                 WHERE encrypted = 1
+                   AND value IS NOT NULL
+                   AND value <> ''
+                 ORDER BY id ASC"
+            )?->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+
+            if ($rows === []) {
+                return $this->jsonOk('Nessun valore cifrato da migrare.', [
+                    'rotated' => 0,
+                    'legacy_plaintext_normalized' => 0,
+                    'forced_runtime_mismatch' => $forceRuntimeMismatch,
+                ]);
+            }
+
+            $updatedBy = $this->currentUser();
+            $updatedCount = 0;
+            $normalizedPlaintextCount = 0;
+
+            if (!$dryRun) {
+                $pdo->beginTransaction();
+            }
+
+            $updateStmt = null;
+            if (!$dryRun) {
+                $updateStmt = $pdo->prepare(
+                    'UPDATE settings SET value = :value, updated_by = :updated_by WHERE id = :id'
+                );
+            }
+
+            foreach ($rows as $row) {
+                $value = (string)($row['value'] ?? '');
+                $decrypt = $this->decryptValueForKeyRotation($value, $oldKey);
+
+                if (!($decrypt['ok'] ?? false)) {
+                    $pdo->rollBack();
+                    $settingPath = (string)($row['section'] ?? '') . '.' . (string)($row['key_name'] ?? '');
+                    return $this->jsonError(
+                        "Rotazione interrotta: impossibile decifrare {$settingPath} con la old key (chiave errata o dato corrotto).",
+                        409
+                    );
+                }
+
+                if (($decrypt['source'] ?? '') === 'plaintext') {
+                    $normalizedPlaintextCount++;
+                }
+
+                if ($dryRun) {
+                    $updatedCount++;
+                    continue;
+                }
+
+                $reEncrypted = $this->encryptValueForKeyRotation((string)$decrypt['plaintext'], $newKey);
+                if ($reEncrypted === null) {
+                    $pdo->rollBack();
+                    return $this->jsonError('Rotazione interrotta: errore durante la cifratura con la nuova chiave.', 500);
+                }
+
+                $updateStmt->execute([
+                    ':value' => $reEncrypted,
+                    ':updated_by' => $updatedBy,
+                    ':id' => (int)$row['id'],
+                ]);
+                $updatedCount++;
+            }
+
+            if ($dryRun) {
+                return $this->jsonOk(
+                    'Dry-run completato: nessuna modifica salvata nel DB.',
+                    [
+                        'dry_run' => true,
+                        'rotated' => $updatedCount,
+                        'legacy_plaintext_normalized' => $normalizedPlaintextCount,
+                        'forced_runtime_mismatch' => $forceRuntimeMismatch,
+                    ]
+                );
+            }
+
+            $pdo->commit();
+            SettingsRepository::flush();
+
+            return $this->jsonOk(
+                'Rotazione chiave completata. Verifica che APP_ENCRYPTION_KEY sia allineata su tutte le istanze e riavvia i servizi applicativi.',
+                [
+                    'dry_run' => false,
+                    'rotated' => $updatedCount,
+                    'legacy_plaintext_normalized' => $normalizedPlaintextCount,
+                    'forced_runtime_mismatch' => $forceRuntimeMismatch,
+                ]
+            );
+        } catch (\Throwable $e) {
+            if (isset($pdo) && $pdo instanceof \PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Logger::getInstance()->error('Rotazione APP_ENCRYPTION_KEY fallita', ['error' => $e->getMessage()]);
+            return $this->jsonError('Rotazione chiave fallita: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Elenco chiavi attualmente marcate encrypted=1 nella tabella settings.
+     *
+     * GET /impostazioni/sicurezza/encrypted-keys
+     */
+    public function getEncryptedSettingsKeys(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+
+        try {
+            $pdo = Connection::getPDO();
+            $stmt = $pdo->query(
+                "SELECT section, key_name,
+                        CASE WHEN value IS NULL OR value = '' THEN 0 ELSE 1 END AS has_value
+                 FROM settings
+                 WHERE encrypted = 1
+                 ORDER BY section ASC, key_name ASC"
+            );
+
+            $rows = $stmt ? $stmt->fetchAll(\PDO::FETCH_ASSOC) : [];
+
+            return $this->jsonResponse([
+                'success' => true,
+                'count' => count($rows),
+                'items' => $rows,
+            ]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Lettura chiavi encrypted=1 fallita', ['error' => $e->getMessage()]);
+            return $this->jsonError('Impossibile leggere le chiavi cifrate: ' . $e->getMessage(), 500);
+        }
     }
 
     private function triggerAuthProxyReload(): bool
@@ -2645,6 +2836,65 @@ class ImpostazioniController
         }
 
         return in_array(strtolower(trim($q)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function getRuntimeEncryptionKey(): string
+    {
+        $fromConfig = (string)(ConfigLoader::get('app.encryption_key') ?? '');
+        if ($fromConfig !== '') {
+            return $fromConfig;
+        }
+
+        $fromEnv = (string)($_ENV['APP_ENCRYPTION_KEY'] ?? getenv('APP_ENCRYPTION_KEY') ?: '');
+        return $fromEnv;
+    }
+
+    /**
+     * @return array{ok:bool,plaintext?:string,source?:string}
+     */
+    private function decryptValueForKeyRotation(string $value, string $oldKey): array
+    {
+        $decoded = base64_decode($value, true);
+        $ivLength = openssl_cipher_iv_length('aes-256-cbc');
+
+        // Valore legacy in chiaro: normalizza cifrandolo con la nuova chiave.
+        if ($decoded === false || strlen($decoded) <= $ivLength) {
+            return [
+                'ok' => true,
+                'plaintext' => $value,
+                'source' => 'plaintext',
+            ];
+        }
+
+        $iv = substr($decoded, 0, $ivLength);
+        $ciphertext = substr($decoded, $ivLength);
+        $cleartext = openssl_decrypt($ciphertext, 'aes-256-cbc', $oldKey, OPENSSL_RAW_DATA, $iv);
+
+        if ($cleartext === false) {
+            return ['ok' => false];
+        }
+
+        return [
+            'ok' => true,
+            'plaintext' => $cleartext,
+            'source' => 'encrypted',
+        ];
+    }
+
+    private function encryptValueForKeyRotation(string $plaintext, string $newKey): ?string
+    {
+        $ivLength = openssl_cipher_iv_length('aes-256-cbc');
+        $iv = openssl_random_pseudo_bytes($ivLength);
+        if ($iv === false) {
+            return null;
+        }
+
+        $ciphertext = openssl_encrypt($plaintext, 'aes-256-cbc', $newKey, OPENSSL_RAW_DATA, $iv);
+        if ($ciphertext === false) {
+            return null;
+        }
+
+        return base64_encode($iv . $ciphertext);
     }
 
     private function jsonOk(string $message, array $extra = []): Response

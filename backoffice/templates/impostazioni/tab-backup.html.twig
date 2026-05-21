@@ -118,6 +118,91 @@
     </div>
   </div>
   {% endif %}
+
+  {% if is_superadmin %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+      <h2 class="h6 mb-0"><i class="fas fa-lock me-2 text-primary"></i>Chiavi cifrate nel DB (encrypted=1)</h2>
+      <button class="btn btn-outline-secondary btn-sm" type="button" onclick="loadEncryptedKeys(this)">
+        <i class="fas fa-sync-alt me-1"></i>Aggiorna
+      </button>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-2">
+        Elenco reale delle chiavi marcate come cifrate nella tabella settings.
+      </p>
+      <div id="encrypted-keys-list" class="small text-muted">Caricamento...</div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
+      <h2 class="h6 mb-0"><i class="fas fa-key me-2 text-warning"></i>Rotazione chiave cifratura (APP_ENCRYPTION_KEY)</h2>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Re-cifra tutti i valori con <code>encrypted=1</code> usando una nuova chiave.
+        Esegui questa operazione solo in finestra di manutenzione.
+      </p>
+      <div class="alert alert-warning small py-2 mb-3">
+        <strong>Attenzione:</strong> se la nuova chiave non è già attiva su tutte le istanze,
+        potresti avere errori di decifratura finché non completi rollout e riavvio.
+      </div>
+
+      <div class="alert alert-info small py-2 mb-3">
+        <strong>Procedura consigliata (qui dove la usi):</strong>
+        <ol class="mb-0 ps-3 mt-2">
+          <li>Backup DB completo.</li>
+          <li>Aggiorna APP_ENCRYPTION_KEY su tutte le istanze e riavvia.</li>
+          <li>Verifica l'elenco "Chiavi cifrate nel DB" in questa pagina.</li>
+          <li>Esegui prima dry-run con old/new key.</li>
+          <li>Se dry-run OK, togli dry-run e avvia rotazione reale.</li>
+          <li>Verifica log e funzionalità; per rollback ripristina DB + vecchia chiave.</li>
+        </ol>
+      </div>
+
+      <div id="rotate-key-result" class="mb-3" style="display:none;"></div>
+
+      <form id="form-rotate-key" onsubmit="return false;">
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Old key</label>
+            <input type="password" class="form-control form-control-sm" name="old_key" autocomplete="off" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">New key (32 caratteri)</label>
+            <input type="password" class="form-control form-control-sm" name="new_key" minlength="32" maxlength="32" autocomplete="off" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Conferma new key</label>
+            <input type="password" class="form-control form-control-sm" name="confirm_new_key" minlength="32" maxlength="32" autocomplete="off" required>
+          </div>
+        </div>
+
+        <div class="form-check mt-3">
+          <input class="form-check-input" type="checkbox" value="true" id="force-runtime-mismatch" name="force_runtime_mismatch">
+          <label class="form-check-label small" for="force-runtime-mismatch">
+            Confermo che sto forzando la rotazione anche se la chiave runtime attuale non coincide con la nuova.
+          </label>
+        </div>
+
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" value="true" id="rotate-key-dry-run" name="dry_run" checked>
+          <label class="form-check-label small" for="rotate-key-dry-run">
+            Esegui prima una simulazione (dry-run, nessuna scrittura su DB).
+          </label>
+        </div>
+      </form>
+
+      <div class="mt-3">
+        <button class="btn btn-warning btn-sm" onclick="rotateEncryptionKey(this)">
+          <i class="fas fa-key me-1"></i>Ruota chiave
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
 </div>
 
 <script>
@@ -235,6 +320,38 @@
     el.style.display = '';
   }
 
+  function showRotateKeyResult(ok, msg, detail) {
+    const el = document.getElementById('rotate-key-result');
+    if (!el) return;
+    let extra = '';
+    if (detail && ok) {
+      const rotated = Number(detail.rotated || 0);
+      const normalized = Number(detail.legacy_plaintext_normalized || 0);
+      extra = `<br><span class="text-muted">Valori ruotati: ${rotated} | Valori legacy normalizzati: ${normalized}</span>`;
+    }
+    el.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 mb-0 small">${msg}${extra}</div>`;
+    el.style.display = '';
+  }
+
+  function renderEncryptedKeys(items) {
+    const el = document.getElementById('encrypted-keys-list');
+    if (!el) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      el.innerHTML = '<span class="text-muted">Nessuna chiave marcata encrypted=1.</span>';
+      return;
+    }
+
+    let html = '<div class="table-responsive"><table class="table table-sm table-striped mb-0">'
+      + '<thead><tr><th>Sezione</th><th>Chiave</th><th>Valore presente</th></tr></thead><tbody>';
+    for (const row of items) {
+      html += `<tr><td class="font-monospace">${row.section || ''}</td>`
+           + `<td class="font-monospace">${row.key_name || ''}</td>`
+           + `<td>${Number(row.has_value || 0) === 1 ? 'Si' : 'No'}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  }
+
   async function doRestore(formData, btn) {
     const orig = btn.innerHTML;
     btn.disabled = true;
@@ -314,7 +431,89 @@
     }
   };
 
+  window.rotateEncryptionKey = async function (btn) {
+    const form = document.getElementById('form-rotate-key');
+    if (!form) return;
+
+    const oldKey = form.querySelector('input[name="old_key"]')?.value || '';
+    const newKey = form.querySelector('input[name="new_key"]')?.value || '';
+    const confirmNewKey = form.querySelector('input[name="confirm_new_key"]')?.value || '';
+    const forceRuntimeMismatch = !!form.querySelector('input[name="force_runtime_mismatch"]')?.checked;
+    const dryRun = !!form.querySelector('input[name="dry_run"]')?.checked;
+    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+
+    if (!oldKey || !newKey || !confirmNewKey) {
+      impToast('Compila tutti i campi della rotazione chiave.', false);
+      return;
+    }
+
+    if (newKey.length !== 32) {
+      impToast('La nuova chiave deve essere di 32 caratteri.', false);
+      return;
+    }
+
+    if (newKey !== confirmNewKey) {
+      impToast('La conferma della nuova chiave non coincide.', false);
+      return;
+    }
+
+    if (!confirm('Confermi la rotazione di APP_ENCRYPTION_KEY? Esegui l\'operazione solo in manutenzione.')) {
+      return;
+    }
+
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Rotazione…';
+
+    try {
+      const payload = {
+        csrf_token: csrf,
+        old_key: oldKey,
+        new_key: newKey,
+        confirm_new_key: confirmNewKey,
+        force_runtime_mismatch: forceRuntimeMismatch,
+        dry_run: dryRun,
+      };
+
+      const res = await fetch('/impostazioni/sicurezza/rotate-encryption-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await parseJsonOrThrow(res);
+      showRotateKeyResult(!!json.success, json.message || (json.success ? 'Rotazione completata.' : 'Errore.'), json);
+      impToast(json.message || (json.success ? 'Rotazione completata.' : 'Errore rotazione.'), !!json.success);
+    } catch (e) {
+      showRotateKeyResult(false, 'Errore di rete: ' + e.message, null);
+      impToast('Errore di rete: ' + e.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  };
+
+  window.loadEncryptedKeys = async function (btn) {
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/impostazioni/sicurezza/encrypted-keys');
+      const json = await parseJsonOrThrow(res);
+      if (!json.success) {
+        throw new Error(json.message || 'Errore nel caricamento chiavi cifrate');
+      }
+      renderEncryptedKeys(json.items || []);
+    } catch (e) {
+      const el = document.getElementById('encrypted-keys-list');
+      if (el) {
+        el.innerHTML = `<span class="text-danger">Errore: ${e.message}</span>`;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
   // Carica automaticamente la lista all'apertura del tab
   backupListSistema(null);
+  loadEncryptedKeys(null);
 })();
 </script>
