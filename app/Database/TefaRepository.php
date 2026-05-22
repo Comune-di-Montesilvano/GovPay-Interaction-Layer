@@ -57,29 +57,61 @@ class TefaRepository
     }
 
     /** Restituisce l'id_flusso del prossimo flusso con record PENDING (ordine cronologico). */
-    public function getNextPendingFlusso(string $idDominio): ?string
+    public function getNextPendingFlusso(string $idDominio, ?string $minDate = null): ?string
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT id_flusso FROM tefa_ricevute
-             WHERE id_dominio = :dom AND stato = \'PENDING\'
-             ORDER BY id_flusso ASC
-             LIMIT 1'
-        );
-        $stmt->execute([':dom' => $idDominio]);
+           $sql = 'SELECT id_flusso, MIN(data_pagamento) AS min_data_pagamento FROM tefa_ricevute
+               WHERE id_dominio = :dom AND stato = \'PENDING\'';
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND data_pagamento >= :min_date';
+        }
+           $sql .= ' GROUP BY id_flusso
+               ORDER BY min_data_pagamento ASC, id_flusso ASC
+               LIMIT 1';
+
+        $stmt = $this->pdo->prepare($sql);
+        $params = [':dom' => $idDominio];
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $params[':min_date'] = $minDate;
+        }
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row !== false ? (string)$row['id_flusso'] : null;
     }
 
     /** Tutti i record PENDING per uno specifico flusso. */
-    public function fetchPendingByFlusso(string $idFlusso, string $idDominio): array
+    public function fetchPendingByFlusso(string $idFlusso, string $idDominio, ?string $minDate = null): array
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT * FROM tefa_ricevute
-             WHERE id_dominio = :dom AND id_flusso = :flusso AND stato = \'PENDING\'
-             ORDER BY id ASC'
-        );
-        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        $sql = 'SELECT * FROM tefa_ricevute
+             WHERE id_dominio = :dom AND id_flusso = :flusso AND stato = \'PENDING\'';
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND data_pagamento >= :min_date';
+        }
+        $sql .= ' ORDER BY id ASC';
+
+        $stmt = $this->pdo->prepare($sql);
+        $params = [':dom' => $idDominio, ':flusso' => $idFlusso];
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $params[':min_date'] = $minDate;
+        }
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function countPendingForProcessing(string $idDominio, ?string $minDate = null): int
+    {
+        $sql = 'SELECT COUNT(*) FROM tefa_ricevute
+             WHERE id_dominio = :dom AND stato = \'PENDING\'';
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND data_pagamento >= :min_date';
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $params = [':dom' => $idDominio];
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $params[':min_date'] = $minDate;
+        }
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn();
     }
 
     public function markProcessed(

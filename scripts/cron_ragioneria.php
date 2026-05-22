@@ -103,7 +103,7 @@ while (true) {
     $newRows = 0;
     $page = 1;
     $flussiCount = 0;
-    $scanIndex = 0;
+    $flussiToScan = [];
 
     while (true) {
         $checkStop();
@@ -137,62 +137,8 @@ while (true) {
         $log('Pagina ' . $page . ': ' . $pageCount . ' flussi [' . $firstFlusso . ' .. ' . $lastFlusso . ']');
 
         foreach ($risultati as $flussoItem) {
-            $checkStop();
-            if (!is_array($flussoItem)) {
-                continue;
-            }
-
-            $scanIndex++;
-
-            $idFlusso = (string)($flussoItem['idFlusso'] ?? '');
-            $dominioFlusso = (string)($flussoItem['dominio']['idDominio'] ?? $flussoItem['idDominio'] ?? $idDominio);
-            $dataFlussoScan = (string)($flussoItem['dataFlusso'] ?? '');
-            if ($idFlusso === '' || $dominioFlusso === '') {
-                continue;
-            }
-
-            if ($scanIndex === 1 || $scanIndex % 25 === 0) {
-                $log(sprintf(
-                    '  [scan] flusso %d/%d pagina=%d id=%s dominio=%s data=%s',
-                    $scanIndex,
-                    $flussiCount,
-                    $page,
-                    $idFlusso,
-                    $dominioFlusso,
-                    $dataFlussoScan
-                ));
-            }
-
-            try {
-                $detailUrl = $backofficeUrl . '/flussiRendicontazione/' . rawurlencode($dominioFlusso) . '/' . rawurlencode($idFlusso);
-                $detailResp = $client->request('GET', $detailUrl);
-                $detail = json_decode((string)$detailResp->getBody(), true);
-            } catch (Throwable $e) {
-                $log('Errore dettaglio flusso ' . $idFlusso . ': ' . $e->getMessage());
-                continue;
-            }
-
-            if (!is_array($detail)) {
-                continue;
-            }
-
-            $rows = mapFlussoRows($detail, $dominioFlusso, $idFlusso);
-            if ($rows === []) {
-                if ($scanIndex === 1 || $scanIndex % 25 === 0) {
-                    $log('  [scan] flusso ' . $idFlusso . ': nessuna rendicontazione utile');
-                }
-                continue;
-            }
-
-            $affected = $repo->upsertBatch($rows);
-            $newRows += max(0, $affected);
-            if ($scanIndex === 1 || $scanIndex % 25 === 0) {
-                $log(sprintf(
-                    '  [scan] flusso %s: rendicontazioni=%d upsert_affected=%d',
-                    $idFlusso,
-                    count($rows),
-                    $affected
-                ));
+            if (is_array($flussoItem)) {
+                $flussiToScan[] = $flussoItem;
             }
         }
 
@@ -201,6 +147,78 @@ while (true) {
             break;
         }
         $page = $nextPage;
+    }
+
+    if ($flussiToScan !== []) {
+        usort($flussiToScan, static function (array $a, array $b): int {
+            $da = (string)($a['dataFlusso'] ?? '');
+            $db = (string)($b['dataFlusso'] ?? '');
+            if ($da === $db) {
+                return strcmp((string)($a['idFlusso'] ?? ''), (string)($b['idFlusso'] ?? ''));
+            }
+            return strcmp($da, $db);
+        });
+
+        $oldest = (string)($flussiToScan[0]['idFlusso'] ?? '-');
+        $newest = (string)($flussiToScan[count($flussiToScan) - 1]['idFlusso'] ?? '-');
+        $log('Ordine scansione cronologico (vecchio -> nuovo): [' . $oldest . ' .. ' . $newest . ']');
+    }
+
+    $scanIndex = 0;
+    foreach ($flussiToScan as $flussoItem) {
+        $checkStop();
+
+        $scanIndex++;
+
+        $idFlusso = (string)($flussoItem['idFlusso'] ?? '');
+        $dominioFlusso = (string)($flussoItem['dominio']['idDominio'] ?? $flussoItem['idDominio'] ?? $idDominio);
+        $dataFlussoScan = (string)($flussoItem['dataFlusso'] ?? '');
+        if ($idFlusso === '' || $dominioFlusso === '') {
+            continue;
+        }
+
+        if ($scanIndex === 1 || $scanIndex % 25 === 0) {
+            $log(sprintf(
+                '  [scan] flusso %d/%d id=%s dominio=%s data=%s',
+                $scanIndex,
+                $flussiCount,
+                $idFlusso,
+                $dominioFlusso,
+                $dataFlussoScan
+            ));
+        }
+
+        try {
+            $detailUrl = $backofficeUrl . '/flussiRendicontazione/' . rawurlencode($dominioFlusso) . '/' . rawurlencode($idFlusso);
+            $detailResp = $client->request('GET', $detailUrl);
+            $detail = json_decode((string)$detailResp->getBody(), true);
+        } catch (Throwable $e) {
+            $log('Errore dettaglio flusso ' . $idFlusso . ': ' . $e->getMessage());
+            continue;
+        }
+
+        if (!is_array($detail)) {
+            continue;
+        }
+
+        $rows = mapFlussoRows($detail, $dominioFlusso, $idFlusso);
+        if ($rows === []) {
+            if ($scanIndex === 1 || $scanIndex % 25 === 0) {
+                $log('  [scan] flusso ' . $idFlusso . ': nessuna rendicontazione utile');
+            }
+            continue;
+        }
+
+        $affected = $repo->upsertBatch($rows);
+        $newRows += max(0, $affected);
+        if ($scanIndex === 1 || $scanIndex % 25 === 0) {
+            $log(sprintf(
+                '  [scan] flusso %s: rendicontazioni=%d upsert_affected=%d',
+                $idFlusso,
+                count($rows),
+                $affected
+            ));
+        }
     }
 
     $log('Ciclo completato. Flussi letti=' . $flussiCount . ', righe upsert=' . $newRows);
