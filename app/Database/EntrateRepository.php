@@ -311,7 +311,7 @@ class EntrateRepository
         $this->pdo->prepare(
             'UPDATE entrate_tipologie
              SET descrizione_locale = NULL, descrizione_estesa = NULL,
-                 override_locale = NULL, external_url = NULL, updated_at = :now
+                 override_locale = NULL, external_url = NULL, iuv_prefix = NULL, updated_at = :now
              WHERE id_dominio = :dom'
         )->execute([':now' => $now, ':dom' => $idDominio]);
 
@@ -348,7 +348,7 @@ class EntrateRepository
     /** Imposta (o azzera) il prefisso IUV vincolato per una tipologia. */
     public function setIuvPrefix(string $idDominio, string $idEntrata, ?string $prefix): void
     {
-        $normalized = ($prefix === null || trim($prefix) === '') ? null : preg_replace('/[^0-9]/', '', trim($prefix));
+        $normalized = ($prefix === null || trim($prefix) === '') ? null : substr(preg_replace('/[^0-9]/', '', trim($prefix)), 0, 6);
         $sql = 'UPDATE entrate_tipologie SET iuv_prefix = :prefix, updated_at = :now WHERE id_dominio = :dom AND id_entrata = :ent';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([

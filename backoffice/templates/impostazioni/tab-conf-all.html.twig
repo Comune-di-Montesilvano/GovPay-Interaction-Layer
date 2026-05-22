@@ -396,8 +396,8 @@
                         <div class="row g-2 small mt-2">
                           <div class="col-md-12">
                             <label for="iuvprefix_{{ eid }}" class="text-muted">Prefisso IUV vincolato</label>
-                            <input id="iuvprefix_{{ eid }}" name="iuv_prefix" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" class="form-control form-control-sm" style="max-width:180px" placeholder="Es. 300122" value="{{ iuvPrefixVal }}">
-                            <div class="form-text">Solo cifre, max 10. Se impostato, l'ID pendenza e il numero avviso saranno <code>{prefisso}+{cifre random}</code> per un totale di 18 cifre. Lascia vuoto per usare il formato standard GIL-xxxx.</div>
+                            <input id="iuvprefix_{{ eid }}" name="iuv_prefix" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="form-control form-control-sm" style="max-width:120px" placeholder="Es. 300122" value="{{ iuvPrefixVal }}">
+                            <div class="form-text">Solo cifre, max 6. Se impostato, il numero avviso pagoPA sarà <code>{prefisso}{anno}{giorno}{ora}{minuto}{random}</code> = 18 cifre totali. Lascia vuoto per il formato standard <code>GIL-xxxx</code>.</div>
                           </div>
                         </div>
                       </form>
