@@ -33,7 +33,6 @@ docker/
 
 # Non usate nel build principale
 debug/
-scripts/
 backup/
 plans/
 

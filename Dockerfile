@@ -195,6 +195,7 @@ CMD ["apache2-foreground"]
 FROM runtime-base AS runtime-backoffice
 COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
 COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
+COPY --chown=www-app:www-data scripts/ /var/www/html/scripts/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
     && ln -s /var/www/html/backoffice/templates /var/www/html/templates \

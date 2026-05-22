@@ -76,6 +76,23 @@ class ImpostazioniController
             $data = array_merge($data, $confCtrl->getTabData($tab, $request));
         }
 
+        // Tab Cron: lista job e storico esecuzioni
+        if ($tab === 'cron' && $this->isSuperadmin()) {
+            $data['jobs'] = CronController::getJobs();
+            $daemonStatus = [];
+            foreach ($data['jobs'] as $key => $job) {
+                if ($job['daemon'] ?? false) {
+                    $daemonStatus[$key] = CronController::isDaemonRunning($key);
+                }
+            }
+            $data['daemon_status'] = $daemonStatus;
+            $data['ragioneria_scan_da'] = SettingsRepository::get(
+                'backoffice',
+                'ragioneria_scan_da',
+                date('Y-01-01', strtotime('-1 year'))
+            );
+        }
+
         // Tab Info GIL: stato container e info sistema
         if ($tab === 'info-gil') {
             $gilInfo = [
@@ -205,6 +222,24 @@ class ImpostazioniController
         }
 
         return $this->jsonOk('Impostazioni Backoffice salvate.');
+    }
+
+    public function saveTefa(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+        $by = $this->currentUser();
+        SettingsRepository::set(
+            'backoffice',
+            'tefa_enabled',
+            isset($body['tefa_enabled']) && $body['tefa_enabled'] === 'true' ? 'true' : 'false',
+            false,
+            $by
+        );
+        return $this->jsonOk('Impostazioni TEFA salvate.');
     }
 
     public function saveFrontoffice(Request $request, Response $response): Response

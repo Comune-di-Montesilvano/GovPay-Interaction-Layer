@@ -186,6 +186,9 @@
                               <li><a class="dropdown-item list-item {{ current_path starts with '/pagamenti/ricerca-flussi' ? 'active' : '' }}" href="/pagamenti/ricerca-flussi"><span>Ricerca Flussi</span></a></li>
                               <li><a class="dropdown-item list-item {{ current_path starts with '/pagamenti/incassi-tassonomia' ? 'active' : '' }}" href="/pagamenti/incassi-tassonomia"><span>Report Incassi</span></a></li>
                               <li><a class="dropdown-item list-item {{ current_path starts with '/pagamenti/report-ragioneria' ? 'active' : '' }}" href="/pagamenti/report-ragioneria"><span>Report Ragioneria</span></a></li>
+                              {% if tefa_enabled is defined and tefa_enabled %}
+                              <li><a class="dropdown-item list-item {{ current_path starts with '/pagamenti/report-tefa' ? 'active' : '' }}" href="/pagamenti/report-tefa"><span>Report TEFA</span></a></li>
+                              {% endif %}
                             </ul>
                           </div>
                         </div>

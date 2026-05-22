@@ -112,6 +112,11 @@ return (function (): array {
     ];
     $twig->getEnvironment()->addGlobal('pendenza_states', $pendenzaStates);
 
+    $twig->getEnvironment()->addGlobal(
+        'tefa_enabled',
+        \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true'
+    );
+
     $app->add(TwigMiddleware::create($app, $twig));
 
     // Ensure storage logs directory exists and register logger global
