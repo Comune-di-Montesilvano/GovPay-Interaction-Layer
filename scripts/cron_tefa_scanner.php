@@ -158,6 +158,9 @@ while (true) {
             $n   = $i + 1;
             $iur = (string)$row['iur'];
             $log("  Pendenza {$n}/{$total} IUR={$iur}: interrogo Biz Events...");
+            if ((int)($row['is_govpay'] ?? 0) === 1 && (int)($row['is_multibeneficiario'] ?? 0) === 1) {
+                $log("  IUR={$iur}: edge-case GovPay+multibeneficiario rilevato, verifico comunque su Biz Events");
+            }
 
             try {
                 $result = $service->enrichOne($row, $idDominio);
