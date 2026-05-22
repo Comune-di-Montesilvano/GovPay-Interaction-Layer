@@ -88,28 +88,6 @@
             <label for="idDominio" class="form-label">ID Dominio</label>
             <input type="text" class="form-control" id="idDominio" name="idDominio" value="{{ f.idDominio|default('') }}" placeholder="(opzionale)">
           </div>
-          <div class="col-md-3">
-            <label for="gov_results_per_page" class="form-label">GovPay risultati/pagina</label>
-            <input type="number" min="1" max="200" class="form-control" id="gov_results_per_page" name="gov_results_per_page" value="{{ f.gov_results_per_page|default(100) }}">
-          </div>
-          <div class="col-md-3">
-            <label for="gov_max_flussi_pages" class="form-label">GovPay max pagine</label>
-            <input type="number" min="1" max="1000" class="form-control" id="gov_max_flussi_pages" name="gov_max_flussi_pages" value="{{ f.gov_max_flussi_pages|default(200) }}">
-          </div>
-          <div class="col-md-3">
-            <label for="gov_metadati_paginazione" class="form-label">Metadati paginazione</label>
-            <select class="form-select" id="gov_metadati_paginazione" name="gov_metadati_paginazione">
-              <option value="true" {% if f.gov_metadati_paginazione|default(true) %}selected{% endif %}>true</option>
-              <option value="false" {% if not f.gov_metadati_paginazione|default(true) %}selected{% endif %}>false</option>
-            </select>
-          </div>
-          <div class="col-md-3">
-            <label for="gov_max_risultati" class="form-label">Max risultati GovPay</label>
-            <select class="form-select" id="gov_max_risultati" name="gov_max_risultati">
-              <option value="true" {% if f.gov_max_risultati|default(true) %}selected{% endif %}>true</option>
-              <option value="false" {% if not f.gov_max_risultati|default(true) %}selected{% endif %}>false</option>
-            </select>
-          </div>
         </fieldset>
       </div>
     </div>
@@ -262,7 +240,7 @@
     </div>
 
   {% elseif query_made and (errors is not defined or not errors) %}
-    <div class="alert alert-info">Nessun risultato trovato per i filtri selezionati.</div>
+    <div class="alert alert-info">Nessun dato: avvia il daemon Ragioneria da Impostazioni -> Cron</div>
   {% endif %}
 
   {# ── Debug ────────────────────────────────────────────────────────────── #}
@@ -309,94 +287,10 @@
   const form = document.getElementById('reportRagioneriaForm');
   const submitButton = document.getElementById('reportRagioneriaSubmit');
   const loadingBox = document.getElementById('reportRagioneriaLoading');
-  const loadingText = document.getElementById('reportRagioneriaLoadingText');
-  const progressBar = document.getElementById('reportRagioneriaProgressBar');
   if (form && submitButton && loadingBox) {
     form.addEventListener('submit', function (evt) {
-      if (typeof fetch === 'undefined' || typeof URLSearchParams === 'undefined') {
-        return;
-      }
-      evt.preventDefault();
       submitButton.disabled = true;
       loadingBox.classList.remove('d-none');
-
-      const formData = new FormData(form);
-      const params = new URLSearchParams();
-      formData.forEach((value, key) => params.append(key, String(value)));
-      params.set('q', '1');
-      params.set('ajax_run', '1');
-
-      const token = (window.crypto && typeof window.crypto.randomUUID === 'function')
-        ? window.crypto.randomUUID()
-        : ('rr-' + Date.now() + '-' + Math.floor(Math.random() * 100000));
-      params.set('progress_token', token);
-
-      let pollingStopped = false;
-      const stopPolling = function () { pollingStopped = true; };
-
-      const updateProgress = function (status) {
-        const pct = Number(status.percent || 0);
-        const safePct = Math.max(0, Math.min(100, pct));
-        if (progressBar) {
-          progressBar.style.width = safePct + '%';
-          progressBar.textContent = safePct + '%';
-        }
-        if (loadingText) {
-          loadingText.textContent = status.message || 'Elaborazione backend in corso...';
-        }
-      };
-
-      const poll = function () {
-        if (pollingStopped) return;
-        fetch('/pagamenti/report-ragioneria/status?token=' + encodeURIComponent(token), {
-          headers: { 'Accept': 'application/json' }
-        })
-          .then(r => r.ok ? r.json() : null)
-          .then(payload => {
-            if (!payload || !payload.ok || !payload.status) return;
-            updateProgress(payload.status);
-          })
-          .catch(() => {})
-          .finally(() => {
-            if (!pollingStopped) {
-              setTimeout(poll, 800);
-            }
-          });
-      };
-
-      poll();
-
-      fetch('/pagamenti/report-ragioneria?' + params.toString(), {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      })
-        .then(async (resp) => {
-          const payload = await resp.json().catch(() => ({}));
-          if (!resp.ok || !payload.ok) {
-            const msg = payload.error || 'Errore durante l\'elaborazione del report.';
-            throw new Error(msg);
-          }
-          stopPolling();
-          if (payload.redirect_url) {
-            window.location.href = payload.redirect_url;
-            return;
-          }
-          window.location.reload();
-        })
-        .catch((err) => {
-          stopPolling();
-          submitButton.disabled = false;
-          if (loadingText) {
-            loadingText.textContent = err && err.message ? err.message : 'Errore durante l\'elaborazione';
-          }
-          if (progressBar) {
-            progressBar.classList.remove('progress-bar-animated');
-            progressBar.classList.add('bg-danger');
-          }
-        });
     });
   }
 

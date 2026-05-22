@@ -1,0 +1,46 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom-0 pb-0">
+    <h5 class="mb-1"><i class="fas fa-building-columns me-2 text-primary"></i>TEFA</h5>
+    <p class="text-muted small mb-0">
+      Funzione per province: traccia la quota TEFA incassata per comune analizzando i flussi di rendicontazione GovPay.
+      Abilitare solo su istanze provincia — aggiunge un cron di background e una voce nel menu Pagamenti.
+    </p>
+  </div>
+  <div class="card-body">
+    <form id="form-tefa" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="tefa_enabled" id="tefa-enabled-chk" value="true"
+              {{ backoffice.tefa_enabled|default('false') == 'true' ? 'checked' : '' }}
+              {{ not is_superadmin ? 'disabled' : '' }}>
+            <label class="form-check-label" for="tefa-enabled-chk">Abilita funzione TEFA</label>
+          </div>
+          <div class="form-text">
+            Se attivo: aggiunge "Report TEFA" nel menu Pagamenti, abilita lo scanner di background
+            (<code>cron_tefa_scanner.php</code>) e mostra i contatori avanzamento nell'UI.
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="alert alert-info py-2 small mb-0" role="alert">
+            <strong>Cron consigliato:</strong>
+            <code>*/5 * * * * docker exec gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php</code><br>
+            Per la scansione storica iniziale, eseguire una tantum:<br>
+            <code>docker exec gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php --scan --da={{ 'now'|date('Y') }}-01-01 --a={{ 'now'|date('Y-m-d') }}</code>
+          </div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3 mt-4">
+        <button type="button" class="btn btn-primary" onclick="impSaveForm('form-tefa', '/impostazioni/tefa/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>

@@ -1,0 +1,157 @@
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom-0 pb-0">
+    <h5 class="mb-1"><i class="fas fa-clock me-2 text-primary"></i>Gestione Daemon</h5>
+    <p class="text-muted small mb-0">Avvia e ferma i processi in background. I log vengono salvati su file.</p>
+  </div>
+  <div class="card-body">
+
+    <form method="POST" action="/impostazioni/cron/set-scan-date" class="mb-4 p-3 border rounded bg-light">
+      <label class="form-label small fw-semibold mb-1">
+        <i class="fas fa-calendar-day me-1 text-primary"></i>Data inizio sincronizzazione flussi
+      </label>
+      <div class="d-flex gap-2 align-items-center">
+        <input type="date" name="ragioneria_scan_da" class="form-control form-control-sm"
+               style="max-width:180px" value="{{ ragioneria_scan_da|default('') }}">
+        <button type="submit" class="btn btn-primary btn-sm">Salva</button>
+      </div>
+      <div class="text-muted small mt-1">Comune a ragioneria e TEFA. Il daemon ragioneria scarica tutti i flussi da questa data in avanti.</div>
+    </form>
+
+    {# ── Daemon cards ─────────────────────────────────────────────────────── #}
+    <div class="row g-3 mb-4">
+      {% for jobKey, job in jobs %}
+      {% set running = daemon_status[jobKey] ?? false %}
+      <div class="col-md-6">
+        <div class="card h-100 border shadow-none" id="job-card-{{ jobKey }}">
+          <div class="card-body d-flex flex-column gap-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-primary"><i class="fas {{ job.icon }}"></i></span>
+              <strong class="small">{{ job.label }}</strong>
+              <span class="badge ms-auto {{ running ? 'bg-success' : 'bg-secondary' }} small">
+                {{ running ? 'RUNNING' : 'STOPPED' }}
+              </span>
+            </div>
+            <p class="text-muted small mb-1">{{ job.description }}</p>
+
+            {% if job.params %}
+            <div class="row g-2" id="params-{{ jobKey }}">
+              {% for param in job.params %}
+              <div class="col-6">
+                <label class="form-label small mb-1">{{ param.label }}</label>
+                <input type="{{ param.type }}" class="form-control form-control-sm"
+                       id="param-{{ jobKey }}-{{ param.name }}"
+                       data-job="{{ jobKey }}" data-param="{{ param.name }}"
+                       value="{{ param.type == 'date' ? 'now'|date('Y') ~ '-01-01' : '' }}">
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2 mt-auto">
+              {% if running %}
+              <button class="btn btn-danger btn-sm" onclick="daemonStop('{{ jobKey }}')">
+                <i class="fas fa-stop me-1"></i>Ferma
+              </button>
+              {% else %}
+              <button class="btn btn-success btn-sm" onclick="daemonStart('{{ jobKey }}')">
+                <i class="fas fa-play me-1"></i>Avvia
+              </button>
+              {% endif %}
+              <button class="btn btn-outline-secondary btn-sm" onclick="showLog('{{ jobKey }}')">
+                <i class="fas fa-terminal me-1"></i>Log
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# ── Log panel ─────────────────────────────────────────────────────────── #}
+    <div id="daemon-log-panel" class="d-none">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="fw-semibold small" id="daemon-log-label">Log</span>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" onclick="refreshLog()">
+            <i class="fas fa-rotate-right me-1"></i>Aggiorna
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('daemon-log-panel').classList.add('d-none')">
+            <i class="fas fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <pre id="daemon-log-output" class="bg-dark text-light rounded p-3 small mb-0"
+           style="max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;">(nessun log)</pre>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  let currentLogJob = null;
+
+  window.daemonStart = async function (jobKey) {
+    const paramInputs = document.querySelectorAll('[data-job="' + jobKey + '"][data-param]');
+    const body = new URLSearchParams();
+    for (const inp of paramInputs) {
+      const val = inp.value.trim();
+      if (val) body.append(inp.dataset.param, val);
+    }
+    try {
+      const res  = await fetch('/impostazioni/cron/' + jobKey + '/run', { method: 'POST', body });
+      const json = await res.json();
+      if (json.ok) {
+        impToast('Daemon avviato.', true);
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        impToast(json.error || 'Errore avvio daemon.', false);
+      }
+    } catch (e) {
+      impToast('Errore di rete: ' + e.message, false);
+    }
+  };
+
+  window.daemonStop = async function (jobKey) {
+    try {
+      const res  = await fetch('/impostazioni/cron/' + jobKey + '/stop', { method: 'POST' });
+      const json = await res.json();
+      if (json.ok) {
+        impToast('Segnale di stop inviato.', true);
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        impToast(json.error || 'Errore stop daemon.', false);
+      }
+    } catch (e) {
+      impToast('Errore di rete: ' + e.message, false);
+    }
+  };
+
+  window.showLog = async function (jobKey) {
+    currentLogJob = jobKey;
+    document.getElementById('daemon-log-label').textContent = 'Log — ' + jobKey;
+    document.getElementById('daemon-log-panel').classList.remove('d-none');
+    document.getElementById('daemon-log-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    await refreshLog();
+  };
+
+  window.refreshLog = async function () {
+    if (!currentLogJob) return;
+    try {
+      const res  = await fetch('/impostazioni/cron/' + currentLogJob + '/log');
+      const json = await res.json();
+      const out  = document.getElementById('daemon-log-output');
+      if (json.ok) {
+        out.textContent = json.content || '(nessun log)';
+        out.scrollTop   = out.scrollHeight;
+      } else {
+        out.textContent = json.error || 'Errore lettura log.';
+      }
+    } catch (e) {
+      document.getElementById('daemon-log-output').textContent = 'Errore di rete: ' + e.message;
+    }
+  };
+})();
+</script>

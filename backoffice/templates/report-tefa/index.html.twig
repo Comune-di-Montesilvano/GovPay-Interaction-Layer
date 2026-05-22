@@ -1,0 +1,315 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Report TEFA - GovPay{% endblock %}
+
+{% block head %}
+<style>
+  .tefa-stat-card { border-left: 4px solid; }
+  .tefa-stat-card.pending   { border-left-color: #ffc107; }
+  .tefa-stat-card.processed { border-left-color: #198754; }
+  .tefa-stat-card.error     { border-left-color: #dc3545; }
+  .tefa-stat-card.skipped   { border-left-color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h4 mb-0"><i class="fas fa-building-columns me-2 text-primary"></i>Report TEFA</h1>
+  <a class="btn btn-sm btn-outline-secondary" href="/"><i class="fas fa-arrow-left me-1"></i>Home</a>
+</div>
+
+{# ── Contatori stato ──────────────────────────────────────────────────────── #}
+<div class="row g-2 mb-4" id="tefa-counts">
+  <div class="col-6 col-md-3">
+    <div class="card tefa-stat-card pending shadow-sm p-2">
+      <div class="small text-muted">In attesa</div>
+      <div class="fs-4 fw-bold" id="cnt-pending">{{ counts.PENDING }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card tefa-stat-card processed shadow-sm p-2">
+      <div class="small text-muted">Elaborati</div>
+      <div class="fs-4 fw-bold text-success" id="cnt-processed">{{ counts.PROCESSED }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card tefa-stat-card error shadow-sm p-2">
+      <div class="small text-muted">Errori</div>
+      <div class="fs-4 fw-bold text-danger" id="cnt-error">{{ counts.ERROR }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card tefa-stat-card skipped shadow-sm p-2">
+      <div class="small text-muted">Non TEFA</div>
+      <div class="fs-4 fw-bold text-secondary" id="cnt-skipped">{{ counts.SKIPPED }}</div>
+    </div>
+  </div>
+</div>
+<div class="text-muted small mb-4" id="poll-status">
+  {% if counts.PENDING > 0 %}
+    <i class="fas fa-circle-notch fa-spin me-1"></i>Elaborazione in corso — aggiornamento automatico ogni 15s.
+  {% else %}
+    <i class="fas fa-check-circle text-success me-1"></i>Nessun record in attesa.
+  {% endif %}
+</div>
+
+{% if counts.SKIPPED > 0 %}
+<div class="mb-3">
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="retrySkipped()">
+    <i class="fas fa-rotate-right me-1"></i>Riprocessa non-TEFA ({{ counts.SKIPPED }})
+  </button>
+  <span class="text-muted small ms-2">Rimette in coda i record scartati per ri-elaborarli.</span>
+</div>
+{% endif %}
+
+{# ── Tabella errori ───────────────────────────────────────────────────────── #}
+{% if error_rows|length > 0 %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white d-flex align-items-center justify-content-between">
+    <h6 class="mb-0 text-danger"><i class="fas fa-triangle-exclamation me-2"></i>Errori ({{ error_rows|length }})</h6>
+    <button type="button" class="btn btn-sm btn-outline-warning" onclick="retryErrors()">
+      <i class="fas fa-rotate-right me-1"></i>Riprova tutti
+    </button>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="table-light"><tr>
+          <th>IUR</th><th>IUV</th><th>Data pagamento</th><th>Importo</th><th>Motivo errore</th><th>Data errore</th>
+        </tr></thead>
+        <tbody>
+        {% for r in error_rows %}
+          <tr>
+            <td class="font-monospace small">{{ r.iur }}</td>
+            <td class="font-monospace small">{{ r.iuv }}</td>
+            <td>{{ r.data_pagamento }}</td>
+            <td>{{ r.importo_tefa ? '€ ' ~ r.importo_tefa|number_format(2, ',', '.') : '-' }}</td>
+            <td class="text-danger small">{{ r.error_msg }}</td>
+            <td class="small text-muted">{{ r.updated_at }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Report per Comune ────────────────────────────────────────────────────── #}
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white">
+    <h5 class="mb-0"><i class="fas fa-chart-bar me-2 text-primary"></i>Report per Comune</h5>
+  </div>
+  <div class="card-body">
+    <form method="GET" action="/pagamenti/report-tefa" class="mb-3">
+      <input type="hidden" name="q" value="1">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label small fw-semibold">Intervallo date</label>
+          <div class="d-flex gap-1 align-items-center">
+            <input type="text" id="rDaVis" class="form-control form-control-sm" placeholder="Da" autocomplete="off" readonly style="cursor:pointer;">
+            <span class="text-muted small">–</span>
+            <input type="text" id="rAVis"  class="form-control form-control-sm" placeholder="A"  autocomplete="off" readonly style="cursor:pointer;">
+          </div>
+          <input type="hidden" id="rDa" name="dataDa" value="{{ filters.dataDa }}">
+          <input type="hidden" id="rA"  name="dataA"  value="{{ filters.dataA }}">
+        </div>
+        <div class="col-md-auto d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search me-1"></i>Cerca</button>
+          {% if query_made and report_rows|length > 0 %}
+          <a href="/pagamenti/report-tefa?q=1&dataDa={{ filters.dataDa }}&dataA={{ filters.dataA }}&export=csv"
+             class="btn btn-sm btn-outline-secondary"><i class="fas fa-file-csv me-1"></i>CSV</a>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+
+    {% if query_made %}
+      {# ── Copertura mensile ─────────────────────────────────────────────── #}
+      {% set mesi_nomi = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'] %}
+      {% if coverage|length > 0 %}
+      <div class="mb-3">
+        <div class="d-flex flex-wrap gap-1">
+          {% for c in coverage %}
+            {% set pct_ok = c.n_total > 0 ? (c.n_processed / c.n_total * 100)|round : 0 %}
+            {% if c.n_pending > 0 %}
+              {% set cls = 'bg-warning text-dark' %}
+              {% set tip = 'In attesa: ' ~ c.n_pending ~ '/' ~ c.n_total %}
+            {% elseif c.n_error > 0 %}
+              {% set cls = 'bg-danger' %}
+              {% set tip = 'Errori: ' ~ c.n_error ~ '/' ~ c.n_total %}
+            {% elseif c.n_processed > 0 %}
+              {% set cls = 'bg-success' %}
+              {% set tip = 'Elaborati: ' ~ c.n_processed ~ '/' ~ c.n_total %}
+            {% else %}
+              {% set cls = 'bg-secondary' %}
+              {% set tip = 'Solo SKIPPED: ' ~ c.n_skipped %}
+            {% endif %}
+            <span class="badge {{ cls }}" title="{{ tip }}" style="font-size:.75rem;cursor:default">
+              {{ mesi_nomi[c.mese - 1] }} {{ c.anno }}
+            </span>
+          {% endfor %}
+        </div>
+        <div class="text-muted small mt-1">
+          <span class="badge bg-success me-1">verde</span>elaborato
+          <span class="badge bg-warning text-dark me-1 ms-2">giallo</span>in attesa
+          <span class="badge bg-danger me-1 ms-2">rosso</span>errori
+          <span class="badge bg-secondary ms-2">grigio</span>solo scartati
+        </div>
+      </div>
+      {% endif %}
+
+      {# Mesi nel range senza nessun record #}
+      {# Build set as "ANNO-MESE" with no leading zero (matches DB integer mese) #}
+      {% set mesi_con_dati = [] %}
+      {% for c in coverage %}
+        {% set mesi_con_dati = mesi_con_dati|merge([c.anno ~ '-' ~ c.mese]) %}
+      {% endfor %}
+      {% set da_anno = filters.dataDa|slice(0,4)|number_format(0,'','') %}
+      {% set da_mese = filters.dataDa|slice(5,2)|number_format(0,'','') %}
+      {% set a_anno  = filters.dataA|slice(0,4)|number_format(0,'','') %}
+      {% set a_mese  = filters.dataA|slice(5,2)|number_format(0,'','') %}
+      {% set mesi_mancanti = [] %}
+      {% for y in da_anno..a_anno %}
+        {% set m_start = (y == da_anno) ? da_mese : 1 %}
+        {% set m_end   = (y == a_anno)  ? a_mese  : 12 %}
+        {% for m in m_start..m_end %}
+          {% if (y ~ '-' ~ m) not in mesi_con_dati %}
+            {% set mesi_mancanti = mesi_mancanti|merge([mesi_nomi[m - 1] ~ ' ' ~ y]) %}
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+      {% if mesi_mancanti|length > 0 %}
+      <div class="alert alert-warning py-2 small mb-3">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        <strong>Mesi non scansionati:</strong>
+        {{ mesi_mancanti|join(', ') }}
+      </div>
+      {% endif %}
+
+      {% if report_rows|length == 0 %}
+        <div class="alert alert-info py-2">Nessun dato TEFA elaborato per il periodo selezionato.</div>
+      {% else %}
+        <div class="table-responsive">
+          <table class="table table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Comune</th>
+                <th>CF Comune</th>
+                <th class="text-end">N. Pagamenti</th>
+                <th class="text-end">Totale TEFA (€)</th>
+                <th class="text-end">Totale Imp. Comune (€)</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for r in report_rows %}
+              <tr>
+                <td>{{ r.denominazione_comune ?: r.cf_comune }}</td>
+                <td class="font-monospace small">{{ r.cf_comune }}</td>
+                <td class="text-end">{{ r.n_pagamenti }}</td>
+                <td class="text-end fw-semibold">{{ r.totale_tefa|number_format(2, ',', '.') }}</td>
+                <td class="text-end">{{ r.totale_comune|number_format(2, ',', '.') }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td colspan="2">Totale</td>
+                <td class="text-end">{{ report_rows|column('n_pagamenti')|reduce((a, b) => a + b, 0) }}</td>
+                <td class="text-end">{{ totali_tefa|number_format(2, ',', '.') }}</td>
+                <td class="text-end">{{ totali_comune|number_format(2, ',', '.') }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // ── Litepicker report ─────────────────────────────────────────────────────
+  const toIt = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return (d && m && y) ? `${d}/${m}/${y}` : iso;
+  };
+  const elDa  = document.getElementById('rDaVis');
+  const elA   = document.getElementById('rAVis');
+  const hidDa = document.getElementById('rDa');
+  const hidA  = document.getElementById('rA');
+  if (elDa && elA && hidDa && hidA && typeof Litepicker !== 'undefined') {
+    if (hidDa.value) elDa.value = toIt(hidDa.value);
+    if (hidA.value)  elA.value  = toIt(hidA.value);
+    new Litepicker({
+      element: elDa,
+      elementEnd: elA,
+      singleMode: false,
+      format: 'DD/MM/YYYY',
+      lang: 'it-IT',
+      autoApply: true,
+      resetButton: true,
+      numberOfMonths: 1,
+      numberOfColumns: 1,
+      tooltipText: { one: 'giorno', other: 'giorni' },
+      setup(p) {
+        p.on('selected', (d1, d2) => {
+          hidDa.value = d1.format('YYYY-MM-DD');
+          hidA.value  = d2.format('YYYY-MM-DD');
+        });
+        p.on('clear:selection', () => {
+          hidDa.value = hidA.value = elDa.value = elA.value = '';
+        });
+      },
+    });
+  }
+
+  // ── Polling contatori ─────────────────────────────────────────────────────
+  var pollInterval = null;
+  var pendingCount = {{ counts.PENDING|default(0) }};
+
+  function updateCounts(c) {
+    document.getElementById('cnt-pending').textContent   = c.PENDING   ?? 0;
+    document.getElementById('cnt-processed').textContent = c.PROCESSED ?? 0;
+    document.getElementById('cnt-error').textContent     = c.ERROR     ?? 0;
+    document.getElementById('cnt-skipped').textContent   = c.SKIPPED   ?? 0;
+    var ps = document.getElementById('poll-status');
+    if ((c.PENDING ?? 0) > 0) {
+      ps.innerHTML = '<i class="fas fa-circle-notch fa-spin me-1"></i>Elaborazione in corso — aggiornamento automatico ogni 15s.';
+    } else {
+      ps.innerHTML = '<i class="fas fa-check-circle text-success me-1"></i>Nessun record in attesa.';
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    }
+  }
+
+  function pollStatus() {
+    fetch('/pagamenti/report-tefa/status')
+      .then(r => r.json())
+      .then(d => { if (d.ok) updateCounts(d.counts); })
+      .catch(() => {});
+  }
+
+  if (pendingCount > 0) {
+    pollInterval = setInterval(pollStatus, 15000);
+  }
+
+  window.retryErrors = function () {
+    fetch('/pagamenti/report-tefa/retry-errors', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { if (d.ok) { alert(d.reset + ' errori reimpostati come PENDING.'); pollStatus(); } })
+      .catch(() => {});
+  };
+
+  window.retrySkipped = function () {
+    if (!confirm('Rimettere in coda tutti i record non-TEFA? Verranno ri-elaborati.')) return;
+    fetch('/pagamenti/report-tefa/retry-skipped', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { if (d.ok) { alert(d.reset + ' record rimessi in coda.'); location.reload(); } })
+      .catch(() => {});
+  };
+})();
+</script>
+{% endblock %}

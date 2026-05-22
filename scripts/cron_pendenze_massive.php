@@ -2,8 +2,11 @@
 declare(strict_types=1);
 
 /**
- * Script per elaborare in background l'inserimento massivo di pendenze.
- * Deve essere richiamato via cron o systemd timer (CLI).
+ * Daemon pendenze massive.
+ *
+ * Loop infinito: processa batch di 50 pendenze PENDING, attende 30s quando
+ * la coda è vuota. Si ferma su segnale di stop (file /tmp/cron-stop-pendenze-massive)
+ * o se un'altra istanza è già attiva (PID file /tmp/cron-pendenze-massive.pid).
  */
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -13,101 +16,146 @@ use App\Controllers\PendenzeController;
 use Dotenv\Dotenv;
 use Slim\Views\Twig;
 
-// Nel container GovPay, le env (incluso DB_NAME ecc.) sono esposte ad apache.
-// Per gli script CLI, le si può iniettare leggendo .env o dal docker-compose.
 if (file_exists(dirname(__DIR__) . '/.env')) {
     $dotenv = Dotenv::createImmutable(dirname(__DIR__));
     $dotenv->load();
 }
-
-// Fallback DB_HOST a "db" per l'ambiente Docker se non valorizzato e non in localhost
 if (!getenv('DB_HOST')) {
-    putenv("DB_HOST=db");
+    putenv('DB_HOST=db');
 }
 
-// Imposta un time limit compatibile con lo script
-set_time_limit(300);
+set_time_limit(0);
 
-echo "[".date('Y-m-d H:i:s')."] Avvio batch elaborazione pendenze massive...\n";
+$log = static function (string $msg): void {
+    echo '[' . date('Y-m-d H:i:s') . '] ' . $msg . "\n";
+    flush();
+};
 
-// Istanze necessarie
-$repo = new MassivePendenzeRepository();
+$pidFile  = '/tmp/cron-pendenze-massive.pid';
+$stopFile = '/tmp/cron-stop-pendenze-massive';
 
-// Per inviare la pendenza, usiamo la logica esistente nel PendenzeController.
-// Siccome la classe controller si aspetta Twig, lo simuliamo.
-$twigMock = Twig::create(dirname(__DIR__) . '/backoffice/templates');
+// Wait for DB to be ready (max 60s — MariaDB may still be starting)
+{
+    $dbReady = false;
+    for ($i = 0; $i < 60; $i++) {
+        try {
+            \App\Database\Connection::getPDO()->query('SELECT 1');
+            $dbReady = true;
+            break;
+        } catch (\Throwable $_) {
+            sleep(1);
+        }
+    }
+    if (!$dbReady) {
+        $log('DB non raggiungibile dopo 60s. Uscita.');
+        exit(1);
+    }
+}
+
+// Single-instance guard via PID file
+if (file_exists($pidFile)) {
+    $existingPid = (int)file_get_contents($pidFile);
+    if ($existingPid > 0 && file_exists('/proc/' . $existingPid)) {
+        $log("Istanza già attiva (PID $existingPid). Uscita.");
+        exit(0);
+    }
+}
+file_put_contents($pidFile, (string)getmypid());
+
+// Clear any leftover stop signal
+@unlink($stopFile);
+
+register_shutdown_function(static function () use ($pidFile): void {
+    @unlink($pidFile);
+});
+
+// Handle SIGTERM gracefully
+if (function_exists('pcntl_async_signals')) {
+    pcntl_async_signals(true);
+    pcntl_signal(15, static function () use ($pidFile, $log): void { // 15 = SIGTERM
+        $log('SIGTERM ricevuto. Uscita.');
+        @unlink($pidFile);
+        exit(0);
+    });
+}
+
+$log('Daemon avviato (PID=' . getmypid() . ').');
+
+$repo       = new MassivePendenzeRepository();
+$twigMock   = Twig::create(dirname(__DIR__) . '/backoffice/templates');
 $controller = new PendenzeController($twigMock, null);
 
-// Prendi i primi N (es. 50 righe alla volta)
-$batchSize = 50;
-$pending = $repo->fetchPending($batchSize);
+$batchSize    = 50;
+$sleepSeconds = 30;
 
-if (count($pending) === 0) {
-    echo "[".date('Y-m-d H:i:s')."] Nessuna pendenza in stato PENDING trovata.\n";
-    exit(0);
-}
+while (true) {
+    if (file_exists($stopFile)) {
+        @unlink($stopFile);
+        $log('Segnale di stop ricevuto. Uscita pulita.');
+        exit(0);
+    }
 
-echo "[".date('Y-m-d H:i:s')."] Trovate ".count($pending)." pendenze in coda.\n";
+    $pending = $repo->fetchPending($batchSize);
 
-foreach ($pending as $row) {
-    $id = (int)$row['id'];
-    $batchId = $row['file_batch_id'];
-    $numeroRiga = (int)$row['riga'];
-    
-    // Decodifica il payload salvato
-    $payloadJson = $row['payload_json'];
-    $payload = $payloadJson ? json_decode($payloadJson, true) : null;
-
-    if (!is_array($payload)) {
-        echo "  [Riga $batchId:$numeroRiga] ID-$id ERRORE PAYLOAD SCORRETTO.\n";
-        $repo->setResult($id, false, null, "Payload JSON non valido o mancante");
+    if (count($pending) === 0) {
+        $log("Nessuna pendenza PENDING. Attendo {$sleepSeconds}s...");
+        sleep($sleepSeconds);
         continue;
     }
 
-    echo "  [Riga $batchId:$numeroRiga] Elaborazione pendenza ID-$id ...";
-    $repo->setProcessing($id); // Segna la transizione a PROCESSING
+    $log('Elaboro batch di ' . count($pending) . ' pendenze...');
 
-    // Arricchimento dati contabili (IBAN, codEntrata, tipoBollo, etc)
-    $accErrors = [];
-    $accWarnings = [];
-    $accountingParams = [
-        'idDominio' => $payload['idDominio'] ?? '',
-        'idTipoPendenza' => $payload['idTipoPendenza'] ?? ''
-    ];
-    $payload['voci'] = $controller->buildVociWithAccounting(
-        $payload['voci'] ?? [],
-        $accountingParams,
-        null,
-        $accErrors,
-        $accWarnings
-    );
+    foreach ($pending as $row) {
+        $id         = (int)$row['id'];
+        $batchId    = $row['file_batch_id'];
+        $numeroRiga = (int)$row['riga'];
+        $payload    = $row['payload_json'] ? json_decode($row['payload_json'], true) : null;
 
-    if (!empty($accErrors)) {
-        $errorMsg = "Errore contabilità: " . implode("; ", $accErrors);
-        echo " ERRORE ($errorMsg)\n";
-        $repo->setResult($id, false, null, $errorMsg);
-        continue;
-    }
+        if (!is_array($payload)) {
+            $log("  [$batchId:$numeroRiga] ID-$id ERRORE PAYLOAD SCORRETTO.");
+            $repo->setResult($id, false, null, 'Payload JSON non valido o mancante');
+            continue;
+        }
 
-    // Aggiunta Origine e Log in DatiAllegati per i filtri pendenze
-    $dDa = isset($payload['datiAllegati']) && is_string($payload['datiAllegati']) ? json_decode($payload['datiAllegati'], true) : ($payload['datiAllegati'] ?? []);
-    if (!is_array($dDa)) $dDa = [];
-    $dDa['sorgente'] = 'GIL-Massivo';
-    $payload['datiAllegati'] = $dDa;
+        $repo->setProcessing($id);
 
-    // Creiamo una pendenza con \App\Controllers\PendenzeController::sendPendenzaToBackoffice
-    // Togliamo la chiave " idPendenza " se ne generasse uno per lasciare che backoffice
-    // API la crei se mancante, in realtà se la UI massivo non lo passa, la funzione helper lo creerà.
-    $res = $controller->sendPendenzaToBackoffice($payload);
+        $accErrors        = [];
+        $accWarnings      = [];
+        $accountingParams = [
+            'idDominio'      => $payload['idDominio'] ?? '',
+            'idTipoPendenza' => $payload['idTipoPendenza'] ?? '',
+        ];
+        $payload['voci'] = $controller->buildVociWithAccounting(
+            $payload['voci'] ?? [],
+            $accountingParams,
+            null,
+            $accErrors,
+            $accWarnings
+        );
 
-    if ($res['success'] === true) {
-        echo " OK (Creato: " . ($res['idPendenza'] ?? 'sconosciuto') . ")\n";
-        $repo->setResult($id, true, $res['response'] ?? null, null);
-    } else {
-        $errorMsg = is_array($res['errors']) ? implode("; ", $res['errors']) : 'Errore sconosciuto';
-        echo " ERRORE ($errorMsg)\n";
-        $repo->setResult($id, false, $res['response'] ?? null, $errorMsg);
+        if (!empty($accErrors)) {
+            $errorMsg = 'Errore contabilità: ' . implode('; ', $accErrors);
+            $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
+            $repo->setResult($id, false, null, $errorMsg);
+            continue;
+        }
+
+        $dDa = isset($payload['datiAllegati']) && is_string($payload['datiAllegati'])
+            ? json_decode($payload['datiAllegati'], true)
+            : ($payload['datiAllegati'] ?? []);
+        if (!is_array($dDa)) $dDa = [];
+        $dDa['sorgente']         = 'GIL-Massivo';
+        $payload['datiAllegati'] = $dDa;
+
+        $res = $controller->sendPendenzaToBackoffice($payload);
+
+        if ($res['success'] === true) {
+            $log("  [$batchId:$numeroRiga] ID-$id OK (Creato: " . ($res['idPendenza'] ?? 'sconosciuto') . ')');
+            $repo->setResult($id, true, $res['response'] ?? null, null);
+        } else {
+            $errorMsg = is_array($res['errors']) ? implode('; ', $res['errors']) : 'Errore sconosciuto';
+            $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
+            $repo->setResult($id, false, $res['response'] ?? null, $errorMsg);
+        }
     }
 }
-
-echo "[".date('Y-m-d H:i:s')."] Batch concluso.\n";

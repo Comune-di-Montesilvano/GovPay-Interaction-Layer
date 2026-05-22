@@ -282,6 +282,23 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
   fi
 fi
 
+if [ "$APP_SUITE" != "frontoffice" ]; then
+  shopt -s nullglob
+  for autostart_file in /var/www/cache/daemon-*.autostart; do
+    job="${autostart_file##*/daemon-}"
+    job="${job%.autostart}"
+    case "$job" in
+      ragioneria)       script="scripts/cron_ragioneria.php" ;;
+      tefa)             script="scripts/cron_tefa_scanner.php" ;;
+      pendenze-massive) script="scripts/cron_pendenze_massive.php" ;;
+      *) continue ;;
+    esac
+    echo "ℹ️  Auto-avvio daemon: ${job}"
+    php "/var/www/html/${script}" >> "/var/www/cache/daemon-${job}.log" 2>&1 &
+  done
+  shopt -u nullglob
+fi
+
 echo "--- Avvio Apache. ---"
 # Garantisce che APACHE_SERVER_NAME abbia sempre un valore (evita "ServerName takes one argument")
 export APACHE_SERVER_NAME="${APACHE_SERVER_NAME:-localhost}"

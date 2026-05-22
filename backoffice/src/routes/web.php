@@ -13,6 +13,8 @@ use App\Controllers\HomeController;
 use App\Controllers\IncassiTassonomiaController;
 use App\Controllers\FlussiController;
 use App\Controllers\ReportRagioneriaController;
+use App\Controllers\CronController;
+use App\Controllers\ReportTefaController;
 use App\Controllers\ImpostazioniController;
 use App\Controllers\PendenzeController;
 use App\Controllers\SetupController;
@@ -91,6 +93,9 @@ return function (App $app, Twig $twig): void {
     });
     $app->post('/impostazioni/backoffice/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveBackoffice($request, $response);
+    });
+    $app->post('/impostazioni/tefa/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->saveTefa($request, $response);
     });
     $app->post('/impostazioni/frontoffice/save', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->saveFrontoffice($request, $response);
@@ -251,10 +256,6 @@ return function (App $app, Twig $twig): void {
     $app->get('/pagamenti/report-ragioneria', function(Request $request, Response $response) use ($twig): Response {
         $controller = new ReportRagioneriaController($twig);
         return $controller->index($request, $response);
-    });
-    $app->get('/pagamenti/report-ragioneria/status', function(Request $request, Response $response) use ($twig): Response {
-        $controller = new ReportRagioneriaController($twig);
-        return $controller->status($request, $response);
     });
 
     // Pendenze
@@ -1161,6 +1162,43 @@ return function (App $app, Twig $twig): void {
     $app->get('/pagamenti/ricerca-flussi/dettaglio/{idFlusso}', function($request, $response, $args) use ($twig) {
         $controller = new FlussiController($twig);
         return $controller->detail($request, $response, $args);
+    });
+
+    // Cron management (superadmin only)
+    $app->post('/impostazioni/cron/{job}/run', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->run($request, $response, $args);
+    });
+    $app->post('/impostazioni/cron/set-scan-date', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->setScanDate($request, $response);
+    });
+    $app->post('/impostazioni/cron/{job}/stop', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->stop($request, $response, $args);
+    });
+    $app->get('/impostazioni/cron/{job}/log', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->log($request, $response, $args);
+    });
+
+    // Report TEFA (solo province con tefa_enabled = true)
+    $app->get('/pagamenti/report-tefa', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->index($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/scan', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->scan($request, $response);
+    });
+    $app->get('/pagamenti/report-tefa/status', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->status($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/retry-errors', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->retryErrors($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/retry-skipped', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->retrySkipped($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/fix-dates', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->fixDates($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/stop', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->stop($request, $response);
     });
 
     // AJAX: fetch single Biz Events receipt on-demand
