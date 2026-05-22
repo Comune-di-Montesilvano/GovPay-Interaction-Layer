@@ -60,11 +60,11 @@ jobs:
           provenance: false
           sbom: false
           build-args: |
-            GIL_IMAGE_TAG=${{ needs.setup.outputs.version }}
-            GIL_VERSION_TYPE=${{ needs.setup.outputs.version_type }}
-            GIL_VERSION_LABEL=${{ needs.setup.outputs.version_label }}
-            GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
-            GIT_COMMIT_SHA=${{ github.sha }}
+            GIL_IMAGE_TAG=cache-warmup
+            GIL_VERSION_TYPE=cache-warmup
+            GIL_VERSION_LABEL=cache-warmup
+            GIL_REF_URL=
+            GIT_COMMIT_SHA=cache-warmup
           cache-from: |
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
@@ -133,12 +133,15 @@ jobs:
             GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
           cache-from: |
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
             type=gha,scope=${{ matrix.scope }}
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}:dev
           # mode=max protegge cache di composer e npm (stage intermedi); inline aggiunge
           # metadati cache nell'immagine per fallback registry su cache GHA evict
           cache-to: |
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main,mode=max
             type=gha,mode=max,scope=${{ matrix.scope }}
             type=inline
 
