@@ -1844,13 +1844,59 @@ class PendenzeController
             // Genera idPendenza se non fornito
             $idP = trim((string)($idPendenza ?? ($payload['idPendenza'] ?? '')));
             if ($idP === '') {
-                try {
-                    $rand = bin2hex(random_bytes(8));
-                } catch (\Throwable $_) {
-                    $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid());
+                $iuvPrefix = null;
+                $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
+                $idDominioPayload = trim((string)($payload['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
+                if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
+                    try {
+                        $details = (new EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
+                        $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
+                    } catch (\Throwable $_) {
+                        // fallback to GIL-
+                    }
                 }
-                $idPCand = 'GIL-' . substr($rand, 0, 16);
-                $idP = preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35));
+
+                if ($iuvPrefix !== null) {
+                    $chkUser = SettingsRepository::get('govpay', 'user', '');
+                    $chkPass = SettingsRepository::get('govpay', 'password', '');
+                    $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
+                    if ($chkUser !== '' && $chkPass !== '') {
+                        $chkOpts['auth'] = [$chkUser, $chkPass];
+                    }
+                    $maxAttempts = 10;
+                    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                        $candidate = $this->generateVincolatoId($iuvPrefix);
+                        $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
+                        try {
+                            $chkResp = $httpClient->request('GET', $chkUrl, $chkOpts);
+                            $chkCode = $chkResp->getStatusCode();
+                            if ($chkCode === 404) {
+                                $idP = $candidate;
+                                break;
+                            } elseif ($chkCode !== 200) {
+                                $idP = $candidate;
+                                break;
+                            }
+                            // 200 = exists, try another candidate
+                        } catch (\Throwable $_) {
+                            $idP = $candidate;
+                            break;
+                        }
+                    }
+                    if ($idP === '') {
+                        $errors[] = 'Impossibile generare ID univoco per IUV vincolato dopo ' . $maxAttempts . ' tentativi';
+                        return ['success' => false, 'errors' => $errors];
+                    }
+                    $payload['numeroAvviso'] = $idP;
+                } else {
+                    try {
+                        $rand = bin2hex(random_bytes(8));
+                    } catch (\Throwable $_) {
+                        $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid());
+                    }
+                    $idPCand = 'GIL-' . substr($rand, 0, 16);
+                    $idP = preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35));
+                }
             }
 
             // Ensure idPendenza is not sent in the request body: the API expects it in the URL
@@ -4336,6 +4382,22 @@ class PendenzeController
         }
 
         return '';
+    }
+
+    private function generateVincolatoId(string $prefix): string
+    {
+        $totalLen = 18;
+        $suffixLen = max(1, $totalLen - strlen($prefix));
+        // 9-digit date slot: YY(2) + DDD(3) + HH(2) + mm(2)
+        $datePart = sprintf('%s%03d%s%s', date('y'), (int)date('z') + 1, date('H'), date('i'));
+        if ($suffixLen >= 9) {
+            $rand = '';
+            for ($i = 0; $i < $suffixLen - 9; $i++) { $rand .= (string)random_int(0, 9); }
+            return $prefix . $datePart . $rand;
+        }
+        $suffix = '';
+        for ($i = 0; $i < $suffixLen; $i++) { $suffix .= (string)random_int(0, 9); }
+        return $prefix . $suffix;
     }
 
     private function fetchPendenzaById(string $idPendenza): ?array

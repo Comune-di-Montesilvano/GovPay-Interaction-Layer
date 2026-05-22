@@ -167,7 +167,7 @@ class EntrateRepository
      */
     public function findDetails(string $idDominio, string $idEntrata): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id_entrata, descrizione, descrizione_locale, descrizione_estesa, iban_accredito, codice_contabilita, tipo_bollo, tipo_contabilita, abilitato_backoffice, override_locale, external_url, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva FROM entrate_tipologie WHERE id_dominio = :dom AND id_entrata = :ent LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id_entrata, iuv_prefix, descrizione, descrizione_locale, descrizione_estesa, iban_accredito, codice_contabilita, tipo_bollo, tipo_contabilita, abilitato_backoffice, override_locale, external_url, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva FROM entrate_tipologie WHERE id_dominio = :dom AND id_entrata = :ent LIMIT 1');
         $stmt->execute([':dom' => $idDominio, ':ent' => $idEntrata]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -179,7 +179,7 @@ class EntrateRepository
      */
     public function listByDominio(string $idDominio): array
     {
-    $stmt = $this->pdo->prepare('SELECT id_entrata, descrizione, descrizione_locale, descrizione_estesa, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva, iban_accredito, codice_contabilita, tipo_contabilita, abilitato_backoffice, override_locale, external_url FROM entrate_tipologie WHERE id_dominio = :id ORDER BY id_entrata ASC');
+    $stmt = $this->pdo->prepare('SELECT id_entrata, iuv_prefix, descrizione, descrizione_locale, descrizione_estesa, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva, iban_accredito, codice_contabilita, tipo_contabilita, abilitato_backoffice, override_locale, external_url FROM entrate_tipologie WHERE id_dominio = :id ORDER BY id_entrata ASC');
         $stmt->execute([':id' => $idDominio]);
         return $stmt->fetchAll();
     }
@@ -286,12 +286,12 @@ class EntrateRepository
     /**
      * Restituisce solo le colonne di override locale per tutte le tipologie del dominio.
      * Usato per il backup della configurazione.
-     * @return array<int, array{id_entrata:string,descrizione_locale:?string,descrizione_estesa:?string,override_locale:?int,external_url:?string,abilitato_backoffice:int}>
+     * @return array<int, array{id_entrata:string,iuv_prefix:?string,descrizione_locale:?string,descrizione_estesa:?string,override_locale:?int,external_url:?string,abilitato_backoffice:int}>
      */
     public function listLocalOverrides(string $idDominio): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id_entrata, descrizione_locale, descrizione_estesa, override_locale, external_url, abilitato_backoffice
+            'SELECT id_entrata, iuv_prefix, descrizione_locale, descrizione_estesa, override_locale, external_url, abilitato_backoffice
              FROM entrate_tipologie WHERE id_dominio = :dom ORDER BY id_entrata ASC'
         );
         $stmt->execute([':dom' => $idDominio]);
@@ -323,6 +323,7 @@ class EntrateRepository
             'UPDATE entrate_tipologie
              SET descrizione_locale = :dl, descrizione_estesa = :de,
                  override_locale = :ol, external_url = :eu,
+                 iuv_prefix = :iuv_prefix,
                  abilitato_backoffice = :ab, updated_at = :now
              WHERE id_dominio = :dom AND id_entrata = :ent'
         );
@@ -333,6 +334,7 @@ class EntrateRepository
                 ':de'  => $row['descrizione_estesa'] ?? null,
                 ':ol'  => isset($row['override_locale']) ? (int)$row['override_locale'] : null,
                 ':eu'  => $row['external_url'] ?? null,
+                ':iuv_prefix' => $row['iuv_prefix'] ?? null,
                 ':ab'  => isset($row['abilitato_backoffice']) ? (int)$row['abilitato_backoffice'] : 1,
                 ':now' => $now,
                 ':dom' => $idDominio,
@@ -341,6 +343,20 @@ class EntrateRepository
             $updated += $stmt->rowCount();
         }
         return $updated;
+    }
+
+    /** Imposta (o azzera) il prefisso IUV vincolato per una tipologia. */
+    public function setIuvPrefix(string $idDominio, string $idEntrata, ?string $prefix): void
+    {
+        $normalized = ($prefix === null || trim($prefix) === '') ? null : preg_replace('/[^0-9]/', '', trim($prefix));
+        $sql = 'UPDATE entrate_tipologie SET iuv_prefix = :prefix, updated_at = :now WHERE id_dominio = :dom AND id_entrata = :ent';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            ':prefix' => $normalized === '' ? null : $normalized,
+            ':now'    => date('Y-m-d H:i:s'),
+            ':dom'    => $idDominio,
+            ':ent'    => $idEntrata,
+        ]);
     }
 
     /**

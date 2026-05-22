@@ -1065,7 +1065,7 @@ class ConfigurazioneController
                                 $repoEntr   = new EntrateRepository();
                                 foreach ($entrateRows as $row) { $repoEntr->upsertFromBackoffice($idDominio, $row); }
                                 $entrateEff = $repoEntr->listByDominio($idDominio);
-                                $boMap = []; $ovrMap = []; $urlMap = []; $descrMap = []; $descrEstesaMap = []; $descrEffMap = [];
+                                $boMap = []; $ovrMap = []; $urlMap = []; $descrMap = []; $descrEstesaMap = []; $descrEffMap = []; $iuvPrefixMap = [];
                                 foreach ($entrateEff as $r) {
                                     $idE = $r['id_entrata'];
                                     $boMap[$idE]          = (int)$r['abilitato_backoffice'] === 1;
@@ -1074,6 +1074,7 @@ class ConfigurazioneController
                                     $descrMap[$idE]       = $r['descrizione_locale'] ?? null;
                                     $descrEstesaMap[$idE] = $r['descrizione_estesa'] ?? null;
                                     $descrEffMap[$idE]    = $r['descrizione_effettiva'] ?? ($r['descrizione'] ?? null);
+                                    $iuvPrefixMap[$idE]   = $r['iuv_prefix'] ?? null;
                                     $registerTipologiaCode($extractValue($r, ['codice_contabilita', 'codiceContabilita']));
                                     $registerTipologiaCode($extractValue($r, ['id_entrata', 'idEntrata']));
                                 }
@@ -1083,6 +1084,7 @@ class ConfigurazioneController
                                 $entrateArr['_descr_map']        = $descrMap;
                                 $entrateArr['_descr_estesa_map'] = $descrEstesaMap;
                                 $entrateArr['_descr_eff_map']    = $descrEffMap;
+                                $entrateArr['_iuv_prefix_map']   = $iuvPrefixMap;
                             } catch (\Throwable $e) {
                                 $errors[] = 'Sync DB entrate fallito: ' . $e->getMessage();
                             }
@@ -2597,6 +2599,10 @@ class ConfigurazioneController
             // URL esterna (vuota = rimuovi)
             $url = trim((string)($data['external_url'] ?? ''));
             $entrateRepo->setExternalUrl($idDominio, $idEntrata, $url !== '' ? $url : null);
+
+            // Prefisso IUV vincolato (solo cifre, vuoto = rimuovi)
+            $iuvPrefix = isset($data['iuv_prefix']) ? trim((string)$data['iuv_prefix']) : null;
+            $entrateRepo->setIuvPrefix($idDominio, $idEntrata, $iuvPrefix !== '' ? $iuvPrefix : null);
 
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Tipologia salvata'];
             Logger::getInstance()->info('Tipologia salvata (save-all)', [

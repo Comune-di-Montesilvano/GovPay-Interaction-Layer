@@ -1169,11 +1169,66 @@ if (!function_exists('frontoffice_send_pendenza_to_backoffice')) {
             return ['success' => false, 'errors' => ['Configurazione GovPay incompleta (GOVPAY_BACKOFFICE_URL o ID_A2A mancanti).']];
         }
 
-        $idPendenza = frontoffice_generate_pendenza_id();
+        // Lookup iuv_prefix per la tipologia (solo DB, nessuna HTTP qui)
+        $iuvPrefix = null;
+        $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
+        $idDominioPayload = trim((string)($payload['idDominio'] ?? \App\Config\SettingsRepository::get('entity', 'id_dominio', '')));
+        if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
+            try {
+                $details = (new \App\Database\EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
+                $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
+            } catch (\Throwable $_) {
+                // fallback a GIL-
+            }
+        }
+
         unset($payload['idPendenza']);
 
         try {
             $client = new Client(frontoffice_govpay_client_options());
+
+            // Generazione ID pendenza
+            if ($iuvPrefix !== null) {
+                $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
+                if ($auth = frontoffice_basic_auth()) {
+                    $chkOpts['auth'] = $auth;
+                }
+                $maxAttempts = 10;
+                $idPendenza = '';
+                for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                    $totalLen = 18;
+                    $suffixLen = max(1, $totalLen - strlen($iuvPrefix));
+                    $datePart = sprintf('%s%03d%s%s', date('y'), (int)date('z') + 1, date('H'), date('i'));
+                    if ($suffixLen >= 9) {
+                        $rand = '';
+                        for ($si = 0; $si < $suffixLen - 9; $si++) { $rand .= (string)random_int(0, 9); }
+                        $candidate = $iuvPrefix . $datePart . $rand;
+                    } else {
+                        $suffix = '';
+                        for ($si = 0; $si < $suffixLen; $si++) { $suffix .= (string)random_int(0, 9); }
+                        $candidate = $iuvPrefix . $suffix;
+                    }
+                    $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
+                    try {
+                        $chkResp = $client->request('GET', $chkUrl, $chkOpts);
+                        $chkCode = $chkResp->getStatusCode();
+                        if ($chkCode === 404 || $chkCode !== 200) {
+                            $idPendenza = $candidate;
+                            break;
+                        }
+                    } catch (\Throwable $_) {
+                        $idPendenza = $candidate;
+                        break;
+                    }
+                }
+                if ($idPendenza === '') {
+                    return ['success' => false, 'errors' => ['IUV vincolato: impossibile generare ID univoco dopo ' . $maxAttempts . ' tentativi']];
+                }
+                $payload['numeroAvviso'] = $idPendenza;
+            } else {
+                $idPendenza = frontoffice_generate_pendenza_id();
+            }
+
             $requestOptions = [
                 'headers' => [
                     'Accept' => 'application/json',

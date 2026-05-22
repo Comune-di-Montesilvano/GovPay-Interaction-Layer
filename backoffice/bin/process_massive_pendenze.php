@@ -57,9 +57,50 @@ function sendOne(array $payload): array {
         $httpClient = new Client($guzzleOptions);
         $idP = trim((string)($payload['idPendenza'] ?? ''));
         if ($idP === '') {
-            try { $rand = bin2hex(random_bytes(8)); } catch (\Throwable $_) { $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid()); }
-            $idPCand = 'GIL-' . substr($rand, 0, 16);
-            $idP = preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35));
+            $iuvPrefix = null;
+            $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
+            $idDominioPayload = trim((string)($payload['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
+            if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
+                try {
+                    $details = (new \App\Database\EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
+                    $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
+                } catch (\Throwable $_) { }
+            }
+
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
+
+            if ($iuvPrefix !== null) {
+                $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
+                if ($username !== '' && $password !== '') { $chkOpts['auth'] = [$username, $password]; }
+                $maxAttempts = 10;
+                for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                    $totalLen = 18;
+                    $suffixLen = max(1, $totalLen - strlen($iuvPrefix));
+                    $datePart = sprintf('%s%03d%s%s', date('y'), (int)date('z') + 1, date('H'), date('i'));
+                    if ($suffixLen >= 9) {
+                        $rand = '';
+                        for ($si = 0; $si < $suffixLen - 9; $si++) { $rand .= (string)random_int(0, 9); }
+                        $candidate = $iuvPrefix . $datePart . $rand;
+                    } else {
+                        $suffix = '';
+                        for ($si = 0; $si < $suffixLen; $si++) { $suffix .= (string)random_int(0, 9); }
+                        $candidate = $iuvPrefix . $suffix;
+                    }
+                    $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
+                    try {
+                        $chkResp = $httpClient->request('GET', $chkUrl, $chkOpts);
+                        $chkCode = $chkResp->getStatusCode();
+                        if ($chkCode === 404 || $chkCode !== 200) { $idP = $candidate; break; }
+                    } catch (\Throwable $_) { $idP = $candidate; break; }
+                }
+                if ($idP === '') { return ['success' => false, 'errors' => ['IUV vincolato: impossibile generare ID univoco dopo ' . $maxAttempts . ' tentativi']]; }
+                $payload['numeroAvviso'] = $idP;
+            } else {
+                try { $rand = bin2hex(random_bytes(8)); } catch (\Throwable $_) { $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid()); }
+                $idPCand = 'GIL-' . substr($rand, 0, 16);
+                $idP = preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35));
+            }
         }
 
         if (array_key_exists('idPendenza', $payload)) { unset($payload['idPendenza']); }
