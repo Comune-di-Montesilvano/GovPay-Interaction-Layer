@@ -448,11 +448,8 @@ Ogni release è associata a un tag Git `vX.Y.Z`. Al push del tag, il workflow Gi
 
 ```bash
 # Avanzare di versione
-echo "vX.Y.Z" > VERSION
-git add VERSION
-git commit -m "chore: release vX.Y.Z"
 git tag vX.Y.Z
-git push origin main --tags
+git push origin vX.Y.Z
 ```
 
 Il workflow parte automaticamente. Puoi seguire l'avanzamento su GitHub → Actions → "Docker Publish".
@@ -482,6 +479,19 @@ Registry: `ghcr.io/comune-di-montesilvano/`
 ---
 
 ## Processi batch
+
+I daemon principali (`cron_ragioneria.php`, `cron_tefa_scanner.php`, `cron_pendenze_massive.php`) si gestiscono da **Impostazioni → Cron** nel backoffice (start/stop/log/autostart). Possono anche essere avviati manualmente:
+
+```bash
+# Daemon ragioneria (sincronizza flussi GovPay → DB)
+docker exec -d gil-backoffice php /var/www/html/scripts/cron_ragioneria.php
+
+# Daemon TEFA scanner (elabora IUR via Biz Events)
+docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
+
+# Pendenze massive (one-shot o in loop)
+docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
+```
 
 ### Inserimento massivo pendenze
 
@@ -532,12 +542,14 @@ WantedBy=timers.target
 - Ricerca, inserimento singolo e massivo.
 - Dettaglio con azioni: annullamento, stralcio, riattivazione.
 - Storico modifiche in `datiAllegati`; origine e operatore tracciati.
+- **IUV vincolato (`iuv_prefix`)**: per tipologia si può configurare un prefisso (max 10 cifre) che forza `idPendenza` e `numeroAvviso` a essere avvisi pagoPA a 18 cifre con quel prefisso. Si imposta da Impostazioni → Configurazione tipologie.
 
 ### Flussi di Rendicontazione
 
 - Ricerca per data, PSP, stato con paginazione e filtri.
 - Dettaglio flusso con IUV, causale, importo, esito.
 - **Ricevute on-demand (Biz Events)**: per pagamenti "orfani" (senza dati GovPay locali), un pulsante carica la ricevuta pagoPA via AJAX mostrando debitore, pagatore, PSP, importi e trasferimenti.
+- **Cache DB locale**: i flussi GovPay vengono sincronizzati nella tabella `flussi_rendicontazioni` dal daemon ragioneria — i report leggono da cache locale anziché interrogare GovPay in real-time.
 
 ### Statistiche
 
@@ -555,12 +567,33 @@ Dashboard con grafici e indicatori.
 - Dettaglio rendicontazioni paginato (50 righe/pagina) con export CSV.
 - Link rapido alla pendenza: apre direttamente il dettaglio (se `id_pendenza` disponibile) o la ricerca per IUV.
 
+#### Report TEFA (`/pagamenti/report-tefa`)
+
+- Stato copertura TEFA: contatori PENDING / PROCESSED / ERROR / SKIPPED per flusso.
+- View copertura con percentuale elaborazione per singolo flusso.
+- Export CSV dei dati elaborati.
+- Alimentato dal daemon `cron_tefa_scanner.php` che arricchisce le IUR via Biz Events.
+
 #### Report Incassi (`/pagamenti/incassi-tassonomia`)
 
 - Primo accesso senza ricerca automatica (coerente con Report Ragioneria).
 - Maschera filtri allineata al Report Ragioneria: datepicker range, selettore tipologie con ricerca (TomSelect), filtri avanzati.
 - Tabella dettaglio con descrizione tipologia (`tassonomia_label`) in luogo del valore tecnico raw.
 - Link rapido alla pendenza nella griglia dettaglio con stessa logica del Report Ragioneria.
+
+### Impostazioni → Cron (gestione daemon)
+
+Il tab **Impostazioni → Cron** gestisce i daemon di background:
+
+| Daemon | Scopo |
+|---|---|
+| `cron_ragioneria.php` | Sincronizza flussi GovPay nella tabella `flussi_rendicontazioni`; ciclo ogni 30 min |
+| `cron_tefa_scanner.php` | Processa IUR dalla cache, arricchisce via Biz Events per TEFA |
+| `cron_pendenze_massive.php` | Elabora lotti pendenze massive in stato `PENDING` |
+
+- **Autostart**: se il flag autostart è attivo per un daemon, `docker-setup.sh` lo riavvia automaticamente a ogni rebuild del container.
+- **Log viewer**: log file-based consultabili dall'interfaccia backoffice.
+- **Data di scansione ragioneria**: configurabile dal tab Cron (impostazione `ragioneria_scan_da`).
 
 ---
 
@@ -608,7 +641,7 @@ Gli script devono usare LF (non CRLF). Questo repository forza i line ending via
 
 ### Container backoffice non parte
 
-Controlla i log: `docker compose logs govpay-interaction-backoffice`
+Controlla i log: `docker compose logs backoffice` oppure `docker logs gil-backoffice`
 
 Cause comuni:
 - `.env` mancante o con variabili obbligatorie vuote
