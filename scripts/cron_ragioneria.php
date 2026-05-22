@@ -312,6 +312,8 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
         $risc = is_array($rend['riscossione'] ?? null) ? $rend['riscossione'] : [];
         $voce = is_array($risc['vocePendenza'] ?? null) ? $risc['vocePendenza'] : [];
         $isMultiBeneficiario = deriveIsMultiBeneficiario($detail, $rend, $risc);
+        $idPendenza = extractIdPendenza($rend, $risc, $voce);
+        $isGovPay = $idPendenza !== '' || trim((string)($risc['pendenza'] ?? '')) !== '';
 
         $dataPagamento = normalizeDate((string)($risc['data'] ?? ''));
 
@@ -334,7 +336,8 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
             'data_pagamento' => $dataPagamento,
             'cod_entrata' => (string)($voce['codEntrata'] ?? ''),
             'descrizione_entrata' => (string)($voce['descrizione'] ?? ''),
-            'id_pendenza' => (string)($voce['idPendenza'] ?? $risc['idPendenza'] ?? ''),
+            'id_pendenza' => $idPendenza,
+            'is_govpay' => $isGovPay,
             'is_multibeneficiario' => $isMultiBeneficiario,
         ];
     }
@@ -398,4 +401,24 @@ function deriveIsMultiBeneficiario(array $detail, array $rend, array $risc): ?bo
     }
 
     return null;
+}
+
+function extractIdPendenza(array $rend, array $risc, array $voce): string
+{
+    $candidates = [
+        $voce['idPendenza'] ?? null,
+        is_array($voce['pendenza'] ?? null) ? ($voce['pendenza']['idPendenza'] ?? null) : null,
+        $risc['idPendenza'] ?? null,
+        is_array($risc['pendenza'] ?? null) ? ($risc['pendenza']['idPendenza'] ?? null) : null,
+        is_array($rend['pendenza'] ?? null) ? ($rend['pendenza']['idPendenza'] ?? null) : null,
+    ];
+
+    foreach ($candidates as $value) {
+        $id = trim((string)$value);
+        if ($id !== '') {
+            return $id;
+        }
+    }
+
+    return '';
 }

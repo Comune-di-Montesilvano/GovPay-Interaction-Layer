@@ -1171,6 +1171,9 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/cron/set-scan-date', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->setScanDate($request, $response);
     });
+    $app->post('/impostazioni/cron/reset-range', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->resetDateRange($request, $response);
+    });
     $app->post('/impostazioni/cron/{job}/stop', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->stop($request, $response, $args);
     });
