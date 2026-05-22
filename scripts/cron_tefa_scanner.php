@@ -183,6 +183,9 @@ while (true) {
                 if ($result['status'] === 'RATE_LIMITED') {
                     $log("  IUR={$iur}: rate limit persistente - errore");
                     $repo->markError((int)$row['id'], 'Rate limit Biz Events (429) dopo 5 tentativi');
+                    if ($i < $total - 1) {
+                        sleep(5);
+                    }
                     continue;
                 }
             }
@@ -201,8 +204,13 @@ while (true) {
                     break;
             }
 
-            if ($result['status'] !== 'SKIPPED' && $i < $total - 1) {
-                sleep(6);
+            $bizWasCalled = !(
+                $result['status'] === 'SKIPPED'
+                && str_contains((string)$result['reason'], 'Biz Events non interrogato')
+            );
+
+            if ($bizWasCalled && $i < $total - 1) {
+                sleep(5);
             }
         }
 

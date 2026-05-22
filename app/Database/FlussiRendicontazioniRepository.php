@@ -127,7 +127,7 @@ class FlussiRendicontazioniRepository
                 id_pendenza
             FROM flussi_rendicontazioni
             ' . $whereSql . '
-            ORDER BY data_flusso DESC, id DESC
+            ORDER BY data_pagamento DESC, id DESC
             LIMIT :limit OFFSET :offset';
 
         $stmt = $this->pdo->prepare($sql);
@@ -186,19 +186,19 @@ class FlussiRendicontazioniRepository
             WHERE f.id_dominio = :id_dominio
                             AND t.id IS NULL';
 
-                if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
-                        $sql .= ' AND f.data_pagamento >= :min_date';
-                }
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND f.data_pagamento >= :min_date';
+        }
 
-                $sql .= '
-            ORDER BY f.data_pagamento ASC, f.id ASC
+        $sql .= '
+                ORDER BY f.data_pagamento ASC, f.id ASC
             LIMIT :limit';
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id_dominio', $idDominio);
-                if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
-                        $stmt->bindValue(':min_date', $minDate);
-                }
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $stmt->bindValue(':min_date', $minDate);
+        }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
@@ -379,12 +379,12 @@ class FlussiRendicontazioniRepository
         $params = [':id_dominio' => $idDominio];
 
         if ($dataDa !== '') {
-            $where[] = 'data_flusso >= :data_da';
+            $where[] = 'data_pagamento >= :data_da';
             $params[':data_da'] = $dataDa;
         }
 
         if ($dataA !== '') {
-            $where[] = 'data_flusso <= :data_a';
+            $where[] = 'data_pagamento <= :data_a';
             $params[':data_a'] = $dataA;
         }
 

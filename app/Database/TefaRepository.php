@@ -71,13 +71,13 @@ class TefaRepository
     /** Restituisce l'id_flusso del prossimo flusso con record PENDING (ordine cronologico). */
     public function getNextPendingFlusso(string $idDominio, ?string $minDate = null): ?string
     {
-           $sql = 'SELECT id_flusso, MIN(data_pagamento) AS min_data_pagamento FROM tefa_ricevute
+           $sql = 'SELECT id_flusso, MIN(data_pagamento) AS min_data_riferimento FROM tefa_ricevute
                WHERE id_dominio = :dom AND stato = \'PENDING\'';
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND data_pagamento >= :min_date';
         }
            $sql .= ' GROUP BY id_flusso
-               ORDER BY min_data_pagamento ASC, id_flusso ASC
+               ORDER BY min_data_riferimento ASC, id_flusso ASC
                LIMIT 1';
 
         $stmt = $this->pdo->prepare($sql);
