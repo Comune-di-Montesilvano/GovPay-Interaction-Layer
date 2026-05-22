@@ -198,7 +198,7 @@ while (true) {
                     break;
             }
 
-            if ($i < $total - 1) {
+            if ($result['status'] !== 'SKIPPED' && $i < $total - 1) {
                 sleep(6);
             }
         }
