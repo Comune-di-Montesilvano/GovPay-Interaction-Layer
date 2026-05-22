@@ -77,7 +77,7 @@ jobs:
   # ── PHP apps: backoffice + frontoffice (parallel matrix) ─────────────────
   # Shared layers are warmed by build-php-base and then reused per app.
   build-php:
-    needs: [setup, build-php-base]
+    needs: [setup]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
