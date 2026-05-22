@@ -203,8 +203,7 @@ while (true) {
             }
         }
 
-        $log("Flusso {$idFlusso} completato. Pausa 10s...");
-        sleep(10);
+        $log("Flusso {$idFlusso} completato. Proseguo al flusso successivo...");
     }
 
     if ((int)$queueResult['queued'] === 0 && (int)$pendingInScope === 0) {
