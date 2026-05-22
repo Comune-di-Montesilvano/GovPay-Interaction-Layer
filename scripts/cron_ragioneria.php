@@ -311,6 +311,7 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
 
         $risc = is_array($rend['riscossione'] ?? null) ? $rend['riscossione'] : [];
         $voce = is_array($risc['vocePendenza'] ?? null) ? $risc['vocePendenza'] : [];
+        $isMultiBeneficiario = deriveIsMultiBeneficiario($detail, $rend, $risc);
 
         $dataPagamento = normalizeDate((string)($risc['data'] ?? ''));
 
@@ -334,6 +335,7 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
             'cod_entrata' => (string)($voce['codEntrata'] ?? ''),
             'descrizione_entrata' => (string)($voce['descrizione'] ?? ''),
             'id_pendenza' => (string)($voce['idPendenza'] ?? $risc['idPendenza'] ?? ''),
+            'is_multibeneficiario' => $isMultiBeneficiario,
         ];
     }
 
@@ -353,6 +355,46 @@ function normalizeDate(string $value): ?string
 
     if (strlen($value) === 7) {
         return $value . '-01';
+    }
+
+    return null;
+}
+
+function deriveIsMultiBeneficiario(array $detail, array $rend, array $risc): ?bool
+{
+    $candidates = [
+        $rend['isMultibeneficiario'] ?? null,
+        $rend['is_multi_beneficiario'] ?? null,
+        $rend['multiBeneficiario'] ?? null,
+        $rend['multibeneficiario'] ?? null,
+        $risc['isMultibeneficiario'] ?? null,
+        $risc['is_multi_beneficiario'] ?? null,
+        $risc['multiBeneficiario'] ?? null,
+        $risc['multibeneficiario'] ?? null,
+        $detail['isMultibeneficiario'] ?? null,
+        $detail['is_multi_beneficiario'] ?? null,
+        $detail['multiBeneficiario'] ?? null,
+        $detail['multibeneficiario'] ?? null,
+    ];
+
+    foreach ($candidates as $value) {
+        if ($value === null || $value === '') {
+            continue;
+        }
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    }
+
+    $datiVersamento = $detail['rpt']['json']['datiVersamento'] ?? null;
+    if (is_array($datiVersamento)) {
+        $tipoVersamento = strtoupper(trim((string)($datiVersamento['tipoVersamento'] ?? '')));
+        if ($tipoVersamento === 'MPO') {
+            return true;
+        }
+
+        $singoli = $datiVersamento['datiSingoloVersamento'] ?? null;
+        if (is_array($singoli)) {
+            return count($singoli) > 1;
+        }
     }
 
     return null;

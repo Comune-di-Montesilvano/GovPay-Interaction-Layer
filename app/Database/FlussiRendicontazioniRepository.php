@@ -25,11 +25,11 @@ class FlussiRendicontazioniRepository
         $sql = 'INSERT INTO flussi_rendicontazioni
             (id_dominio, id_flusso, data_flusso, data_regolamento, trn, id_psp, ragione_psp,
              anno, mese, iur, iuv, importo, esito, stato_rend, indice, data_pagamento,
-             cod_entrata, descrizione_entrata, id_pendenza)
+             cod_entrata, descrizione_entrata, id_pendenza, is_multibeneficiario)
             VALUES
             (:id_dominio, :id_flusso, :data_flusso, :data_regolamento, :trn, :id_psp, :ragione_psp,
              :anno, :mese, :iur, :iuv, :importo, :esito, :stato_rend, :indice, :data_pagamento,
-             :cod_entrata, :descrizione_entrata, :id_pendenza)
+             :cod_entrata, :descrizione_entrata, :id_pendenza, :is_multibeneficiario)
             ON DUPLICATE KEY UPDATE
              id_flusso = VALUES(id_flusso),
              data_flusso = VALUES(data_flusso),
@@ -48,6 +48,7 @@ class FlussiRendicontazioniRepository
              cod_entrata = VALUES(cod_entrata),
              descrizione_entrata = VALUES(descrizione_entrata),
              id_pendenza = VALUES(id_pendenza),
+             is_multibeneficiario = VALUES(is_multibeneficiario),
              synced_at = CURRENT_TIMESTAMP';
 
         $stmt = $this->pdo->prepare($sql);
@@ -74,6 +75,7 @@ class FlussiRendicontazioniRepository
                 ':cod_entrata' => $this->normalizeString($row['cod_entrata'] ?? null),
                 ':descrizione_entrata' => $this->normalizeString($row['descrizione_entrata'] ?? null),
                 ':id_pendenza' => $this->normalizeString($row['id_pendenza'] ?? null),
+                ':is_multibeneficiario' => $this->normalizeBoolInt($row['is_multibeneficiario'] ?? null),
             ]);
 
             // MySQL rowCount for INSERT ... ON DUPLICATE KEY UPDATE:
@@ -220,7 +222,7 @@ class FlussiRendicontazioniRepository
               ON t.id_dominio = f.id_dominio
              AND t.iur = f.iur
             WHERE f.id_dominio = :id_dominio
-              AND t.id IS NULL';
+                            AND t.id IS NULL';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND f.data_pagamento >= :min_date';
@@ -234,6 +236,56 @@ class FlussiRendicontazioniRepository
         $stmt->execute($params);
 
         return (int)$stmt->fetchColumn();
+    }
+
+    public function hasGovPayPendenza(string $idDominio, string $iur): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1
+             FROM flussi_rendicontazioni
+             WHERE id_dominio = :id_dominio
+               AND iur = :iur
+               AND NULLIF(TRIM(id_pendenza), \'\') IS NOT NULL
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':id_dominio' => $idDominio,
+            ':iur' => $iur,
+        ]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * @return array{is_govpay:bool,is_multibeneficiario:?bool}|null
+     */
+    public function getTefaHintsForIur(string $idDominio, string $iur): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id_pendenza, is_multibeneficiario
+             FROM flussi_rendicontazioni
+             WHERE id_dominio = :id_dominio
+               AND iur = :iur
+             ORDER BY id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':id_dominio' => $idDominio,
+            ':iur' => $iur,
+        ]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $idPendenza = trim((string)($row['id_pendenza'] ?? ''));
+        $isMultiRaw = $row['is_multibeneficiario'] ?? null;
+
+        return [
+            'is_govpay' => $idPendenza !== '',
+            'is_multibeneficiario' => $isMultiRaw === null ? null : ((int)$isMultiRaw === 1),
+        ];
     }
 
     public function ensureTable(): void
@@ -266,6 +318,7 @@ class FlussiRendicontazioniRepository
   cod_entrata         VARCHAR(100),
   descrizione_entrata VARCHAR(500),
   id_pendenza         VARCHAR(100),
+    is_multibeneficiario TINYINT(1) NULL,
   synced_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_iur_dominio (iur, id_dominio),
   INDEX idx_dominio_flusso (id_dominio, id_flusso),
@@ -278,6 +331,13 @@ class FlussiRendicontazioniRepository
                 $this->pdo->exec($sql);
             } catch (\Throwable $_ignore) {
             }
+
+            return;
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE flussi_rendicontazioni ADD COLUMN is_multibeneficiario TINYINT(1) NULL AFTER id_pendenza');
+        } catch (\Throwable $_ignore) {
         }
     }
 
@@ -345,5 +405,14 @@ class FlussiRendicontazioniRepository
         }
 
         return (float)$value;
+    }
+
+    private function normalizeBoolInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true ? 1 : 0;
     }
 }
