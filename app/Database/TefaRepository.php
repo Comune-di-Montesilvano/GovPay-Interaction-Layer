@@ -15,18 +15,26 @@ class TefaRepository
 
     /**
      * Bulk-insert rendicontazioni come PENDING. Ignora duplicati (uq_iur_dominio).
-     * @param array<int,array{id_dominio:string,anno:int,mese:int,id_flusso:string,iur:string,iuv:string,data_pagamento:string,importo:float}> $rows
+        * @param array<int,array{id_dominio:string,anno:int,mese:int,id_flusso:string,iur:string,iuv:string,data_pagamento:string,importo:float,is_govpay?:bool|null,is_multibeneficiario?:bool|null}> $rows
      */
     public function upsertPending(array $rows): int
     {
         if ($rows === []) {
             return 0;
         }
-        $inserted = 0;
-        $sql = 'INSERT IGNORE INTO tefa_ricevute
-                  (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, importo_tefa, stato, created_at, updated_at)
-                VALUES
-                  (:id_dominio, :anno, :mese, :id_flusso, :iur, :iuv, :data_pagamento, :importo_tefa, \'PENDING\', NOW(), NOW())';
+                $inserted = 0;
+                $sql = 'INSERT INTO tefa_ricevute
+                                    (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, importo_tefa, is_govpay, is_multibeneficiario, stato, created_at, updated_at)
+                                VALUES
+                                    (:id_dominio, :anno, :mese, :id_flusso, :iur, :iuv, :data_pagamento, :importo_tefa, :is_govpay, :is_multibeneficiario, \'PENDING\', NOW(), NOW())
+                                ON DUPLICATE KEY UPDATE
+                                    id_flusso = VALUES(id_flusso),
+                                    iuv = VALUES(iuv),
+                                    data_pagamento = VALUES(data_pagamento),
+                                    importo_tefa = VALUES(importo_tefa),
+                                    is_govpay = VALUES(is_govpay),
+                                    is_multibeneficiario = VALUES(is_multibeneficiario),
+                                    updated_at = NOW()';
         $stmt = $this->pdo->prepare($sql);
         foreach ($rows as $r) {
             $stmt->execute([
@@ -38,8 +46,12 @@ class TefaRepository
                 ':iuv'            => $r['iuv'] ?? null,
                 ':data_pagamento' => $r['data_pagamento'] !== '' ? $r['data_pagamento'] : null,
                 ':importo_tefa'   => $r['importo'] ?? null,
+                ':is_govpay'      => $this->normalizeBoolInt($r['is_govpay'] ?? null),
+                ':is_multibeneficiario' => $this->normalizeBoolInt($r['is_multibeneficiario'] ?? null),
             ]);
-            $inserted += $stmt->rowCount();
+            if ($stmt->rowCount() === 1) {
+                $inserted++;
+            }
         }
         return $inserted;
     }
@@ -335,6 +347,8 @@ class TefaRepository
   iuv           VARCHAR(35),
   data_pagamento DATE,
   importo_tefa  DECIMAL(10,2),
+    is_govpay     TINYINT(1),
+    is_multibeneficiario TINYINT(1),
   cf_comune     VARCHAR(20),
   denominazione_comune VARCHAR(255),
   importo_comune DECIMAL(10,2),
@@ -350,6 +364,18 @@ class TefaRepository
             try {
                 $this->pdo->exec($sql);
             } catch (\Throwable $_ignore) {}
+
+            return;
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE tefa_ricevute ADD COLUMN is_govpay TINYINT(1) NULL AFTER importo_tefa');
+        } catch (\Throwable $_ignore) {
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE tefa_ricevute ADD COLUMN is_multibeneficiario TINYINT(1) NULL AFTER is_govpay');
+        } catch (\Throwable $_ignore) {
         }
     }
 }
