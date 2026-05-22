@@ -8,6 +8,8 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\SettingsRepository;
+use App\Database\FlussiRendicontazioniRepository;
+use App\Database\TefaRepository;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -158,6 +160,56 @@ class CronController
             SettingsRepository::set('backoffice', 'ragioneria_scan_da', $date);
         }
         $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Data inizio scansione salvata.'];
+
+        return $response
+            ->withHeader('Location', '/impostazioni?tab=cron')
+            ->withStatus(302);
+    }
+
+    public function resetDateRange(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+
+        $body = (array)($request->getParsedBody() ?? []);
+        $dataDa = trim((string)($body['reset_data_da'] ?? ''));
+        $dataA = trim((string)($body['reset_data_a'] ?? ''));
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataDa) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataA)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Date non valide. Usa formato YYYY-MM-DD.'];
+            return $response->withHeader('Location', '/impostazioni?tab=cron')->withStatus(302);
+        }
+
+        if ($dataDa > $dataA) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Intervallo non valido: la data Da deve essere <= data A.'];
+            return $response->withHeader('Location', '/impostazioni?tab=cron')->withStatus(302);
+        }
+
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        if ($idDominio === '') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'id_dominio non configurato.'];
+            return $response->withHeader('Location', '/impostazioni?tab=cron')->withStatus(302);
+        }
+
+        $flussiRepo = new FlussiRendicontazioniRepository();
+        $tefaRepo = new TefaRepository();
+
+        $deletedTefa = $tefaRepo->deleteByDateRange($idDominio, $dataDa, $dataA);
+        $deletedRagioneria = $flussiRepo->deleteByDateRange($idDominio, $dataDa, $dataA);
+
+        $_SESSION['flash'][] = [
+            'type' => 'success',
+            'text' => sprintf(
+                'Reset completato (%s -> %s). Cancellate %d righe TEFA e %d righe Ragioneria.',
+                $dataDa,
+                $dataA,
+                $deletedTefa,
+                $deletedRagioneria
+            ),
+        ];
 
         return $response
             ->withHeader('Location', '/impostazioni?tab=cron')

@@ -114,6 +114,23 @@ class TefaRepository
         return (int)$stmt->fetchColumn();
     }
 
+    public function deleteByDateRange(string $idDominio, string $dataDa, string $dataA): int
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM tefa_ricevute
+             WHERE id_dominio = :id_dominio
+               AND data_pagamento >= :data_da
+               AND data_pagamento <= :data_a'
+        );
+        $stmt->execute([
+            ':id_dominio' => $idDominio,
+            ':data_da' => $dataDa,
+            ':data_a' => $dataA,
+        ]);
+
+        return $stmt->rowCount();
+    }
+
     public function markProcessed(
         int $id,
         string $cfComune,
