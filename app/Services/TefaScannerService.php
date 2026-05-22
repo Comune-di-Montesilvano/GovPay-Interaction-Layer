@@ -28,13 +28,16 @@ class TefaScannerService
     ) {}
 
     /**
-     * @return array{queued:int,from_cache:int,sample_iur:string,sample_flusso:string}
+     * @return array{queued:int,from_cache:int,sample_iur:string,sample_flusso:string,min_date:string}
      */
     public function queueFromCache(string $idDominio, int $limit = 500): array
     {
-        $rows = $this->flussiRepo->getUnprocessedForTefa($idDominio, $limit);
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : '';
+
+        $rows = $this->flussiRepo->getUnprocessedForTefa($idDominio, $limit, $minDate !== '' ? $minDate : null);
         if ($rows === []) {
-            return ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => ''];
+            return ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => '', 'min_date' => $minDate];
         }
 
         $first = $rows[0] ?? [];
@@ -60,6 +63,7 @@ class TefaScannerService
             'from_cache' => count($rows),
             'sample_iur' => (string)($first['iur'] ?? ''),
             'sample_flusso' => (string)($first['id_flusso'] ?? ''),
+            'min_date' => $minDate,
         ];
     }
 

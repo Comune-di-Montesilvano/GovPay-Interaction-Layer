@@ -99,17 +99,22 @@ $repo       = new TefaRepository();
 $flussiRepo = new FlussiRendicontazioniRepository();
 $service    = new TefaScannerService($repo, $flussiRepo);
 
-$initialBacklog = $flussiRepo->countUnprocessedForTefa((string)$idDominio);
-$log('Loop avviato. Fonte queue: flussi_rendicontazioni (backlog iniziale non processato=' . $initialBacklog . ').');
+$scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+$minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+$initialBacklog = $flussiRepo->countUnprocessedForTefa((string)$idDominio, $minDate);
+$log('Loop avviato. Fonte queue: flussi_rendicontazioni (data_pagamento >= ' . ($minDate ?? '-') . ', backlog iniziale non processato=' . $initialBacklog . ').');
 
 while (true) {
     $checkStop();
 
     try {
-        $backlogBefore = $flussiRepo->countUnprocessedForTefa((string)$idDominio);
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+        $backlogBefore = $flussiRepo->countUnprocessedForTefa((string)$idDominio, $minDate);
         $queueResult = $service->queueFromCache($idDominio);
         $log(sprintf(
-            'queueFromCache: source=flussi_rendicontazioni backlog_before=%d from_cache=%d queued=%d sample_iur=%s sample_flusso=%s',
+            'queueFromCache: source=flussi_rendicontazioni min_date=%s backlog_before=%d from_cache=%d queued=%d sample_iur=%s sample_flusso=%s',
+            $queueResult['min_date'] !== '' ? $queueResult['min_date'] : '-',
             $backlogBefore,
             $queueResult['from_cache'],
             $queueResult['queued'],
@@ -117,7 +122,7 @@ while (true) {
             $queueResult['sample_flusso'] !== '' ? $queueResult['sample_flusso'] : '-'
         ));
     } catch (\Throwable $e) {
-        $queueResult = ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => ''];
+        $queueResult = ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => '', 'min_date' => ''];
         $log('ERRORE queueFromCache: ' . $e->getMessage());
     }
 

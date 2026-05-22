@@ -51,7 +51,7 @@ class FlussiRendicontazioniRepository
              synced_at = CURRENT_TIMESTAMP';
 
         $stmt = $this->pdo->prepare($sql);
-        $affected = 0;
+        $inserted = 0;
 
         foreach ($rows as $row) {
             $stmt->execute([
@@ -76,10 +76,14 @@ class FlussiRendicontazioniRepository
                 ':id_pendenza' => $this->normalizeString($row['id_pendenza'] ?? null),
             ]);
 
-            $affected += $stmt->rowCount();
+            // MySQL rowCount for INSERT ... ON DUPLICATE KEY UPDATE:
+            // 1 = inserted row, 2 = duplicate row updated.
+            if ($stmt->rowCount() === 1) {
+                $inserted++;
+            }
         }
 
-        return $affected;
+        return $inserted;
     }
 
     /**
@@ -156,7 +160,7 @@ class FlussiRendicontazioniRepository
     /**
      * @return array<int,array<string,mixed>>
      */
-    public function getUnprocessedForTefa(string $idDominio, int $limit): array
+    public function getUnprocessedForTefa(string $idDominio, int $limit, ?string $minDate = null): array
     {
         $limit = max(1, $limit);
 
@@ -174,12 +178,21 @@ class FlussiRendicontazioniRepository
               ON t.id_dominio = f.id_dominio
              AND t.iur = f.iur
             WHERE f.id_dominio = :id_dominio
-              AND t.id IS NULL
+                            AND t.id IS NULL';
+
+                if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+                        $sql .= ' AND f.data_pagamento >= :min_date';
+                }
+
+                $sql .= '
             ORDER BY f.data_pagamento ASC, f.id ASC
             LIMIT :limit';
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id_dominio', $idDominio);
+                if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+                        $stmt->bindValue(':min_date', $minDate);
+                }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
@@ -199,7 +212,7 @@ class FlussiRendicontazioniRepository
         return $value;
     }
 
-    public function countUnprocessedForTefa(string $idDominio): int
+    public function countUnprocessedForTefa(string $idDominio, ?string $minDate = null): int
     {
         $sql = 'SELECT COUNT(*)
             FROM flussi_rendicontazioni f
@@ -209,8 +222,16 @@ class FlussiRendicontazioniRepository
             WHERE f.id_dominio = :id_dominio
               AND t.id IS NULL';
 
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND f.data_pagamento >= :min_date';
+        }
+
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':id_dominio' => $idDominio]);
+        $params = [':id_dominio' => $idDominio];
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $params[':min_date'] = $minDate;
+        }
+        $stmt->execute($params);
 
         return (int)$stmt->fetchColumn();
     }
