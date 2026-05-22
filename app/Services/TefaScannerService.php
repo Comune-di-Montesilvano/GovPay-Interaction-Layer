@@ -239,6 +239,23 @@ class TefaScannerService
         $id  = (int)$row['id'];
         $iur = (string)$row['iur'];
 
+        $rowDominio = trim((string)($row['id_dominio'] ?? ''));
+        $lookupDominio = $rowDominio !== '' ? $rowDominio : $idDominioProvincia;
+        if ($lookupDominio !== '') {
+            $hints = $this->flussiRepo->getTefaHintsForIur($lookupDominio, $iur);
+            if (is_array($hints) && ($hints['is_govpay'] ?? false) === true) {
+                $msg = 'Pendenza GovPay (id_pendenza presente): Biz Events non interrogato';
+                $this->repo->markSkipped($id, $msg);
+                return ['status' => 'SKIPPED', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $msg];
+            }
+
+            if (is_array($hints) && array_key_exists('is_multibeneficiario', $hints) && $hints['is_multibeneficiario'] === false) {
+                $msg = 'GovPay indica pagamento non multi-beneficiario: Biz Events non interrogato';
+                $this->repo->markSkipped($id, $msg);
+                return ['status' => 'SKIPPED', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $msg];
+            }
+        }
+
         $biz = $this->buildBizEventsClient();
         if ($biz === null) {
             $msg = 'Biz Events non configurato (host/api_key mancanti)';

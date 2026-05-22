@@ -102,7 +102,7 @@ $service    = new TefaScannerService($repo, $flussiRepo);
 $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
 $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
 $initialBacklog = $flussiRepo->countUnprocessedForTefa((string)$idDominio, $minDate);
-$log('Loop avviato. Fonte queue: flussi_rendicontazioni (data_pagamento >= ' . ($minDate ?? '-') . ', backlog iniziale non processato=' . $initialBacklog . ').');
+$log('Loop avviato. Fonte queue: flussi_rendicontazioni (pendenze GovPay escluse prima di Biz, data_pagamento >= ' . ($minDate ?? '-') . ', backlog iniziale non processato=' . $initialBacklog . ').');
 
 while (true) {
     $checkStop();
