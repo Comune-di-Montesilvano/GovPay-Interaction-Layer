@@ -14,7 +14,7 @@ Multi-container Docker. Container principali:
 |---|---|---|---|
 | `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute |
 | `gil-frontoffice` | `frontoffice` | PHP 8.5 + Slim 4 + Apache | Portale cittadino: visualizza e paga pendenze |
-| `gil-db` | `db` | MariaDB 10.x | DB condiviso, utenti separati backoffice (RW) / frontoffice (RO) |
+| `gil-db` | `db` | MariaDB 11 | DB condiviso, utenti separati backoffice (RW) / frontoffice (RO) |
 | `gil-auth-proxy` | `auth-proxy` | Python SATOSA | Proxy SPID/CIE: legge config da backoffice, gestisce SATOSA |
 | `gil-auth-proxy-nginx` | `auth-proxy-nginx` | Nginx | Reverse proxy per SATOSA, serve metadata e disco SPID |
 | `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
@@ -38,8 +38,16 @@ docker compose pull && docker compose up -d
 # Esegui test PHP
 docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build --abort-on-container-exit
 
+# Daemon ragioneria (sincronizza flussi GovPay → tabella flussi_rendicontazioni)
+docker exec -d gil-backoffice php /var/www/html/scripts/cron_ragioneria.php
+
+# Daemon TEFA scanner (elabora IUR via Biz Events → tabella tefa_ricevute)
+docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
+
 # Cron batch pendenze massive
 docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
+
+# Daemon gestibili anche da Backoffice → Impostazioni → Cron (start/stop/log/autostart)
 ```
 
 ## Struttura directory
@@ -86,10 +94,10 @@ Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsReposito
 
 **GitHub Actions** (`.github/workflows/`):
 
-- **`ci.yml`** — push/PR su `main`/`dev`: installa PHP 8.5, avvia stack Docker, esegue PHPUnit
-- **`docker-publish.yml`** — tag `vX.Y.Z` o push su `dev`: builda e pubblica 7 immagini su `ghcr.io/comune-di-montesilvano/`
+- **`ci.yml`** — push/PR su `main`/`dev`: installa PHP 8.5, avvia solo il container `db` (backoffice/frontoffice non servono), esegue PHPUnit. DB image cachata via `docker save`/`docker load` (chiave: hash di `docker/db/Dockerfile` + `docker/db-init/`).
+- **`docker-publish.yml`** — tag `vX.Y.Z` o push su `dev`: job `setup` risolve version-resolver una volta, poi `build-php` e `build-services` parallelizzano su quella output. PHP builds usano `type=gha,mode=max` + fallback `type=registry` sull'immagine `:dev`; services usano `type=gha,mode=min` per non esaurire i 10GB di cache GHA.
 
-Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `GIL_IMAGE_TAG` nel compose seleziona versione.
+Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona versione.
 
 ## Convenzioni di sviluppo
 
@@ -144,7 +152,7 @@ index.php → bootstrap/app.php → Slim App
 
 ## Migrazioni DB
 
-File SQL in `migrations/` (numerati es. `003_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
+File SQL in `migrations/` (numerati `003_...sql` → `013_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
 
 ## Test
 
