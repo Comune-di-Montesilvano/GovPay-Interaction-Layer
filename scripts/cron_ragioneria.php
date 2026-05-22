@@ -103,6 +103,7 @@ while (true) {
     $newRows = 0;
     $page = 1;
     $flussiCount = 0;
+    $scanIndex = 0;
 
     while (true) {
         $checkStop();
@@ -129,8 +130,11 @@ while (true) {
             break;
         }
 
-        $flussiCount += count($risultati);
-        $log('Pagina ' . $page . ': ' . count($risultati) . ' flussi');
+        $pageCount = count($risultati);
+        $flussiCount += $pageCount;
+        $firstFlusso = is_array($risultati[0] ?? null) ? (string)(($risultati[0]['idFlusso'] ?? '')) : '';
+        $lastFlusso = is_array($risultati[$pageCount - 1] ?? null) ? (string)(($risultati[$pageCount - 1]['idFlusso'] ?? '')) : '';
+        $log('Pagina ' . $page . ': ' . $pageCount . ' flussi [' . $firstFlusso . ' .. ' . $lastFlusso . ']');
 
         foreach ($risultati as $flussoItem) {
             $checkStop();
@@ -138,10 +142,25 @@ while (true) {
                 continue;
             }
 
+            $scanIndex++;
+
             $idFlusso = (string)($flussoItem['idFlusso'] ?? '');
             $dominioFlusso = (string)($flussoItem['dominio']['idDominio'] ?? $flussoItem['idDominio'] ?? $idDominio);
+            $dataFlussoScan = (string)($flussoItem['dataFlusso'] ?? '');
             if ($idFlusso === '' || $dominioFlusso === '') {
                 continue;
+            }
+
+            if ($scanIndex === 1 || $scanIndex % 25 === 0) {
+                $log(sprintf(
+                    '  [scan] flusso %d/%d pagina=%d id=%s dominio=%s data=%s',
+                    $scanIndex,
+                    $flussiCount,
+                    $page,
+                    $idFlusso,
+                    $dominioFlusso,
+                    $dataFlussoScan
+                ));
             }
 
             try {
@@ -159,11 +178,22 @@ while (true) {
 
             $rows = mapFlussoRows($detail, $dominioFlusso, $idFlusso);
             if ($rows === []) {
+                if ($scanIndex === 1 || $scanIndex % 25 === 0) {
+                    $log('  [scan] flusso ' . $idFlusso . ': nessuna rendicontazione utile');
+                }
                 continue;
             }
 
             $affected = $repo->upsertBatch($rows);
             $newRows += max(0, $affected);
+            if ($scanIndex === 1 || $scanIndex % 25 === 0) {
+                $log(sprintf(
+                    '  [scan] flusso %s: rendicontazioni=%d upsert_affected=%d',
+                    $idFlusso,
+                    count($rows),
+                    $affected
+                ));
+            }
         }
 
         $nextPage = extractNextPage((string)($payload['prossimiRisultati'] ?? ''));

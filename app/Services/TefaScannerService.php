@@ -28,14 +28,16 @@ class TefaScannerService
     ) {}
 
     /**
-     * @return array{queued:int,from_cache:int}
+     * @return array{queued:int,from_cache:int,sample_iur:string,sample_flusso:string}
      */
     public function queueFromCache(string $idDominio, int $limit = 500): array
     {
         $rows = $this->flussiRepo->getUnprocessedForTefa($idDominio, $limit);
         if ($rows === []) {
-            return ['queued' => 0, 'from_cache' => 0];
+            return ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => ''];
         }
+
+        $first = $rows[0] ?? [];
 
         $pendingRows = [];
         foreach ($rows as $row) {
@@ -56,6 +58,8 @@ class TefaScannerService
         return [
             'queued' => $queued,
             'from_cache' => count($rows),
+            'sample_iur' => (string)($first['iur'] ?? ''),
+            'sample_flusso' => (string)($first['id_flusso'] ?? ''),
         ];
     }
 

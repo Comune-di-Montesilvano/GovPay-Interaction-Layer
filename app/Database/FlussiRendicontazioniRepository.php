@@ -199,6 +199,22 @@ class FlussiRendicontazioniRepository
         return $value;
     }
 
+    public function countUnprocessedForTefa(string $idDominio): int
+    {
+        $sql = 'SELECT COUNT(*)
+            FROM flussi_rendicontazioni f
+            LEFT JOIN tefa_ricevute t
+              ON t.id_dominio = f.id_dominio
+             AND t.iur = f.iur
+            WHERE f.id_dominio = :id_dominio
+              AND t.id IS NULL';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':id_dominio' => $idDominio]);
+
+        return (int)$stmt->fetchColumn();
+    }
+
     public function ensureTable(): void
     {
         try {
