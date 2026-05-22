@@ -176,7 +176,9 @@ class FlussiRendicontazioniRepository
                 f.iur,
                 f.iuv,
                 f.data_pagamento,
-                f.importo
+                f.importo,
+                f.is_govpay,
+                f.is_multibeneficiario
             FROM flussi_rendicontazioni f
             LEFT JOIN tefa_ricevute t
               ON t.id_dominio = f.id_dominio
