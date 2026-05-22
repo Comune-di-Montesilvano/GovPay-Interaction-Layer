@@ -107,9 +107,10 @@ $log('Loop avviato. Fonte queue: flussi_rendicontazioni (data_pagamento >= ' . (
 while (true) {
     $checkStop();
 
+    $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+    $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+
     try {
-        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
-        $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
         $backlogBefore = $flussiRepo->countUnprocessedForTefa((string)$idDominio, $minDate);
         $queueResult = $service->queueFromCache($idDominio);
         $log(sprintf(
@@ -128,21 +129,27 @@ while (true) {
 
     $checkStop();
     $counts = $repo->getCounts($idDominio);
+    $pendingInScope = $repo->countPendingForProcessing((string)$idDominio, $minDate);
     $log(sprintf(
-        'Coda: PENDING=%d PROCESSED=%d ERROR=%d SKIPPED=%d',
-        $counts['PENDING'], $counts['PROCESSED'], $counts['ERROR'], $counts['SKIPPED']
+        'Coda: PENDING=%d (in-scope=%d, min_date=%s) PROCESSED=%d ERROR=%d SKIPPED=%d',
+        $counts['PENDING'],
+        $pendingInScope,
+        $minDate ?? '-',
+        $counts['PROCESSED'],
+        $counts['ERROR'],
+        $counts['SKIPPED']
     ));
 
     // Enrich tutti i PENDING flusso per flusso
     while (true) {
         $checkStop();
-        $idFlusso = $repo->getNextPendingFlusso($idDominio);
+        $idFlusso = $repo->getNextPendingFlusso($idDominio, $minDate);
         if ($idFlusso === null) {
-            $log('Tutti i flussi elaborati.');
+            $log('Tutti i flussi in-scope elaborati.');
             break;
         }
 
-        $rows  = $repo->fetchPendingByFlusso($idFlusso, $idDominio);
+        $rows  = $repo->fetchPendingByFlusso($idFlusso, $idDominio, $minDate);
         $total = count($rows);
         $log("Flusso {$idFlusso}: {$total} pendenze");
 
@@ -200,8 +207,12 @@ while (true) {
         sleep(10);
     }
 
-    if ((int)$queueResult['queued'] === 0 && (int)$counts['PENDING'] === 0) {
-        $log('Nessun elemento nuovo e nessun PENDING. Prossimo tra 15 minuti...');
+    if ((int)$queueResult['queued'] === 0 && (int)$pendingInScope === 0) {
+        if ((int)$counts['PENDING'] > 0) {
+            $log('Nessun elemento nuovo e nessun PENDING in-scope. Restano PENDING fuori filtro data. Prossimo tra 15 minuti...');
+        } else {
+            $log('Nessun elemento nuovo e nessun PENDING. Prossimo tra 15 minuti...');
+        }
         for ($s = 0; $s < 900; $s += 10) {
             $checkStop();
             sleep(10);
