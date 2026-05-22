@@ -113,18 +113,22 @@ jobs:
             context: .
             file: auth-proxy/Dockerfile
             scope: auth-proxy-italia
+            cache_mode: min
           - image: auth-proxy-nginx
             context: auth-proxy/nginx
             file: ""
             scope: auth-proxy-nginx
+            cache_mode: max
           - image: db
             context: docker
             file: docker/db/Dockerfile
             scope: db
+            cache_mode: min
           - image: metadata-builder
             context: .
             file: metadata/builder/Dockerfile
             scope: metadata-builder
+            cache_mode: max
 
     steps:
       - uses: actions/checkout@v6
@@ -168,5 +172,5 @@ jobs:
             GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.scope }}
-          # mode=min per prevenire l'esaurimento dei 10GB di limite della cache di GitHub
-          cache-to: type=gha,mode=min,scope=${{ matrix.scope }}
+          # max per immagini con layer costosi (pip install, npm); min per immagini triviali
+          cache-to: type=gha,mode=${{ matrix.cache_mode }},scope=${{ matrix.scope }}
