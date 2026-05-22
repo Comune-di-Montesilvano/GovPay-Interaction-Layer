@@ -313,7 +313,7 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
         $voce = is_array($risc['vocePendenza'] ?? null) ? $risc['vocePendenza'] : [];
         $isMultiBeneficiario = deriveIsMultiBeneficiario($detail, $rend, $risc);
         $idPendenza = extractIdPendenza($rend, $risc, $voce);
-        $isGovPay = $idPendenza !== '' || trim((string)($risc['pendenza'] ?? '')) !== '';
+        $isGovPay = $idPendenza !== '' || hasGovPayPendenzaReference($risc);
 
         $dataPagamento = normalizeDate((string)($risc['data'] ?? ''));
 
@@ -421,4 +421,28 @@ function extractIdPendenza(array $rend, array $risc, array $voce): string
     }
 
     return '';
+}
+
+function hasGovPayPendenzaReference(array $risc): bool
+{
+    if (!array_key_exists('pendenza', $risc)) {
+        return false;
+    }
+
+    $pendenza = $risc['pendenza'];
+    if (is_string($pendenza)) {
+        return trim($pendenza) !== '';
+    }
+
+    if (is_array($pendenza)) {
+        $id = trim((string)($pendenza['idPendenza'] ?? ''));
+        if ($id !== '') {
+            return true;
+        }
+
+        $numero = trim((string)($pendenza['numeroAvviso'] ?? ''));
+        return $numero !== '';
+    }
+
+    return false;
 }
