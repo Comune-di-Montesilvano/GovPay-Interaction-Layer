@@ -241,24 +241,10 @@ class TefaScannerService
         $id  = (int)$row['id'];
         $iur = (string)$row['iur'];
 
-        $queuedGovPay = array_key_exists('is_govpay', $row) ? $row['is_govpay'] : null;
-        if ($queuedGovPay !== null) {
-            if ((int)$queuedGovPay === 0) {
-                $msg = 'Pendenza non GovPay (flag cache): Biz Events non interrogato';
-                $this->repo->markSkipped($id, $msg);
-                return ['status' => 'SKIPPED', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $msg];
-            }
-        }
-
         $rowGovPay = $row['is_govpay'] ?? null;
-        if ($rowGovPay !== null) {
-            if ((int)$rowGovPay === 1) {
-                $msg = 'Pendenza GovPay (flag cache): Biz Events non interrogato';
-                $this->repo->markSkipped($id, $msg);
-                return ['status' => 'SKIPPED', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $msg];
-            }
-
-            $msg = 'Pendenza non GovPay (flag cache): Biz Events non interrogato';
+        $rowMultiBeneficiario = $row['is_multibeneficiario'] ?? null;
+        if ($rowGovPay !== null && (int)$rowGovPay === 1 && (int)$rowMultiBeneficiario !== 1) {
+            $msg = 'Pendenza GovPay (flag cache): Biz Events non interrogato';
             $this->repo->markSkipped($id, $msg);
             return ['status' => 'SKIPPED', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $msg];
         }

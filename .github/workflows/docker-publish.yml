@@ -66,10 +66,13 @@ jobs:
             GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
           cache-from: |
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice:dev
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice:dev
-          cache-to: type=gha,mode=max,scope=php-common
+          cache-to: |
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main,mode=max
+            type=gha,mode=max,scope=php-common
 
   # ── PHP apps: backoffice + frontoffice (parallel matrix) ─────────────────
   # Shared layers are warmed by build-php-base and then reused per app.

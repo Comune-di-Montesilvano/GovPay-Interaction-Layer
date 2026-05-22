@@ -46,8 +46,8 @@ class TefaRepository
                 ':iuv'            => $r['iuv'] ?? null,
                 ':data_pagamento' => $r['data_pagamento'] !== '' ? $r['data_pagamento'] : null,
                 ':importo_tefa'   => $r['importo'] ?? null,
-                ':is_govpay'      => $this->normalizeBoolInt($r['is_govpay'] ?? null),
-                ':is_multibeneficiario' => $this->normalizeBoolInt($r['is_multibeneficiario'] ?? null),
+                ':is_govpay'      => array_key_exists('is_govpay', $r) && $r['is_govpay'] !== null ? (int)$r['is_govpay'] : null,
+                ':is_multibeneficiario' => array_key_exists('is_multibeneficiario', $r) && $r['is_multibeneficiario'] !== null ? (int)$r['is_multibeneficiario'] : null,
             ]);
             if ($stmt->rowCount() === 1) {
                 $inserted++;
