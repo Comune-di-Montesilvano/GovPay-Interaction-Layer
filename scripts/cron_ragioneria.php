@@ -101,6 +101,8 @@ while (true) {
     $log("Ciclo scan da {$scanDa}... ");
 
     $newRows = 0;
+    $cycleRowsTotal = 0;
+    $cycleGovPayYes = 0;
     $page = 1;
     $flussiCount = 0;
     $flussiToScan = [];
@@ -209,19 +211,36 @@ while (true) {
             continue;
         }
 
+        $flussoRowsTotal = count($rows);
+        $flussoGovPayYes = 0;
+        foreach ($rows as $mappedRow) {
+            if ((int)($mappedRow['is_govpay'] ?? 0) === 1) {
+                $flussoGovPayYes++;
+            }
+        }
+        $cycleRowsTotal += $flussoRowsTotal;
+        $cycleGovPayYes += $flussoGovPayYes;
+
         $affected = $repo->upsertBatch($rows);
         $newRows += max(0, $affected);
-        if ($scanIndex === 1 || $scanIndex % 25 === 0) {
-            $log(sprintf(
-                '  [scan] flusso %s: rendicontazioni=%d upsert_affected=%d',
-                $idFlusso,
-                count($rows),
-                $affected
-            ));
-        }
+        $log(sprintf(
+            '  [scan] flusso %s: rendicontazioni=%d govpay_si=%d govpay_no=%d upsert_affected=%d',
+            $idFlusso,
+            $flussoRowsTotal,
+            $flussoGovPayYes,
+            max(0, $flussoRowsTotal - $flussoGovPayYes),
+            $affected
+        ));
     }
 
-    $log('Ciclo completato. Flussi letti=' . $flussiCount . ', righe upsert=' . $newRows);
+    $log(sprintf(
+        'Ciclo completato. Flussi letti=%d, righe_parse_totali=%d, govpay_si=%d, govpay_no=%d, righe_upsert=%d',
+        $flussiCount,
+        $cycleRowsTotal,
+        $cycleGovPayYes,
+        max(0, $cycleRowsTotal - $cycleGovPayYes),
+        $newRows
+    ));
 
     if ($newRows > 0) {
         continue;
@@ -288,9 +307,10 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
 
     $dataFlusso = normalizeDate($dataFlussoRaw);
     $dataRegolamento = normalizeDate($dataRegolamentoRaw);
+    $dataIncasso = $dataRegolamento;
 
-    $anno = (int)substr(($dataFlusso ?? date('Y-m-d')), 0, 4);
-    $mese = (int)substr(($dataFlusso ?? date('Y-m-d')), 5, 2);
+    $anno = (int)substr(($dataIncasso ?? date('Y-m-d')), 0, 4);
+    $mese = (int)substr(($dataIncasso ?? date('Y-m-d')), 5, 2);
     if ($anno < 2020 || $anno > 2100) {
         $anno = (int)date('Y');
         $mese = (int)date('n');
@@ -313,9 +333,8 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
         $voce = is_array($risc['vocePendenza'] ?? null) ? $risc['vocePendenza'] : [];
         $isMultiBeneficiario = deriveIsMultiBeneficiario($detail, $rend, $risc);
         $idPendenza = extractIdPendenza($rend, $risc, $voce);
-        $isGovPay = $idPendenza !== '' || hasGovPayPendenzaReference($risc);
-
-        $dataPagamento = normalizeDate((string)($risc['data'] ?? ''));
+        // GovPay only when a concrete idPendenza is present in the flow payload.
+        $isGovPay = $idPendenza !== '';
 
         $rows[] = [
             'id_dominio' => $idDominio,
@@ -333,7 +352,7 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
             'esito' => isset($rend['esito']) ? (int)$rend['esito'] : null,
             'stato_rend' => (string)($rend['stato'] ?? $rend['statoRendicontazione'] ?? ''),
             'indice' => isset($rend['indice']) ? (int)$rend['indice'] : null,
-            'data_pagamento' => $dataPagamento,
+            'data_pagamento' => $dataIncasso,
             'cod_entrata' => (string)($voce['codEntrata'] ?? ''),
             'descrizione_entrata' => (string)($voce['descrizione'] ?? ''),
             'id_pendenza' => $idPendenza,
@@ -423,26 +442,3 @@ function extractIdPendenza(array $rend, array $risc, array $voce): string
     return '';
 }
 
-function hasGovPayPendenzaReference(array $risc): bool
-{
-    if (!array_key_exists('pendenza', $risc)) {
-        return false;
-    }
-
-    $pendenza = $risc['pendenza'];
-    if (is_string($pendenza)) {
-        return trim($pendenza) !== '';
-    }
-
-    if (is_array($pendenza)) {
-        $id = trim((string)($pendenza['idPendenza'] ?? ''));
-        if ($id !== '') {
-            return true;
-        }
-
-        $numero = trim((string)($pendenza['numeroAvviso'] ?? ''));
-        return $numero !== '';
-    }
-
-    return false;
-}

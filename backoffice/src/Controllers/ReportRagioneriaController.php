@@ -16,7 +16,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
 
 /**
- * Report Ragioneria: incassi reali per data flusso di rendicontazione, filtrati per tassonomia.
+ * Report Ragioneria: incassi reali per data di regolamento/incasso (dataRegolamento), filtrati per tassonomia.
  *
  * Flusso dati:
  *   1. GET /flussiRendicontazione  (periodo → tutti i flussi)
