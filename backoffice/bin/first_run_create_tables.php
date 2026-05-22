@@ -37,6 +37,7 @@ $statements = [
         id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         id_dominio VARCHAR(64) NOT NULL,
     id_entrata VARCHAR(128) NOT NULL,
+    iuv_prefix VARCHAR(10) NULL,
     descrizione VARCHAR(255) NULL,
     descrizione_locale VARCHAR(255) NULL,
     descrizione_estesa TEXT NULL,

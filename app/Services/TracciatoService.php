@@ -321,6 +321,8 @@ class TracciatoService
 
         try {
             $api = $this->api;
+            $rawHttpClient = null;
+            $chkOpts = [];
             if ($api === null) {
                 $config = new BackofficeConfiguration();
                 $config->setHost(rtrim($backofficeUrl, '/'));
@@ -427,6 +429,11 @@ class TracciatoService
                 // Merge handler into guzzle options
                 $guzzleOptions['handler'] = $handlerStack;
                 $client = new Client($guzzleOptions);
+                $rawHttpClient = $client;
+                $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
+                if ($username !== '' && $password !== '') {
+                    $chkOpts['auth'] = [$username, $password];
+                }
                 $api = new BackofficePendenzeApi($client, $config);
             }
 
@@ -469,11 +476,52 @@ class TracciatoService
                 $merged['idPendenza'] = $idPSanitized;
             }
 
+            // Lookup prefisso IUV vincolato per la tipologia
+            $iuvPrefix = null;
+            $idTipoPendenzaTr = trim((string)($merged['idTipoPendenza'] ?? ''));
+            if ($idTipoPendenzaTr !== '' && $idDominio !== '') {
+                try {
+                    $details = (new EntrateRepository())->findDetails($idDominio, $idTipoPendenzaTr);
+                    $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
+                } catch (\Throwable $_) {
+                    // fallback a GIL-
+                }
+            }
+            $usedVincolatoIds = [];
+
             // Costruzione tracciato
             $idTracciato = 'TR-' . substr(bin2hex(random_bytes(6)), 0, 12);
             $inserimenti = [];
             foreach ($parts as $idx => $p) {
-                $idP = ($merged['idPendenza'] ?? '') . '-R' . ($p['indice'] ?? ($idx + 1));
+                if ($iuvPrefix !== null && $rawHttpClient !== null) {
+                    $maxAttempts = 10;
+                    $idP = '';
+                    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                        $candidate = $this->generateVincolatoId($iuvPrefix);
+                        if (isset($usedVincolatoIds[$candidate])) {
+                            continue;
+                        }
+                        $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2AEnv) . '/' . rawurlencode($candidate);
+                        try {
+                            $chkResp = $rawHttpClient->request('GET', $chkUrl, $chkOpts);
+                            $chkCode = $chkResp->getStatusCode();
+                            if ($chkCode === 404 || $chkCode !== 200) {
+                                $idP = $candidate;
+                                $usedVincolatoIds[$candidate] = true;
+                                break;
+                            }
+                        } catch (\Throwable $_) {
+                            $idP = $candidate;
+                            $usedVincolatoIds[$candidate] = true;
+                            break;
+                        }
+                    }
+                    if ($idP === '') {
+                        return ['success' => false, 'errors' => ["IUV vincolato: impossibile generare ID univoco per rate $idx dopo $maxAttempts tentativi"], 'idTracciato' => null, 'response' => null];
+                    }
+                } else {
+                    $idP = ($merged['idPendenza'] ?? '') . '-R' . ($p['indice'] ?? ($idx + 1));
+                }
                 $nuova = [
                     'idDominio' => $idDominio,
                     'idTipoPendenza' => $merged['idTipoPendenza'] ?? null,
@@ -493,6 +541,10 @@ class TracciatoService
                     'idA2A' => $idA2AEnv,
                     'idPendenza' => $idP,
                 ];
+
+                if ($iuvPrefix !== null) {
+                    $nuova['numeroAvviso'] = $idP;
+                }
 
                 // Normalizza il soggettoPagatore: unisci nome+anagrafica e rimuovi 'nome' per evitare UnrecognizedPropertyException
                 if (isset($nuova['soggettoPagatore']) && is_array($nuova['soggettoPagatore'])) {
@@ -671,5 +723,21 @@ class TracciatoService
             $errors[] = $e->getMessage();
             return ['success' => false, 'errors' => $errors, 'idTracciato' => null, 'response' => null];
         }
+    }
+
+    private function generateVincolatoId(string $prefix): string
+    {
+        $totalLen = 18;
+        $suffixLen = max(1, $totalLen - strlen($prefix));
+        // 9-digit date slot: YY(2) + DDD(3) + HH(2) + mm(2)
+        $datePart = sprintf('%s%03d%s%s', date('y'), (int)date('z') + 1, date('H'), date('i'));
+        if ($suffixLen >= 9) {
+            $rand = '';
+            for ($i = 0; $i < $suffixLen - 9; $i++) { $rand .= (string)random_int(0, 9); }
+            return $prefix . $datePart . $rand;
+        }
+        $suffix = '';
+        for ($i = 0; $i < $suffixLen; $i++) { $suffix .= (string)random_int(0, 9); }
+        return $prefix . $suffix;
     }
 }
