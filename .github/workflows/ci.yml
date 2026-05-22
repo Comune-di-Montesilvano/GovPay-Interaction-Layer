@@ -63,11 +63,6 @@ jobs:
           extensions: mbstring, pdo_mysql, intl, zip
           coverage: xdebug
 
-      - name: Avvia servizi con Docker Compose
-        run: |
-          docker volume create govpay_spid_certs
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
-
       - name: Cache Composer dependencies
         uses: actions/cache@v5
         with:
@@ -77,6 +72,31 @@ jobs:
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress
+
+      - name: Cache DB image
+        id: db-image-cache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/docker-cache
+          key: docker-db-${{ hashFiles('docker/db/Dockerfile', 'docker/db-init/**') }}
+          restore-keys: docker-db-
+
+      - name: Load or pull DB image
+        env:
+          DB_IMAGE: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:latest
+        run: |
+          if [ -f /tmp/docker-cache/db.tar ]; then
+            docker load -i /tmp/docker-cache/db.tar
+          else
+            docker pull "$DB_IMAGE"
+            mkdir -p /tmp/docker-cache
+            docker save "$DB_IMAGE" -o /tmp/docker-cache/db.tar
+          fi
+
+      - name: Avvia servizi con Docker Compose
+        run: |
+          docker volume create govpay_spid_certs
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db
 
       - name: Run tests
         run: vendor/bin/phpunit --coverage-text || echo "No tests found"

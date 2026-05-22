@@ -16,10 +16,27 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Resolve version once, share outputs to all matrix jobs ───────────────
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      version_type: ${{ steps.v.outputs.version_type }}
+      version_label: ${{ steps.v.outputs.version_label }}
+      ref_url: ${{ steps.v.outputs.ref_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve version info
+        id: v
+        uses: ./.github/actions/version-resolver
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
   # ── PHP apps: backoffice + frontoffice (parallel matrix) ─────────────────
   # Shared layers (asset_builder, vendor_builder, runtime-base) are reused
   # via GHA cache cross-scope reference on frontoffice runner.
   build-php:
+    needs: setup
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,12 +52,6 @@ jobs:
             scope: frontoffice
     steps:
       - uses: actions/checkout@v6
-
-      - name: Resolve version info
-        id: version-info
-        uses: ./.github/actions/version-resolver
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -75,19 +86,24 @@ jobs:
           provenance: false
           sbom: false
           build-args: |
-            GIL_IMAGE_TAG=${{ steps.version-info.outputs.version }}
-            GIL_VERSION_TYPE=${{ steps.version-info.outputs.version_type }}
-            GIL_VERSION_LABEL=${{ steps.version-info.outputs.version_label }}
-            GIL_REF_URL=${{ steps.version-info.outputs.ref_url }}
+            GIL_IMAGE_TAG=${{ needs.setup.outputs.version }}
+            GIL_VERSION_TYPE=${{ needs.setup.outputs.version_type }}
+            GIL_VERSION_LABEL=${{ needs.setup.outputs.version_label }}
+            GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
           cache-from: |
             type=gha,scope=${{ matrix.scope }}
             ${{ matrix.scope == 'frontoffice' && 'type=gha,scope=backoffice' || '' }}
-          # Manteniamo mode=max qui per proteggere le cache di composer e npm (stage intermedi)
-          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}:dev
+          # mode=max protegge cache di composer e npm (stage intermedi); inline aggiunge
+          # metadati cache nell'immagine per fallback registry su cache GHA evict
+          cache-to: |
+            type=gha,mode=max,scope=${{ matrix.scope }}
+            type=inline
 
   # ── Independent services: parallel matrix ─────────────────────────────────
   build-services:
+    needs: setup
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -112,12 +128,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Resolve version info
-        id: version-info
-        uses: ./.github/actions/version-resolver
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -152,11 +162,11 @@ jobs:
           provenance: false
           sbom: false
           build-args: |
-            GIL_IMAGE_TAG=${{ steps.version-info.outputs.version }}
-            GIL_VERSION_TYPE=${{ steps.version-info.outputs.version_type }}
-            GIL_VERSION_LABEL=${{ steps.version-info.outputs.version_label }}
-            GIL_REF_URL=${{ steps.version-info.outputs.ref_url }}
+            GIL_IMAGE_TAG=${{ needs.setup.outputs.version }}
+            GIL_VERSION_TYPE=${{ needs.setup.outputs.version_type }}
+            GIL_VERSION_LABEL=${{ needs.setup.outputs.version_label }}
+            GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.scope }}
-          # Cambiato in mode=min per prevenire l'esaurimento dei 10GB di limite della cache di GitHub
+          # mode=min per prevenire l'esaurimento dei 10GB di limite della cache di GitHub
           cache-to: type=gha,mode=min,scope=${{ matrix.scope }}
