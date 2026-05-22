@@ -99,20 +99,25 @@ $repo       = new TefaRepository();
 $flussiRepo = new FlussiRendicontazioniRepository();
 $service    = new TefaScannerService($repo, $flussiRepo);
 
-$log('Loop avviato. Fonte queue: flussi_rendicontazioni.');
+$initialBacklog = $flussiRepo->countUnprocessedForTefa((string)$idDominio);
+$log('Loop avviato. Fonte queue: flussi_rendicontazioni (backlog iniziale non processato=' . $initialBacklog . ').');
 
 while (true) {
     $checkStop();
 
     try {
+        $backlogBefore = $flussiRepo->countUnprocessedForTefa((string)$idDominio);
         $queueResult = $service->queueFromCache($idDominio);
         $log(sprintf(
-            'queueFromCache: queued=%d from_cache=%d',
+            'queueFromCache: source=flussi_rendicontazioni backlog_before=%d from_cache=%d queued=%d sample_iur=%s sample_flusso=%s',
+            $backlogBefore,
+            $queueResult['from_cache'],
             $queueResult['queued'],
-            $queueResult['from_cache']
+            $queueResult['sample_iur'] !== '' ? $queueResult['sample_iur'] : '-',
+            $queueResult['sample_flusso'] !== '' ? $queueResult['sample_flusso'] : '-'
         ));
     } catch (\Throwable $e) {
-        $queueResult = ['queued' => 0, 'from_cache' => 0];
+        $queueResult = ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => ''];
         $log('ERRORE queueFromCache: ' . $e->getMessage());
     }
 
