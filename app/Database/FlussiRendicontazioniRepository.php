@@ -105,30 +105,41 @@ class FlussiRendicontazioniRepository
         $limit = max(1, $limit);
         $offset = max(0, $offset);
 
-        [$whereSql, $params] = $this->buildReportWhere($idDominio, $dataDa, $dataA, $codEntrate);
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
 
-        $sql = 'SELECT
-                data_flusso,
-                data_regolamento,
-                id_flusso,
-                trn,
-                id_psp,
-                id_dominio,
-                cod_entrata AS tassonomia,
-                COALESCE(descrizione_entrata, cod_entrata, "N/D") AS tassonomia_label,
-                iuv,
-                iur,
-                indice,
-                importo,
-                esito,
-                stato_rend,
-                data_pagamento,
-                descrizione_entrata AS descrizione_voce,
-                id_pendenza
-            FROM flussi_rendicontazioni
-            ' . $whereSql . '
-            ORDER BY data_pagamento DESC, id DESC
-            LIMIT :limit OFFSET :offset';
+        $sql = "SELECT
+                f.data_flusso,
+                f.data_regolamento,
+                f.id_flusso,
+                f.trn,
+                f.id_psp,
+                f.id_dominio,
+                CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 THEN 'ESTERNA'
+                     ELSE COALESCE(f.cod_entrata, 'N/D')
+                END AS tassonomia,
+                CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 THEN 'Tipologia esterna'
+                     ELSE COALESCE(f.descrizione_entrata, f.cod_entrata, 'N/D')
+                END AS tassonomia_label,
+                f.iuv,
+                f.iur,
+                f.indice,
+                f.importo,
+                f.esito,
+                f.stato_rend,
+                f.data_pagamento,
+                f.descrizione_entrata AS descrizione_voce,
+                f.id_pendenza,
+                f.is_govpay
+            FROM flussi_rendicontazioni f
+            LEFT JOIN tefa_ricevute t
+              ON t.iur = f.iur
+             AND t.id_dominio = f.id_dominio
+             AND t.stato = 'PROCESSED'
+            $whereSql
+            ORDER BY f.data_pagamento DESC, f.id DESC
+            LIMIT :limit OFFSET :offset";
 
         $stmt = $this->pdo->prepare($sql);
         foreach ($params as $key => $val) {
@@ -150,15 +161,90 @@ class FlussiRendicontazioniRepository
         string $dataA,
         array $codEntrate
     ): int {
-        [$whereSql, $params] = $this->buildReportWhere($idDominio, $dataDa, $dataA, $codEntrate);
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
 
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM flussi_rendicontazioni ' . $whereSql);
+        $stmt = $this->pdo->prepare(
+            "SELECT COUNT(*)
+             FROM flussi_rendicontazioni f
+             LEFT JOIN tefa_ricevute t
+               ON t.iur = f.iur
+              AND t.id_dominio = f.id_dominio
+              AND t.stato = 'PROCESSED'
+             $whereSql"
+        );
         foreach ($params as $key => $val) {
             $stmt->bindValue($key, $val);
         }
         $stmt->execute();
 
         return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Tutte le righe per il CSV, arricchite con dati Biz Events. Stessa logica di
+     * getForReport ma senza paginazione e con LEFT JOIN su biz_ricevute.
+     * @param array<int,string> $codEntrate
+     * @return array<int,array<string,mixed>>
+     */
+    public function getForCsvWithBiz(
+        string $idDominio,
+        string $dataDa,
+        string $dataA,
+        array $codEntrate
+    ): array {
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+
+        $sql = "SELECT
+                f.data_flusso,
+                f.data_regolamento,
+                f.id_flusso,
+                f.trn,
+                f.id_psp,
+                f.ragione_psp,
+                f.id_dominio,
+                CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 THEN 'ESTERNA'
+                     ELSE COALESCE(f.cod_entrata, 'N/D')
+                END AS tassonomia,
+                CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 THEN 'Tipologia esterna'
+                     ELSE COALESCE(f.descrizione_entrata, f.cod_entrata, 'N/D')
+                END AS tassonomia_label,
+                f.iuv,
+                f.iur,
+                f.indice,
+                f.importo,
+                f.esito,
+                f.stato_rend,
+                f.data_pagamento,
+                f.descrizione_entrata AS descrizione_voce,
+                f.id_pendenza,
+                f.is_govpay,
+                b.descrizione AS biz_descrizione,
+                b.cf_debitore,
+                b.nominativo_debitore,
+                b.cf_pagante,
+                b.nominativo_pagante,
+                b.company_name AS biz_company_name
+            FROM flussi_rendicontazioni f
+            LEFT JOIN tefa_ricevute t
+              ON t.iur = f.iur
+             AND t.id_dominio = f.id_dominio
+             AND t.stato = 'PROCESSED'
+            LEFT JOIN biz_ricevute b
+              ON b.iur = f.iur
+             AND b.id_dominio = f.id_dominio
+             AND b.stato = 'PROCESSED'
+            $whereSql
+            ORDER BY f.data_pagamento DESC, f.id DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     /**
@@ -459,6 +545,40 @@ class FlussiRendicontazioniRepository
             $this->pdo->exec('ALTER TABLE flussi_rendicontazioni ADD COLUMN is_govpay TINYINT(1) NULL AFTER id_pendenza');
         } catch (\Throwable $_ignore) {
         }
+    }
+
+    /**
+     * WHERE builder con alias `f.` per query con JOIN. Se cod_entrata filter attivo,
+     * include sempre righe non-GovPay (is_govpay = 0) indipendentemente dalla tassonomia.
+     * @param array<int,string> $codEntrate
+     * @return array{0:string,1:array<string,mixed>}
+     */
+    private function buildReportWhereF(string $idDominio, string $dataDa, string $dataA, array $codEntrate): array
+    {
+        $conditions = ['f.id_dominio = :id_dominio'];
+        $params = [':id_dominio' => $idDominio];
+
+        if ($dataDa !== '') {
+            $conditions[] = 'f.data_pagamento >= :data_da';
+            $params[':data_da'] = $dataDa;
+        }
+        if ($dataA !== '') {
+            $conditions[] = 'f.data_pagamento <= :data_a';
+            $params[':data_a'] = $dataA;
+        }
+
+        $codEntrate = array_values(array_filter(array_map(static fn(mixed $v): string => trim((string)$v), $codEntrate)));
+        if ($codEntrate !== []) {
+            $placeholders = [];
+            foreach ($codEntrate as $idx => $code) {
+                $key = ':cod_' . $idx;
+                $placeholders[] = $key;
+                $params[$key] = $code;
+            }
+            $conditions[] = '(f.is_govpay = 0 OR f.cod_entrata IN (' . implode(', ', $placeholders) . '))';
+        }
+
+        return ['WHERE ' . implode(' AND ', $conditions), $params];
     }
 
     /**
