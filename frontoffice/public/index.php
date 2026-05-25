@@ -2853,10 +2853,25 @@ if ($spidCallbackPath === '' || $spidCallbackPath[0] !== '/') {
 $spidCallbackUrl = $frontofficeBaseUrl !== '' ? ($frontofficeBaseUrl . $spidCallbackPath) : '';
 
 $routes = [
-    '/' => static fn (): array => [
-        'template' => 'home.html.twig',
-        'context' => [],
-    ],
+    '/' => static function () use ($serviceCatalog): array {
+        $featuredIds = json_decode(\App\Config\SettingsRepository::get('frontoffice', 'featured_services', '[]') ?: '[]', true) ?: [];
+        $featuredServices = [];
+        if (!empty($featuredIds)) {
+            $idMap = [];
+            foreach ($serviceCatalog as $svc) {
+                $idMap[$svc['id']] = $svc;
+            }
+            foreach ($featuredIds as $id) {
+                if (isset($idMap[$id])) {
+                    $featuredServices[] = $idMap[$id];
+                }
+            }
+        }
+        return [
+            'template' => 'home.html.twig',
+            'context'  => ['featured_services' => $featuredServices],
+        ];
+    },
     '/guida' => static function (): array {
         return [
             'template' => 'guida.html.twig',
@@ -5587,6 +5602,7 @@ $baseContext = [
     'app_version_type' => $versionInfo['version_type'],
     'app_version_label' => $versionInfo['version_label'],
     'app_ref_url' => $versionInfo['ref_url'],
+    'app_repo_url' => \App\Config\Config::getRepositoryUrl(),
 ];
 
 $context = array_merge(

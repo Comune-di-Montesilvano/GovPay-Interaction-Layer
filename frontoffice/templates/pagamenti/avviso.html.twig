@@ -1,156 +1,148 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Paga un avviso - {{ app_entity.name }}{% endblock %}
+{% block title %}{{ 'Paga un avviso o scarica la ricevuta'|trans }} - {{ app_entity.name }}{% endblock %}
 
 {% set old = form_data|default({}) %}
 
-{% block head %}
-  <style>
-    body { background: #f6f8fb; }
-    .page-hero {
-      padding: 3rem 0 1rem;
-      background: linear-gradient(135deg, #0b1431 0%, #0a2c5f 50%, #005fcc 100%);
-      color: #fff;
-    }
-    .page-hero .breadcrumb-item + .breadcrumb-item::before { color: rgba(255,255,255,0.65); }
-    .page-hero .breadcrumb-item a { color: rgba(255,255,255,0.85); }
-    .payment-card {
-      border: none;
-      border-radius: 24px;
-      box-shadow: 0 20px 60px rgba(8, 26, 60, 0.1);
-    }
-    .section-title {
-      font-size: 0.9rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #5a6f85;
-      font-weight: 600;
-    }
-    .summary-card {
-      border-radius: 20px;
-      border: 1px solid #dbe2ef;
-      background: #fff;
-    }
-    .summary-card .icon-wrapper {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      background: rgba(0,95,204,0.12);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 0.75rem;
-    }
-    .cta-list li { margin-bottom: 0.35rem; }
-  </style>
-{% endblock %}
-
 {% block content %}
-  <section class="page-hero">
-    <div class="container-xxl">
-      <div class="row align-items-center g-3">
-        <div class="col-lg-8">
-          <nav aria-label="Percorso" class="mb-2">
-            <ol class="breadcrumb mb-0">
-              <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
-              <li class="breadcrumb-item active" aria-current="page">{{ 'Paga un avviso'|trans }}</li>
-            </ol>
-          </nav>
-          <p class="text-uppercase small mb-2 text-white-50">{{ 'Pagamenti PagoPA'|trans }}</p>
-          <h1 class="display-6 fw-semibold mb-3">{{ 'Inserisci il codice avviso PagoPA e paga in sicurezza'|trans }}</h1>
-          <p class="mb-0 lead text-white-75">{{ 'Servono il codice avviso (IUV) riportato sul documento ricevuto e il codice fiscale o la partita IVA del soggetto debitore. Il sistema verificherà lo stato e ti porterà sul portale PagoPA.'|trans }}</p>
-        </div>
-      </div>
-    </div>
-  </section>
+{# ── Page header ── #}
+<section class="fo-page-header">
+  <div class="fo-page-header-inner">
+    <nav class="fo-breadcrumb" aria-label="{{ 'Percorso'|trans }}">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="fo-breadcrumb-sep" aria-hidden="true">›</span>
+      <span aria-current="page">{{ 'Paga un avviso'|trans }}</span>
+    </nav>
+    <div class="fo-ph-badge">{{ 'Pagamenti pagoPA'|trans }}</div>
+    <h1>{{ 'Paga un avviso o scarica la ricevuta'|trans }}</h1>
+    <p>{{ 'Inserisci codice avviso e codice fiscale: verifichiamo lo stato e — se già pagato — puoi scaricare subito la ricevuta digitale. Nessun login necessario.'|trans }}</p>
+  </div>
+</section>
 
-  <section class="py-5">
-    <div class="container-xxl">
-      <div class="row g-4">
-        <div class="col-lg-8">
-          <form class="card payment-card" method="post" action="/pagamento-avviso">
-            <div class="card-body p-4 p-lg-5">
-              <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-4">
-                <div>
-                  <p class="section-title mb-1">{{ 'Verifica avviso'|trans }}</p>
-                  <h2 class="h3 mb-0">{{ 'Dati richiesti'|trans }}</h2>
-                </div>
-                <div class="text-md-end text-muted small">{{ 'Solo due campi obbligatori'|trans }}</div>
+{# ── Form section ── #}
+<section class="fo-form-section">
+  <div class="container-xxl">
+    <div class="row g-4">
+
+      {# ── Main form ── #}
+      <div class="col-lg-8">
+        <form class="fo-form-card" method="post" action="/pagamento-avviso">
+          <div class="fo-form-card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-4">
+              <div>
+                <p class="fo-field-section mb-1">{{ 'Verifica avviso'|trans }}</p>
+                <h2 class="h3 mb-0">{{ 'Dati richiesti'|trans }}</h2>
               </div>
+              <div class="text-md-end small" style="color:var(--fo-fg-3);">{{ 'Solo due campi obbligatori'|trans }}</div>
+            </div>
 
-              {% if form_feedback %}
-                <div class="alert alert-{{ form_feedback.type|default('info') }}" role="status">
-                  <h3 class="h6 mb-1">{{ form_feedback.title|trans }}</h3>
-                  <p class="mb-0">{{ form_feedback.message|trans }}</p>
+            {% if form_feedback %}
+              <div class="alert alert-{{ form_feedback.type|default('info') }}" role="status">
+                <h3 class="h6 mb-1">{{ form_feedback.title|trans }}</h3>
+                <p class="mb-0">{{ form_feedback.message|trans }}</p>
+              </div>
+              {% if form_feedback.type == 'danger' %}
+                <div class="mb-3">
+                  <p class="small mb-1" style="color:var(--fo-fg-3);">{{ 'Se l\'avviso è stato emesso da un altro ente, puoi provare direttamente sul portale pagoPA:'|trans }}</p>
+                  <a href="{{ pay_portal_url|default('https://checkout.pagopa.it/') }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                    </svg>
+                    {{ 'Prova su pagoPA Checkout'|trans }}
+                  </a>
                 </div>
-                {% if form_feedback.type == 'danger' %}
-                  <div class="mb-3">
-                    <p class="small text-muted mb-1">{{ 'Se l\'avviso è stato emesso da un altro ente, puoi provare direttamente sul portale pagoPA:'|trans }}</p>
-                    <a href="{{ pay_portal_url|default('https://checkout.pagopa.it/') }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm">
-                      <i class="fas fa-external-link-alt me-1"></i>{{ 'Prova su pagoPA Checkout'|trans }}
-                    </a>
-                  </div>
-                {% endif %}
               {% endif %}
+            {% endif %}
 
-              <div class="row g-4">
-                <div class="col-12">
-                  <label for="codiceAvviso" class="form-label">{{ 'Codice avviso / IUV *'|trans }}</label>
-                  <input type="text" class="form-control form-control-lg" id="codiceAvviso" name="codiceAvviso" value="{{ old.codiceAvviso|default('') }}" maxlength="35" required placeholder="0123 4567 8901 2345">
-                  <div class="form-text">{{ 'Lo trovi sul bollettino o sulla comunicazione inviata dall\'ente.'|trans }}</div>
-                </div>
-                <div class="col-12">
-                  <label for="codiceFiscale" class="form-label">{{ 'Codice fiscale / Partita IVA del soggetto pagatore *'|trans }}</label>
-                  <input type="text" class="form-control" id="codiceFiscale" name="codiceFiscale" value="{{ old.codiceFiscale|default('') }}" maxlength="16" required placeholder="RSSMRA00A01H501Z oppure 01234567890">
-                  <div class="form-text">{{ 'Inserisci il codice fiscale (16 caratteri) oppure la partita IVA (11 cifre) del soggetto pagatore.'|trans }}</div>
-                </div>
+            <div class="row g-4">
+              <div class="col-12">
+                <label for="codiceAvviso" class="form-label">{{ 'Codice avviso / IUV *'|trans }}</label>
+                <input type="text" class="form-control form-control-lg" id="codiceAvviso" name="codiceAvviso" value="{{ old.codiceAvviso|default('') }}" maxlength="35" required placeholder="0123 4567 8901 2345">
+                <div class="form-text">{{ 'Lo trovi sul bollettino o sulla comunicazione inviata dall\'ente.'|trans }}</div>
               </div>
-
-              <script>
-                (function(){
-                  const cf = document.getElementById('codiceFiscale');
-                  if(!cf) return;
-                  const up = function(){ cf.value = (cf.value || '').toUpperCase(); };
-                  cf.addEventListener('input', up);
-                  cf.addEventListener('blur', up);
-                })();
-              </script>
-
-              <div class="alert alert-info mt-4" role="note">
-                <p class="mb-1 fw-semibold">{{ 'Cosa succede dopo'|trans }}</p>
-                <ol class="ps-3 mb-0">
-                  <li>{{ 'Verifichiamo lo stato dell\'avviso e l\'importo aggiornato;'|trans }}</li>
-                  <li>{{ 'apri una finestra PagoPA per scegliere il canale preferito;'|trans }}</li>
-                  <li>{{ 'ricevi la ricevuta digitale direttamente via email.'|trans }}</li>
-                </ol>
-              </div>
-
-              <div class="d-flex gap-3 flex-wrap mt-4">
-                <button type="submit" class="btn btn-primary btn-lg px-4">{{ 'Prosegui con PagoPA'|trans }}</button>
-                <a class="btn btn-outline-secondary btn-lg" href="/">{{ 'Annulla'|trans }}</a>
+              <div class="col-12">
+                <label for="codiceFiscale" class="form-label">{{ 'Codice fiscale / Partita IVA del soggetto pagatore *'|trans }}</label>
+                <input type="text" class="form-control" id="codiceFiscale" name="codiceFiscale" value="{{ old.codiceFiscale|default('') }}" maxlength="16" required placeholder="RSSMRA00A01H501Z oppure 01234567890">
+                <div class="form-text">{{ 'Inserisci il codice fiscale (16 caratteri) oppure la partita IVA (11 cifre) del soggetto pagatore.'|trans }}</div>
               </div>
             </div>
-          </form>
-        </div>
-        <div class="col-lg-4">
-          <div class="summary-card p-4 mb-4">
-            <div class="icon-wrapper">
-              <svg class="icon"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-card"></use></svg>
+
+            <script>
+              (function(){
+                const cf = document.getElementById('codiceFiscale');
+                if(!cf) return;
+                const up = function(){ cf.value = (cf.value || '').toUpperCase(); };
+                cf.addEventListener('input', up);
+                cf.addEventListener('blur', up);
+              })();
+            </script>
+
+            <div class="alert alert-info mt-4" role="note">
+              <p class="mb-1 fw-semibold">{{ 'Cosa succede dopo'|trans }}</p>
+              <ol class="ps-3 mb-0">
+                <li>{{ 'Verifichiamo lo stato dell\'avviso e l\'importo aggiornato;'|trans }}</li>
+                <li>{{ 'se ancora da pagare: scegli il canale e completa su pagoPA — ricevi ricevuta via email;'|trans }}</li>
+                <li>{{ 'se già pagato: scarica subito la ricevuta digitale, senza login.'|trans }}</li>
+              </ol>
             </div>
-            <h3 class="fw-semibold">{{ 'Hai perso l\'avviso?'|trans }}</h3>
-            <p class="text-muted mb-2">{{ 'Puoi richiederne una copia scrivendo agli uffici oppure generare un nuovo pagamento spontaneo.'|trans }}</p>
-            <a class="btn btn-outline-primary w-100" href="/pagamento-spontaneo">{{ 'Genera pagamento spontaneo'|trans }}</a>
+
+            <div class="d-flex gap-3 flex-wrap mt-4">
+              <button type="submit" class="btn btn-primary btn-lg px-4">{{ 'Cerca avviso'|trans }}</button>
+              <a class="btn btn-outline-secondary btn-lg" href="/">{{ 'Annulla'|trans }}</a>
+            </div>
           </div>
-          <div class="summary-card p-4">
-            <h3 class="fw-semibold mb-2">{{ 'Supporto'|trans }}</h3>
-            <ul class="cta-list text-muted ps-3 mb-0">
-              <li>{{ 'Email'|trans }}: <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>
-              <li>{{ 'Telefono'|trans }}: {{ support_phone }} ({{ support_hours }})</li>
-              <li>{{ 'Sede'|trans }}: {{ support_location|raw }}</li>
-            </ul>
-          </div>
-        </div>
+        </form>
       </div>
+
+      {# ── Sidebar ── #}
+      <div class="col-lg-4">
+        <div class="fo-sidebar-card mb-4">
+          <div class="fo-sidebar-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>
+            </svg>
+          </div>
+          <h3>{{ 'Già pagato?'|trans }}</h3>
+          <p>{{ 'Puoi scaricare la ricevuta digitale inserendo gli stessi dati: codice avviso e codice fiscale. Nessun accesso richiesto.'|trans }}</p>
+          <p style="font-size:13px; color:var(--fo-fg-3);">{{ 'Se hai smarrito il codice avviso, contatta l\'ente oppure accedi con SPID/CIE per consultare lo storico delle pendenze.'|trans }}</p>
+        </div>
+        <div class="fo-sidebar-card mb-4">
+          <div class="fo-sidebar-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>
+            </svg>
+          </div>
+          <h3>{{ 'Non hai un avviso?'|trans }}</h3>
+          <p>{{ 'Puoi generare un nuovo avviso pagoPA scegliendo il servizio e inserendo i dati del pagatore.'|trans }}</p>
+          <a class="btn btn-outline-primary w-100" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+        </div>
+        {% if support_email or support_phone or support_location %}
+        <div class="fo-sidebar-card">
+          <h3>{{ 'Supporto'|trans }}</h3>
+          {% if support_email %}
+            <p>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;color:var(--fo-primary);" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/>
+              </svg>
+              <a href="mailto:{{ support_email }}" style="color:var(--fo-primary);">{{ support_email }}</a>
+            </p>
+          {% endif %}
+          {% if support_phone %}
+            <p>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;color:var(--fo-primary);" aria-hidden="true">
+                <path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/>
+              </svg>
+              {{ support_phone }}{% if support_hours %} <span style="color:var(--fo-fg-3);">({{ support_hours }})</span>{% endif %}
+            </p>
+          {% endif %}
+          {% if support_location %}
+            <p style="font-size:13px; color:var(--fo-fg-3);">{{ support_location|raw }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+
     </div>
-  </section>
+  </div>
+</section>
 {% endblock %}

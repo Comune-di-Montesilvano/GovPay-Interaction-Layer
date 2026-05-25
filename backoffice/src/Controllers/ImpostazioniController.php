@@ -103,6 +103,28 @@ class ImpostazioniController
             $data['gil_info'] = $gilInfo;
         }
 
+        // Tab Frontoffice: service catalog for featured services
+        if ($tab === 'frontoffice') {
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+            $foCatalog = [];
+            if ($idDominio !== '') {
+                try {
+                    $repo = new \App\Database\EntrateRepository();
+                    $rows = $repo->listByDominio($idDominio);
+                    foreach ($rows as $row) {
+                        if ((int)($row['abilitato_backoffice'] ?? 0) !== 1) { continue; }
+                        $id = (string)($row['id_entrata'] ?? '');
+                        if ($id === '') { continue; }
+                        $label = trim((string)($row['descrizione_effettiva'] ?? $row['descrizione'] ?? $id));
+                        $foCatalog[] = ['id' => $id, 'label' => $label !== '' ? $label : $id];
+                    }
+                } catch (\Throwable $e) {}
+            }
+            $data['service_catalog']   = $foCatalog;
+            $featuredRaw               = SettingsRepository::get('frontoffice', 'featured_services', '[]');
+            $data['frontoffice_featured'] = json_decode($featuredRaw ?: '[]', true) ?: [];
+        }
+
         $data['ssl_on'] = (strtolower((string)(getenv('SSL') ?: 'off')) === 'on');
 
         return $this->twig->render($response, 'impostazioni/index.html.twig', $data);
@@ -252,9 +274,14 @@ class ImpostazioniController
 
         $by = $this->currentUser();
         $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
+        $featuredIds = array_values(array_slice(
+            array_filter(array_map('strval', (array)($body['featured_services'] ?? []))),
+            0, 8
+        ));
         SettingsRepository::setSection('frontoffice', [
             'public_base_url'   => $publicBaseUrl,
             'auth_proxy_type'   => $body['auth_proxy_type'] ?? 'none',
+            'featured_services' => json_encode($featuredIds),
         ], $by);
 
         return $this->jsonOk('Impostazioni Frontoffice salvate.');

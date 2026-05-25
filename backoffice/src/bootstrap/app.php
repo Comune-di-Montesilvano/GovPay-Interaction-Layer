@@ -85,6 +85,7 @@ return (function (): array {
     $twig->getEnvironment()->addGlobal('app_version_type', $versionInfo['version_type']);
     $twig->getEnvironment()->addGlobal('app_version_label', $versionInfo['version_label']);
     $twig->getEnvironment()->addGlobal('app_ref_url', $versionInfo['ref_url']);
+    $twig->getEnvironment()->addGlobal('app_repo_url', \App\Config\Config::getRepositoryUrl());
 
 
     $pendenzaStates = [
