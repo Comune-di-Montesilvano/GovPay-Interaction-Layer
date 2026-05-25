@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Seleziona il servizio - {{ app_entity.name }}{% endblock %}
+{% block title %}{{ 'Seleziona il servizio da pagare'|trans }} - {{ app_entity.name }}{% endblock %}
 
 {% block head %}
   <style>
@@ -61,7 +61,7 @@
     <div class="container-xxl">
       <div class="row align-items-center g-3">
         <div class="col-lg-8">
-          <nav aria-label="Percorso" class="mb-2">
+          <nav aria-label="{{ 'Percorso'|trans }}" class="mb-2">
             <ol class="breadcrumb mb-0">
               <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
               <li class="breadcrumb-item active" aria-current="page">{{ 'Pagamento spontaneo'|trans }}</li>

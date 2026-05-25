@@ -73,13 +73,7 @@ class ReportRagioneriaController
             $filters['tassonomie'] = array_values(array_intersect($filters['tassonomie'], $allowedTipologie));
         }
 
-        $taxonomyLabels = [];
-        foreach ($tipologieCensite as $tipologia) {
-            $idEntrata = (string)($tipologia['id_entrata'] ?? '');
-            if ($idEntrata !== '') {
-                $taxonomyLabels[$idEntrata] = (string)($tipologia['descrizione'] ?? $idEntrata);
-            }
-        }
+        $taxonomyLabels = $this->loadTaxonomyLabels($filters['idDominio']);
 
         $dataDa = $this->parseStartDate($filters['dataDa']);
         $dataA  = $this->parseEndDate($filters['dataA']);
@@ -139,22 +133,8 @@ class ReportRagioneriaController
                         )
                         : [];
 
-                    foreach ($allRows as &$row) {
-                        $tax = (string)($row['tassonomia'] ?? '');
-                        if ($tax !== '') {
-                            $row['tassonomia_label'] = $taxonomyLabels[$tax] ?? (string)($row['tassonomia_label'] ?? $tax);
-                        }
-                        $row['tassonomia_descrizione'] = (string)($row['tassonomia_label'] ?? '');
-                    }
-                    unset($row);
-
-                    foreach ($rows as &$row) {
-                        $tax = (string)($row['tassonomia'] ?? '');
-                        if ($tax !== '') {
-                            $row['tassonomia_label'] = $taxonomyLabels[$tax] ?? (string)($row['tassonomia_label'] ?? $tax);
-                        }
-                    }
-                    unset($row);
+                    $allRows = $this->applyTaxonomyLabels($allRows, $taxonomyLabels);
+                    $rows = $this->applyTaxonomyLabels($rows, $taxonomyLabels);
 
                     [$totals, $byTipologia] = $this->buildAggregations($allRows);
                     $meta = [
@@ -226,6 +206,8 @@ class ReportRagioneriaController
             preg_replace('/[^A-Za-z0-9_-]/', '_', (string)($filters['dataA'] ?? 'a'))
         );
 
+        $taxonomyLabels = $this->loadTaxonomyLabels((string)($filters['idDominio'] ?? ''));
+
         $repo = new FlussiRendicontazioniRepository();
         $rows = $repo->getForCsvWithBiz(
             (string)($filters['idDominio'] ?? ''),
@@ -233,6 +215,7 @@ class ReportRagioneriaController
             (string)($filters['dataA'] ?? ''),
             (array)($filters['tassonomie'] ?? [])
         );
+        $rows = $this->applyTaxonomyLabels($rows, $taxonomyLabels);
 
         $stream = fopen('php://temp', 'r+');
         if ($stream === false) {
@@ -356,6 +339,73 @@ class ReportRagioneriaController
             return false;
         }
         return in_array(strtolower((string)$raw), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function loadTaxonomyLabels(string $idDominio): array
+    {
+        if ($idDominio === '') {
+            return [];
+        }
+
+        $labels = [];
+        $tipologieRepo = new EntrateRepository();
+        foreach ($tipologieRepo->listByDominio($idDominio) as $tipologia) {
+            $idEntrata = trim((string)($tipologia['id_entrata'] ?? ''));
+            if ($idEntrata === '') {
+                continue;
+            }
+
+            $label = trim((string)($tipologia['descrizione_effettiva'] ?? $tipologia['descrizione'] ?? $idEntrata));
+            $labels[$idEntrata] = $label !== '' ? $label : $idEntrata;
+        }
+
+        return $labels;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @param array<string,string> $taxonomyLabels
+     * @return array<int,array<string,mixed>>
+     */
+    private function applyTaxonomyLabels(array $rows, array $taxonomyLabels): array
+    {
+        $normalizedLabels = [];
+        foreach ($taxonomyLabels as $code => $label) {
+            $normalizedCode = trim((string)$code);
+            if ($normalizedCode === '') {
+                continue;
+            }
+
+            $normalizedLabels[$normalizedCode] = (string)$label;
+            $normalizedLabels[strtoupper($normalizedCode)] = (string)$label;
+        }
+
+        foreach ($rows as &$row) {
+            $tax = trim((string)($row['tassonomia'] ?? ''));
+            $existingLabel = trim((string)($row['tassonomia_label'] ?? ''));
+
+            if ($tax === '' || $tax === 'N/D') {
+                $row['tassonomia_label'] = $existingLabel !== '' ? $existingLabel : 'N/D';
+                $row['tassonomia_descrizione'] = $row['tassonomia_label'];
+                continue;
+            }
+
+            if (in_array($tax, ['TEFA', 'ESTERNA'], true)) {
+                $row['tassonomia_label'] = $existingLabel !== '' ? $existingLabel : $tax;
+                $row['tassonomia_descrizione'] = $row['tassonomia_label'];
+                continue;
+            }
+
+            $resolvedLabel = $normalizedLabels[$tax] ?? $normalizedLabels[strtoupper($tax)] ?? $tax;
+            $row['tassonomia_label'] = $resolvedLabel;
+            $row['tassonomia_descrizione'] = $resolvedLabel;
+        }
+        unset($row);
+
+        return $rows;
     }
 
 

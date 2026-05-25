@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Anteprima avviso PagoPA - {{ app_entity.name }}{% endblock %}
+{% block title %}{{ 'Anteprima avviso'|trans }} {{ 'PagoPA'|trans }} - {{ app_entity.name }}{% endblock %}
 
 {% set avviso = avviso_preview|default({}) %}
 {% set pagatore = avviso.soggetto_pagatore|default({}) %}
@@ -71,7 +71,7 @@
 {% block content %}
   <section class="page-hero">
     <div class="container-xxl">
-      <nav aria-label="Percorso" class="mb-3">
+      <nav aria-label="{{ 'Percorso'|trans }}" class="mb-3">
         <ol class="breadcrumb mb-0">
           <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
           <li class="breadcrumb-item"><a href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a></li>

@@ -2177,6 +2177,217 @@ class PendenzeController
         return is_numeric($normalized) ? (float)$normalized : 0.0;
     }
 
+    private function extractLatestRtEntry(mixed $rtData): ?array
+    {
+        if (!is_array($rtData) || $rtData === []) {
+            return null;
+        }
+
+        if (array_is_list($rtData)) {
+            $last = end($rtData);
+            return is_array($last) ? $last : null;
+        }
+
+        return $rtData;
+    }
+
+    private function buildReceiptPathLookup(array $pendenza): array
+    {
+        $lookup = [];
+        $voci = $pendenza['voci'] ?? null;
+        if (!is_array($voci)) {
+            return $lookup;
+        }
+
+        foreach ($voci as $voce) {
+            if (!is_array($voce) || !isset($voce['riscossioni']) || !is_array($voce['riscossioni'])) {
+                continue;
+            }
+            foreach ($voce['riscossioni'] as $riscossione) {
+                if (!is_array($riscossione)) {
+                    continue;
+                }
+                $iur = trim((string)($riscossione['iur'] ?? ''));
+                $rppPath = trim((string)($riscossione['rpp'] ?? ''));
+                if ($iur !== '' && $rppPath !== '' && !isset($lookup[$iur])) {
+                    $lookup[$iur] = $rppPath;
+                }
+            }
+        }
+
+        return $lookup;
+    }
+
+    private function normalizePaymentAttempts(?array $pendenza, string $defaultIdDominio): array
+    {
+        if (!is_array($pendenza)) {
+            return [];
+        }
+
+        $rawAttempts = $pendenza['rpp'] ?? null;
+        if (!is_array($rawAttempts)) {
+            return [];
+        }
+
+        $receiptPathLookup = $this->buildReceiptPathLookup($pendenza);
+        $fallbackIuv = trim((string)($pendenza['iuvPagamento'] ?? $pendenza['numeroAvviso'] ?? ''));
+        $fallbackDomainId = trim((string)($pendenza['dominio']['idDominio'] ?? $defaultIdDominio));
+        $attempts = [];
+
+        foreach ($rawAttempts as $rr) {
+            if (!is_array($rr)) {
+                continue;
+            }
+
+            $selectedRt = $this->extractLatestRtEntry($rr['rt'] ?? null);
+
+            $idPago = $this->extractStringByPath($rr, ['rpt', 'datiVersamento', 'codiceContestoPagamento']);
+            if ($idPago === '') {
+                $idPago = $this->extractStringByPath($rr, ['rpt', 'creditorReferenceId']);
+            }
+            if ($idPago === '' && is_array($selectedRt)) {
+                $idPago = $this->extractStringByPath($selectedRt, ['receiptId']);
+            }
+
+            $combinedTs = '';
+            $dataExec = $this->extractStringByPath($rr, ['rpt', 'datiVersamento', 'dataEsecuzionePagamento']);
+            if ($dataExec !== '') {
+                try {
+                    $datePart = (new \DateTimeImmutable($dataExec))->format('Y-m-d');
+                    $oraMsg = $this->extractStringByPath($rr, ['rpt', 'dataOraMessaggioRichiesta']);
+                    $timePart = '00:00:00';
+                    if ($oraMsg !== '') {
+                        $timePart = (new \DateTimeImmutable($oraMsg))->format('H:i:s');
+                    }
+                    $combinedTs = $datePart . ' ' . $timePart;
+                } catch (\Throwable $_) {
+                    $combinedTs = $dataExec;
+                }
+            }
+            if ($combinedTs === '' && is_array($selectedRt)) {
+                $combinedTs = $this->extractStringByPath($selectedRt, ['paymentDateTime']);
+            }
+            if ($combinedTs === '') {
+                $combinedTs = $this->extractStringByPath($rr, ['rpt', 'dueDate']);
+            }
+            if ($combinedTs === '') {
+                $combinedTs = $this->extractStringByPath($rr, ['pendenza', 'dataUltimoAggiornamento']);
+            }
+            if ($combinedTs === '') {
+                $combinedTs = $this->extractStringByPath($rr, ['pendenza', 'dataCaricamento']);
+            }
+
+            $importoRaw = $this->extractStringByPath($rr, ['rpt', 'datiVersamento', 'datiSingoloVersamento', 0, 'importoSingoloVersamento']);
+            if ($importoRaw === '') {
+                $importoRaw = $this->extractStringByPath($rr, ['rpt', 'paymentAmount']);
+            }
+            if ($importoRaw === '' && is_array($selectedRt)) {
+                $importoRaw = $this->extractStringByPath($selectedRt, ['paymentAmount']);
+            }
+            if ($importoRaw === '') {
+                $importoRaw = $this->extractStringByPath($rr, ['pendenza', 'importo']);
+            }
+            $importo = $importoRaw !== '' ? $this->normalizeImporto($importoRaw) : null;
+
+            $abi = '';
+            if (is_array($selectedRt)) {
+                $abi = $this->extractStringByPath($selectedRt, ['istitutoAttestante', 'identificativoUnivocoAttestante', 'codiceIdentificativoUnivoco']);
+                if ($abi === '') {
+                    $abi = $this->extractStringByPath($selectedRt, ['idPSP']);
+                }
+            }
+
+            $istituto = '';
+            if (is_array($selectedRt)) {
+                $istituto = $this->extractStringByPath($selectedRt, ['istitutoAttestante', 'denominazioneAttestante']);
+                if ($istituto === '') {
+                    $istituto = $this->extractStringByPath($selectedRt, ['PSPCompanyName']);
+                }
+            }
+            if ($istituto === '') {
+                $istituto = $this->extractStringByPath($rr, ['rpt', 'companyName']);
+            }
+            if ($istituto === '') {
+                $istituto = $this->extractStringByPath($rr, ['pendenza', 'dominio', 'ragioneSociale']);
+            }
+
+            $stato = '';
+            if (is_array($selectedRt)) {
+                $stato = $this->extractStringByPath($selectedRt, ['datiPagamento', 'datiSingoloPagamento', 0, 'esitoSingoloPagamento']);
+            }
+            if ($stato === '') {
+                $stato = trim((string)($rr['stato'] ?? ''));
+            }
+            if ($stato === '' && is_array($selectedRt)) {
+                $stato = $this->extractStringByPath($selectedRt, ['outcome']);
+            }
+
+            $iuv = '';
+            if (is_array($selectedRt)) {
+                $iuv = $this->extractStringByPath($selectedRt, ['datiPagamento', 'identificativoUnivocoVersamento']);
+                if ($iuv === '') {
+                    $iuv = $this->extractStringByPath($selectedRt, ['noticeNumber']);
+                }
+                if ($iuv === '') {
+                    $iuv = $this->extractStringByPath($selectedRt, ['creditorReferenceId']);
+                }
+            }
+            if ($iuv === '') {
+                $iuv = $this->extractStringByPath($rr, ['rpt', 'datiVersamento', 'identificativoUnivocoVersamento']);
+            }
+            if ($iuv === '') {
+                $iuv = $this->extractStringByPath($rr, ['rpt', 'creditorReferenceId']);
+            }
+            if ($iuv === '') {
+                $iuv = $this->extractStringByPath($rr, ['pendenza', 'iuvAvviso']);
+            }
+            if ($iuv === '') {
+                $iuv = $fallbackIuv;
+            }
+
+            $idDom = $this->extractStringByPath($rr, ['rpt', 'dominio', 'identificativoDominio']);
+            if ($idDom === '') {
+                $idDom = $fallbackDomainId;
+            }
+
+            $receiptMatchId = '';
+            if (is_array($selectedRt)) {
+                $receiptMatchId = $this->extractStringByPath($selectedRt, ['receiptId']);
+            }
+            if ($receiptMatchId === '') {
+                $receiptMatchId = $idPago;
+            }
+            $rppPath = $receiptMatchId !== '' ? ($receiptPathLookup[$receiptMatchId] ?? '') : '';
+
+            $iur = '';
+            if (is_array($selectedRt)) {
+                $iur = $this->extractStringByPath($selectedRt, ['receiptId']);
+                if ($iur === '') {
+                    $iur = $this->extractStringByPath($selectedRt, ['datiPagamento', 'datiSingoloPagamento', 0, 'identificativoUnivocoRiscossione']);
+                    if ($iur === '0') {
+                        $iur = '';
+                    }
+                }
+            }
+
+            $displayId = $iur !== '' ? $iur : ($idPago !== '' ? $idPago : $iuv);
+
+            $attempts[] = [
+                'display_id' => $displayId,
+                'timestamp' => $combinedTs,
+                'state' => $stato,
+                'state_detail' => trim((string)($rr['dettaglioStato'] ?? '')),
+                'amount' => $importo,
+                'abi' => $abi,
+                'institution' => $istituto,
+                'receipt_path' => $rppPath,
+                'domain_id' => $idDom,
+            ];
+        }
+
+        return $attempts;
+    }
+
     private function parseOptionalPositiveDays(mixed $value, string $label, array &$errors): ?int
     {
         $raw = trim((string)($value ?? ''));
@@ -2806,6 +3017,8 @@ class PendenzeController
             }
         }
 
+        $paymentAttempts = $this->normalizePaymentAttempts($pendenza, $idDominio);
+
         return $this->twig->render($response, 'pendenze/dettaglio.html.twig', [
             'idPendenza' => $idPendenza,
             'return_url' => $returnUrl,
@@ -2818,6 +3031,7 @@ class PendenzeController
             'related_by_rata' => $relatedByRata,
             'current_rate' => $currentRate,
             'rate_info_source' => $rateInfoSource,
+            'payment_attempts' => $paymentAttempts,
             'tipologie' => $tipologie,
         ]);
     }

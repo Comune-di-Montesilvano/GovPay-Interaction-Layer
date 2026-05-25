@@ -142,7 +142,7 @@
 
     <div class="fo-nav-spacer"></div>
 
-    <a class="fo-cart-btn" href="/carrello" aria-label="{{ 'Carrello'|trans }} ({{ cart_count|default(0) }} avvisi)">
+    <a class="fo-cart-btn" href="/carrello" aria-label="{{ 'Carrello'|trans }} ({{ cart_count|default(0) }} {{ cart_count|default(0) == 1 ? 'avviso'|trans : 'avvisi'|trans }})">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
         <path d="M3 4h2l3 12h11l2-8H7"/>

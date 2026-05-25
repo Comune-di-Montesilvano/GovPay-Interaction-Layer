@@ -12,13 +12,13 @@
           {{ message|default('Operazione non disponibile in questo momento.'|trans) }}
         </p>
         {% if debug_spid_errors %}
-          <p class="small text-muted"><strong>SPID Errors:</strong> {{ debug_spid_errors }}</p>
+          <p class="small text-muted"><strong>{{ 'SPID errors'|trans }}:</strong> {{ debug_spid_errors }}</p>
         {% endif %}
         {% if debug_spid_reason %}
-          <p class="small text-muted"><strong>Reason:</strong> {{ debug_spid_reason }}</p>
+          <p class="small text-muted"><strong>{{ 'Reason'|trans }}:</strong> {{ debug_spid_reason }}</p>
         {% endif %}
         {% if debug_session_info %}
-          <p class="small text-muted"><strong>Session Info:</strong> {{ debug_session_info }}</p>
+          <p class="small text-muted"><strong>{{ 'Session info'|trans }}:</strong> {{ debug_session_info }}</p>
         {% endif %}
         <a class="btn btn-outline-primary" href="/">{{ 'Torna alla home'|trans }}</a>
       </div>

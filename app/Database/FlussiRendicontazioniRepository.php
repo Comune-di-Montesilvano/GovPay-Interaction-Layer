@@ -118,10 +118,10 @@ class FlussiRendicontazioniRepository
                      WHEN f.is_govpay = 0 THEN 'ESTERNA'
                      ELSE COALESCE(f.cod_entrata, 'N/D')
                 END AS tassonomia,
-                CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                 CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
                      WHEN f.is_govpay = 0 THEN 'Tipologia esterna'
-                     ELSE COALESCE(f.descrizione_entrata, f.cod_entrata, 'N/D')
-                END AS tassonomia_label,
+                     ELSE COALESCE(f.cod_entrata, 'N/D')
+                 END AS tassonomia_label,
                 f.iuv,
                 f.iur,
                 f.indice,
@@ -206,10 +206,10 @@ class FlussiRendicontazioniRepository
                      WHEN f.is_govpay = 0 THEN 'ESTERNA'
                      ELSE COALESCE(f.cod_entrata, 'N/D')
                 END AS tassonomia,
-                CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                 CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
                      WHEN f.is_govpay = 0 THEN 'Tipologia esterna'
-                     ELSE COALESCE(f.descrizione_entrata, f.cod_entrata, 'N/D')
-                END AS tassonomia_label,
+                     ELSE COALESCE(f.cod_entrata, 'N/D')
+                 END AS tassonomia_label,
                 f.iuv,
                 f.iur,
                 f.indice,
