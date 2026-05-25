@@ -41,7 +41,10 @@ docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build --abort
 # Daemon ragioneria (sincronizza flussi GovPay → tabella flussi_rendicontazioni)
 docker exec -d gil-backoffice php /var/www/html/scripts/cron_ragioneria.php
 
-# Daemon TEFA scanner (elabora IUR via Biz Events → tabella tefa_ricevute)
+# Daemon Biz scanner (salva dati ricevuta Biz Events per pendenze non-GovPay → biz_ricevute)
+docker exec -d gil-backoffice php /var/www/html/scripts/cron_biz_scanner.php
+
+# Daemon TEFA scanner (classifica IUR come TEFA/non-TEFA da biz_ricevute → tefa_ricevute)
 docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
 
 # Cron batch pendenze massive

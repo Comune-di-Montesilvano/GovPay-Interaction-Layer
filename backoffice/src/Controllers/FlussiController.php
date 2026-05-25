@@ -302,6 +302,39 @@ class FlussiController
                                 $flow[$paymentsKey][$index]['_fc'] = $fiscalCode;
                             }
                         }
+
+                        // Enrich orphan payments with daemon data already in DB
+                        $orphanIurs = [];
+                        foreach ($flow[$paymentsKey] as $payment) {
+                            if (!empty($payment['is_orphan'])) {
+                                $iur = $payment['iur'] ?? ($payment['riscossione']['iur'] ?? '');
+                                if ($iur !== '') {
+                                    $orphanIurs[] = $iur;
+                                }
+                            }
+                        }
+                        if ($orphanIurs !== [] && $fiscalCode !== '') {
+                            $flussiRepo   = new \App\Database\FlussiRendicontazioniRepository();
+                            $tefaRepo     = new \App\Database\TefaRepository();
+                            $bizRepo      = new \App\Database\BizRepository();
+                            $rendicontMap = $flussiRepo->getByIurs($orphanIurs, $fiscalCode);
+                            $tefaMap      = $tefaRepo->getByIurs($orphanIurs, $fiscalCode);
+                            $bizMap       = $bizRepo->getByIurs($orphanIurs, $fiscalCode);
+                            foreach ($flow[$paymentsKey] as $index => $payment) {
+                                if (!empty($payment['is_orphan'])) {
+                                    $iur = $payment['iur'] ?? ($payment['riscossione']['iur'] ?? '');
+                                    if ($iur !== '' && (isset($rendicontMap[$iur]) || isset($tefaMap[$iur]) || isset($bizMap[$iur]))) {
+                                        $flow[$paymentsKey][$index]['_rendicontazione'] = $rendicontMap[$iur] ?? null;
+                                        $flow[$paymentsKey][$index]['_tefa']            = $tefaMap[$iur] ?? null;
+                                        $bizRow = $bizMap[$iur] ?? null;
+                                        if ($bizRow !== null && is_string($bizRow['trasferimenti'] ?? null)) {
+                                            $bizRow['trasferimenti'] = json_decode($bizRow['trasferimenti'], true) ?? [];
+                                        }
+                                        $flow[$paymentsKey][$index]['_biz'] = $bizRow;
+                                    }
+                                }
+                            }
+                        }
                     }
                 } catch (ClientException $ce) {
                     $errors[] = 'Errore recupero dettaglio flusso: ' . $ce->getMessage();

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\SettingsRepository;
+use App\Database\BizRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\TefaRepository;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -20,9 +21,20 @@ class CronController
     private const LOG_DIR   = '/var/www/cache';
 
     private const JOBS = [
+        'biz' => [
+            'label'       => 'Biz: Scanner ricevute',
+            'description' => 'Loop continuo: accoda pendenze non-GovPay da flussi ragioneria, chiama Biz Events e salva descrizione/soggetto pagante/trasferimenti in biz_ricevute. Funziona per qualsiasi ente con Biz Events configurato.',
+            'script'      => 'scripts/cron_biz_scanner.php',
+            'args_tpl'    => '',
+            'params'      => [],
+            'icon'        => 'fa-receipt',
+            'daemon'      => true,
+            'stop_file'   => '/tmp/cron-stop-biz',
+            'pid_file'    => '/tmp/cron-biz-scanner.pid',
+        ],
         'tefa' => [
-            'label'       => 'TEFA: Scanner loop',
-            'description' => 'Loop continuo: accoda IUR da cache flussi ragioneria e processa PENDING con Biz Events. Si ferma con segnale di stop.',
+            'label'       => 'TEFA: Classificatore loop',
+            'description' => 'Loop continuo: accoda IUR da biz_ricevute (PROCESSED) e li classifica come TEFA/non-TEFA. Richiede il demone Biz attivo. Si ferma con segnale di stop.',
             'script'      => 'scripts/cron_tefa_scanner.php',
             'args_tpl'    => '',
             'params'      => [],
@@ -195,17 +207,20 @@ class CronController
         }
 
         $flussiRepo = new FlussiRendicontazioniRepository();
-        $tefaRepo = new TefaRepository();
+        $tefaRepo   = new TefaRepository();
+        $bizRepo    = new BizRepository();
 
-        $deletedTefa = $tefaRepo->deleteByDateRange($idDominio, $dataDa, $dataA);
+        $deletedBiz        = $bizRepo->deleteByDateRange($idDominio, $dataDa, $dataA);
+        $deletedTefa       = $tefaRepo->deleteByDateRange($idDominio, $dataDa, $dataA);
         $deletedRagioneria = $flussiRepo->deleteByDateRange($idDominio, $dataDa, $dataA);
 
         $_SESSION['flash'][] = [
             'type' => 'success',
             'text' => sprintf(
-                'Reset completato (%s -> %s). Cancellate %d righe TEFA e %d righe Ragioneria.',
+                'Reset completato (%s -> %s). Cancellate %d righe Biz, %d righe TEFA e %d righe Ragioneria.',
                 $dataDa,
                 $dataA,
+                $deletedBiz,
                 $deletedTefa,
                 $deletedRagioneria
             ),
