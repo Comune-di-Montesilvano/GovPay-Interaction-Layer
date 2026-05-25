@@ -169,7 +169,7 @@ class ReportRagioneriaController
                     ];
 
                     if (($params['export'] ?? null) === 'csv') {
-                        return $this->exportCsv($response, $allRows, $filters);
+                        return $this->exportCsv($response, $filters);
                     }
 
                     $baseParams = $filters;
@@ -218,10 +218,7 @@ class ReportRagioneriaController
         ]);
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $rows
-     */
-    private function exportCsv(Response $response, array $rows, array $filters): Response
+    private function exportCsv(Response $response, array $filters): Response
     {
         $filename = sprintf(
             'report-ragioneria-%s-%s.csv',
@@ -229,15 +226,26 @@ class ReportRagioneriaController
             preg_replace('/[^A-Za-z0-9_-]/', '_', (string)($filters['dataA'] ?? 'a'))
         );
 
+        $repo = new FlussiRendicontazioniRepository();
+        $rows = $repo->getForCsvWithBiz(
+            (string)($filters['idDominio'] ?? ''),
+            (string)($filters['dataDa'] ?? ''),
+            (string)($filters['dataA'] ?? ''),
+            (array)($filters['tassonomie'] ?? [])
+        );
+
         $stream = fopen('php://temp', 'r+');
         if ($stream === false) {
             return $response;
         }
 
+        fwrite($stream, "\xEF\xBB\xBF");
         fputcsv($stream, [
-            'data_flusso', 'data_regolamento', 'id_flusso', 'trn', 'id_psp',
-            'id_dominio', 'tassonomia', 'iuv', 'iur', 'indice',
-            'tassonomia_descrizione', 'importo', 'esito', 'stato_rend', 'data_pagamento', 'descrizione_voce',
+            'data_flusso', 'data_regolamento', 'id_flusso', 'trn', 'id_psp', 'ragione_psp',
+            'id_dominio', 'tassonomia', 'tassonomia_label', 'iuv', 'iur', 'indice',
+            'importo', 'esito', 'stato_rend', 'data_pagamento', 'descrizione_voce', 'id_pendenza',
+            'govpay',
+            'biz_descrizione', 'cf_debitore', 'nominativo_debitore', 'cf_pagante', 'nominativo_pagante', 'biz_company_name',
         ], ';');
 
         foreach ($rows as $row) {
@@ -247,17 +255,26 @@ class ReportRagioneriaController
                 (string)($row['id_flusso'] ?? ''),
                 (string)($row['trn'] ?? ''),
                 (string)($row['id_psp'] ?? ''),
+                (string)($row['ragione_psp'] ?? ''),
                 (string)($row['id_dominio'] ?? ''),
                 (string)($row['tassonomia'] ?? ''),
+                (string)($row['tassonomia_label'] ?? ''),
                 (string)($row['iuv'] ?? ''),
                 (string)($row['iur'] ?? ''),
                 (string)($row['indice'] ?? ''),
-                (string)($row['tassonomia_descrizione'] ?? ''),
                 number_format((float)($row['importo'] ?? 0), 2, '.', ''),
                 (string)($row['esito'] ?? ''),
                 (string)($row['stato_rend'] ?? ''),
                 (string)($row['data_pagamento'] ?? ''),
                 (string)($row['descrizione_voce'] ?? ''),
+                (string)($row['id_pendenza'] ?? ''),
+                $row['is_govpay'] === null ? '' : ((int)$row['is_govpay'] === 1 ? 'Si' : 'No'),
+                (string)($row['biz_descrizione'] ?? ''),
+                (string)($row['cf_debitore'] ?? ''),
+                (string)($row['nominativo_debitore'] ?? ''),
+                (string)($row['cf_pagante'] ?? ''),
+                (string)($row['nominativo_pagante'] ?? ''),
+                (string)($row['biz_company_name'] ?? ''),
             ], ';');
         }
 
