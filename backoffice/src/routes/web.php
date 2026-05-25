@@ -1203,6 +1203,15 @@ return function (App $app, Twig $twig): void {
     $app->post('/pagamenti/report-tefa/stop', function($request, $response) use ($twig): Response {
         return (new ReportTefaController($twig))->stop($request, $response);
     });
+    $app->post('/pagamenti/report-tefa/biz-scan', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->bizScan($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/biz-stop', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->bizStop($request, $response);
+    });
+    $app->get('/pagamenti/report-tefa/biz-status', function($request, $response) use ($twig): Response {
+        return (new ReportTefaController($twig))->bizStatus($request, $response);
+    });
 
     // AJAX: fetch single Biz Events receipt on-demand
     $app->get('/api/biz-event', function($request, $response) use ($twig) {

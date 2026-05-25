@@ -6,16 +6,17 @@ declare(strict_types=1);
  *
  * Uso: php cron_tefa_scanner.php
  *
- * Ogni iterazione accoda IUR dalla cache condivisa flussi_rendicontazioni,
- * elabora tutti i PENDING con Biz Events e poi attende 15 min solo se la coda e' vuota.
+ * Ogni iterazione accoda IUR da biz_ricevute (PROCESSED, non ancora in tefa_ricevute)
+ * e li classifica come TEFA/non-TEFA. Non chiama Biz Events direttamente:
+ * i dati vengono dal demone Biz (cron_biz_scanner.php).
  * Si ferma ricevendo il segnale /tmp/cron-stop-tefa.
  */
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Config\SettingsRepository;
+use App\Database\BizRepository;
 use App\Database\Connection;
-use App\Database\FlussiRendicontazioniRepository;
 use App\Database\TefaRepository;
 use App\Services\TefaScannerService;
 use Dotenv\Dotenv;
@@ -58,7 +59,7 @@ $checkStop = static function () use ($stopFile, $log): void {
     }
 };
 
-// Wait DB before reading feature flags/settings to avoid false defaults at container boot.
+// Attendi DB prima di leggere settings per evitare false default al boot del container.
 $dbReady = false;
 for ($i = 0; $i < 60; $i++) {
     try {
@@ -85,36 +86,36 @@ if ($idDominio === '') {
     exit(1);
 }
 
-// Handle SIGTERM gracefully (sent by stop endpoint for immediate stop)
+// Handle SIGTERM gracefully
 if (function_exists('pcntl_async_signals')) {
     pcntl_async_signals(true);
-    pcntl_signal(15, static function () use ($pidFile, $log): void { // 15 = SIGTERM
+    pcntl_signal(15, static function () use ($pidFile, $log): void {
         $log('SIGTERM ricevuto. Uscita.');
         @unlink($pidFile);
         exit(0);
     });
 }
 
-$repo       = new TefaRepository();
-$flussiRepo = new FlussiRendicontazioniRepository();
-$service    = new TefaScannerService($repo, $flussiRepo);
+$repo    = new TefaRepository();
+$bizRepo = new BizRepository();
+$service = new TefaScannerService($repo, $bizRepo);
 
-$scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+$scanDa  = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
 $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
-$initialBacklog = $flussiRepo->countUnprocessedForTefa((string)$idDominio, $minDate);
-$log('Loop avviato. Fonte queue: flussi_rendicontazioni (pendenze GovPay escluse prima di Biz, data_pagamento >= ' . ($minDate ?? '-') . ', backlog iniziale non processato=' . $initialBacklog . ').');
+$initialBacklog = $bizRepo->countProcessedForTefa((string)$idDominio, $minDate);
+$log('Loop avviato. Fonte queue: biz_ricevute (PROCESSED, data_pagamento >= ' . ($minDate ?? '-') . ', backlog iniziale non classificato=' . $initialBacklog . ').');
 
 while (true) {
     $checkStop();
 
-    $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+    $scanDa  = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
     $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
 
     try {
-        $backlogBefore = $flussiRepo->countUnprocessedForTefa((string)$idDominio, $minDate);
-        $queueResult = $service->queueFromCache($idDominio);
+        $backlogBefore = $bizRepo->countProcessedForTefa((string)$idDominio, $minDate);
+        $queueResult   = $service->queueFromCache($idDominio);
         $log(sprintf(
-            'queueFromCache: source=flussi_rendicontazioni min_date=%s backlog_before=%d from_cache=%d queued=%d sample_iur=%s sample_flusso=%s',
+            'queueFromCache: source=biz_ricevute min_date=%s backlog_before=%d from_cache=%d queued=%d sample_iur=%s sample_flusso=%s',
             $queueResult['min_date'] !== '' ? $queueResult['min_date'] : '-',
             $backlogBefore,
             $queueResult['from_cache'],
@@ -128,7 +129,7 @@ while (true) {
     }
 
     $checkStop();
-    $counts = $repo->getCounts($idDominio);
+    $counts         = $repo->getCounts($idDominio);
     $pendingInScope = $repo->countPendingForProcessing((string)$idDominio, $minDate);
     $log(sprintf(
         'Coda: PENDING=%d (in-scope=%d, min_date=%s) PROCESSED=%d ERROR=%d SKIPPED=%d',
@@ -140,12 +141,12 @@ while (true) {
         $counts['SKIPPED']
     ));
 
-    // Enrich tutti i PENDING flusso per flusso
+    // Classifica tutti i PENDING flusso per flusso
     while (true) {
         $checkStop();
         $idFlusso = $repo->getNextPendingFlusso($idDominio, $minDate);
         if ($idFlusso === null) {
-            $log('Tutti i flussi in-scope elaborati.');
+            $log('Tutti i flussi in-scope classificati.');
             break;
         }
 
@@ -157,37 +158,13 @@ while (true) {
             $checkStop();
             $n   = $i + 1;
             $iur = (string)$row['iur'];
-            $log("  Pendenza {$n}/{$total} IUR={$iur}: interrogo Biz Events...");
-            if ((int)($row['is_govpay'] ?? 0) === 1 && (int)($row['is_multibeneficiario'] ?? 0) === 1) {
-                $log("  IUR={$iur}: edge-case GovPay+multibeneficiario rilevato, verifico comunque su Biz Events");
-            }
+            $log("  Pendenza {$n}/{$total} IUR={$iur}: classifico TEFA...");
 
             try {
                 $result = $service->enrichOne($row, $idDominio);
             } catch (\Throwable $e) {
                 $log("  IUR={$iur}: eccezione - " . $e->getMessage());
                 continue;
-            }
-
-            if ($result['status'] === 'RATE_LIMITED') {
-                for ($attempt = 1; $attempt < 5 && $result['status'] === 'RATE_LIMITED'; $attempt++) {
-                    $log("  IUR={$iur}: rate limit 429 (tentativo {$attempt}/5) - pausa 10s...");
-                    sleep(10);
-                    try {
-                        $result = $service->enrichOne($row, $idDominio);
-                    } catch (\Throwable $e) {
-                        $result = ['status' => 'ERROR', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $e->getMessage()];
-                        break;
-                    }
-                }
-                if ($result['status'] === 'RATE_LIMITED') {
-                    $log("  IUR={$iur}: rate limit persistente - errore");
-                    $repo->markError((int)$row['id'], 'Rate limit Biz Events (429) dopo 5 tentativi');
-                    if ($i < $total - 1) {
-                        sleep(5);
-                    }
-                    continue;
-                }
             }
 
             switch ($result['status']) {
@@ -202,15 +179,6 @@ while (true) {
                 case 'ERROR':
                     $log("  IUR={$iur}: errore - {$result['reason']}");
                     break;
-            }
-
-            $bizWasCalled = !(
-                $result['status'] === 'SKIPPED'
-                && str_contains((string)$result['reason'], 'Biz Events non interrogato')
-            );
-
-            if ($bizWasCalled && $i < $total - 1) {
-                sleep(5);
             }
         }
 
@@ -230,5 +198,5 @@ while (true) {
         continue;
     }
 
-    $log('Nuovi elementi processati. Avvio ciclo successivo immediato...');
+    $log('Nuovi elementi classificati. Avvio ciclo successivo immediato...');
 }

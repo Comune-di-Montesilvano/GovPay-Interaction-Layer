@@ -42,6 +42,10 @@ class ReportTefaController
         $totaliComune = 0.0;
         $queryMade    = array_key_exists('q', $params);
 
+        if (($params['export'] ?? '') === 'csv') {
+            return $this->exportCsv($response, $dataDa, $dataA, $idDominio);
+        }
+
         $coverage = [];
         if ($queryMade) {
             $repo->fixNullDataPagamento($idDominio);
@@ -51,10 +55,6 @@ class ReportTefaController
                 $totaliComune += (float)$r['totale_comune'];
             }
             $coverage = $repo->getCoverage($dataDa, $dataA, $idDominio);
-
-            if (($params['export'] ?? '') === 'csv') {
-                return $this->exportCsv($response, $reportRows, $dataDa, $dataA);
-            }
         }
 
         $errors = $repo->getErrors($idDominio);
@@ -74,6 +74,9 @@ class ReportTefaController
 
     private const SCANNER_PID_FILE  = '/tmp/cron-tefa-scanner.pid';
     private const SCANNER_STOP_FILE = '/tmp/cron-stop-tefa';
+
+    private const BIZ_SCANNER_PID_FILE  = '/tmp/cron-biz-scanner.pid';
+    private const BIZ_SCANNER_STOP_FILE = '/tmp/cron-stop-biz';
 
     public function scan(Request $request, Response $response): Response
     {
@@ -223,11 +226,10 @@ class ReportTefaController
         }
     }
 
-    /** @param array<int,array<string,mixed>> $rows */
-    private function exportCsv(Response $response, array $rows, string $dataDa, string $dataA): Response
+    private function exportCsv(Response $response, string $dataDa, string $dataA, string $idDominio): Response
     {
         $filename = sprintf(
-            'report-tefa-%s-%s.csv',
+            'report-tefa-pendenze-%s-%s.csv',
             preg_replace('/[^A-Za-z0-9_-]/', '_', $dataDa),
             preg_replace('/[^A-Za-z0-9_-]/', '_', $dataA)
         );
@@ -236,20 +238,53 @@ class ReportTefaController
             ->withHeader('Content-Type', 'text/csv; charset=UTF-8')
             ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"');
 
+        $repo = new TefaRepository();
+        $rows = $repo->getDetailedRows($dataDa, $dataA, $idDominio);
+
         $out = fopen('php://temp', 'r+');
         if ($out === false) {
             return $response;
         }
 
         fwrite($out, "\xEF\xBB\xBF"); // BOM UTF-8 per Excel
-        fputcsv($out, ['CF Comune', 'Denominazione Comune', 'N. Pagamenti TEFA', 'Totale TEFA (€)', 'Totale Importo Comune (€)'], ';');
+        fputcsv($out, [
+            'IUR', 'IUV', 'Anno', 'Mese', 'Data Pagamento',
+            'Stato TEFA', 'GovPay', 'Multibeneficiario',
+            'Importo TEFA (€)', 'Importo Comune (€)',
+            'CF Comune', 'Denominazione Comune', 'Sorgente', 'Errore',
+            'ID Flusso', 'Data Flusso', 'Data Regolamento', 'TRN',
+            'ID PSP', 'Ragione PSP', 'Importo Originale (€)',
+            'Esito', 'Stato Rend.', 'Cod. Entrata', 'Descrizione Entrata', 'ID Pendenza',
+        ], ';');
+
         foreach ($rows as $r) {
             fputcsv($out, [
+                $r['iur'] ?? '',
+                $r['iuv'] ?? '',
+                $r['anno'] ?? '',
+                $r['mese'] ?? '',
+                $r['data_pagamento'] ?? '',
+                $r['stato'] ?? '',
+                $r['is_govpay'] === null ? '' : ((int)$r['is_govpay'] === 1 ? 'Sì' : 'No'),
+                $r['is_multibeneficiario'] === null ? '' : ((int)$r['is_multibeneficiario'] === 1 ? 'Sì' : 'No'),
+                $r['importo_tefa'] !== null ? number_format((float)$r['importo_tefa'], 2, ',', '.') : '',
+                $r['importo_comune'] !== null ? number_format((float)$r['importo_comune'], 2, ',', '.') : '',
                 $r['cf_comune'] ?? '',
                 $r['denominazione_comune'] ?? '',
-                (int)($r['n_pagamenti'] ?? 0),
-                number_format((float)($r['totale_tefa'] ?? 0), 2, ',', '.'),
-                number_format((float)($r['totale_comune'] ?? 0), 2, ',', '.'),
+                $r['sorgente'] ?? '',
+                $r['error_msg'] ?? '',
+                $r['id_flusso'] ?? '',
+                $r['data_flusso'] ?? '',
+                $r['data_regolamento'] ?? '',
+                $r['trn'] ?? '',
+                $r['id_psp'] ?? '',
+                $r['ragione_psp'] ?? '',
+                $r['importo_originale'] !== null ? number_format((float)$r['importo_originale'], 2, ',', '.') : '',
+                $r['esito'] ?? '',
+                $r['stato_rend'] ?? '',
+                $r['cod_entrata'] ?? '',
+                $r['descrizione_entrata'] ?? '',
+                $r['id_pendenza'] ?? '',
             ], ';');
         }
 
@@ -259,6 +294,54 @@ class ReportTefaController
 
         $response->getBody()->write((string)$csv);
         return $response;
+    }
+
+    // ── Biz daemon controls ───────────────────────────────────────────────────
+
+    public function bizScan(Request $request, Response $response): Response
+    {
+        $this->requireAuth();
+
+        $script = '/var/www/html/scripts/cron_biz_scanner.php';
+        $cmd    = sprintf('php %s < /dev/null > /dev/null 2>&1 &', escapeshellarg($script));
+        exec($cmd);
+
+        return $this->jsonResponse($response, [
+            'ok'     => true,
+            'result' => ['message' => 'Demone Biz avviato.'],
+        ]);
+    }
+
+    public function bizStop(Request $request, Response $response): Response
+    {
+        $this->requireAuth();
+
+        file_put_contents(self::BIZ_SCANNER_STOP_FILE, '1');
+        return $this->jsonResponse($response, ['ok' => true]);
+    }
+
+    public function bizStatus(Request $request, Response $response): Response
+    {
+        $this->requireAuth();
+
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $repo      = new \App\Database\BizRepository();
+        $counts    = $repo->getCounts($idDominio);
+
+        return $this->jsonResponse($response, [
+            'ok'             => true,
+            'counts'         => $counts,
+            'scanner_running' => $this->isBizScannerRunning(),
+        ]);
+    }
+
+    private function isBizScannerRunning(): bool
+    {
+        if (!file_exists(self::BIZ_SCANNER_PID_FILE)) {
+            return false;
+        }
+        $pid = (int)file_get_contents(self::BIZ_SCANNER_PID_FILE);
+        return $pid > 0 && file_exists('/proc/' . $pid);
     }
 
     private function jsonResponse(Response $response, array $data, int $status = 200): Response

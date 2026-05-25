@@ -242,6 +242,74 @@ class FlussiRendicontazioniRepository
         return (int)$stmt->fetchColumn();
     }
 
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public function getUnprocessedForBiz(string $idDominio, int $limit, ?string $minDate = null): array
+    {
+        $limit = max(1, $limit);
+
+        $sql = 'SELECT
+                f.id_dominio,
+                f.anno,
+                f.mese,
+                f.id_flusso,
+                f.iur,
+                f.iuv,
+                f.data_pagamento,
+                f.importo
+            FROM flussi_rendicontazioni f
+            LEFT JOIN biz_ricevute b
+              ON b.id_dominio = f.id_dominio
+             AND b.iur = f.iur
+            WHERE f.id_dominio = :id_dominio
+              AND f.is_govpay = 0
+              AND b.id IS NULL';
+
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND f.data_pagamento >= :min_date';
+        }
+
+        $sql .= '
+            ORDER BY f.data_pagamento ASC, f.id ASC
+            LIMIT :limit';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id_dominio', $idDominio);
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $stmt->bindValue(':min_date', $minDate);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function countUnprocessedForBiz(string $idDominio, ?string $minDate = null): int
+    {
+        $sql = 'SELECT COUNT(*)
+            FROM flussi_rendicontazioni f
+            LEFT JOIN biz_ricevute b
+              ON b.id_dominio = f.id_dominio
+             AND b.iur = f.iur
+            WHERE f.id_dominio = :id_dominio
+              AND f.is_govpay = 0
+              AND b.id IS NULL';
+
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND f.data_pagamento >= :min_date';
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $params = [':id_dominio' => $idDominio];
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $params[':min_date'] = $minDate;
+        }
+        $stmt->execute($params);
+
+        return (int)$stmt->fetchColumn();
+    }
+
     public function deleteByDateRange(string $idDominio, string $dataDa, string $dataA): int
     {
         $stmt = $this->pdo->prepare(
@@ -308,6 +376,30 @@ class FlussiRendicontazioniRepository
             'is_govpay' => $isGovPayRaw === null ? ($idPendenza !== '') : ((int)$isGovPayRaw === 1),
             'is_multibeneficiario' => $isMultiRaw === null ? null : ((int)$isMultiRaw === 1),
         ];
+    }
+
+    /**
+     * Fetch rows by IUR list for a given domain. Returns map [iur => row].
+     * @param array<int,string> $iurs
+     * @return array<string,array<string,mixed>>
+     */
+    public function getByIurs(array $iurs, string $idDominio): array
+    {
+        if ($iurs === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($iurs), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM flussi_rendicontazioni
+             WHERE id_dominio = ? AND iur IN ($placeholders)
+             ORDER BY id DESC"
+        );
+        $stmt->execute([$idDominio, ...$iurs]);
+        $result = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $result[(string)$row['iur']] = $row;
+        }
+        return $result;
     }
 
     public function ensureTable(): void

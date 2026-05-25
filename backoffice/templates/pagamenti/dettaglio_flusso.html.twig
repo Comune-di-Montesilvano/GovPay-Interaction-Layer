@@ -177,8 +177,11 @@
                 {% set iuv = p.iuv|default(risc.iuv|default(p.iuvPagamento|default(p.iuvAvviso|default('')))) %}
                 {% set iur = p.iur|default(risc.iur|default('')) %}
                 {% set voceId = voce.idVocePendenza|default('') %}
-                {% set causale = p.causale|default(voce.descrizione|default(pend.causale|default(''))) %}
+                {% set causale = p.causale|default(voce.descrizione|default(pend.causale|default(p._biz.descrizione|default('')))) %}
                 {% set tipologia = p.tipologia|default(pend.tipoPendenza.descrizione|default(pend.tipoPendenza.idTipoPendenza|default(''))) %}
+                {% if p._tefa is defined and p._tefa is not null and p._tefa.stato == 'PROCESSED' %}
+                  {% set tipologia = 'TEFA' %}
+                {% endif %}
                 {% set anno = p.annoRiferimento|default(pend.annoRiferimento|default('')) %}
                 {% set importo = p.importo|default(voce.importo|default(risc.importo|default(null))) %}
                 {% set esito_code = p.stato|default(voce.stato|default(risc.stato|default(p.esito|default(p.esitoPagamento|default(''))))) %}
@@ -187,8 +190,14 @@
                 {% set collapseId = 'payRow-' ~ idx %}
                 {% set hasDetail = risc is not null %}
                 {% set isOrphan = p.is_orphan|default(false) %}
-                <tr{% if loop.index is even %} class="table-light"{% endif %}>
-                  <td class="text-center small text-muted">{{ idx }}</td>
+                {% set hasDaemonData = isOrphan and ((p._rendicontazione is defined and p._rendicontazione is not null) or (p._tefa is defined and p._tefa is not null) or (p._biz is defined and p._biz is not null)) %}
+                <tr class="{% if isOrphan %}table-secondary{% elseif loop.index is even %}table-light{% endif %}">
+                  <td class="text-center small text-muted">
+                    {{ idx }}
+                    {% if isOrphan %}
+                      <div><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size:.6rem" title="Pagamento non presente in GovPay — dati da rendicontazione">Esterna</span></div>
+                    {% endif %}
+                  </td>
                   <td class="align-middle">
                     {% set pendenzaId = voce.pendenza.idPendenza|default(voce.pendenza.id_pendenza|default('')) %}
                     {% set isIndexId = voceId and voceId matches '/^\\d{1,3}$/' %}
@@ -215,7 +224,13 @@
                     {% endif %}
                   </td>
                   <td>{{ causale ?: '—' }}</td>
-                  <td>{{ tipologia ?: '—' }}</td>
+                  <td>
+                    {% if tipologia == 'TEFA' %}
+                      <span class="badge bg-primary">TEFA</span>
+                    {% else %}
+                      {{ tipologia ?: '—' }}
+                    {% endif %}
+                  </td>
                   <td class="text-nowrap">{{ anno ?: '—' }}</td>
                   <td class="text-end text-nowrap">{% if importo is not null %}{{ importo|number_format(2, ',', '.') }} €{% else %}—{% endif %}</td>
                   <td>
@@ -232,14 +247,21 @@
                         <i class="fas fa-arrow-down"></i>
                       </button>
                     {% elseif isOrphan %}
-                      <button class="btn btn-sm btn-outline-info js-load-receipt"
-                              type="button"
-                              title="Carica ricevuta da pagoPA"
-                              data-fc="{{ p._fc|default('')|e('html_attr') }}"
-                              data-iur="{{ iur|e('html_attr') }}"
-                              data-iuv="{{ iuv|e('html_attr') }}">
-                        <i class="fas fa-search"></i>
-                      </button>
+                      <div class="d-flex gap-1 justify-content-center">
+                        {% if hasDaemonData %}
+                          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapseId }}" aria-expanded="false" aria-controls="{{ collapseId }}" title="Dati rendicontazione">
+                            <i class="fas fa-arrow-down"></i>
+                          </button>
+                        {% endif %}
+                        <button class="btn btn-sm btn-outline-info js-load-receipt"
+                                type="button"
+                                title="Carica ricevuta da pagoPA"
+                                data-fc="{{ p._fc|default('')|e('html_attr') }}"
+                                data-iur="{{ iur|e('html_attr') }}"
+                                data-iuv="{{ iuv|e('html_attr') }}">
+                          <i class="fas fa-search"></i>
+                        </button>
+                      </div>
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
@@ -294,6 +316,113 @@
 
                         </div>
                         </article>
+                      </div>
+                    </td>
+                  </tr>
+                {% endif %}
+                {% if hasDaemonData %}
+                  {% set rend = p._rendicontazione|default(null) %}
+                  {% set tefa = p._tefa|default(null) %}
+                  {% set biz  = p._biz|default(null) %}
+                  <tr class="detail-row">
+                    <td colspan="8" class="p-0 border-0">
+                      <div class="collapse" id="{{ collapseId }}">
+                        <div class="card-body small bg-light border-top">
+                          <div class="row g-3">
+                            {% if rend %}
+                            <div class="col-12 col-md-6">
+                              <h6 class="text-secondary text-uppercase mb-2">Rendicontazione</h6>
+                              <dl class="row mb-0">
+                                <dt class="col-sm-5 text-muted">Descrizione</dt>
+                                <dd class="col-sm-7">{{ rend.descrizione_entrata ?: '—' }}</dd>
+                                <dt class="col-sm-5 text-muted">Cod. entrata</dt>
+                                <dd class="col-sm-7">{{ rend.cod_entrata ?: '—' }}</dd>
+                                <dt class="col-sm-5 text-muted">Data pagamento</dt>
+                                <dd class="col-sm-7">{% if rend.data_pagamento %}{{ rend.data_pagamento|date('d/m/Y') }}{% else %}—{% endif %}</dd>
+                                <dt class="col-sm-5 text-muted">Stato rend.</dt>
+                                <dd class="col-sm-7">{{ rend.stato_rend ?: '—' }}</dd>
+                                <dt class="col-sm-5 text-muted">PSP</dt>
+                                <dd class="col-sm-7">{{ rend.ragione_psp ?: '—' }}</dd>
+                                <dt class="col-sm-5 text-muted">TRN</dt>
+                                <dd class="col-sm-7">{{ rend.trn ?: '—' }}</dd>
+                                {% if rend.id_pendenza %}
+                                  <dt class="col-sm-5 text-muted">ID Pendenza</dt>
+                                  <dd class="col-sm-7">{{ rend.id_pendenza }}</dd>
+                                {% endif %}
+                              </dl>
+                            </div>
+                            {% endif %}
+                            {% if biz %}
+                            <div class="col-12 col-md-6">
+                              <h6 class="text-secondary text-uppercase mb-2">Ricevuta Biz</h6>
+                              {% set bizStatoClass = {'PROCESSED': 'bg-success', 'PENDING': 'bg-warning text-dark', 'ERROR': 'bg-danger', 'SKIPPED': 'bg-secondary'} %}
+                              <dl class="row mb-0">
+                                <dt class="col-sm-5 text-muted">Stato</dt>
+                                <dd class="col-sm-7"><span class="badge {{ bizStatoClass[biz.stato]|default('bg-secondary') }}">{{ biz.stato }}</span></dd>
+                                {% if biz.stato == 'PROCESSED' %}
+                                  {% if biz.descrizione %}
+                                    <dt class="col-sm-5 text-muted">Descrizione</dt>
+                                    <dd class="col-sm-7">{{ biz.descrizione }}</dd>
+                                  {% endif %}
+                                  {% if biz.cf_debitore or biz.nominativo_debitore %}
+                                    <dt class="col-sm-5 text-muted">Debitore</dt>
+                                    <dd class="col-sm-7">
+                                      {% if biz.cf_debitore %}<strong>{{ biz.cf_debitore }}</strong>{% endif %}
+                                      {% if biz.nominativo_debitore %}<div class="text-muted">{{ biz.nominativo_debitore }}</div>{% endif %}
+                                    </dd>
+                                  {% endif %}
+                                  {% if biz.cf_pagante or biz.nominativo_pagante %}
+                                    <dt class="col-sm-5 text-muted">Pagante</dt>
+                                    <dd class="col-sm-7">
+                                      {% if biz.cf_pagante %}<strong>{{ biz.cf_pagante }}</strong>{% endif %}
+                                      {% if biz.nominativo_pagante %}<div class="text-muted">{{ biz.nominativo_pagante }}</div>{% endif %}
+                                    </dd>
+                                  {% endif %}
+                                  {% if biz.trasferimenti is iterable and biz.trasferimenti|length > 0 %}
+                                    <dt class="col-sm-5 text-muted">Trasferimenti</dt>
+                                    <dd class="col-sm-7">
+                                      {% for tr in biz.trasferimenti %}
+                                        <div class="text-nowrap">
+                                          <span class="text-muted">{{ tr.fiscal_code_pa }}</span>
+                                          — {{ tr.transfer_amount|number_format(2, ',', '.') }} €
+                                        </div>
+                                      {% endfor %}
+                                    </dd>
+                                  {% endif %}
+                                {% endif %}
+                                {% if biz.error_msg %}
+                                  <dt class="col-sm-5 text-muted">Motivo</dt>
+                                  <dd class="col-sm-7 text-danger">{{ biz.error_msg }}</dd>
+                                {% endif %}
+                              </dl>
+                            </div>
+                            {% endif %}
+                            {% if tefa %}
+                            <div class="col-12 col-md-6">
+                              <h6 class="text-secondary text-uppercase mb-2">TEFA</h6>
+                              {% set tefaStatoClass = {'PROCESSED': 'bg-success', 'PENDING': 'bg-warning text-dark', 'ERROR': 'bg-danger', 'SKIPPED': 'bg-secondary'} %}
+                              <dl class="row mb-0">
+                                <dt class="col-sm-5 text-muted">Stato</dt>
+                                <dd class="col-sm-7"><span class="badge {{ tefaStatoClass[tefa.stato]|default('bg-secondary') }}">{{ tefa.stato }}</span></dd>
+                                <dt class="col-sm-5 text-muted">Importo TEFA</dt>
+                                <dd class="col-sm-7">{% if tefa.importo_tefa is not null %}{{ tefa.importo_tefa|number_format(2, ',', '.') }} €{% else %}—{% endif %}</dd>
+                                <dt class="col-sm-5 text-muted">Importo comune</dt>
+                                <dd class="col-sm-7">{% if tefa.importo_comune is not null %}{{ tefa.importo_comune|number_format(2, ',', '.') }} €{% else %}—{% endif %}</dd>
+                                <dt class="col-sm-5 text-muted">Comune</dt>
+                                <dd class="col-sm-7">{{ tefa.denominazione_comune ?: '—' }}</dd>
+                                <dt class="col-sm-5 text-muted">CF Comune</dt>
+                                <dd class="col-sm-7">{{ tefa.cf_comune ?: '—' }}</dd>
+                                <dt class="col-sm-5 text-muted">Sorgente</dt>
+                                <dd class="col-sm-7">{{ tefa.sorgente ?: '—' }}</dd>
+                                {% if tefa.error_msg %}
+                                  <dt class="col-sm-5 text-muted">Motivo</dt>
+                                  <dd class="col-sm-7 text-danger">{{ tefa.error_msg }}</dd>
+                                {% endif %}
+                              </dl>
+                            </div>
+                            {% endif %}
+                          </div>
+                        </div>
                       </div>
                     </td>
                   </tr>

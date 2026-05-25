@@ -276,6 +276,59 @@ class TefaRepository
     }
 
     /**
+     * Righe dettagliate per-IUR (per export CSV), JOIN con flussi_rendicontazioni.
+     * @return array<int,array<string,mixed>>
+     */
+    public function getDetailedRows(string $dataDa, string $dataA, string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT
+               t.iur, t.iuv, t.anno, t.mese, t.data_pagamento,
+               t.stato, t.is_govpay, t.is_multibeneficiario,
+               t.importo_tefa, t.importo_comune,
+               t.cf_comune, t.denominazione_comune, t.sorgente, t.error_msg,
+               COALESCE(f.id_flusso, t.id_flusso) AS id_flusso,
+               f.data_flusso, f.data_regolamento, f.trn,
+               f.id_psp, f.ragione_psp, f.importo AS importo_originale,
+               f.esito, f.stato_rend, f.cod_entrata, f.descrizione_entrata, f.id_pendenza
+             FROM tefa_ricevute t
+             LEFT JOIN flussi_rendicontazioni f
+               ON f.iur = t.iur AND f.id_dominio = t.id_dominio
+             WHERE t.id_dominio = :id_dominio
+               AND t.stato = 'PROCESSED'
+               AND t.data_pagamento >= :da
+               AND t.data_pagamento <= :a
+             ORDER BY t.data_pagamento DESC, t.id ASC"
+        );
+        $stmt->execute([':id_dominio' => $idDominio, ':da' => $dataDa, ':a' => $dataA]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * Fetch rows by IUR list for a given domain. Returns map [iur => row].
+     * @param array<int,string> $iurs
+     * @return array<string,array<string,mixed>>
+     */
+    public function getByIurs(array $iurs, string $idDominio): array
+    {
+        if ($iurs === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($iurs), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM tefa_ricevute
+             WHERE id_dominio = ? AND iur IN ($placeholders)
+             ORDER BY id DESC"
+        );
+        $stmt->execute([$idDominio, ...$iurs]);
+        $result = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $result[(string)$row['iur']] = $row;
+        }
+        return $result;
+    }
+
+    /**
      * Copertura mensile: per ogni mese nel range restituisce n. record per stato.
      * Usato per la vista "date scansionate / mancanti".
      * @return array<int,array{anno:int,mese:int,n_total:int,n_processed:int,n_pending:int,n_error:int,n_skipped:int}>
