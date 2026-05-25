@@ -36,6 +36,73 @@
         </div>
       </div>
 
+      {# ─── Servizi in evidenza ─────────────────────────────────────────── #}
+      <hr class="my-4">
+      <h6 class="text-muted text-uppercase small fw-semibold mb-1">
+        <i class="fas fa-star me-1"></i>Servizi in evidenza (homepage)
+      </h6>
+      <p class="text-muted small mb-3">
+        Seleziona e ordina fino a <strong>8 servizi</strong> da mostrare nella sezione «Servizi più richiesti» della homepage.
+        {% if not is_superadmin %}<span class="text-warning"><i class="fas fa-lock ms-1"></i> Sola lettura</span>{% endif %}
+      </p>
+
+      {% if service_catalog is defined and service_catalog %}
+      <div class="row g-3 mb-4">
+        {# Colonna sinistra: lista ordinata dei selezionati #}
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">
+            <i class="fas fa-sort me-1 text-muted"></i>Selezionati <span class="text-muted fw-normal">(trascina o usa ↑↓ per ordinare)</span>
+          </label>
+          <div id="fo-featured-list" class="list-group" style="min-height:52px; border:1px dashed #dee2e6; border-radius:8px; padding:4px;">
+            {% for id in frontoffice_featured %}
+              {% set svc = null %}
+              {% for s in service_catalog %}{% if s.id == id %}{% set svc = s %}{% endif %}{% endfor %}
+              {% if svc %}
+                <div class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2 px-3 fo-feat-item"
+                     data-id="{{ svc.id }}" style="border-radius:6px; margin-bottom:3px; cursor:{% if is_superadmin %}grab{% else %}default{% endif %};">
+                  <input type="hidden" name="featured_services[]" value="{{ svc.id }}">
+                  {% if is_superadmin %}<span class="text-muted fo-feat-handle" title="Trascina per ordinare" style="cursor:grab;">⠿</span>{% endif %}
+                  <span class="me-auto small">{{ svc.label }}</span>
+                  {% if is_superadmin %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary fo-feat-up py-0 px-1" title="Sposta su" style="line-height:1.4;">↑</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary fo-feat-dn py-0 px-1" title="Sposta giù" style="line-height:1.4;">↓</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger fo-feat-rm py-0 px-1" title="Rimuovi" style="line-height:1.4;">×</button>
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="mt-2">
+            <small class="text-muted" id="fo-feat-counter">{{ frontoffice_featured|length }} / 8 selezionati</small>
+          </div>
+        </div>
+
+        {# Colonna destra: servizi disponibili da aggiungere #}
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">
+            <i class="fas fa-plus-circle me-1 text-muted"></i>Disponibili <span class="text-muted fw-normal">(clicca per aggiungere)</span>
+          </label>
+          <div id="fo-feat-available" style="max-height:280px; overflow-y:auto; border:1px solid #dee2e6; border-radius:8px; padding:8px;">
+            {% for svc in service_catalog %}
+              {% set is_sel = svc.id in frontoffice_featured %}
+              {% set safe_id = svc.id|replace({'/': '_', '.': '_', ' ': '_', ':': '_'}) %}
+              <div class="form-check fo-feat-avail-row py-1" data-id="{{ svc.id }}" data-label="{{ svc.label|e('html_attr') }}"{% if is_sel %} style="display:none;"{% endif %}>
+                <input class="form-check-input fo-feat-add-cb" type="checkbox" id="favail_{{ safe_id }}"{% if not is_superadmin %} disabled{% endif %}>
+                <label class="form-check-label small" for="favail_{{ safe_id }}">{{ svc.label }}</label>
+              </div>
+            {% endfor %}
+            <p class="text-muted small mb-0" id="fo-feat-all-selected" style="display:none;">Tutti i servizi sono già selezionati.</p>
+          </div>
+        </div>
+      </div>
+      {% else %}
+        <div class="alert alert-warning py-2 px-3 small mb-4">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          Nessun servizio configurato. Configura le tipologie in
+          <a href="/impostazioni?tab=tipologie">Configurazione → Tipologie</a>.
+        </div>
+      {% endif %}
+
       {% if is_superadmin %}
       <div class="d-flex justify-content-end border-top pt-3 mb-4">
         <button type="button" class="btn btn-primary" onclick="impSaveForm('form-frontoffice', '/impostazioni/frontoffice/save', this)">
@@ -47,3 +114,113 @@
 
   </div>
 </div>
+
+<script>
+(function(){
+  var MAX = 8;
+  var list = document.getElementById('fo-featured-list');
+  var counter = document.getElementById('fo-feat-counter');
+  var allSelectedMsg = document.getElementById('fo-feat-all-selected');
+  if (!list) return;
+
+  function getCount(){ return list.querySelectorAll('.fo-feat-item').length; }
+
+  function updateCounter(){
+    if (counter) counter.textContent = getCount() + ' / 8 selezionati';
+  }
+
+  function updateUpDown(){
+    var items = list.querySelectorAll('.fo-feat-item');
+    items.forEach(function(item, i){
+      var up = item.querySelector('.fo-feat-up');
+      var dn = item.querySelector('.fo-feat-dn');
+      if (up) up.disabled = (i === 0);
+      if (dn) dn.disabled = (i === items.length - 1);
+    });
+  }
+
+  function updateAvailMsg(){
+    if (!allSelectedMsg) return;
+    var visible = document.querySelectorAll('.fo-feat-avail-row:not([style*="none"])').length;
+    allSelectedMsg.style.display = visible === 0 ? '' : 'none';
+  }
+
+  function showAvailRow(id, show){
+    var row = document.querySelector('.fo-feat-avail-row[data-id="' + id.replace(/"/g, '\\"') + '"]');
+    if (row) row.style.display = show ? '' : 'none';
+    updateAvailMsg();
+  }
+
+  function makeItem(id, label){
+    var item = document.createElement('div');
+    item.className = 'list-group-item list-group-item-action d-flex align-items-center gap-2 py-2 px-3 fo-feat-item';
+    item.dataset.id = id;
+    item.style.cssText = 'border-radius:6px; margin-bottom:3px; cursor:grab;';
+    item.innerHTML =
+      '<input type="hidden" name="featured_services[]" value="' + id.replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '">' +
+      '<span class="text-muted fo-feat-handle" title="Trascina per ordinare" style="cursor:grab;">⠿</span>' +
+      '<span class="me-auto small">' + label + '</span>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary fo-feat-up py-0 px-1" title="Sposta su" style="line-height:1.4;">↑</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary fo-feat-dn py-0 px-1" title="Sposta giù" style="line-height:1.4;">↓</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger fo-feat-rm py-0 px-1" title="Rimuovi" style="line-height:1.4;">×</button>';
+    bindItem(item);
+    return item;
+  }
+
+  function bindItem(item){
+    var up = item.querySelector('.fo-feat-up');
+    var dn = item.querySelector('.fo-feat-dn');
+    var rm = item.querySelector('.fo-feat-rm');
+    if (up) up.addEventListener('click', function(){ var p = item.previousElementSibling; if (p) list.insertBefore(item, p); updateUpDown(); });
+    if (dn) dn.addEventListener('click', function(){ var n = item.nextElementSibling; if (n) list.insertBefore(n, item); updateUpDown(); });
+    if (rm) rm.addEventListener('click', function(){
+      var id = item.dataset.id;
+      list.removeChild(item);
+      showAvailRow(id, true);
+      updateCounter();
+      updateUpDown();
+    });
+  }
+
+  // Native drag-and-drop ordering
+  var dragged = null;
+  list.addEventListener('dragstart', function(e){
+    dragged = e.target.closest('.fo-feat-item');
+    if (dragged) { dragged.style.opacity = '0.5'; e.dataTransfer.effectAllowed = 'move'; }
+  });
+  list.addEventListener('dragend', function(){ if (dragged) { dragged.style.opacity = ''; dragged = null; } updateUpDown(); });
+  list.addEventListener('dragover', function(e){
+    e.preventDefault();
+    var target = e.target.closest('.fo-feat-item');
+    if (target && dragged && target !== dragged) {
+      var rect = target.getBoundingClientRect();
+      var mid  = rect.top + rect.height / 2;
+      list.insertBefore(dragged, e.clientY < mid ? target : (target.nextElementSibling || null));
+    }
+  });
+  list.querySelectorAll('.fo-feat-item').forEach(function(item){
+    item.setAttribute('draggable', 'true');
+    bindItem(item);
+  });
+
+  // Add from available list
+  document.querySelectorAll('.fo-feat-add-cb').forEach(function(cb){
+    cb.addEventListener('change', function(){
+      cb.checked = false;
+      if (getCount() >= MAX) return;
+      var row = cb.closest('.fo-feat-avail-row');
+      if (!row) return;
+      var newItem = makeItem(row.dataset.id, row.dataset.label);
+      newItem.setAttribute('draggable', 'true');
+      list.appendChild(newItem);
+      showAvailRow(row.dataset.id, false);
+      updateCounter();
+      updateUpDown();
+    });
+  });
+
+  updateUpDown();
+  updateCounter();
+  updateAvailMsg();
+})();
+</script>

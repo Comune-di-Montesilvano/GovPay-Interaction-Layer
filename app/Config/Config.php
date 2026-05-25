@@ -283,6 +283,11 @@ class Config
         return $version;
     }
 
+    public static function getRepositoryUrl(): string
+    {
+        return self::REPOSITORY_URL;
+    }
+
     private static function buildRefUrl(string $versionType, string $version, string $commit): string
     {
         if ($versionType === 'development') {

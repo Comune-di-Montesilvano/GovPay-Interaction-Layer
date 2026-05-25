@@ -2,115 +2,46 @@
 
 {% block title %}{{ 'Le mie pendenze'|trans }} - {{ app_entity.name }}{% endblock %}
 
-{% block head %}
-  <style>
-    body { background: #f4f6fb; }
-    .pendenze-hero {
-      background: linear-gradient(135deg, #05193d 0%, #003a6d 50%, #0062b8 100%);
-      color: #fff;
-      border-radius: 24px;
-      box-shadow: 0 25px 60px rgba(9, 26, 62, 0.12);
-    }
-    .pendenze-hero .btn { border-radius: 999px; font-weight: 600; }
-    .metric-card {
-      border-radius: 20px;
-      border: none;
-      box-shadow: 0 20px 50px rgba(9, 26, 62, 0.08);
-    }
-    .filters-surface {
-      border-radius: 20px;
-      border: 1px solid rgba(9, 26, 62, 0.10);
-      background: rgba(255, 255, 255, 0.85);
-      box-shadow: none;
-      backdrop-filter: blur(6px);
-    }
-    .filters-surface .form-select {
-      background-color: #fff;
-    }
-    /* Compat: Bootstrap 5 usa .visually-hidden; qui aggiungiamo anche .sr-only per richiesta UI */
-    .sr-only {
-      position: absolute !important;
-      width: 1px !important;
-      height: 1px !important;
-      padding: 0 !important;
-      margin: -1px !important;
-      overflow: hidden !important;
-      clip: rect(0, 0, 0, 0) !important;
-      white-space: nowrap !important;
-      border: 0 !important;
-    }
-    /* Cart sticky bar */
-    #carrello-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 1050;
-      background: #05193d;
-      color: #fff;
-      padding: 14px 24px;
-      display: none;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-      box-shadow: 0 -4px 24px rgba(0,0,0,.25);
-    }
-    #carrello-bar.visible { display: flex; }
-    #carrello-bar .bar-info { font-size: .95rem; }
-    #carrello-bar .bar-info strong { font-size: 1.1rem; }
-    #carrello-bar .btn-aggiungi {
-      background: #f5a623;
-      color: #05193d;
-      font-weight: 700;
-      border: none;
-      border-radius: 999px;
-      padding: 10px 28px;
-      font-size: 1rem;
-    }
-    #carrello-bar .btn-aggiungi:disabled { opacity: .5; cursor: not-allowed; }
-    /* Checkbox column */
-    .col-sel { width: 44px; }
-    .row-payable:hover { background: rgba(9, 26, 62, 0.03); }
-    .pendenza-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #0062b8; }
-    .pendenza-checkbox:disabled { opacity: .4; cursor: not-allowed; }
-  </style>
-{% endblock %}
-
 {% set items = pendenze|default([]) %}
 {% set stato = filters.stato|default('') %}
 {% set pagina = pagination.pagina|default(1) %}
 {% set per_pagina = pagination.risultati_per_pagina|default(25) %}
-{% set num_risultati = pagination.num_risultati|default(0) %}
 
 {% block content %}
-  <div class="container-xxl py-4">
-    <nav aria-label="Percorso" class="mb-3">
-      <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
-        <li class="breadcrumb-item active" aria-current="page">{{ 'Le mie pendenze'|trans }}</li>
-      </ol>
-    </nav>
 
-    <div class="pendenze-hero p-4 p-lg-5 mb-4">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-        <div>
-          <p class="text-uppercase small mb-2 text-white-50">{{ 'Area personale'|trans }}</p>
-          <h1 class="h3 mb-1">{{ 'Le mie pendenze'|trans }}</h1>
-          <div class="text-white-50">{{ 'Codice fiscale'|trans }}: <strong class="text-white">{{ codice_fiscale|default('') }}</strong></div>
-          <div class="text-white-50 small mt-2">{{ 'Da qui puoi consultare lo stato, scaricare l\'avviso e (quando disponibile) la ricevuta di pagamento.'|trans }}</div>
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-          <a class="btn btn-warning text-dark" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
-          <a class="btn btn-outline-light" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
-          <a class="btn btn-outline-light" href="/profile">{{ 'Profilo'|trans }}</a>
-          <a class="btn btn-outline-light" href="/logout">{{ 'Logout'|trans }}</a>
-        </div>
+{# ── Page Header ── #}
+<section class="fo-page-header">
+  <div class="fo-page-header-inner">
+    <nav class="fo-breadcrumb" aria-label="{{ 'Percorso'|trans }}">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="fo-breadcrumb-sep" aria-hidden="true">›</span>
+      <span aria-current="page">{{ 'Le mie pendenze'|trans }}</span>
+    </nav>
+    <div class="fo-ph-badge">{{ 'Area personale'|trans }}</div>
+    <div class="fo-ph-head">
+      <div>
+        <h1>{{ 'Le mie pendenze'|trans }}</h1>
+        <p>{{ 'Codice fiscale'|trans }}: <strong style="color:#fff;">{{ codice_fiscale|default('') }}</strong></p>
+      </div>
+      <div class="fo-ph-actions">
+        <a class="fo-ph-btn primary" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
+        <a class="fo-ph-btn" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+        <a class="fo-ph-btn" href="/profile">{{ 'Profilo'|trans }}</a>
+        <a class="fo-ph-btn" href="/logout">{{ 'Logout'|trans }}</a>
       </div>
     </div>
+    <p style="font-size:13px; color:rgba(255,255,255,.7); margin-top:var(--fo-sp-2); margin-bottom:0;">{{ 'Da qui puoi consultare lo stato, scaricare l\'avviso e (quando disponibile) la ricevuta di pagamento.'|trans }}</p>
+  </div>
+</section>
 
-    <div class="filters-surface p-3 p-lg-4 mb-4">
-      <form class="row gy-2 gx-3 align-items-end" method="get" action="/pendenze">
+{# ── Content ── #}
+<section class="fo-form-section">
+  <div class="container-xxl">
+
+    {# ── Filters ── #}
+    <div class="fo-form-card mb-4">
+      <div class="fo-form-card-body">
+        <form class="row gy-2 gx-3 align-items-end" method="get" action="/pendenze">
           <div class="col-12 col-md-4">
             <label class="form-label" for="stato">{{ 'Stato'|trans }}</label>
             <select class="form-select" id="stato" name="stato">
@@ -123,7 +54,6 @@
               <option value="ANOMALA" {{ stato == 'ANOMALA' ? 'selected' : '' }}>{{ 'In verifica'|trans }}</option>
             </select>
           </div>
-
           <div class="col-12 col-md-3">
             <label class="form-label" for="per_page">{{ 'Risultati per pagina'|trans }}</label>
             <select class="form-select" id="per_page" name="per_page">
@@ -132,253 +62,257 @@
               {% endfor %}
             </select>
           </div>
-
           <div class="col-12 col-md-auto ms-md-auto d-flex gap-2">
             <button class="btn btn-primary" type="submit">{{ 'Aggiorna'|trans }}</button>
             <a class="btn btn-outline-secondary" href="/pendenze">{{ 'Reset'|trans }}</a>
           </div>
-      </form>
+        </form>
+      </div>
     </div>
 
-    <div class="card shadow-sm">
-      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <span class="fw-semibold">{{ 'Elenco'|trans }}</span>
-        <span class="text-muted small" id="carrello-hint" style="display:none">
-          <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Seleziona fino a 5 pendenze pagabili e aggiungile al carrello'|trans }}
-        </span>
-      </div>
-      <div class="card-body p-0">
-        {% if items is empty %}
-          <div class="p-4">
-            <div class="alert alert-info mb-0" role="status">{{ 'Nessuna pendenza trovata.'|trans }}</div>
-          </div>
-        {% else %}
-          {# Hidden form for cart POST #}
-          <form id="carrello-form" method="post" action="/carrello/checkout" style="display:none">
-            <input type="hidden" name="csrf_token" id="csrf_token_field" value="">
-          </form>
-
-          <div class="table-responsive">
-            <table class="table table-striped mb-0 align-middle">
-              <thead>
-                <tr>
-                  <th class="col-sel">
-                    <span class="sr-only">{{ 'Seleziona'|trans }}</span>
-                  </th>
-                  <th>{{ 'Causale'|trans }}</th>
-                  <th class="text-end">{{ 'Importo'|trans }}</th>
-                  <th class="d-none d-md-table-cell">{{ 'Scadenza'|trans }}</th>
-                  <th>{{ 'Stato'|trans }}</th>
-                  <th class="text-end">{{ 'Azioni'|trans }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for p in items %}
-                  {% set is_payable = p.stato.code in ['NON_ESEGUITA', 'ESEGUITA_PARZIALE'] %}
-                  <tr class="{{ is_payable ? 'row-payable' : '' }}">
-                    <td class="col-sel text-center">
-                      {% if is_payable and p.id_pendenza %}
-                        <input
-                          class="pendenza-checkbox"
-                          type="checkbox"
-                          name="pendenze[]"
-                          value="{{ p.id_pendenza }}"
-                          data-importo="{{ p.importo is not null ? (p.importo * 100)|round(0, 'floor') : 0 }}"
-                          aria-label="{{ 'Seleziona pendenza'|trans }} {{ p.numero_avviso|default(p.id_pendenza) }}"
-                          form="carrello-form"
-                        >
-                      {% endif %}
-                    </td>
-                    <td>
-                      <div class="fw-semibold">{{ p.causale|default('—') }}</div>
-                      {% if p.numero_avviso %}
-                        <small class="text-muted font-monospace">{{ p.numero_avviso }}</small>
-                      {% endif %}
-                    </td>
-                    <td class="text-end text-nowrap">
-                      {% if p.importo is not null %}
-                        € {{ p.importo|number_format(2, ',', '.') }}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
-                    <td class="d-none d-md-table-cell">
-                      {% if p.data_scadenza %}
-                        {{ p.data_scadenza|date('d/m/Y') }}
-                      {% else %}
-                        <span class="text-muted">—</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% set badge = p.stato.code in ['NON_ESEGUITA','ESEGUITA_PARZIALE'] ? 'bg-success' : (p.stato.code in ['SCADUTA','ANOMALA'] ? 'bg-warning text-dark' : 'bg-secondary') %}
-                      <span class="badge {{ badge }}">{{ p.stato.label|default('—') }}</span>
-                    </td>
-                    <td class="text-end">
-                      <div class="btn-group" role="group" aria-label="{{ 'Azioni pendenza'|trans|escape('html_attr') }}">
-                        {% if is_payable and p.id_pendenza %}
-                          <button
-                            type="button"
-                            class="btn btn-sm btn-primary btn-cart-row"
-                            data-id="{{ p.id_pendenza }}"
-                            title="{{ 'Aggiungi al carrello'|trans }}"
-                            aria-label="{{ 'Aggiungi al carrello'|trans }}"
-                            {{ p.id_pendenza in cart_items_ids|default([]) ? 'disabled' : '' }}
-                          >
-                            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
-                            <span class="sr-only">{{ 'Aggiungi al carrello'|trans }}</span>
-                          </button>
-                        {% endif %}
-                        {% if p.detail_url %}
-                          <a class="btn btn-sm btn-outline-primary" href="{{ p.detail_url }}">
-                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                            <span class="sr-only">{{ 'Dettaglio'|trans }}</span>
-                          </a>
-                        {% endif %}
-                        {% if p.download_url %}
-                          <a class="btn btn-sm btn-outline-secondary" href="{{ p.download_url }}" target="_blank" rel="noopener">
-                            <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
-                            <span class="sr-only">{{ 'Scarica PDF avviso'|trans }}</span>
-                          </a>
-                        {% endif %}
-                        {% if p.receipt_url %}
-                          <a class="btn btn-sm btn-outline-success" href="{{ p.receipt_url }}">
-                            <i class="fa-solid fa-receipt" aria-hidden="true"></i>
-                            <span class="sr-only">{{ 'Scarica ricevuta'|trans }}</span>
-                          </a>
-                        {% endif %}
-                      </div>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
-      </div>
-      <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div class="text-muted small">{{ 'Pagina'|trans }} {{ pagination.pagina }} {{ 'di'|trans }} {{ pagination.total_pages|default(1) }}</div>
-        <div class="d-flex gap-2">
-          <a class="btn btn-sm btn-outline-secondary {{ pagination.pagina <= 1 ? 'disabled' : '' }}" href="?page={{ pagination.pagina - 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}" {% if pagination.pagina <= 1 %}aria-disabled="true" tabindex="-1"{% endif %}>{{ 'Precedente'|trans }}</a>
-          <a class="btn btn-sm btn-outline-secondary {{ pagination.pagina >= (pagination.total_pages|default(1)) ? 'disabled' : '' }}" href="?page={{ pagination.pagina + 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}" {% if pagination.pagina >= (pagination.total_pages|default(1)) %}aria-disabled="true" tabindex="-1"{% endif %}>{{ 'Successiva'|trans }}</a>
+    {# ── Table ── #}
+    <div class="fo-form-card">
+      <div class="fo-form-card-body" style="padding-bottom: var(--fo-sp-3);">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span class="fo-field-section mb-0">{{ 'Elenco'|trans }}</span>
+          <span class="text-muted small" id="carrello-hint" style="display:none;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle; margin-right:3px;"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+            {{ 'Seleziona fino a 5 pendenze pagabili e aggiungile al carrello'|trans }}
+          </span>
         </div>
       </div>
+
+      {% if items is empty %}
+        <div class="fo-form-card-body" style="padding-top:0;">
+          <div class="alert alert-info mb-0" role="status">{{ 'Nessuna pendenza trovata.'|trans }}</div>
+        </div>
+      {% else %}
+
+        {# Hidden form for cart POST #}
+        <form id="carrello-form" method="post" action="/carrello/checkout" style="display:none">
+          <input type="hidden" name="csrf_token" id="csrf_token_field" value="">
+        </form>
+
+        <div class="table-responsive">
+          <table class="table table-striped mb-0 align-middle">
+            <thead>
+              <tr>
+                <th class="col-sel">
+                  <span class="visually-hidden">{{ 'Seleziona'|trans }}</span>
+                </th>
+                <th>{{ 'Causale'|trans }}</th>
+                <th class="text-end">{{ 'Importo'|trans }}</th>
+                <th class="d-none d-md-table-cell">{{ 'Scadenza'|trans }}</th>
+                <th>{{ 'Stato'|trans }}</th>
+                <th class="text-end">{{ 'Azioni'|trans }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in items %}
+                {% set is_payable = p.stato.code in ['NON_ESEGUITA', 'ESEGUITA_PARZIALE'] %}
+                {% set badge_cls = is_payable ? 'fo-status-open' : (p.stato.code in ['SCADUTA','ANOMALA'] ? 'fo-status-warn' : (p.stato.code == 'ESEGUITA' ? 'fo-status-done' : 'fo-status-neutral')) %}
+                <tr class="{{ is_payable ? 'fo-row-payable' : '' }}">
+                  <td class="col-sel text-center">
+                    {% if is_payable and p.id_pendenza %}
+                      <input
+                        class="pendenza-checkbox"
+                        type="checkbox"
+                        name="pendenze[]"
+                        value="{{ p.id_pendenza }}"
+                        data-importo="{{ p.importo is not null ? (p.importo * 100)|round(0, 'floor') : 0 }}"
+                        aria-label="{{ 'Seleziona pendenza'|trans }} {{ p.numero_avviso|default(p.id_pendenza) }}"
+                        form="carrello-form"
+                      >
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="fw-semibold">{{ p.causale|default('—') }}</div>
+                    {% if p.numero_avviso %}
+                      <small class="text-muted font-monospace">{{ p.numero_avviso }}</small>
+                    {% endif %}
+                  </td>
+                  <td class="text-end text-nowrap">
+                    {% if p.importo is not null %}
+                      € {{ p.importo|number_format(2, ',', '.') }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td class="d-none d-md-table-cell">
+                    {% if p.data_scadenza %}
+                      {{ p.data_scadenza|date('d/m/Y') }}
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="fo-status-badge {{ badge_cls }}">{{ p.stato.label|default('—') }}</span>
+                  </td>
+                  <td class="text-end">
+                    <div class="d-flex gap-1 justify-content-end">
+                      {% if is_payable and p.id_pendenza %}
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-primary btn-cart-row"
+                          data-id="{{ p.id_pendenza }}"
+                          title="{{ 'Aggiungi al carrello'|trans }}"
+                          aria-label="{{ 'Aggiungi al carrello'|trans }}"
+                          {{ p.id_pendenza in cart_items_ids|default([]) ? 'disabled' : '' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/><path d="m17 9 2-5"/></svg>
+                          <span class="visually-hidden">{{ 'Aggiungi al carrello'|trans }}</span>
+                        </button>
+                      {% endif %}
+                      {% if p.detail_url %}
+                        <a class="btn btn-sm btn-outline-primary" href="{{ p.detail_url }}" title="{{ 'Dettaglio'|trans }}">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                          <span class="visually-hidden">{{ 'Dettaglio'|trans }}</span>
+                        </a>
+                      {% endif %}
+                      {% if p.download_url %}
+                        <a class="btn btn-sm btn-outline-secondary" href="{{ p.download_url }}" target="_blank" rel="noopener" title="{{ 'Scarica PDF avviso'|trans }}">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
+                          <span class="visually-hidden">{{ 'Scarica PDF avviso'|trans }}</span>
+                        </a>
+                      {% endif %}
+                      {% if p.receipt_url %}
+                        <a class="btn btn-sm btn-outline-success" href="{{ p.receipt_url }}" title="{{ 'Scarica ricevuta'|trans }}">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                          <span class="visually-hidden">{{ 'Scarica ricevuta'|trans }}</span>
+                        </a>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="fo-form-card-body d-flex flex-wrap justify-content-between align-items-center gap-2" style="border-top:1px solid var(--fo-border-1); padding-top:var(--fo-sp-4); padding-bottom:var(--fo-sp-4);">
+          <div class="text-muted small">{{ 'Pagina'|trans }} {{ pagination.pagina }} {{ 'di'|trans }} {{ pagination.total_pages|default(1) }}</div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary {{ pagination.pagina <= 1 ? 'disabled' : '' }}" href="?page={{ pagination.pagina - 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}" {% if pagination.pagina <= 1 %}aria-disabled="true" tabindex="-1"{% endif %}>{{ 'Precedente'|trans }}</a>
+            <a class="btn btn-sm btn-outline-secondary {{ pagination.pagina >= (pagination.total_pages|default(1)) ? 'disabled' : '' }}" href="?page={{ pagination.pagina + 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}" {% if pagination.pagina >= (pagination.total_pages|default(1)) %}aria-disabled="true" tabindex="-1"{% endif %}>{{ 'Successiva'|trans }}</a>
+          </div>
+        </div>
+
+      {% endif %}
     </div>
+
   </div>
+</section>
 
-  {# ── Sticky Cart Bar ── #}
-  <div id="carrello-bar" role="status" aria-live="polite">
-    <div class="bar-info">
-      <i class="fa-solid fa-cart-shopping me-2"></i>
-      <strong id="bar-count">0</strong> 
-      <span id="bar-text-singular" style="display:none;">{{ 'pendenza selezionata'|trans }}</span>
-      <span id="bar-text-plural" style="display:none;">{{ 'pendenze selezionate'|trans }}</span>
-      <span id="bar-text-display"></span>
-      &nbsp;·&nbsp;
-      {{ 'Totale'|trans }}: <strong id="bar-total">€ 0,00</strong>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <button type="button" class="btn btn-outline-light btn-sm" id="deseleziona-btn">{{ 'Deseleziona tutto'|trans }}</button>
-      <button type="submit" form="carrello-form" formaction="/carrello/aggiungi-multiplo" class="btn-aggiungi" id="aggiungi-btn">
-        <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Aggiungi al carrello'|trans }}
-      </button>
-      <button type="submit" form="carrello-form" formaction="/carrello/checkout" class="btn btn-outline-light btn-sm">
-        <i class="fa-solid fa-bolt me-1"></i>{{ 'Paga selezionate'|trans }}
-      </button>
-    </div>
+{# ── Sticky Cart Bar ── #}
+<div id="carrello-bar" role="status" aria-live="polite">
+  <div class="fo-bar-info">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+    <strong id="bar-count">0</strong>
+    <span id="bar-text-singular" style="display:none;">{{ 'pendenza selezionata'|trans }}</span>
+    <span id="bar-text-plural" style="display:none;">{{ 'pendenze selezionate'|trans }}</span>
+    <span id="bar-text-display"></span>
+    &nbsp;·&nbsp;
+    {{ 'Totale'|trans }}: <strong id="bar-total">€ 0,00</strong>
   </div>
+  <div class="fo-bar-actions">
+    <button type="button" class="fo-bar-btn" id="deseleziona-btn">{{ 'Deseleziona tutto'|trans }}</button>
+    <button type="submit" form="carrello-form" formaction="/carrello/aggiungi-multiplo" class="fo-bar-btn primary" id="aggiungi-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+      {{ 'Aggiungi al carrello'|trans }}
+    </button>
+    <button type="submit" form="carrello-form" formaction="/carrello/checkout" class="fo-bar-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+      {{ 'Paga selezionate'|trans }}
+    </button>
+  </div>
+</div>
 
-  <script>
-  (function () {
-    const MAX_SEL = 5;
-    const bar = document.getElementById('carrello-bar');
-    const hint = document.getElementById('carrello-hint');
-    const countEl = document.getElementById('bar-count');
-    const totalEl = document.getElementById('bar-total');
-    const pluralEl = document.getElementById('bar-plural');
-    const pluralEEl = document.getElementById('bar-plural-e');
-    const deselBtn = document.getElementById('deseleziona-btn');
-    const checkboxes = Array.from(document.querySelectorAll('.pendenza-checkbox'));
+<script>
+(function () {
+  const MAX_SEL = 5;
+  const bar = document.getElementById('carrello-bar');
+  const hint = document.getElementById('carrello-hint');
+  const countEl = document.getElementById('bar-count');
+  const totalEl = document.getElementById('bar-total');
+  const deselBtn = document.getElementById('deseleziona-btn');
+  const checkboxes = Array.from(document.querySelectorAll('.pendenza-checkbox'));
 
-    function formatEuro(cents) {
-      const euros = cents / 100;
-      return '€\u00a0' + euros.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  function formatEuro(cents) {
+    const euros = cents / 100;
+    return '€ ' + euros.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function update() {
+    const selected = checkboxes.filter(cb => cb.checked);
+    const count = selected.length;
+    const totalCents = selected.reduce((s, cb) => s + parseInt(cb.dataset.importo || '0', 10), 0);
+
+    countEl.textContent = count;
+    totalEl.textContent = formatEuro(totalCents);
+
+    const displayEl = document.getElementById('bar-text-display');
+    if (displayEl) {
+      displayEl.textContent = count === 1
+        ? document.getElementById('bar-text-singular').textContent
+        : document.getElementById('bar-text-plural').textContent;
     }
 
-    function update() {
-      const selected = checkboxes.filter(cb => cb.checked);
-      const count = selected.length;
-      const totalCents = selected.reduce((s, cb) => s + parseInt(cb.dataset.importo || '0', 10), 0);
-
-      countEl.textContent = count;
-      totalEl.textContent = formatEuro(totalCents);
-      
-      const displayEl = document.getElementById('bar-text-display');
-      if (displayEl) {
-        displayEl.textContent = count === 1 ? 
-          document.getElementById('bar-text-singular').textContent : 
-          document.getElementById('bar-text-plural').textContent;
-      }
-
-      if (count > 0) {
-        bar.classList.add('visible');
-        if (hint) hint.style.display = '';
-        document.body.style.paddingBottom = '80px';
-      } else {
-        bar.classList.remove('visible');
-        document.body.style.paddingBottom = '';
-      }
-
-      // Disable unchecked boxes if limit reached
-      checkboxes.forEach(cb => {
-        if (!cb.checked) {
-          cb.disabled = count >= MAX_SEL;
-        }
-      });
+    if (count > 0) {
+      bar.classList.add('visible');
+      if (hint) hint.style.display = '';
+      document.body.style.paddingBottom = '80px';
+    } else {
+      bar.classList.remove('visible');
+      document.body.style.paddingBottom = '';
     }
 
-    checkboxes.forEach(cb => cb.addEventListener('change', update));
-
-    deselBtn?.addEventListener('click', () => {
-      checkboxes.forEach(cb => { cb.checked = false; cb.disabled = false; });
-      update();
+    checkboxes.forEach(cb => {
+      if (!cb.checked) cb.disabled = count >= MAX_SEL;
     });
+  }
 
-    // Show hint if any payable pendenze exist
-    if (checkboxes.length > 0 && hint) hint.style.display = '';
+  checkboxes.forEach(cb => cb.addEventListener('change', update));
 
+  deselBtn?.addEventListener('click', () => {
+    checkboxes.forEach(cb => { cb.checked = false; cb.disabled = false; });
     update();
-  })();
+  });
 
-  // ── Per-row cart AJAX buttons ──
-  (function () {
-    document.querySelectorAll('.btn-cart-row').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var id = btn.dataset.id;
-        if (!id || btn.disabled) return;
-        btn.disabled = true;
-        var body = new URLSearchParams({ idPendenza: id });
-        fetch('/carrello/aggiungi', {
-          method: 'POST',
-          body: body,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
-        .then(function (data) {
-          if (data.error) { btn.disabled = false; alert(data.error); return; }
-          btn.classList.remove('btn-primary');
-          btn.classList.add('btn-success');
-          btn.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i><span class="sr-only">{{ "Nel carrello ✓"|trans }}</span>';
-          document.querySelectorAll('.cart-badge').forEach(function (el) {
-            el.textContent = data.count || 0;
-            el.style.display = (data.count || 0) > 0 ? '' : 'none';
-          });
-        })
-        .catch(function (err) {
-          btn.disabled = false;
-          alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+  if (checkboxes.length > 0 && hint) hint.style.display = '';
+
+  update();
+})();
+
+(function () {
+  document.querySelectorAll('.btn-cart-row').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.dataset.id;
+      if (!id || btn.disabled) return;
+      btn.disabled = true;
+      var body = new URLSearchParams({ idPendenza: id });
+      fetch('/carrello/aggiungi', {
+        method: 'POST',
+        body: body,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
+      .then(function (data) {
+        if (data.error) { btn.disabled = false; alert(data.error); return; }
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg><span class="visually-hidden">{{ "Nel carrello ✓"|trans }}</span>';
+        document.querySelectorAll('.cart-badge').forEach(function (el) {
+          el.textContent = data.count || 0;
+          el.style.display = (data.count || 0) > 0 ? '' : 'none';
         });
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
       });
     });
-  })();
-  </script>
+  });
+})();
+</script>
+
 {% endblock %}

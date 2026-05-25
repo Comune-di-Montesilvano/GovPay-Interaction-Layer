@@ -9,93 +9,99 @@
 {% set iuv_display = p.iuv|default(raw.iuv|default(raw.iuvAvviso|default(raw.iuv_avviso|default(raw.iuvPagamento|default(''))))) %}
 
 {% block content %}
-  <div class="container-xxl py-4">
-    <nav aria-label="Percorso" class="mb-3">
-      <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
-        <li class="breadcrumb-item"><a href="/pendenze">{{ 'Le mie pendenze'|trans }}</a></li>
-        <li class="breadcrumb-item active" aria-current="page">{{ 'Dettaglio'|trans }}</li>
-      </ol>
+
+{# ── Page Header ── #}
+<section class="fo-page-header">
+  <div class="fo-page-header-inner">
+    <nav class="fo-breadcrumb" aria-label="{{ 'Percorso'|trans }}">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="fo-breadcrumb-sep" aria-hidden="true">›</span>
+      <a href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+      <span class="fo-breadcrumb-sep" aria-hidden="true">›</span>
+      <span aria-current="page">{{ 'Dettaglio'|trans }}</span>
     </nav>
+    <div class="fo-ph-badge">{{ 'Area personale'|trans }}</div>
+    <h1>{{ 'Dettaglio pendenza'|trans }}</h1>
+  </div>
+</section>
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-      <div>
-        <h1 class="h3 mb-1">{{ 'Dettaglio pendenza'|trans }}</h1>
-      </div>
-      <div class="d-flex gap-2">
-        {% if back_url|default('') %}
-          <a class="btn btn-outline-secondary" href="{{ back_url }}">{{ 'Torna all\'elenco'|trans }}</a>
-        {% endif %}
-      </div>
-    </div>
-
+{# ── Content ── #}
+<section class="fo-form-section">
+  <div class="container-xxl">
     <div class="row g-4">
+
+      {# ── Main ── #}
       <div class="col-12 col-lg-8">
-        <div class="card shadow-sm mb-4">
-          <div class="card-body">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-              {% set badge = p.stato.code in ['NON_ESEGUITA','ESEGUITA_PARZIALE'] ? 'bg-success' : (p.stato.code in ['SCADUTA','ANOMALA'] ? 'bg-warning text-dark' : 'bg-secondary') %}
-              <span class="badge {{ badge }}">{{ p.stato.label|default('—') }}</span>
+
+        <div class="fo-form-card mb-4">
+          <div class="fo-form-card-body">
+            <p class="fo-field-section">{{ 'Dati pendenza'|trans }}</p>
+
+            {% set badge_cls = p.stato.code in ['NON_ESEGUITA','ESEGUITA_PARZIALE'] ? 'fo-status-open' : (p.stato.code in ['SCADUTA','ANOMALA'] ? 'fo-status-warn' : (p.stato.code == 'ESEGUITA' ? 'fo-status-done' : 'fo-status-neutral')) %}
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-4">
+              <span class="fo-status-badge {{ badge_cls }}">{{ p.stato.label|default('—') }}</span>
               {% if p.numero_avviso %}
-                <span class="text-muted">{{ 'Numero avviso'|trans }}:</span>
-                <span class="font-monospace">{{ p.numero_avviso }}</span>
+                <span class="text-muted small">{{ 'N. avviso'|trans }}: <span class="font-monospace">{{ p.numero_avviso }}</span></span>
               {% endif %}
               {% if iuv_display %}
-                <span class="text-muted">{{ 'IUV'|trans }}:</span>
-                <span class="font-monospace">{{ iuv_display }}</span>
+                <span class="text-muted small">IUV: <span class="font-monospace">{{ iuv_display }}</span></span>
               {% endif %}
             </div>
 
-            <dl class="row mb-0">
-              <dt class="col-sm-4">{{ 'Causale'|trans }}</dt>
-              <dd class="col-sm-8">{{ p.causale|default('—') }}</dd>
-
+            <dl class="fo-dl">
+              <div class="fo-dl-row">
+                <dt>{{ 'Causale'|trans }}</dt>
+                <dd>{{ p.causale|default('—') }}</dd>
+              </div>
               {% if p.numero_avviso %}
-                <dt class="col-sm-4">{{ 'Numero avviso'|trans }}</dt>
-                <dd class="col-sm-8"><span class="font-monospace">{{ p.numero_avviso }}</span></dd>
+                <div class="fo-dl-row">
+                  <dt>{{ 'Numero avviso'|trans }}</dt>
+                  <dd><span class="font-monospace">{{ p.numero_avviso }}</span></dd>
+                </div>
               {% endif %}
-
               {% if iuv_display %}
-                <dt class="col-sm-4">{{ 'IUV'|trans }}</dt>
-                <dd class="col-sm-8"><span class="font-monospace">{{ iuv_display }}</span></dd>
+                <div class="fo-dl-row">
+                  <dt>{{ 'IUV'|trans }}</dt>
+                  <dd><span class="font-monospace">{{ iuv_display }}</span></dd>
+                </div>
               {% endif %}
-
-              <dt class="col-sm-4">{{ 'Importo'|trans }}</dt>
-              <dd class="col-sm-8">
-                {% if p.importo is not null %}
-                  € {{ p.importo|number_format(2, ',', '.') }}
-                {% else %}
-                  —
-                {% endif %}
-              </dd>
-
-              <dt class="col-sm-4">{{ 'Data scadenza'|trans }}</dt>
-              <dd class="col-sm-8">
-                {% if p.data_scadenza %}
-                  {{ p.data_scadenza|date('d/m/Y') }}
-                {% else %}
-                  —
-                {% endif %}
-              </dd>
-
-              <dt class="col-sm-4">{{ 'Pagatore'|trans }}</dt>
-              <dd class="col-sm-8">
-                <strong>{{ pagatore.anagrafica|default('—') }}</strong><br>
-                <span class="text-muted">{{ pagatore.identificativo|default('') }}</span>
-              </dd>
+              <div class="fo-dl-row">
+                <dt>{{ 'Importo'|trans }}</dt>
+                <dd>
+                  {% if p.importo is not null %}
+                    <strong>€ {{ p.importo|number_format(2, ',', '.') }}</strong>
+                  {% else %}
+                    —
+                  {% endif %}
+                </dd>
+              </div>
+              <div class="fo-dl-row">
+                <dt>{{ 'Data scadenza'|trans }}</dt>
+                <dd>{{ p.data_scadenza ? p.data_scadenza|date('d/m/Y') : '—' }}</dd>
+              </div>
+              <div class="fo-dl-row">
+                <dt>{{ 'Pagatore'|trans }}</dt>
+                <dd>
+                  <strong>{{ pagatore.anagrafica|default('—') }}</strong>
+                  {% if pagatore.identificativo %}
+                    <br><span class="text-muted small font-monospace">{{ pagatore.identificativo }}</span>
+                  {% endif %}
+                </dd>
+              </div>
             </dl>
           </div>
-          <div class="card-footer d-flex flex-wrap gap-2">
+
+          <div style="padding: var(--fo-sp-4) var(--fo-sp-6); border-top: 1px solid var(--fo-border-1); display:flex; flex-wrap:wrap; gap: var(--fo-sp-3); align-items:center;">
             {% if p.download_url %}
-              <a class="btn btn-primary" href="{{ p.download_url }}" target="_blank" rel="noopener">
-                <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
-                <span class="sr-only">{{ 'Scarica PDF avviso'|trans }}</span>
+              <a class="btn btn-outline-primary" href="{{ p.download_url }}" target="_blank" rel="noopener">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
+                {{ 'Scarica PDF avviso'|trans }}
               </a>
             {% endif %}
             {% if p.receipt_url %}
               <a class="btn btn-outline-success" href="{{ p.receipt_url }}">
-                <i class="fa-solid fa-receipt" aria-hidden="true"></i>
-                <span class="sr-only">{{ 'Scarica ricevuta'|trans }}</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                {{ 'Scarica ricevuta'|trans }}
               </a>
             {% endif %}
             {% if p.is_payable and p.id_pendenza %}
@@ -107,7 +113,7 @@
                 data-added="{{ p.id_pendenza in cart_items_ids|default([]) ? '1' : '0' }}"
                 aria-label="{{ 'Aggiungi al carrello'|trans }}"
               >
-                <i class="fa-solid fa-cart-shopping me-1"></i>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
                 <span id="btn-cart-label">
                   {% if p.id_pendenza in cart_items_ids|default([]) %}
                     {{ 'Nel carrello ✓'|trans }}
@@ -124,10 +130,12 @@
         </div>
 
         {% if voci %}
-          <div class="card shadow-sm">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span class="fw-semibold">{{ 'Dettaglio voci'|trans }}</span>
-              <span class="text-muted small">{{ voci|length }} {{ voci|length > 1 ? 'voci'|trans : 'voce'|trans }}</span>
+          <div class="fo-form-card">
+            <div class="fo-form-card-body" style="padding-bottom:0;">
+              <div class="d-flex justify-content-between align-items-center">
+                <p class="fo-field-section mb-0">{{ 'Dettaglio voci'|trans }}</p>
+                <span class="text-muted small">{{ voci|length }} {{ voci|length > 1 ? 'voci'|trans : 'voce'|trans }}</span>
+              </div>
             </div>
             <div class="table-responsive">
               <table class="table mb-0 align-middle">
@@ -155,17 +163,25 @@
             </div>
           </div>
         {% endif %}
+
       </div>
 
+      {# ── Sidebar ── #}
       <div class="col-12 col-lg-4">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <h2 class="h6">{{ 'Intestatario sessione'|trans }}</h2>
-            <div class="text-muted small mb-2">{{ 'Codice fiscale'|trans }}: <strong>{{ codice_fiscale|default('') }}</strong></div>
-            <a class="btn btn-outline-primary w-100" href="/pendenze">{{ 'Vai all\'elenco'|trans }}</a>
-          </div>
+        <div class="fo-sidebar-card mb-4">
+          <h3>{{ 'Intestatario sessione'|trans }}</h3>
+          <p>{{ 'Codice fiscale'|trans }}: <strong style="color:var(--fo-fg-1);">{{ codice_fiscale|default('') }}</strong></p>
+          <a class="btn btn-outline-primary w-100" href="/pendenze">{{ 'Vai all\'elenco'|trans }}</a>
         </div>
+        {% if back_url|default('') %}
+          <div class="fo-sidebar-card">
+            <a class="btn btn-outline-secondary w-100" href="{{ back_url }}">{{ 'Torna all\'elenco'|trans }}</a>
+          </div>
+        {% endif %}
       </div>
+
     </div>
   </div>
+</section>
+
 {% endblock %}
