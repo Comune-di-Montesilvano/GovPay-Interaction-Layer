@@ -65,8 +65,9 @@
       </div>
       <div class="f-legal">
         <a href="/guida">{{ 'Guida'|trans }}</a>
-        <a href="/privacy">{{ 'Privacy'|trans }}</a>
-        <a href="/accessibilita">{{ 'Accessibilità'|trans }}</a>
+        {% if app_entity.website %}
+          <a href="{{ app_entity.website }}" target="_blank" rel="noopener noreferrer">{{ 'Sito ufficiale'|trans }}</a>
+        {% endif %}
       </div>
     </div>
   </div>

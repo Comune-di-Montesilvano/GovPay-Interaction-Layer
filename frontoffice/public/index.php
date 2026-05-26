@@ -2775,6 +2775,7 @@ $entityName = trim($env('APP_ENTITY_NAME', 'Ente'));
 $entitySuffix = trim($env('APP_ENTITY_SUFFIX', 'Servizi ai cittadini'));
 $entityGovernment = trim($env('APP_ENTITY_GOVERNMENT', ''));
 $entityFull = trim($entityName . ($entitySuffix !== '' ? ' - ' . $entitySuffix : '')) ?: $entityGovernment;
+$entityWebsite = trim($env('APP_ENTITY_WEBSITE', ''));
 
 $documentRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? __DIR__), '/\\');
 $imgCandidates = [
@@ -5617,6 +5618,7 @@ $baseContext = [
         'suffix' => $entitySuffix,
         'government' => $entityGovernment,
         'full' => $entityFull,
+        'website' => $entityWebsite,
     ],
     'app_logo' => $appLogo,
     'app_favicon' => $appFavicon,
