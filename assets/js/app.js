@@ -253,7 +253,7 @@
       if (/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/.test(v)) return 'cf';
       if (/^\d{11}$/.test(v)) return 'piva';
       if (/^\d{15}$/.test(v)) return 'iuv';
-      if (v.length >= 5) return 'flusso';
+      if (v.length >= 5 && (/[^A-Z0-9]/.test(v) || v.length > 16)) return 'flusso';
       return null;
     }
 
