@@ -171,8 +171,8 @@ while (true) {
 
             if ($result['status'] === 'RATE_LIMITED') {
                 for ($attempt = 1; $attempt < 5 && $result['status'] === 'RATE_LIMITED'; $attempt++) {
-                    $log("  IUR={$iur}: rate limit 429 (tentativo {$attempt}/5) - pausa 10s...");
-                    sleep(10);
+                    $log("  IUR={$iur}: rate limit 429 (tentativo {$attempt}/5) - pausa 2s...");
+                    sleep(2);
                     try {
                         $result = $service->enrichOne($row, $idDominio);
                     } catch (\Throwable $e) {
@@ -184,7 +184,7 @@ while (true) {
                     $log("  IUR={$iur}: rate limit persistente - errore");
                     $repo->markError((int)$row['id'], 'Rate limit Biz Events (429) dopo 5 tentativi');
                     if ($i < $total - 1) {
-                        sleep(5);
+                        sleep(10);
                     }
                     continue;
                 }
