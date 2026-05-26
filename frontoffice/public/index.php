@@ -1082,8 +1082,7 @@ if (!function_exists('frontoffice_build_voci')) {
             $voice['tipoContabilita'] = $tipoCont;
             $voice['codiceContabilita'] = $codCont;
         } else {
-            $targetCode = $codCont !== '' ? $codCont : $idTipo;
-            $voice['codEntrata'] = substr(preg_replace('/[^A-Za-z0-9\-_.]/', '', $targetCode) ?: $idTipo, 0, 35);
+            $voice['codEntrata'] = substr(preg_replace('/[^A-Za-z0-9\-_.]/', '', $idTipo), 0, 35);
         }
 
         return [$voice];
