@@ -3,7 +3,7 @@
    Built on Montesilvano DS / .italia tokens (see tokens.css)
    ============================================================================ */
 
-html, body { margin:0; }
+html, body { margin:0; padding: 0; width: 100%; overflow-x: hidden; }
 body {
   background: var(--bg-1);
   color: var(--fg-1);
@@ -66,6 +66,8 @@ button { font-family: inherit; }
    MAIN NAV (sticky)
    ============================================================================ */
 .main-nav { background:#fff; border-bottom: 1px solid var(--border-1); position: sticky; top: 0; z-index: 30; }
+.main-nav .nav-toggle-btn { display: none !important; }
+.main-nav .nav-menu { display: flex !important; align-items: stretch !important; gap: var(--sp-5) !important; }
 .main-nav .container { display:flex; align-items:stretch; gap: var(--sp-5); }
 .main-nav .nav-item {
   padding: 14px 0; font-weight: 600; font-size: 15px;
@@ -117,12 +119,57 @@ button { font-family: inherit; }
 .btn-block { width: 100%; }
 
 .spid-btn {
-  background: var(--bi-primary); color: #fff; display:inline-flex; gap: 10px; align-items:center;
+  background: var(--bi-primary); color: #fff !important; display:inline-flex; gap: 10px; align-items:center;
   padding: 9px 16px; border-radius: var(--r-sm); font-weight: 700; font-size: 14px;
   border: none; cursor: pointer; font-family: inherit;
+  text-decoration: none !important;
 }
-.spid-btn:hover { background: var(--bi-primary-h); }
+.spid-btn:hover { background: var(--bi-primary-h); color: #fff !important; }
 .spid-btn .lockup { font-weight: 900; letter-spacing: .04em; font-size: 11px; padding: 3px 6px; background: #fff; color: var(--bi-primary); border-radius: 2px; }
+
+/* Ensure buttons and link-buttons maintain high contrast text color on hover, focus, and active states */
+.btn, .spid-btn, .hero-cta {
+  text-decoration: none !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active,
+.btn-primary:focus-visible,
+.spid-btn:focus,
+.spid-btn:active,
+.spid-btn:focus-visible,
+.hero-cta:not(.primary):hover,
+.hero-cta:not(.primary):focus,
+.hero-cta:not(.primary):active,
+.hero-cta:not(.primary):focus-visible {
+  color: #ffffff !important;
+  text-decoration: none !important;
+}
+
+.btn-outline:hover,
+.btn-outline:focus,
+.btn-outline:active,
+.btn-outline:focus-visible {
+  color: var(--bi-primary) !important;
+  text-decoration: none !important;
+}
+
+.btn-ghost:hover,
+.btn-ghost:focus,
+.btn-ghost:active,
+.btn-ghost:focus-visible {
+  color: var(--bi-primary) !important;
+  text-decoration: none !important;
+}
+
+.hero-cta.primary:hover,
+.hero-cta.primary:focus,
+.hero-cta.primary:active,
+.hero-cta.primary:focus-visible {
+  color: var(--bi-navy) !important;
+  text-decoration: none !important;
+}
 
 /* ============================================================================
    STATUS BADGES
@@ -538,12 +585,39 @@ body.density-compact .table td { padding: 12px 16px; }
   .slim-header { font-size: 12px; }
   .slim-header .container { height: auto; min-height: 36px; padding-top: 6px; padding-bottom: 6px; gap: var(--sp-3); flex-wrap: wrap; }
   .slim-header .left a { display: none; }
-  .slim-header .left span:not(.gov-dot)::after { content: " ufficiale"; }
+  .slim-header .left span:not(.gov-dot)::after { content: ""; }
   .slim-header .left span:not(.gov-dot) { display: inline-block; overflow: hidden; text-overflow: ellipsis; }
   .slim-header .right span:not(.active),
   .slim-header .right > span { display: none; }
-  .slim-header .right .lang-switch { display: inline-flex; }
+  .slim-header .right .lang-switch-desktop { display: none !important; }
+  .slim-header .right .lang-switch-mobile { display: inline-flex !important; }
   .slim-header .right { gap: 0; }
+  
+  .lang-select-input {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    border-radius: 4px !important;
+    padding: 4px 24px 4px 8px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 6px center !important;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+  .lang-select-input:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+  }
+  .lang-select-input option {
+    background: var(--bi-navy) !important;
+    color: #fff !important;
+  }
 }
 @media (max-width: 480px) {
   .slim-header .left span:not(.gov-dot) { font-size: 11px; }
@@ -565,13 +639,80 @@ body.density-compact .table td { padding: 12px 16px; }
   .inst-brand .title { font-size: 15px; }
 }
 
-/* — Main nav: horizontal scroll on mobile; cart becomes icon-only */
+/* — Main nav: compact hamburger menu on mobile; cart becomes icon-only */
 @media (max-width: 760px) {
-  .main-nav .container { gap: var(--sp-3); overflow-x: auto; scrollbar-width: none; padding-right: 0; }
-  .main-nav .container::-webkit-scrollbar { display: none; }
-  .main-nav .nav-item { font-size: 14px; padding: 12px 0; white-space: nowrap; }
-  .main-nav .spacer { display: none; }
-  .main-nav .cart-btn { position: sticky; right: var(--sp-4); margin-left: var(--sp-3); padding: 7px 12px; flex-shrink: 0; box-shadow: -8px 0 8px -6px rgba(255,255,255,.95); }
+  .main-nav .main-nav-container {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    height: 48px !important;
+    padding: 0 var(--sp-4) !important;
+  }
+  .main-nav .nav-toggle-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: none !important;
+    border: none !important;
+    font-size: 1.25rem !important;
+    color: var(--fg-1) !important;
+    cursor: pointer !important;
+    padding: 8px !important;
+    margin-left: -8px !important;
+  }
+  .main-nav .nav-toggle-btn:hover,
+  .main-nav .nav-toggle-btn.active {
+    color: var(--bi-primary) !important;
+  }
+  .main-nav .nav-menu {
+    position: absolute !important;
+    top: 100% !important;
+    left: 0 !important;
+    right: 0 !important;
+    background: #fff !important;
+    border-bottom: 1px solid var(--border-1) !important;
+    box-shadow: var(--shadow-3) !important;
+    display: none !important;
+    flex-direction: column !important;
+    padding: var(--sp-3) var(--sp-4) !important;
+    gap: 0 !important;
+    z-index: 99 !important;
+  }
+  .main-nav .nav-menu.open {
+    display: flex !important;
+  }
+  .main-nav .nav-item {
+    padding: 12px 0 !important;
+    font-size: 15px !important;
+    width: 100% !important;
+    border-bottom: 1px solid var(--ms-slate-100) !important;
+    display: block !important;
+    text-align: left !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
+    border-bottom-width: 1px !important;
+  }
+  .main-nav .nav-item:last-child {
+    border-bottom: none !important;
+  }
+  .main-nav .nav-item.active {
+    border-bottom-color: transparent !important;
+    color: var(--bi-primary) !important;
+    font-weight: 700 !important;
+  }
+  .main-nav .spacer {
+    display: none !important;
+  }
+  .main-nav .cart-btn {
+    margin-left: auto !important;
+    padding: 6px 12px !important;
+    position: static !important;
+    box-shadow: none !important;
+  }
+  .main-nav .cart-btn-text {
+    display: none !important;
+  }
 }
 
 /* — Hero */

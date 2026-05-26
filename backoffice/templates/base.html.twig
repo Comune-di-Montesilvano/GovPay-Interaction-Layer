@@ -5,30 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}GovPay - Backend{% endblock %}</title>
     <link rel="icon" href="{{ app_favicon.href }}" type="{{ app_favicon.type }}">
-  <link rel="stylesheet" href="/assets/bootstrap-italia/css/bootstrap-italia.min.css">
-  <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
-  <link rel="stylesheet" href="/assets/css/app.css">
-  <link rel="stylesheet" href="/assets/litepicker/litepicker.css">
-  <link rel="stylesheet" href="/assets/tom-select/tom-select.bootstrap5.min.css">
+    <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/assets/css/tokens.css">
+    <link rel="stylesheet" href="/assets/css/no-bootstrap-compat.css">
+    <link rel="stylesheet" href="/assets/css/app.css">
+    <link rel="stylesheet" href="/assets/css/backoffice-shell.css">
+    <link rel="stylesheet" href="/assets/litepicker/litepicker.css">
+    <link rel="stylesheet" href="/assets/tom-select/tom-select.bootstrap5.min.css">
     {% block head %}{% endblock %}
   </head>
-  <body>
-    {% include 'partials/header.html.twig' %}
-  <main class="container my-4 pb-footer">
-      {% if flash %}
-        <div class="mb-3">
-          {% for m in flash %}
-            <div class="alert alert-{{ m.type == 'success' ? 'success' : (m.type == 'error' ? 'danger' : 'info') }}" role="alert">{{ m.text }}</div>
-          {% endfor %}
+  <body class="bo-shell {{ current_user ? 'bo-shell-auth' : 'bo-shell-guest' }}">
+    <div class="bo-shell-root">
+      {% include 'partials/header.html.twig' %}
+
+      <main class="bo-content pb-footer" id="main">
+        <div class="bo-content-inner">
+          {% if flash %}
+            <div class="bo-flash-stack">
+              {% for m in flash %}
+                <div class="alert alert-{{ m.type == 'success' ? 'success' : (m.type == 'error' ? 'danger' : 'info') }}" role="alert">{{ m.text }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% block content %}{% endblock %}
         </div>
-      {% endif %}
-      {% block content %}{% endblock %}
-    </main>
-    {% include 'partials/footer.html.twig' %}
-  <script src="/assets/bootstrap-italia/js/bootstrap-italia.bundle.min.js"></script>
-  <script src="/assets/js/app.js"></script>
-  <script src="/assets/litepicker/litepicker.js"></script>
-  <script src="/assets/tom-select/tom-select.complete.min.js"></script>
-  {% block scripts %}{% endblock %}
+      </main>
+
+    </div>
+
+    <script src="/assets/js/app.js"></script>
+    <script src="/assets/litepicker/litepicker.js"></script>
+    <script src="/assets/tom-select/tom-select.complete.min.js"></script>
+    {% block scripts %}{% endblock %}
   </body>
 </html>

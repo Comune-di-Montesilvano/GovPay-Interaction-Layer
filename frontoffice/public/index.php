@@ -104,6 +104,18 @@ if (!function_exists('frontoffice_inject_spid_contact_extensions')) {
     }
 }
 
+if (!function_exists('frontoffice_slugify')) {
+    function frontoffice_slugify(string $text): string
+    {
+        $s = mb_strtolower(trim($text));
+        if (function_exists('iconv')) {
+            $s = (string)(@iconv('UTF-8', 'ASCII//TRANSLIT', $s) ?: $s);
+        }
+        $s = (string)preg_replace('/[^a-z0-9]+/', '-', $s);
+        return trim($s, '-');
+    }
+}
+
 if (!function_exists('frontoffice_load_service_options')) {
     function frontoffice_load_service_options(): array
     {
@@ -132,6 +144,7 @@ if (!function_exists('frontoffice_load_service_options')) {
                     $internalOptions[] = [
                         'id' => $id,
                         'label' => $label,
+                        'slug' => frontoffice_slugify($label) ?: strtolower($id),
                         'type' => $externalUrl ? 'external' : 'internal',
                         'external_url' => $externalUrl,
                         'descrizione_estesa' => $descrizioneEstesa !== '' ? $descrizioneEstesa : null,
@@ -1086,6 +1099,248 @@ if (!function_exists('frontoffice_build_voci')) {
         }
 
         return [$voice];
+    }
+}
+
+if (!function_exists('frontoffice_build_bollo_voci')) {
+    /**
+     * Costruisce le voci per una pendenza Marca da Bollo Telematica.
+     * Ogni voce corrisponde a un documento: hashDocumento è SHA-256 raw→base64
+     * del contenuto del file (se allegato) oppure di titolo+CF+entropy (se solo testo).
+     *
+     * @param array  $documenti  Array di ['titolo'=>string, 'file_content'=>string|null]
+     * @param string $cf         Codice fiscale/PIVA uppercase senza spazi
+     * @param string $provincia  Sigla provincia 2 lettere uppercase
+     * @param string $tipoBollo  Valore tipoBollo GovPay (es. "01")
+     */
+    function frontoffice_build_bollo_voci(array $documenti, string $cf, string $provincia, string $tipoBollo): array
+    {
+        $voci = [];
+        foreach ($documenti as $i => $doc) {
+            $titolo = trim((string)($doc['titolo'] ?? ''));
+            if ($titolo === '') {
+                continue;
+            }
+            $hashSource = !empty($doc['file_content'])
+                ? $doc['file_content']
+                : ($titolo . '|' . $cf . '|' . $i . '|' . bin2hex(random_bytes(8)));
+            $voci[] = [
+                'idVocePendenza'     => (string)($i + 1),
+                'descrizione'        => $titolo,
+                'importo'            => 16.00,
+                'tipoBollo'          => $tipoBollo,
+                'hashDocumento'      => base64_encode(hash('sha256', $hashSource, true)),
+                'provinciaResidenza' => strtoupper($provincia),
+            ];
+        }
+        return $voci;
+    }
+}
+
+if (!function_exists('frontoffice_process_bollo_request')) {
+    function frontoffice_process_bollo_request(array $data, array $files): array
+    {
+        $context = ['form_data' => $data];
+        $errors = [];
+
+        // Anno
+        $defaultYear = (int) date('Y');
+        $annoRaw = $data['annoRiferimento'] ?? $defaultYear;
+        $anno = is_scalar($annoRaw) && is_numeric((string) $annoRaw) ? (int) $annoRaw : 0;
+        if ($anno < $defaultYear - 5 || $anno > $defaultYear + 1) {
+            $errors[] = 'Anno di riferimento non valido.';
+        }
+
+        // Provincia
+        $provincia = strtoupper(preg_replace('/[^A-Za-z]/', '', trim((string)($data['provinciaResidenza'] ?? ''))));
+        if ($provincia === '') {
+            $errors[] = 'La provincia di residenza è obbligatoria.';
+        } elseif (strlen($provincia) !== 2) {
+            $errors[] = 'La provincia di residenza deve essere di 2 lettere (es. PE, RM).';
+        }
+
+        // Soggetto pagatore
+        $payerRaw = is_array($data['soggettoPagatore'] ?? null) ? $data['soggettoPagatore'] : [];
+        $payerType = strtoupper((string)($payerRaw['tipo'] ?? 'F'));
+        if (!in_array($payerType, ['F', 'G'], true)) {
+            $payerType = 'F';
+        }
+        $ident = strtoupper(preg_replace('/\s+/', '', trim((string)($payerRaw['identificativo'] ?? ''))));
+        if ($ident === '') {
+            $errors[] = $payerType === 'G' ? 'La partita IVA è obbligatoria.' : 'Il codice fiscale è obbligatorio.';
+        } else {
+            if ($payerType === 'F') {
+                $validation = ValidationService::validateCodiceFiscale($ident, $payerRaw['nome'] ?? '', $payerRaw['anagrafica'] ?? '');
+                if (!$validation['format_ok'] || !$validation['check_ok'] || !$validation['valid']) {
+                    $errors[] = $validation['message'] ?? 'Codice fiscale non valido.';
+                }
+            } else {
+                $validation = ValidationService::validatePartitaIva($ident);
+                if (!$validation['valid']) {
+                    $errors[] = $validation['message'] ?? 'Partita IVA non valida.';
+                }
+            }
+        }
+        $surname = trim((string)($payerRaw['anagrafica'] ?? ''));
+        $name    = trim((string)($payerRaw['nome'] ?? ''));
+        if ($surname === '') {
+            $errors[] = $payerType === 'G' ? 'La ragione sociale è obbligatoria.' : 'Il cognome è obbligatorio.';
+        }
+        if ($payerType === 'F' && $name === '') {
+            $errors[] = 'Il nome è obbligatorio per le persone fisiche.';
+        }
+        $email = trim((string)($payerRaw['email'] ?? ''));
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            $errors[] = 'Inserisci un indirizzo email valido.';
+        }
+
+        // Documenti + file opzionali
+        $documentiRaw = is_array($data['documenti'] ?? null) ? array_values($data['documenti']) : [];
+        $filesRaw     = is_array($files['file_bollo'] ?? null) ? $files['file_bollo'] : [];
+        $documenti = [];
+        foreach ($documentiRaw as $i => $titoloRaw) {
+            $titolo = trim((string) $titoloRaw);
+            if ($titolo === '') {
+                continue;
+            }
+            $fileContent = null;
+            $tmpName = $filesRaw['tmp_name'][$i] ?? null;
+            $fileErr = (int)($filesRaw['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+            if ($fileErr === UPLOAD_ERR_OK && is_string($tmpName) && $tmpName !== '' && is_uploaded_file($tmpName)) {
+                $fc = @file_get_contents($tmpName);
+                if ($fc !== false && $fc !== '') {
+                    $fileContent = $fc;
+                }
+            }
+            $documenti[] = ['titolo' => $titolo, 'file_content' => $fileContent];
+        }
+        if (count($documenti) === 0) {
+            $errors[] = 'Inserisci almeno un documento da bollare.';
+        } elseif (count($documenti) > 5) {
+            $errors[] = 'Puoi bollare al massimo 5 documenti per volta.';
+        }
+
+        // Privacy
+        if (empty($data['privacy'])) {
+            $errors[] = "Devi accettare l'informativa privacy per proseguire.";
+        }
+
+        // ID Dominio
+        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        if ($idDominio === '') {
+            $errors[] = 'Configurazione mancante: ID_DOMINIO non impostato.';
+        }
+
+        // Lookup servizio bollo in DB (tipoBollo dalla config dell'entrata)
+        $idTipo    = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $tipoBollo = '01';
+        if ($idDominio !== '') {
+            try {
+                $bolloDetails = (new \App\Database\EntrateRepository())->findDetails($idDominio, $idTipo);
+                if ($bolloDetails && !empty($bolloDetails['tipo_bollo'])) {
+                    $tipoBollo = (string) $bolloDetails['tipo_bollo'];
+                }
+            } catch (\Throwable $_) {
+            }
+        }
+
+        if ($errors) {
+            $context['form_errors'] = $errors;
+            $context['form_feedback'] = [
+                'type'    => 'danger',
+                'title'   => 'Controlla i dati inseriti',
+                'message' => 'Alcuni campi non sono corretti. Correggili e riprova.',
+            ];
+            return $context;
+        }
+
+        $voci          = frontoffice_build_bollo_voci($documenti, $ident, $provincia, $tipoBollo);
+        $importoTotale = count($voci) * 16.00;
+        $dataScadenza  = (new \DateTimeImmutable('today'))->modify('+15 days')->format('Y-m-d');
+        $nDoc          = count($documenti);
+        $causale       = $nDoc === 1
+            ? mb_substr('MBT - ' . $documenti[0]['titolo'], 0, 140)
+            : 'Marca da Bollo Telematica (' . $nDoc . ' documenti)';
+
+        $payload = [
+            'idTipoPendenza'   => $idTipo,
+            'idDominio'        => $idDominio,
+            'causale'          => $causale,
+            'importo'          => $importoTotale,
+            'annoRiferimento'  => $anno,
+            'soggettoPagatore' => frontoffice_prepare_payer($payerRaw),
+            'voci'             => $voci,
+            'dataValidita'     => date('Y-m-d'),
+            'dataScadenza'     => $dataScadenza,
+            'datiAllegati'     => ['sorgente' => 'BolloTelematico'],
+        ];
+
+        $sendResult = frontoffice_send_pendenza_to_backoffice($payload);
+        if (!$sendResult['success']) {
+            $context['form_errors'] = $sendResult['errors'] ?? ['Invio pendenza non riuscito.'];
+            $context['form_feedback'] = [
+                'type'    => 'danger',
+                'title'   => 'Invio non riuscito',
+                'message' => implode(' ', $context['form_errors']),
+            ];
+            return $context;
+        }
+
+        $idPendenza   = $sendResult['idPendenza'] ?? '';
+        $detail       = frontoffice_fetch_pagamenti_detail($idPendenza);
+        $numeroAvviso = frontoffice_extract_numero_avviso($sendResult['response'] ?? null, $detail);
+        // MBT: GovPay non genera avvisi PDF per marca da bollo (422 Avviso non disponibile)
+        $downloadUrl  = null;
+
+        // Whitelist per checkout senza login
+        if ($idPendenza !== '' && session_status() === PHP_SESSION_ACTIVE) {
+            foreach (['frontoffice_spontaneo_pendenze', 'frontoffice_avviso_pendenze'] as $key) {
+                $list = isset($_SESSION[$key]) && is_array($_SESSION[$key]) ? $_SESSION[$key] : [];
+                $list[] = $idPendenza;
+                $list = array_values(array_unique(array_filter(array_map('strval', $list), static fn ($v) => trim($v) !== '')));
+                if (count($list) > 25) {
+                    $list = array_slice($list, -25);
+                }
+                $_SESSION[$key] = $list;
+            }
+        }
+
+        // Auto-aggiunta al carrello
+        $cartError = null;
+        if ($idPendenza !== '') {
+            $cartError = frontoffice_cart_add($idPendenza, [
+                'causale'      => $causale,
+                'importo'      => $importoTotale,
+                'numeroAvviso' => (string)($numeroAvviso ?? ''),
+                'dataScadenza' => $detail['dataScadenza'] ?? $dataScadenza,
+                'email'        => $email,
+            ]);
+        }
+
+        $context['pendenza_result'] = [
+            'idPendenza'        => $idPendenza,
+            'numeroAvviso'      => $numeroAvviso,
+            'importo'           => $importoTotale,
+            'causale'           => $causale,
+            'documenti'         => array_column($documenti, 'titolo'),
+            'download_url'      => $downloadUrl,
+            'checkout_url'      => $idPendenza !== ''
+                ? ('/pagamento-spontaneo/checkout?idPendenza=' . rawurlencode($idPendenza))
+                : null,
+            'cart_url'          => '/carrello',
+            'cart_error'        => $cartError,
+            'data_scadenza'     => $detail['dataScadenza'] ?? $dataScadenza,
+            'soggetto_pagatore' => $payload['soggettoPagatore'],
+        ];
+
+        $context['form_feedback'] = [
+            'type'    => 'success',
+            'title'   => 'Avviso generato',
+            'message' => 'La marca da bollo è stata generata e aggiunta al carrello.',
+        ];
+        $context['form_data'] = [];
+
+        return $context;
     }
 }
 
@@ -2089,12 +2344,14 @@ if (!function_exists('frontoffice_cart_add')) {
         if (count($_SESSION['frontoffice_cart']) >= 5) {
             return 'Puoi aggiungere al massimo 5 avvisi al carrello.';
         }
+        $rawEmail = trim((string)($meta['email'] ?? $meta['soggettoPagatore']['email'] ?? ''));
         $_SESSION['frontoffice_cart'][$idPendenza] = [
             'idPendenza'   => $idPendenza,
             'causale'      => mb_substr(trim((string)($meta['causale'] ?? '')), 0, 140),
             'importo'      => is_numeric($meta['importo'] ?? null) ? (float)$meta['importo'] : null,
             'numeroAvviso' => preg_replace('/\D+/', '', trim((string)($meta['numeroAvviso'] ?? ''))),
             'data_scadenza'=> $meta['dataScadenza'] ?? $meta['data_scadenza'] ?? null,
+            'email'        => filter_var($rawEmail, FILTER_VALIDATE_EMAIL) !== false ? $rawEmail : '',
             'added_at'     => time(),
         ];
         // Sync to whitelist keys so /carrello/checkout can authorize
@@ -3731,6 +3988,28 @@ $routes = [
             ? trim((string)($_POST['idTipoPendenza'] ?? ''))
             : trim((string)($_GET['tipologia'] ?? ''));
 
+        // Risolvi slug → ID (se il parametro è uno slug e non un ID diretto)
+        if ($selectedId !== '') {
+            $isDirectId = frontoffice_find_service_option($serviceCatalog, $selectedId) !== null;
+            if (!$isDirectId) {
+                foreach ($serviceCatalog as $svc) {
+                    if (($svc['slug'] ?? '') === $selectedId) {
+                        $selectedId = $svc['id'];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Redirect BOLLOT al form dedicato
+        if ($method === 'GET' && $selectedId !== '') {
+            $bolloId = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+            if ($selectedId === $bolloId) {
+                header('Location: /pagamento-bollo', true, 302);
+                exit;
+            }
+        }
+
         $selectedService = $selectedId !== ''
             ? frontoffice_find_service_option($serviceCatalog, $selectedId)
             : null;
@@ -3868,6 +4147,51 @@ $routes = [
         return [
             'template' => 'pagamenti/spontaneo.html.twig',
             'context' => $baseContext,
+        ];
+    },
+    '/pagamento-bollo' => static function () use ($method): array {
+        $defaultYear = (int) date('Y');
+
+        if ($method === 'POST') {
+            $result = frontoffice_process_bollo_request($_POST, $_FILES);
+            return [
+                'template' => 'pagamenti/bollo.html.twig',
+                'context'  => array_merge(['default_year' => $defaultYear], $result),
+            ];
+        }
+
+        $baseContext = ['default_year' => $defaultYear, 'form_data' => []];
+
+        // Precompila con dati SPID/CIE se loggato
+        $loggedUser = frontoffice_get_logged_user();
+        if (is_array($loggedUser) && $loggedUser !== []) {
+            $fiscalNumber  = frontoffice_get_logged_user_fiscal_number();
+            $fiscalCompact = strtoupper(preg_replace('/\s+/', '', trim((string) $fiscalNumber)));
+            $fiscalDigits  = preg_replace('/\D+/', '', $fiscalCompact);
+            $isLegalEntity = ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
+            $defaultTipo   = $isLegalEntity ? 'G' : 'F';
+            $defaultIdent  = $isLegalEntity ? $fiscalDigits : $fiscalCompact;
+            $defaultNome   = trim((string)($loggedUser['first_name'] ?? ''));
+            $defaultCognome = trim((string)($loggedUser['last_name'] ?? ''));
+            $defaultEmail  = trim((string)($loggedUser['email'] ?? ''));
+            $defaultAnagrafica = $defaultTipo === 'F'
+                ? $defaultCognome
+                : trim($defaultCognome ?: $defaultNome);
+            if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
+                $defaultAnagrafica = $defaultEmail;
+            }
+            $baseContext['form_data']['soggettoPagatore'] = [
+                'tipo'           => $defaultTipo,
+                'identificativo' => $defaultIdent,
+                'anagrafica'     => $defaultAnagrafica,
+                'nome'           => $defaultTipo === 'F' ? $defaultNome : '',
+                'email'          => $defaultEmail,
+            ];
+        }
+
+        return [
+            'template' => 'pagamenti/bollo.html.twig',
+            'context'  => $baseContext,
         ];
     },
     '/pagamento-avviso' => static function () use ($method, $env): array {
@@ -4138,6 +4462,28 @@ $routes = [
             ],
         ];
     },
+
+    '/avviso-bollo' => static function (): array {
+        $iuv      = preg_replace('/\D/', '', trim((string)($_GET['iuv'] ?? '')));
+        $ente     = preg_replace('/[^A-Za-z0-9]/', '', trim((string)($_GET['ente'] ?? '')));
+        $importo  = max(0, (int)($_GET['importo'] ?? 0));
+        $causale  = mb_substr(trim((string)($_GET['causale'] ?? '')), 0, 140);
+        $cfDeb    = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim((string)($_GET['cf'] ?? ''))));
+        $scadenza = trim((string)($_GET['scadenza'] ?? ''));
+        if ($iuv === '' || $ente === '' || $importo <= 0) {
+            http_response_code(400);
+            return [
+                'template' => 'errors/404.html.twig',
+                'context'  => ['requested_path' => '/avviso-bollo'],
+            ];
+        }
+        $qrString   = 'PAGOPA|002|' . $iuv . '|' . $ente . '|' . $importo;
+        $importoEur = number_format($importo / 100, 2, ',', '.');
+        return [
+            'template' => 'pagamenti/avviso-bollo.html.twig',
+            'context'  => compact('iuv', 'ente', 'importo', 'importoEur', 'causale', 'cfDeb', 'scadenza', 'qrString'),
+        ];
+    },
 ];
 
 
@@ -4349,6 +4695,24 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
     }
 
     $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
+
+    // Fallback: se Pagamenti API non disponibile usa dati dal carrello di sessione
+    if (!$detail) {
+        $cartItems = frontoffice_cart_items();
+        if (isset($cartItems[$idPendenza]) && is_array($cartItems[$idPendenza])) {
+            $ci = $cartItems[$idPendenza];
+            $detail = [
+                'idPendenza'      => $idPendenza,
+                'stato'           => 'NON_ESEGUITA',
+                'numeroAvviso'    => $ci['numeroAvviso'] ?? '',
+                'importo'         => $ci['importo'] ?? 0,
+                'causale'         => $ci['causale'] ?? '',
+                'dataScadenza'    => $ci['data_scadenza'] ?? null,
+                'soggettoPagatore'=> ($ci['email'] ?? '') !== '' ? ['email' => $ci['email']] : null,
+            ];
+        }
+    }
+
     if (!$detail) {
         http_response_code(404);
         echo 'Not found';
@@ -4361,9 +4725,13 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
     $loggedUser = frontoffice_get_logged_user();
     if (is_array($loggedUser) && $loggedUser !== []) {
         if (!frontoffice_pendenza_belongs_to_cf($detail, frontoffice_get_logged_user_fiscal_number())) {
-            http_response_code(404);
-            echo 'Not found';
-            return;
+            $cartItems = frontoffice_cart_items();
+            // Per pendenze create in sessione senza CF loggato, permetti se in carrello
+            if (!isset($cartItems[$idPendenza])) {
+                http_response_code(404);
+                echo 'Not found';
+                return;
+            }
         }
     } else {
         $key = 'frontoffice_spontaneo_pendenze';
@@ -4532,6 +4900,21 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
 
     $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
     if (!$detail) {
+        $cartItems = frontoffice_cart_items();
+        if (isset($cartItems[$idPendenza]) && is_array($cartItems[$idPendenza])) {
+            $ci = $cartItems[$idPendenza];
+            $detail = [
+                'idPendenza'      => $idPendenza,
+                'stato'           => 'NON_ESEGUITA',
+                'numeroAvviso'    => $ci['numeroAvviso'] ?? '',
+                'importo'         => $ci['importo'] ?? 0,
+                'causale'         => $ci['causale'] ?? '',
+                'dataScadenza'    => $ci['data_scadenza'] ?? null,
+                'soggettoPagatore'=> ($ci['email'] ?? '') !== '' ? ['email' => $ci['email']] : null,
+            ];
+        }
+    }
+    if (!$detail) {
         http_response_code(404);
         echo 'Not found';
         return;
@@ -4543,9 +4926,12 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
     $loggedUser = frontoffice_get_logged_user();
     if (is_array($loggedUser) && $loggedUser !== []) {
         if (!frontoffice_pendenza_belongs_to_cf($detail, frontoffice_get_logged_user_fiscal_number())) {
-            http_response_code(404);
-            echo 'Not found';
-            return;
+            $cartItems = frontoffice_cart_items();
+            if (!isset($cartItems[$idPendenza])) {
+                http_response_code(404);
+                echo 'Not found';
+                return;
+            }
         }
     } else {
         $key = 'frontoffice_avviso_pendenze';
@@ -4923,6 +5309,21 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     foreach ($rawIds as $pid) {
         $detail = frontoffice_fetch_pagamenti_detail($pid);
         if (!$detail) {
+            $cartItems = frontoffice_cart_items();
+            if (isset($cartItems[$pid]) && is_array($cartItems[$pid])) {
+                $ci = $cartItems[$pid];
+                $detail = [
+                    'idPendenza'      => $pid,
+                    'stato'           => 'NON_ESEGUITA',
+                    'numeroAvviso'    => $ci['numeroAvviso'] ?? '',
+                    'importo'         => $ci['importo'] ?? 0,
+                    'causale'         => $ci['causale'] ?? '',
+                    'dataScadenza'    => $ci['data_scadenza'] ?? null,
+                    'soggettoPagatore'=> ($ci['email'] ?? '') !== '' ? ['email' => $ci['email']] : null,
+                ];
+            }
+        }
+        if (!$detail) {
             http_response_code(404);
             echo 'Una delle pendenze selezionate non è stata trovata. Aggiorna la pagina e riprova.';
             return;
@@ -4987,8 +5388,17 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idCart=' . rawurlencode($idCart);
     $errorUrl  = $frontofficeBaseUrl . '/checkout/error?idCart=' . rawurlencode($idCart);
 
-    // Get email from logged-in user for notice (empty string if guest)
+    // Get email for notice: logged user first, then payer email from first resolved pendenza.
     $emailNotice = $loggedUser !== null ? trim((string)($loggedUser['email'] ?? '')) : '';
+    if ($emailNotice === '') {
+        foreach ($pendenzaDetails as $pd) {
+            $candidate = trim((string)($pd['soggettoPagatore']['email'] ?? ''));
+            if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL) !== false) {
+                $emailNotice = $candidate;
+                break;
+            }
+        }
+    }
 
 
     try {

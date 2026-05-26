@@ -30,6 +30,9 @@
           <h3 class="h5"><i class="fas fa-search me-2"></i> Operazioni comuni (tutti gli utenti)</h3>
           <ul class="mb-0">
             <li><strong>Pendenze → Ricerca:</strong> filtra per intervallo date, stato, importi, testo libero. I risultati sono ordinabili e paginati.</li>
+            <li><strong>Premium Datepicker:</strong> tutti i filtri temporali usano un calendario sbloccato che consente la digitazione manuale da tastiera e pulsanti rapidi contabili di ragioneria (<em>Mese/Anno Corrente/Precedente</em>) uniformi ed affiancati.</li>
+            <li><strong>Marca da Bollo (@e.bollo):</strong> creazione e pagamento on-line facilitato di marche da bollo telematiche associate alle posizioni debitorie, dematerializzando i procedimenti amministrativi.</li>
+            <li><strong>Rateizzazione Lineare:</strong> pianificazione automatica delle rate. Date e importi progressivi si ricalcolano live alla modifica di qualsiasi campo, senza cliccare alcun tasto manuale.</li>
             <li><strong>Dettaglio pendenza:</strong> clicca una riga per visualizzare i dettagli; troverai i riferimenti di pagamento (IUV/CCP) e gli esiti.</li>
             <li><strong>Download documenti:</strong> dal dettaglio puoi scaricare l'Avviso di pagamento e, quando disponibile, la Ricevuta Telematica (RT).</li>
             <li><strong>Inserimento pendenza:</strong> crea una nuova pendenza dal menu Pendenze → Inserimento.</li>
@@ -49,16 +52,17 @@
         <div class="card-body">
           <h3 class="h5"><i class="fas fa-chart-line me-2"></i> Report pagamenti</h3>
           <ul class="mb-0">
+            <li><strong>Dashboard Real-Time:</strong> monitora i volumi complessivi, l'andamento mensile (Chart.js), il canale di incasso e la ripartizione per singola tipologia (Top 6 automatica ed espandibile a tutte le entrate interattivamente).</li>
             <li><strong>Report Ragioneria:</strong> analizza gli incassi reali dai flussi di rendicontazione per intervallo data flusso e tipologia.</li>
-            <li><strong>Esecuzione guidata:</strong> al primo accesso non parte nessuna ricerca; dopo <em>Aggiorna</em> vedi stato avanzamento elaborazione.</li>
+            <li><strong>Esecuzione guidata:</strong> al primo accesso non parte nessuna ricerca; dopo <em>Aggiorna</em> vedi lo stato di avanzamento dell'elaborazione.</li>
             <li><strong>Filtri avanzati:</strong> selezione multipla tipologie con ricerca, intervallo date e parametri GovPay.</li>
             <li><strong>Dettaglio righe:</strong> dal risultato puoi aprire rapidamente la pendenza collegata (dettaglio o ricerca IUV).</li>
             <li><strong>Report Incassi:</strong> vista per tassonomia con filtri allineati al report ragioneria e tabella dettaglio con link pendenza.</li>
             <li><strong>Export:</strong> entrambi i report supportano export CSV dei risultati.</li>
           </ul>
           <div class="mt-3">
-            <a href="/pagamenti/report-ragioneria" class="btn btn-outline-primary btn-sm">Apri Report Ragioneria</a>
-            <a href="/pagamenti/incassi-tassonomia" class="btn btn-outline-secondary btn-sm ms-2">Apri Report Incassi</a>
+            <a href="/" class="btn btn-outline-primary btn-sm">Apri Dashboard</a>
+            <a href="/pagamenti/report-ragioneria" class="btn btn-outline-secondary btn-sm ms-2">Apri Report Ragioneria</a>
           </div>
         </div>
       </div>
@@ -90,6 +94,7 @@
           <h3 class="h5"><i class="fas fa-tools me-2"></i> Amministrazione e configurazione (superadmin)</h3>
           <p class="mb-2">La pagina Configurazione raccoglie informazioni dal Backoffice GovPay e dalle API per verifiche e setup. Gli admin la consultano in sola lettura (eccetto la tab Utenti), mentre i superadmin possono intervenire sulle impostazioni.</p>
           <ul class="mb-0">
+            <li><strong>GIL Services Hub (Home):</strong> visualizzazione dello stato dei servizi di background e pulsanti AJAX diretti per avviare o arrestare i demoni contabili (`ragioneria`, `biz`, `tefa`, `pendenze-massive`) direttamente dalla Home page.</li>
             <li><strong>Dati principali:</strong> mostra i dettagli del Dominio beneficiario (ragione sociale, stazione, GLN, CBill, conti di accredito, eventuale logo, ecc.).</li>
             <li><strong>Tipologie di pendenze:</strong> elenco delle Entrate configurate per il dominio (con ricerca client-side).</li>
             <li><strong>Gestionali e info:</strong> panoramica sugli applicativi integrati e sulle versioni / build dell'istanza GovPay.</li>

@@ -68,7 +68,7 @@
           {% set isExternal = (service.type|default('internal')) == 'external' %}
           <a
             class="svc-tile{{ isExternal ? ' svc-tile--external' : '' }}"
-            href="/pagamento-spontaneo?tipologia={{ service.id }}"
+            href="/pagamento-spontaneo?tipologia={{ (service.slug|default(service.id))|url_encode }}"
             data-service-id="{{ service.id|default('')|e('html_attr') }}"
             data-service-label="{{ service.label|default('')|e('html_attr') }}"
             data-service-desc="{{ service.descrizione_estesa|default('')|e('html_attr') }}"

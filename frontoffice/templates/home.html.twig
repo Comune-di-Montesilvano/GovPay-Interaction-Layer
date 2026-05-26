@@ -113,7 +113,7 @@
     </div>
     <div class="svc-grid">
       {% for svc in featured_services %}
-        {% set svc_url = svc.type == 'external' ? svc.external_url : '/pagamento-spontaneo?tipologia=' ~ svc.id|url_encode %}
+        {% set svc_url = svc.type == 'external' ? svc.external_url : '/pagamento-spontaneo?tipologia=' ~ (svc.slug|default(svc.id))|url_encode %}
         {% set svc_target = svc.type == 'external' ? '_blank' : '_self' %}
         {% set svc_rel = svc.type == 'external' ? 'noopener noreferrer' : '' %}
         <a class="svc-tile" href="{{ svc_url }}" target="{{ svc_target }}"{% if svc_rel %} rel="{{ svc_rel }}"{% endif %}>

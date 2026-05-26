@@ -1,0 +1,501 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'Marca da Bollo Telematica'|trans }} - {{ app_entity.name }}{% endblock %}
+
+{% set old = form_data|default({}) %}
+{% set payer = old.soggettoPagatore|default({}) %}
+{% set is_done = (pendenza_result is defined and pendenza_result) %}
+
+{% block content %}
+
+{# ── Page header ── #}
+<div class="page-head">
+  <div class="container">
+    <div class="crumbs">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="sep">/</span>
+      <span class="current">{{ 'Marca da Bollo Telematica'|trans }}</span>
+    </div>
+    <h1>{{ 'Marca da Bollo Telematica'|trans }}</h1>
+    <p class="page-sub">{{ 'Acquista la marca da bollo digitale (€ 16,00) direttamente tramite pagoPA. L\'importo è fisso per legge.'|trans }}</p>
+  </div>
+</div>
+
+{# ── Content ── #}
+<section class="block">
+  <div class="container">
+
+    {# ── Stepper ── #}
+    <div class="steps" style="margin-bottom:var(--sp-5);">
+      <div class="step{{ is_done ? ' done' : ' active' }}">
+        <span class="n">
+          {% if is_done %}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+          {% else %}
+            1
+          {% endif %}
+        </span>
+        <span>{{ 'Compila il modulo'|trans }}</span>
+      </div>
+      <div class="bar"></div>
+      <div class="step{{ is_done ? ' active' : '' }}">
+        <span class="n">2</span>
+        <span>{{ 'Avviso generato'|trans }}</span>
+      </div>
+    </div>
+
+    {# ── STEP 2: avviso generato ── #}
+    {% if is_done %}
+      {% set res = pendenza_result %}
+      {% set codice_avviso = res.numeroAvviso|default('—') %}
+      {% set soggetto = res.soggetto_pagatore|default({}) %}
+
+      <div class="alert alert-success" style="margin-bottom:var(--sp-4);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        <div>
+          <strong>{{ 'Avviso pagoPA generato.'|trans }}</strong>
+          {% if res.cart_error is null %}
+            {{ 'Aggiunto automaticamente al carrello.'|trans }}
+          {% else %}
+            {{ res.cart_error|trans }}
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="split">
+        <div>
+          <div class="avviso-card">
+            <div class="avviso-header">
+              <div class="from">
+                {{ 'Ente creditore'|trans }}
+                <strong>{{ app_entity.name }}</strong>
+              </div>
+              <span class="status status-pay"><span class="dot"></span>{{ 'Da pagare'|trans }}</span>
+            </div>
+            <div class="avviso-body">
+              <div class="avviso-row">
+                <div class="k">{{ 'Codice avviso (IUV)'|trans }}</div>
+                <div class="v mono">{{ codice_avviso }}</div>
+              </div>
+              {% if res.causale is defined %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Causale'|trans }}</div>
+                <div class="v">{{ res.causale }}</div>
+              </div>
+              {% endif %}
+              {% if soggetto.nome|default('') or soggetto.anagrafica|default('') %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Soggetto pagatore'|trans }}</div>
+                <div class="v">
+                  <strong>{{ soggetto.nome|default('') }} {{ soggetto.anagrafica|default('') }}</strong>
+                  {% if soggetto.identificativo|default('') %}
+                    <br/><span class="mono" style="font-size:13px;color:var(--fg-3);">{{ soggetto.identificativo }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              {% endif %}
+              {% if res.data_scadenza is defined and res.data_scadenza %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Scadenza'|trans }}</div>
+                <div class="v">{{ res.data_scadenza|date('d/m/Y') }}</div>
+              </div>
+              {% endif %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Importo dovuto'|trans }}</div>
+                <div class="v amount">€&nbsp;{{ res.importo|number_format(2, ',', '.') }}</div>
+              </div>
+              {% if res.documenti is defined and res.documenti %}
+              <div class="avviso-row" style="align-items:flex-start;">
+                <div class="k">{{ 'Documenti bollati'|trans }}</div>
+                <div class="v">
+                  <ul style="margin:0;padding-left:16px;font-size:13px;line-height:1.7;">
+                    {% for doc in res.documenti %}
+                      <li>{{ doc }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              </div>
+              {% endif %}
+            </div>
+            <div class="avviso-actions">
+              {% if res.download_url %}
+                <a class="btn btn-ghost" href="{{ res.download_url }}" target="_blank" rel="noopener">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                  {{ 'Stampa / PDF'|trans }}
+                </a>
+              {% endif %}
+              {% if res.cart_url and res.cart_error is null %}
+                <a class="btn btn-outline" href="{{ res.cart_url }}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+                  {{ 'Vai al carrello'|trans }}
+                </a>
+              {% endif %}
+              {% if res.checkout_url %}
+                <a class="btn btn-primary" href="{{ res.checkout_url }}" target="_blank" rel="noopener">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+                  {{ 'Paga subito'|trans }}
+                </a>
+              {% endif %}
+            </div>
+          </div>
+
+          <div style="margin-top:var(--sp-4);">
+            <a class="btn btn-ghost" href="/pagamento-bollo">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+              {{ 'Nuova marca da bollo'|trans }}
+            </a>
+          </div>
+        </div>
+
+        <aside class="aside">
+          <div class="card card-pad">
+            <h3>{{ 'Prossimi passaggi'|trans }}</h3>
+            <ol style="margin:0;padding-left:18px;font-size:14px;color:var(--fg-2);line-height:1.7;">
+              <li>{{ 'Procedi al pagamento tramite pagoPA'|trans }}</li>
+              <li>{{ 'Riceverai la marca da bollo digitale nella ricevuta'|trans }}</li>
+              <li>{{ 'Conserva la ricevuta come prova di acquisto'|trans }}</li>
+            </ol>
+          </div>
+        </aside>
+      </div>
+
+    {# ── STEP 1: form ── #}
+    {% else %}
+
+      {% if form_errors is defined and form_errors %}
+        <div class="alert alert-danger" style="margin-bottom:var(--sp-4);" role="alert">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div>
+            <strong>{{ 'Controlla i dati inseriti'|trans }}</strong>
+            <ul style="margin:4px 0 0;padding-left:18px;">
+              {% for error in form_errors %}<li>{{ error|trans }}</li>{% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="split">
+        <div>
+          <div class="card card-pad-lg">
+
+            <form method="post" action="/pagamento-bollo" enctype="multipart/form-data" id="bolloForm">
+
+              {# ══ Soggetto pagatore ══ #}
+              <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 var(--sp-3);">{{ 'Soggetto pagatore'|trans }}</h3>
+
+              {% set tipo = payer.tipo|default('F') %}
+              <div style="margin-bottom:var(--sp-4);">
+                <div class="seg" id="seg-tipo">
+                  <button type="button" class="{{ tipo != 'G' ? 'on' : '' }}" data-tipo="F" id="btn-tipo-pf">{{ 'Persona fisica'|trans }}</button>
+                  <button type="button" class="{{ tipo == 'G' ? 'on' : '' }}" data-tipo="G" id="btn-tipo-pg">{{ 'Persona giuridica'|trans }}</button>
+                </div>
+                <input type="hidden" id="soggettoPagatore_tipo" name="soggettoPagatore[tipo]" value="{{ tipo }}">
+              </div>
+
+              {# PF #}
+              <div id="pf-fields" {% if tipo == 'G' %}style="display:none;"{% endif %}>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="nome">{{ 'Nome'|trans }}<span class="required">*</span></label>
+                    <input class="input" type="text" id="nome" name="soggettoPagatore[nome]" value="{{ payer.nome|default('') }}" autocomplete="given-name">
+                  </div>
+                  <div class="field">
+                    <label for="anagrafica">{{ 'Cognome'|trans }}<span class="required">*</span></label>
+                    <input class="input" type="text" id="anagrafica" name="soggettoPagatore[anagrafica]" value="{{ payer.anagrafica|default('') }}" autocomplete="family-name">
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="identificativo">{{ 'Codice fiscale'|trans }}<span class="required">*</span></label>
+                  <input class="input mono" type="text" id="identificativo" name="soggettoPagatore[identificativo]" value="{{ payer.identificativo|default('') }}" maxlength="16" placeholder="RSSMRA00A01H501Z" autocomplete="off">
+                  <p class="hint">{{ '16 caratteri.'|trans }}</p>
+                </div>
+              </div>
+
+              {# PG #}
+              <div id="pg-fields" {% if tipo != 'G' %}style="display:none;"{% endif %}>
+                <div class="field">
+                  <label for="anagrafica-pg">{{ 'Ragione sociale'|trans }}<span class="required">*</span></label>
+                  <input class="input" type="text" id="anagrafica-pg" name="soggettoPagatore[anagrafica]" value="{{ tipo == 'G' ? payer.anagrafica|default('') : '' }}" autocomplete="organization">
+                </div>
+                <div class="field">
+                  <label for="identificativo-pg">{{ 'Partita IVA'|trans }}<span class="required">*</span></label>
+                  <input class="input mono" type="text" id="identificativo-pg" name="soggettoPagatore[identificativo]" value="{{ tipo == 'G' ? payer.identificativo|default('') : '' }}" maxlength="11" placeholder="IT00000000000" autocomplete="off">
+                </div>
+              </div>
+
+              {# Email #}
+              <div class="field-row">
+                <div class="field">
+                  <label for="email">{{ 'Email di contatto'|trans }}<span class="required">*</span></label>
+                  <input class="input" type="email" id="email" name="soggettoPagatore[email]" value="{{ payer.email|default('') }}" required placeholder="esempio@dominio.it">
+                  <p class="hint">{{ 'Riceverai qui l\'avviso e la ricevuta con la marca da bollo.'|trans }}</p>
+                </div>
+              </div>
+
+              <div style="height:1px;background:var(--border-1);margin:var(--sp-5) 0;"></div>
+
+              {# ══ Dati bollo ══ #}
+              <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 var(--sp-3);">{{ 'Dati marca da bollo'|trans }}</h3>
+
+              <div class="field-row">
+                <div class="field" style="max-width:140px;">
+                  <label for="provinciaResidenza">{{ 'Provincia residenza'|trans }}<span class="required">*</span></label>
+                  <input class="input mono" type="text" id="provinciaResidenza" name="provinciaResidenza" value="{{ old.provinciaResidenza|default('') }}" maxlength="2" placeholder="PE" autocomplete="off" style="text-transform:uppercase;">
+                  <p class="hint">{{ 'Sigla 2 lettere (es. PE, RM).'|trans }}</p>
+                </div>
+                <div class="field" style="max-width:180px;">
+                  {% set selected_year = old.annoRiferimento|default(default_year|default('now'|date('Y'))) %}
+                  {% set start_year = (default_year|default('now'|date('Y'))) + 1 %}
+                  {% set end_year = (default_year|default('now'|date('Y'))) - 5 %}
+                  <label for="annoRiferimento">{{ 'Anno di riferimento'|trans }}<span class="required">*</span></label>
+                  <select class="select" id="annoRiferimento" name="annoRiferimento" required>
+                    {% if selected_year is defined and selected_year not in range(start_year, end_year) %}
+                      <option value="{{ selected_year }}" selected>{{ selected_year }}</option>
+                    {% endif %}
+                    {% for y in range(start_year, end_year) %}
+                      <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+
+              <div style="height:1px;background:var(--border-1);margin:var(--sp-4) 0 var(--sp-3);"></div>
+
+              {# ══ Documenti da bollare ══ #}
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3);">
+                <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0;">{{ 'Documenti da bollare'|trans }}</h3>
+                <span id="bolloTotal" style="font-size:14px;font-weight:600;color:var(--fg-1);">€&nbsp;16,00</span>
+              </div>
+              <p class="hint" style="margin:0 0 var(--sp-3);">{{ 'Inserisci la descrizione di ogni documento. Puoi allegare il file per legarlo digitalmente alla marca; altrimenti il collegamento verrà generato automaticamente.'|trans }}</p>
+
+              <div id="documentiList">
+                {# Primo documento (sempre presente) #}
+                <div class="bollo-doc-row" style="margin-bottom:var(--sp-3);padding:var(--sp-3);background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border-1);">
+                  <div class="field" style="margin-bottom:var(--sp-2);">
+                    <label style="font-size:13px;font-weight:500;margin-bottom:4px;display:block;">{{ 'Documento 1'|trans }}</label>
+                    <input class="input doc-titolo" type="text" name="documenti[0]" placeholder="{{ 'Es. Certificato anagrafico prot. 12345'|trans }}" value="{{ old.documenti[0]|default('') }}" required>
+                  </div>
+                  <div class="field" style="margin-bottom:0;">
+                    <label style="font-size:12px;color:var(--fg-3);cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                      <input type="checkbox" class="file-toggle" style="margin:0;"> {{ 'Allega file per legarlo alla marca'|trans }}
+                    </label>
+                    <div class="file-wrap" style="display:none;margin-top:6px;">
+                      <input class="input doc-file" type="file" name="file_bollo[0]" accept=".pdf,.doc,.docx,.txt,.xml,.p7m" style="font-size:13px;">
+                      <p class="hint" style="margin:4px 0 0;">{{ 'Il file non viene salvato, serve solo per calcolare l\'impronta.'|trans }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="margin-bottom:var(--sp-4);">
+                <button type="button" id="btn-add-doc" class="btn btn-ghost btn-sm">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  {{ 'Aggiungi documento'|trans }}
+                </button>
+                <span id="doc-limit-msg" style="display:none;font-size:12px;color:var(--fg-3);margin-left:8px;">{{ 'Massimo 5 documenti'|trans }}</span>
+              </div>
+
+              {# Privacy #}
+              <label class="checkbox" style="margin-top:var(--sp-2);">
+                <input type="checkbox" name="privacy" value="1" required>
+                <span>{{ 'Dichiaro di aver letto l\'informativa privacy dell\'Ente e autorizzo il trattamento dei dati per le finalità connesse al presente pagamento.'|trans }}</span>
+              </label>
+
+              {# Actions #}
+              <div style="display:flex;gap:var(--sp-3);justify-content:space-between;flex-wrap:wrap;margin-top:var(--sp-5);">
+                <a class="btn btn-ghost" href="/">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                  {{ 'Home'|trans }}
+                </a>
+                <button type="submit" class="btn btn-primary btn-lg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+                  {{ 'Genera avviso marca da bollo'|trans }}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+
+        <aside class="aside">
+          <div class="card card-pad">
+            <h3>{{ 'Importo fisso'|trans }}</h3>
+            <p style="margin:0;font-size:14px;color:var(--fg-2);line-height:1.55;">
+              {{ 'La marca da bollo telematica ha importo fisso di € 16,00 per legge. Puoi aggiungere più documenti nello stesso avviso.'|trans }}
+            </p>
+          </div>
+          <div class="card card-pad">
+            <h3>{{ 'Collegamento digitale alla marca'|trans }}</h3>
+            <p style="margin:0;font-size:14px;color:var(--fg-2);line-height:1.55;">
+              {{ 'Se alleghi il file, la marca da bollo viene legata digitalmente al documento. Altrimenti il collegamento viene generato automaticamente dalla descrizione.'|trans }}
+            </p>
+          </div>
+          <div class="card card-pad" style="background:var(--ms-warning-bg);border-color:rgba(166,99,0,.2);">
+            <h3 style="color:var(--ms-warning);">{{ 'Controlla i dati'|trans }}</h3>
+            <p style="margin:0;font-size:13px;color:var(--fg-2);line-height:1.55;">
+              {{ 'Una volta generato l\'avviso i dati non sono modificabili. Verifica codice fiscale e provincia prima di confermare.'|trans }}
+            </p>
+          </div>
+        </aside>
+      </div>
+
+    {% endif %}
+
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{{ parent() }}
+<script>
+(function () {
+  // ── Segmented control tipo soggetto ──────────────────────────────────────
+  var tipoInput = document.getElementById('soggettoPagatore_tipo');
+  var pfFields  = document.getElementById('pf-fields');
+  var pgFields  = document.getElementById('pg-fields');
+  var pfBtn     = document.getElementById('btn-tipo-pf');
+  var pgBtn     = document.getElementById('btn-tipo-pg');
+
+  function switchTipo(tipo) {
+    if (!tipoInput) return;
+    tipoInput.value = tipo;
+    if (tipo === 'G') {
+      pfFields && (pfFields.style.display = 'none');
+      pgFields && (pgFields.style.display = '');
+      pfBtn && pfBtn.classList.remove('on');
+      pgBtn && pgBtn.classList.add('on');
+      document.querySelectorAll('#pf-fields input').forEach(function (el) { el.disabled = true; });
+      document.querySelectorAll('#pg-fields input').forEach(function (el) { el.disabled = false; });
+    } else {
+      pfFields && (pfFields.style.display = '');
+      pgFields && (pgFields.style.display = 'none');
+      pfBtn && pfBtn.classList.add('on');
+      pgBtn && pgBtn.classList.remove('on');
+      document.querySelectorAll('#pf-fields input').forEach(function (el) { el.disabled = false; });
+      document.querySelectorAll('#pg-fields input').forEach(function (el) { el.disabled = true; });
+    }
+  }
+
+  if (pfBtn) pfBtn.addEventListener('click', function () { switchTipo('F'); });
+  if (pgBtn) pgBtn.addEventListener('click', function () { switchTipo('G'); });
+  switchTipo(tipoInput ? tipoInput.value : 'F');
+
+  // Auto-uppercase
+  ['nome', 'anagrafica', 'identificativo', 'anagrafica-pg', 'identificativo-pg', 'provinciaResidenza'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', function () { el.value = el.value.toUpperCase(); });
+    el.addEventListener('blur',  function () { el.value = el.value.toUpperCase(); });
+  });
+
+  // ── Documenti dinamici ────────────────────────────────────────────────────
+  var list        = document.getElementById('documentiList');
+  var addBtn      = document.getElementById('btn-add-doc');
+  var limitMsg    = document.getElementById('doc-limit-msg');
+  var totalSpan   = document.getElementById('bolloTotal');
+  var MAX_DOCS    = 5;
+
+  function getRows() {
+    return list ? Array.from(list.querySelectorAll('.bollo-doc-row')) : [];
+  }
+
+  function updateTotal() {
+    var n = getRows().length;
+    if (totalSpan) {
+      var total = (n * 16).toFixed(2).replace('.', ',');
+      totalSpan.textContent = '€ ' + total + (n > 1 ? ' (' + n + ' bollI)' : '');
+    }
+    if (addBtn) addBtn.style.display = n >= MAX_DOCS ? 'none' : '';
+    if (limitMsg) limitMsg.style.display = n >= MAX_DOCS ? '' : 'none';
+    updateRemoveButtons();
+  }
+
+  function updateRemoveButtons() {
+    var rows = getRows();
+    rows.forEach(function (row) {
+      var btn = row.querySelector('.btn-remove-doc');
+      if (btn) btn.style.display = rows.length > 1 ? '' : 'none';
+    });
+  }
+
+  function reindex() {
+    getRows().forEach(function (row, i) {
+      var label    = row.querySelector('label[for-doc]');
+      var titleLbl = row.querySelector('.doc-label');
+      var textInp  = row.querySelector('.doc-titolo');
+      var fileInp  = row.querySelector('.doc-file');
+      if (titleLbl) titleLbl.textContent = '{{ 'Documento'|trans }} ' + (i + 1);
+      if (textInp)  textInp.name = 'documenti[' + i + ']';
+      if (fileInp)  fileInp.name = 'file_bollo[' + i + ']';
+    });
+  }
+
+  function bindRowEvents(row) {
+    // File toggle
+    var toggle   = row.querySelector('.file-toggle');
+    var fileWrap = row.querySelector('.file-wrap');
+    if (toggle && fileWrap) {
+      toggle.addEventListener('change', function () {
+        fileWrap.style.display = toggle.checked ? '' : 'none';
+        var fileInp = fileWrap.querySelector('input[type="file"]');
+        if (fileInp && !toggle.checked) fileInp.value = '';
+      });
+    }
+    // Remove button
+    var removeBtn = row.querySelector('.btn-remove-doc');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function () {
+        if (getRows().length > 1) {
+          row.remove();
+          reindex();
+          updateTotal();
+        }
+      });
+    }
+  }
+
+  // Bind eventi sulla prima riga (già nel DOM)
+  getRows().forEach(function (row) { bindRowEvents(row); });
+  updateTotal();
+
+  // Aggiungi documento
+  if (addBtn) {
+    addBtn.addEventListener('click', function () {
+      var rows = getRows();
+      if (rows.length >= MAX_DOCS) return;
+      var idx = rows.length;
+
+      var row = document.createElement('div');
+      row.className = 'bollo-doc-row';
+      row.style.cssText = 'margin-bottom:var(--sp-3);padding:var(--sp-3);background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border-1);';
+      row.innerHTML =
+        '<div class="field" style="margin-bottom:var(--sp-2);">' +
+          '<label style="font-size:13px;font-weight:500;margin-bottom:4px;display:block;" class="doc-label">{{ 'Documento'|trans }} ' + (idx + 1) + '</label>' +
+          '<input class="input doc-titolo" type="text" name="documenti[' + idx + ']" placeholder="{{ 'Es. Certificato anagrafico prot. 12345'|trans }}">' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2);">' +
+          '<div class="field" style="margin-bottom:0;flex:1;">' +
+            '<label style="font-size:12px;color:var(--fg-3);cursor:pointer;display:inline-flex;align-items:center;gap:6px;">' +
+              '<input type="checkbox" class="file-toggle" style="margin:0;"> {{ 'Allega file per legarlo alla marca'|trans }}' +
+            '</label>' +
+            '<div class="file-wrap" style="display:none;margin-top:6px;">' +
+              '<input class="input doc-file" type="file" name="file_bollo[' + idx + ']" accept=".pdf,.doc,.docx,.txt,.xml,.p7m" style="font-size:13px;">' +
+              '<p class="hint" style="margin:4px 0 0;">{{ 'Il file non viene salvato, serve solo per calcolare l\'impronta.'|trans }}</p>' +
+            '</div>' +
+          '</div>' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-remove-doc" title="{{ 'Rimuovi'|trans }}" style="color:var(--ms-danger,#c0392b);">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+          '</button>' +
+        '</div>';
+
+      list.appendChild(row);
+      bindRowEvents(row);
+      updateTotal();
+      row.querySelector('.doc-titolo').focus();
+    });
+  }
+
+})();
+</script>
+{% endblock %}

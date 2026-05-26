@@ -543,6 +543,8 @@ WantedBy=timers.target
 - Dettaglio con azioni: annullamento, stralcio, riattivazione.
 - Storico modifiche in `datiAllegati`; origine e operatore tracciati.
 - **IUV vincolato (`iuv_prefix`)**: per tipologia si può configurare un prefisso (max 10 cifre) che forza `idPendenza` e `numeroAvviso` a essere avvisi pagoPA a 18 cifre con quel prefisso. Si imposta da Impostazioni → Configurazione tipologie.
+- **Marca da Bollo Telematica (@e.bollo)**: integrazione del flusso completo per l'acquisto e validazione di marche da bollo digitali direttamente collegate alle posizioni debitorie.
+- **Rateizzazione Automatica e Lineare**: pianificatore di rate in tempo reale. I ricalcoli di date, frequenze e redistribuzioni degli importi residui avvengono automaticamente in JS alla modifica di qualsiasi campo, offrendo un flusso lineare e senza la necessità di cliccare pulsanti manuali.
 
 ### Flussi di Rendicontazione
 
@@ -551,9 +553,16 @@ WantedBy=timers.target
 - **Ricevute on-demand (Biz Events)**: per pagamenti "orfani" (senza dati GovPay locali), un pulsante carica la ricevuta pagoPA via AJAX mostrando debitore, pagatore, PSP, importi e trasferimenti.
 - **Cache DB locale**: i flussi GovPay vengono sincronizzati nella tabella `flussi_rendicontazioni` dal daemon ragioneria — i report leggono da cache locale anziché interrogare GovPay in real-time.
 
-### Statistiche
+### Statistiche e Dashboard Real-Time
 
-Dashboard con grafici e indicatori.
+- **Dashboard operativa premium**: report combinati tramite Chart.js degli andamenti mensili (transazioni e volumi), doughnut split tra flussi interni (GovPay) ed esterni (Biz Events).
+- **Ripartizione Entrate**: analisi della quota di incassi per singola tipologia di pendenza (Top 6 automatica in base al volume raccolto, espandibile interattivamente a tutte le tipologie tramite toggle asincrono).
+- **GIL Services Hub (Home)**: pannello di controllo in tempo reale dello stato di salute dei demoni contabili (`ragioneria`, `biz`, `tefa`, `pendenze-massive`), con pulsanti AJAX dedicati per avviare/arrestare i processi direttamente dalla home page (riservato ai `superadmin`).
+
+### Ottimizzazione UI & Datepicker Contabile
+
+- **Interfaccia ad alto contrasto**: badges di stato riprogettati con sfondi pastello morbidi e contorni coordinati ad alta leggibilità. Sidebar con icone FontAwesome sotto-voci per una chiara gerarchia visiva. Card header compatti allineati a sinistra con paginazione in linea.
+- **Datepicker sbloccato**: Premium Date Picker (Litepicker) che consente la digitazione manuale da tastiera (con validatore date integrato) e comodi pulsanti pillola per le scorciatoie di ragioneria (*Mese Corrente*, *Mese Precedente*, *Anno Corrente*, *Anno Precedente*, *Azzera*) uniformati su tutti i 6 moduli di ricerca e report del backoffice. Disposizione orizzontale affiancata priva di wrapping orizzontale.
 
 ### Report Pagamenti
 

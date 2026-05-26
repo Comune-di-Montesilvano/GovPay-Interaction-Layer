@@ -267,6 +267,7 @@ class PendenzeController
                     // ignore
                 }
             }
+            $tipologie = array_values(array_filter($tipologie, static fn($t) => empty($t['tipo_bollo'])));
             $templates = [];
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
@@ -358,6 +359,7 @@ class PendenzeController
                     $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                 } catch (\Throwable $e) {}
             }
+            $tipologie = array_values(array_filter($tipologie, static fn($t) => empty($t['tipo_bollo'])));
             $templates = [];
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
@@ -391,6 +393,7 @@ class PendenzeController
                     $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                 } catch (\Throwable $e) {}
             }
+            $tipologie = array_values(array_filter($tipologie, static fn($t) => empty($t['tipo_bollo'])));
             $templates = [];
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
@@ -428,6 +431,7 @@ class PendenzeController
                         $tipologie = $repo->listAbilitateByDominioForUser($idDominio, (int)($_SESSION['user']['id'] ?? 0), (string)($_SESSION['user']['role'] ?? 'user'));
                     } catch (\Throwable $e) {}
                 }
+                $tipologie = array_values(array_filter($tipologie, static fn($t) => empty($t['tipo_bollo'])));
                 $templates = [];
                 if ($idDominio && isset($_SESSION['user']['id'])) {
                     try {
@@ -1083,6 +1087,12 @@ class PendenzeController
         // use posted params to prefill the form via `old` variable in the template.
         $posted = (array)($request->getParsedBody() ?? []);
 
+        // Detect BOLLOT pendenza coming back from preview "Modifica" and delegate to dedicated form
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        if (!empty($posted['idTipoPendenza']) && $posted['idTipoPendenza'] === $bolloIdTipo) {
+            return $this->showNuovaBollo($request, $response);
+        }
+
         // Recupera tipologie abilitata per il dominio (se configurato)
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $tipologie = [];
@@ -1095,6 +1105,7 @@ class PendenzeController
                 $tipologie = [];
             }
         }
+        $tipologie = array_values(array_filter($tipologie, static fn($t) => empty($t['tipo_bollo'])));
 
         $templates = [];
         if ($idDominio && isset($_SESSION['user']['id'])) {
@@ -1113,6 +1124,32 @@ class PendenzeController
             'id_a2a' => SettingsRepository::get('entity', 'id_a2a', ''),
             'default_anno' => (int)date('Y'),
             'old' => $posted,
+        ]);
+    }
+
+    public function showNuovaBollo(Request $request, Response $response): Response
+    {
+        $this->exposeCurrentUser();
+        $idDominio   = SettingsRepository::get('entity', 'id_dominio', '');
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $tipoBollo   = '01';
+        $available   = false;
+        if ($idDominio) {
+            try {
+                $det = (new EntrateRepository())->findDetails($idDominio, $bolloIdTipo);
+                if ($det) {
+                    $available = true;
+                    $tipoBollo = $det['tipo_bollo'] ?: '01';
+                }
+            } catch (\Throwable $e) {}
+        }
+        return $this->twig->render($response, 'pendenze/nuova_bollo.html.twig', [
+            'id_tipo_pendenza' => $bolloIdTipo,
+            'tipo_bollo'       => $tipoBollo,
+            'id_dominio'       => $idDominio,
+            'disponibile'      => $available,
+            'default_anno'     => (int)date('Y'),
+            'old'              => (array)($request->getParsedBody() ?? []),
         ]);
     }
 
@@ -2121,6 +2158,13 @@ class PendenzeController
                 if ($finalTipoBollo !== '') {
                     $nv['tipoBollo'] = $finalTipoBollo;
                 }
+                $nv['hashDocumento'] = !empty($voceBase['hashDocumento'])
+                    ? (string)$voceBase['hashDocumento']
+                    : base64_encode(hash('sha256', $descrizione . '|' . $idVoce . '|' . uniqid('', true), true));
+                $prov = !empty($voceBase['provinciaResidenza']) ? $voceBase['provinciaResidenza'] : ($params['provinciaResidenza'] ?? '');
+                if ($prov !== '') {
+                    $nv['provinciaResidenza'] = strtoupper(trim((string)$prov));
+                }
             } elseif ($voiceMode === 'entrata') {
                 $nv['ibanAccredito'] = $finalIban;
                 $nv['tipoContabilita'] = $finalTipoContabilita;
@@ -2304,12 +2348,6 @@ class PendenzeController
                     $istituto = $this->extractStringByPath($selectedRt, ['PSPCompanyName']);
                 }
             }
-            if ($istituto === '') {
-                $istituto = $this->extractStringByPath($rr, ['rpt', 'companyName']);
-            }
-            if ($istituto === '') {
-                $istituto = $this->extractStringByPath($rr, ['pendenza', 'dominio', 'ragioneSociale']);
-            }
 
             $stato = '';
             if (is_array($selectedRt)) {
@@ -2370,7 +2408,10 @@ class PendenzeController
                 }
             }
 
-            $displayId = $iur !== '' ? $iur : ($idPago !== '' ? $idPago : $iuv);
+            $displayId = '';
+            if (is_array($selectedRt)) {
+                $displayId = $iur !== '' ? $iur : ($idPago !== '' ? $idPago : $iuv);
+            }
 
             $attempts[] = [
                 'display_id' => $displayId,
@@ -2593,6 +2634,13 @@ class PendenzeController
             }
             if ($voiceMode === 'bollo') {
                 $vv['tipoBollo'] = $finalTipoBollo;
+                $vv['hashDocumento'] = !empty($vv['hashDocumento'])
+                    ? (string)$vv['hashDocumento']
+                    : base64_encode(hash('sha256', ($vv['descrizione'] ?? '') . '|' . $vv['idVocePendenza'] . '|' . uniqid('', true), true));
+                $prov = !empty($vv['provinciaResidenza']) ? $vv['provinciaResidenza'] : ($merged['provinciaResidenza'] ?? '');
+                if ($prov !== '') {
+                    $vv['provinciaResidenza'] = strtoupper(trim((string)$prov));
+                }
             } elseif ($voiceMode === 'entrata') {
                 $vv['ibanAccredito'] = $finalIban;
                 $vv['tipoContabilita'] = $finalTipoContabilita;

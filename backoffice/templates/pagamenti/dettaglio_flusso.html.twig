@@ -122,13 +122,13 @@
 
     {% set pagamenti = flow.rendicontazioni|default(flow.pagamenti|default([])) %}
     <div class="card shadow-sm">
-      <div class="card-header bg-light border-bottom py-3">
-        <div class="d-flex justify-content-between align-items-center">
-          <div>
-            <h2 class="h6 mb-0 text-uppercase text-secondary">Pagamenti rendicontati</h2>
-            <p class="mb-0 small text-muted">Dettaglio dei singoli pagamenti presenti nel flusso</p>
+      <div class="card-header bg-light border-bottom py-2">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <div class="d-flex align-items-center gap-2">
+            <h2 class="h6 text-uppercase text-secondary mb-0">Pagamenti rendicontati</h2>
+            <span class="badge rounded-pill text-bg-primary">{{ pagamenti|length }}</span>
+            <span class="text-muted small d-none d-md-inline">| Dettaglio dei singoli pagamenti presenti nel flusso</span>
           </div>
-          <span class="badge bg-primary text-white">{{ pagamenti|length }}</span>
         </div>
       </div>
       <div class="table-responsive">
@@ -277,7 +277,7 @@
                   <tr class="detail-row">
                     <td colspan="8" class="p-0 border-0">
                       <div class="collapse" id="{{ collapseId }}">
-                        <article class="it-card it-card-height-full rounded shadow-sm border"
+                        <article class="it-card it-card-height-full rounded shadow-sm border">
                         <div class="card-body small">
                           <div class="row g-3">
                             <div class="col-12 col-md-6">
@@ -330,7 +330,7 @@
                         <div class="card-body small bg-light border-top">
                           <div class="row g-3">
                             {% if rend %}
-                            <div class="col-12 col-md-6">
+                            <div class="col-12 col-md-6 col-lg-4">
                               <h6 class="text-secondary text-uppercase mb-2">Rendicontazione</h6>
                               <dl class="row mb-0">
                                 <dt class="col-sm-5 text-muted">Descrizione</dt>
@@ -341,10 +341,6 @@
                                 <dd class="col-sm-7">{% if rend.data_pagamento %}{{ rend.data_pagamento|date('d/m/Y') }}{% else %}—{% endif %}</dd>
                                 <dt class="col-sm-5 text-muted">Stato rend.</dt>
                                 <dd class="col-sm-7">{{ rend.stato_rend ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">PSP</dt>
-                                <dd class="col-sm-7">{{ rend.ragione_psp ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">TRN</dt>
-                                <dd class="col-sm-7">{{ rend.trn ?: '—' }}</dd>
                                 {% if rend.id_pendenza %}
                                   <dt class="col-sm-5 text-muted">ID Pendenza</dt>
                                   <dd class="col-sm-7">{{ rend.id_pendenza }}</dd>
@@ -353,7 +349,7 @@
                             </div>
                             {% endif %}
                             {% if biz %}
-                            <div class="col-12 col-md-6">
+                            <div class="col-12 col-md-6 col-lg-4">
                               <h6 class="text-secondary text-uppercase mb-2">Ricevuta Biz</h6>
                               {% set bizStatoClass = {'PROCESSED': 'bg-success', 'PENDING': 'bg-warning text-dark', 'ERROR': 'bg-danger', 'SKIPPED': 'bg-secondary'} %}
                               <dl class="row mb-0">
@@ -398,7 +394,7 @@
                             </div>
                             {% endif %}
                             {% if tefa %}
-                            <div class="col-12 col-md-6">
+                            <div class="col-12 col-md-6 col-lg-4">
                               <h6 class="text-secondary text-uppercase mb-2">TEFA</h6>
                               {% set tefaStatoClass = {'PROCESSED': 'bg-success', 'PENDING': 'bg-warning text-dark', 'ERROR': 'bg-danger', 'SKIPPED': 'bg-secondary'} %}
                               <dl class="row mb-0">

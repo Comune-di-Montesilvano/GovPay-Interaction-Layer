@@ -44,7 +44,58 @@
           <div class="d-flex gap-2 align-items-center">
             <label for="rateCount" class="mb-0 small text-muted">Numero rate</label>
             <input id="rateCount" name="rate" type="number" min="1" value="{{ parts|length }}" class="form-control form-control-sm" style="width:80px">
-            <button id="recalcBtn" type="button" class="btn btn-sm btn-outline-secondary">Ricalcola</button>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <label for="validitaFrequency" class="mb-0 small text-muted">Intervallo validità</label>
+            <select id="validitaFrequency" class="form-select form-select-sm" style="width:140px">
+              <option value="1">Mensile</option>
+              <option value="2">Bimestrale</option>
+{% extends 'base.html.twig' %}
+
+{% block title %}Rateizzazione pendenza{% endblock %}
+
+{% block content %}
+  <h1 class="it-title">Rateizzazione</h1>
+
+  <form method="post" action="/pendenze/preview">
+    <input type="hidden" name="original_params" value="{{ params|json_encode|e }}">
+    {# Reincludi i principali campi originali come hidden per sicurezza (soggettoPagatore, idTipoPendenza, ecc.) #}
+    {% for k,v in params %}
+      {% if v is iterable and k == 'voci' %}
+        {# Include anche le voci originali come hidden così il Preview le può mostrare se torni indietro #}
+        {% for idx, vv in v %}
+          <input type="hidden" name="voci[{{ idx }}][idVocePendenza]" value="{{ vv.idVocePendenza|e }}">
+          <input type="hidden" name="voci[{{ idx }}][descrizione]" value="{{ vv.descrizione|e }}">
+          <input type="hidden" name="voci[{{ idx }}][importo]" value="{{ vv.importo|e }}">
+        {% endfor %}
+      {% elseif v is iterable %}
+        {% for sk, sv in v %}
+          {% if sv is iterable %}
+            <input type="hidden" name="{{ k|e }}[{{ sk|e }}]" value="{{ sv|json_encode|e }}">
+          {% else %}
+            <input type="hidden" name="{{ k|e }}[{{ sk|e }}]" value="{{ sv|e }}">
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <input type="hidden" name="{{ k|e }}" value="{{ v|e }}">
+      {% endif %}
+    {% endfor %}
+    {% if errors is defined and errors %}
+    <div class="alert alert-danger">
+      <ul class="mb-0">
+        {% for e in errors %}
+          <li>{{ e }}</li>
+        {% endfor %}
+      </ul>
+      {# Show only sanitized errors in UI. For full HTTP exchange, enable APP_DEBUG and check logs. #}
+    </div>
+  {% endif %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="d-flex gap-2 align-items-center">
+            <label for="rateCount" class="mb-0 small text-muted">Numero rate</label>
+            <input id="rateCount" name="rate" type="number" min="1" value="{{ parts|length }}" class="form-control form-control-sm" style="width:80px">
           </div>
           <div class="d-flex gap-2 align-items-center">
             <label for="validitaFrequency" class="mb-0 small text-muted">Intervallo validità</label>
@@ -54,13 +105,12 @@
               <option value="6">Semestrale</option>
               <option value="12">Annuale</option>
             </select>
-            <button id="recalcValiditaBtn" type="button" class="btn btn-sm btn-outline-secondary">Ricalcola validità</button>
           </div>
         </div>
 
         <table class="table table-sm align-middle">
           <thead>
-            <tr><th>#</th><th class="w-50">Importo</th><th>Validità</th><th>Scadenza <button id="copyDatesBtnHeader" type="button" class="btn btn-link btn-sm p-0 ms-2" title="Copia validità → scadenza">Copia</button><button id="recalcScadenzeBtnHeader" type="button" class="btn btn-link btn-sm p-0 ms-2" title="Ricalcola scadenze (ancorate a fine mese se necessario)">Ricalcola</button><button id="clearDatesBtnHeader" type="button" class="btn btn-link btn-sm p-0 ms-2 text-danger" title="Azzera scadenze">Azzera</button></th></tr>
+            <tr><th>#</th><th class="w-50">Importo</th><th>Validità</th><th>Scadenza <button id="copyDatesBtnHeader" type="button" class="btn btn-link btn-sm p-0 ms-2" title="Copia validità → scadenza">Copia</button><button id="clearDatesBtnHeader" type="button" class="btn btn-link btn-sm p-0 ms-2 text-danger" title="Azzera scadenze">Azzera</button></th></tr>
           </thead>
           <tbody id="rateRows">
             {% for p in parts %}
@@ -98,21 +148,38 @@
       for (let i=1;i<n;i++) parts.push(base);
       return parts;
     }
-    function buildPartsWithDates(total, n) {
-      const parts = splitAmount(total,n);
-      const rows = [];
-      const today = new Date();
-      for (let i=0;i<parts.length;i++){
-        const d = new Date(today.getFullYear(), today.getMonth() + i + 1, today.getDate());
-        const y = d.getFullYear();
-        const m = String(d.getMonth()+1).padStart(2,'0');
-        const day = String(d.getDate()).padStart(2,'0');
-        // default: populate only dataValidita; leave dataScadenza empty so user can decide
-        rows.push({indice:i+1, importo: parts[i].toFixed(2), dataValidita: y + '-' + m + '-' + day, dataScadenza: ''});
-      }
-      return rows;
+    
+    function lastDayOfMonth(y, m){ return new Date(y, m+1, 0).getDate(); }
+    function detectAnchorMode(date){
+      const y = date.getFullYear(); const m = date.getMonth(); const d = date.getDate();
+      const last = lastDayOfMonth(y, m);
+      const isFeb = (m === 1);
+      if (d === 31) return 'EOM';
+      if (d === 30) return 'D30';
+      if (isFeb && (d === 28 || d === 29)) return 'EOM';
+      if (d === last) return 'EOM';
+      return 'NORMAL';
     }
-    // Controllo che la somma delle rate sia uguale all'importo totale prima dell'invio
+    function addMonthsWithAnchor(baseDate, monthsToAdd){
+      const mode = detectAnchorMode(baseDate);
+      const bY = baseDate.getFullYear(); const bM = baseDate.getMonth(); const bD = baseDate.getDate();
+      const tmp = new Date(bY, bM + monthsToAdd, 1);
+      const y = tmp.getFullYear(); const m = tmp.getMonth();
+      const last = lastDayOfMonth(y, m);
+      let day;
+      if (mode === 'EOM') day = last;
+      else if (mode === 'D30') day = (m === 1 ? last : Math.min(30, last));
+      else day = Math.min(bD, last);
+      return new Date(y, m, day);
+    }
+
+    function formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + d;
+    }
+
     const form = document.querySelector('form');
     form.addEventListener('submit', function(e){
       const total = {{ importo }};
@@ -135,196 +202,266 @@
       if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Invio in corso\u2026'; }
     });
 
-    document.getElementById('recalcBtn').addEventListener('click', function(){
-      const count = Math.max(1, parseInt(document.getElementById('rateCount').value || '3', 10));
-      const total = {{ importo }};
-      const rows = buildPartsWithDates(total, count);
+    function recalculateDates() {
       const tbody = document.getElementById('rateRows');
-      tbody.innerHTML = '';
-      rows.forEach(function(r, idx){
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.indice}</td>
-          <td><input type="number" step="0.01" name="parts[${idx}][importo]" value="${r.importo}" class="form-control"></td>
-          <td><input type="date" name="parts[${idx}][dataValidita]" value="${r.dataValidita}" class="form-control"></td>
-          <td><input type="date" name="parts[${idx}][dataScadenza]" value="" class="form-control"></td>`;
-        tbody.appendChild(tr);
-      });
-      // update total after rebuild
-      updatePartsSum();
-    });
-    // Helpers per gestione fine-mese
-    function lastDayOfMonth(y, m){ return new Date(y, m+1, 0).getDate(); }
-    function detectAnchorMode(date){
-      const y = date.getFullYear(); const m = date.getMonth(); const d = date.getDate();
-      const last = lastDayOfMonth(y, m);
-      const isFeb = (m === 1);
-      if (d === 31) return 'EOM';
-      if (d === 30) return 'D30';
-      if (isFeb && (d === 28 || d === 29)) return 'EOM';
-      if (d === last) return 'EOM';
-      return 'NORMAL';
-    }
-    function addMonthsWithAnchor(baseDate, monthsToAdd){
-      const mode = detectAnchorMode(baseDate);
-      const bY = baseDate.getFullYear(); const bM = baseDate.getMonth(); const bD = baseDate.getDate();
-      const tmp = new Date(bY, bM + monthsToAdd, 1); // go to first of target month to avoid rollover
-      const y = tmp.getFullYear(); const m = tmp.getMonth();
-      const last = lastDayOfMonth(y, m);
-      let day;
-      if (mode === 'EOM') day = last;
-      else if (mode === 'D30') day = (m === 1 ? last : Math.min(30, last));
-      else day = Math.min(bD, last);
-      return new Date(y, m, day);
-    }
-    // Ricalcola le validità successive a partire dalla prima in base all'intervallo scelto, rispettando fine mese
-    const recalcValiditaBtn = document.getElementById('recalcValiditaBtn');
-    if (recalcValiditaBtn) {
-      recalcValiditaBtn.addEventListener('click', function(){
-        const freq = parseInt(document.getElementById('validitaFrequency').value || '1', 10);
-        const tbody = document.getElementById('rateRows');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        if (rows.length === 0) return;
-        const firstValiditaInput = rows[0].querySelector('input[name^="parts"][name$="[dataValidita]"]');
-        if (!firstValiditaInput || !firstValiditaInput.value) { alert('Imposta la validità della prima rata prima di ricalcolare le successive.'); return; }
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length === 0) return;
+
+      const freq = parseInt(document.getElementById('validitaFrequency').value || '1', 10);
+
+      // Recalculate Validity Dates
+      const firstValiditaInput = rows[0].querySelector('input[name$="[dataValidita]"]');
+      if (firstValiditaInput && firstValiditaInput.value) {
         const firstDate = new Date(firstValiditaInput.value + 'T00:00:00');
-        rows.forEach(function(tr, idx){
+        rows.forEach(function(tr, idx) {
           if (idx === 0) return; // skip first
           const monthsToAdd = freq * idx;
           const d = addMonthsWithAnchor(firstDate, monthsToAdd);
-          const y = d.getFullYear();
-          const m = String(d.getMonth()+1).padStart(2,'0');
-          const day = String(d.getDate()).padStart(2,'0');
-          const input = tr.querySelector('input[name^="parts"][name$="[dataValidita]"]');
-          if (input) input.value = y + '-' + m + '-' + day;
+          const input = tr.querySelector('input[name$="[dataValidita]"]');
+          if (input) input.value = formatDate(d);
         });
-      });
-    }
-    // Ricalcola scadenze a partire dalla prima scadenza (stesso intervallo della validità), ancorando a fine mese ove necessario
-    const recalcScadBtn = document.getElementById('recalcScadenzeBtnHeader');
-    if (recalcScadBtn) {
-      recalcScadBtn.addEventListener('click', function(){
-        const freq = parseInt(document.getElementById('validitaFrequency').value || '1', 10);
-        const tbody = document.getElementById('rateRows');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        if (rows.length === 0) return;
-        const firstScadInput = rows[0].querySelector('input[name^="parts"][name$="[dataScadenza]"]');
-        if (!firstScadInput || !firstScadInput.value) { alert('Imposta la scadenza della prima rata prima di ricalcolare le successive.'); return; }
-        const firstDate = new Date(firstScadInput.value + 'T00:00:00');
-        rows.forEach(function(tr, idx){
+      }
+
+      // Recalculate Deadline Dates
+      const firstScadenzaInput = rows[0].querySelector('input[name$="[dataScadenza]"]');
+      if (firstScadenzaInput && firstScadenzaInput.value) {
+        const firstDate = new Date(firstScadenzaInput.value + 'T00:00:00');
+        rows.forEach(function(tr, idx) {
           if (idx === 0) return; // skip first
           const monthsToAdd = freq * idx;
           const d = addMonthsWithAnchor(firstDate, monthsToAdd);
-          const y = d.getFullYear();
-          const m = String(d.getMonth()+1).padStart(2,'0');
-          const day = String(d.getDate()).padStart(2,'0');
-          let scadenza = tr.querySelector('input[name^="parts"][name$="[dataScadenza]"]');
-          if (!scadenza) { scadenza = document.createElement('input'); scadenza.type='hidden'; scadenza.name='parts['+idx+'][dataScadenza]'; tr.appendChild(scadenza); }
-          scadenza.value = y + '-' + m + '-' + day;
+          const input = tr.querySelector('input[name$="[dataScadenza]"]');
+          if (input) input.value = formatDate(d);
         });
+      } else {
+        rows.forEach(function(tr, idx) {
+          if (idx === 0) return; // skip first
+          const input = tr.querySelector('input[name$="[dataScadenza]"]');
+          if (input) input.value = '';
+        });
+      }
+    }
+
+    function rebuildRows() {
+      const count = Math.max(1, parseInt(document.getElementById('rateCount').value || '3', 10));
+      const freq = parseInt(document.getElementById('validitaFrequency').value || '1', 10);
+      const total = {{ importo }};
+      
+      const tbody = document.getElementById('rateRows');
+      const oldRows = Array.from(tbody.querySelectorAll('tr'));
+      const oldInputs = oldRows.map(function(tr) {
+        return {
+          importo: tr.querySelector('input[name$="[importo]"]').value,
+          dataValidita: tr.querySelector('input[name$="[dataValidita]"]').value,
+          dataScadenza: tr.querySelector('input[name$="[dataScadenza]"]').value
+        };
+      });
+
+      tbody.innerHTML = '';
+      
+      // Determine the first validity date
+      let firstValidita = '';
+      if (oldInputs.length > 0 && oldInputs[0].dataValidita) {
+        firstValidita = oldInputs[0].dataValidita;
+      } else {
+        const today = new Date();
+        const firstDate = addMonthsWithAnchor(today, 1);
+        firstValidita = formatDate(firstDate);
+      }
+
+      // Determine the first deadline date
+      let firstScadenza = '';
+      if (oldInputs.length > 0 && oldInputs[0].dataScadenza) {
+        firstScadenza = oldInputs[0].dataScadenza;
+      }
+
+      const firstDateObj = new Date(firstValidita + 'T00:00:00');
+      const firstScadDateObj = firstScadenza ? new Date(firstScadenza + 'T00:00:00') : null;
+
+      // Build the new rows
+      for (let idx = 0; idx < count; idx++) {
+        let importo = '0.00';
+        let dataValidita = '';
+        let dataScadenza = '';
+
+        // If we have an existing row for this index, preserve its values
+        if (idx < oldInputs.length) {
+          importo = oldInputs[idx].importo;
+          dataValidita = oldInputs[idx].dataValidita;
+          dataScadenza = oldInputs[idx].dataScadenza;
+        } else {
+          // Calculate dates for new row
+          const monthsToAdd = freq * idx;
+          const valDate = addMonthsWithAnchor(firstDateObj, monthsToAdd);
+          dataValidita = formatDate(valDate);
+          
+          if (firstScadDateObj) {
+            const scadDate = addMonthsWithAnchor(firstScadDateObj, monthsToAdd);
+            dataScadenza = formatDate(scadDate);
+          }
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${idx + 1}</td>
+          <td><input type="number" step="0.01" name="parts[${idx}][importo]" value="${importo}" class="form-control"></td>
+          <td><input type="date" name="parts[${idx}][dataValidita]" value="${dataValidita}" class="form-control"></td>
+          <td><input type="date" name="parts[${idx}][dataScadenza]" value="${dataScadenza}" class="form-control"></td>`;
+        tbody.appendChild(tr);
+      }
+
+      // If the rate count changed, redistribute the total amount equally among the new inputs
+      if (count !== oldInputs.length) {
+        const parts = splitAmount(total, count);
+        const inputs = Array.from(tbody.querySelectorAll('input[name$="[importo]"]'));
+        for (let idx = 0; idx < count; idx++) {
+          inputs[idx].value = parts[idx].toFixed(2);
+        }
+      }
+
+      updatePartsSum();
+    }
+
+    document.getElementById('rateCount').addEventListener('input', rebuildRows);
+    document.getElementById('validitaFrequency').addEventListener('change', function() {
+      recalculateDates();
+    });
+
+    function redistributeFrom(index) {
+      const total = {{ importo }};
+      const tbody = document.getElementById('rateRows');
+      const inputs = Array.from(tbody.querySelectorAll('input[name$="[importo]"]'));
+      const N = inputs.length;
+      if (index >= N - 1) return;
+
+      let fixedSum = 0;
+      for (let k = 0; k <= index; k++) {
+        const val = parseFloat(inputs[k].value.replace(',', '.'));
+        fixedSum += isNaN(val) ? 0 : val;
+      }
+
+      const remainingAmount = total - fixedSum;
+      const remCount = N - (index + 1);
+
+      if (remCount > 0) {
+        const parts = splitAmount(remainingAmount, remCount);
+        for (let k = 0; k < remCount; k++) {
+          const targetIndex = index + 1 + k;
+          inputs[targetIndex].value = parts[k].toFixed(2);
+        }
+      }
+    }
+
+    function updatePartsSum(){
+      const inputs = Array.from(document.querySelectorAll('#rateRows input[name$="[importo]"]'));
+      let sumCents = 0;
+      inputs.forEach(function(i){
+        const v = parseFloat((i.value||'').replace(',', '.'));
+        if(!isNaN(v)) sumCents += Math.round(v*100);
+      });
+      const el = document.getElementById('partsSumValue');
+      if (el) el.textContent = (sumCents/100).toFixed(2);
+      try {
+        const totalCents = Math.round(({{ importo }} || 0) * 100);
+        const container = document.getElementById('partsSum');
+        if (sumCents !== totalCents) {
+          if (container) container.classList.add('text-danger');
+        } else {
+          if (container) container.classList.remove('text-danger');
+        }
+      } catch(e) { /* ignore */ }
+    }
+
+    const rateRowsEl = document.getElementById('rateRows');
+    if (rateRowsEl) {
+      rateRowsEl.addEventListener('input', function(e){
+        if (!e.target) return;
+        
+        // If an amount is changed:
+        if (e.target.name && e.target.name.indexOf('[importo]') !== -1) {
+          const match = e.target.name.match(/parts\[(\d+)\]/);
+          if (match) {
+            const index = parseInt(match[1], 10);
+            redistributeFrom(index);
+          }
+          updatePartsSum();
+        }
+
+        // If a validity date is changed and it is the first row:
+        if (e.target.name && e.target.name.indexOf('[dataValidita]') !== -1) {
+          const match = e.target.name.match(/parts\[(\d+)\]/);
+          if (match && parseInt(match[1], 10) === 0) {
+            recalculateDates();
+          }
+        }
+
+        // If a deadline date is changed and it is the first row:
+        if (e.target.name && e.target.name.indexOf('[dataScadenza]') !== -1) {
+          const match = e.target.name.match(/parts\[(\d+)\]/);
+          if (match && parseInt(match[1], 10) === 0) {
+            recalculateDates();
+          }
+        }
       });
     }
-    // Copy validita -> scadenza when requested (header button)
+
+    updatePartsSum();
+
     const copyBtn = document.getElementById('copyDatesBtnHeader');
     if (copyBtn) {
       copyBtn.addEventListener('click', function(){
         const tbody = document.getElementById('rateRows');
         const rows = Array.from(tbody.querySelectorAll('tr'));
         rows.forEach(function(tr, idx){
-          const validita = tr.querySelector('input[name^="parts"][name$="[dataValidita]"]');
-          let scadenza = tr.querySelector('input[name^="parts"][name$="[dataScadenza]"]');
-          if (!scadenza) {
-            scadenza = document.createElement('input');
-            scadenza.type = 'hidden';
-            scadenza.name = 'parts['+idx+'][dataScadenza]';
-            tr.appendChild(scadenza);
+          const validita = tr.querySelector('input[name$="[dataValidita]"]');
+          let scadenza = tr.querySelector('input[name$="[dataScadenza]"]');
+          if (validita && scadenza) {
+            scadenza.value = validita.value || '';
           }
-          if (validita && scadenza) scadenza.value = validita.value || '';
         });
+        recalculateDates();
       });
     }
-    // Clear (azzera) all dataScadenza values when requested
+
     const clearBtn = document.getElementById('clearDatesBtnHeader');
     if (clearBtn) {
       clearBtn.addEventListener('click', function(){
         const tbody = document.getElementById('rateRows');
         const rows = Array.from(tbody.querySelectorAll('tr'));
         rows.forEach(function(tr, idx){
-          let scadenza = tr.querySelector('input[name^="parts"][name$="[dataScadenza]"]');
+          let scadenza = tr.querySelector('input[name$="[dataScadenza]"]');
           if (scadenza) {
             scadenza.value = '';
-          } else {
-            // create hidden empty input so POST includes empty value
-            const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = 'parts['+idx+'][dataScadenza]'; inp.value = ''; tr.appendChild(inp);
           }
         });
       });
     }
-      // helper: update live sum of parts importo
-      function updatePartsSum(){
-        const inputs = Array.from(document.querySelectorAll('#rateRows input[name$="[importo]"]'));
-        let sumCents = 0;
-        inputs.forEach(function(i){
-          const v = parseFloat((i.value||'').replace(',', '.'));
-          if(!isNaN(v)) sumCents += Math.round(v*100);
-        });
-        const el = document.getElementById('partsSumValue');
-        if (el) el.textContent = (sumCents/100).toFixed(2);
-        try {
-          const totalCents = Math.round(({{ importo }} || 0) * 100);
-          const container = document.getElementById('partsSum');
-          if (sumCents !== totalCents) {
-            if (container) container.classList.add('text-danger');
-          } else {
-            if (container) container.classList.remove('text-danger');
+
+    const annullaBtn = document.getElementById('btnAnnulla');
+    if (annullaBtn) {
+      annullaBtn.addEventListener('click', function(){
+        const origForm = document.querySelector('form');
+        if (!origForm) return;
+        const f = document.createElement('form');
+        f.method = 'post';
+        f.action = '/pendenze/preview';
+        Array.from(origForm.elements).forEach(function(el){
+          if (!el.name) return;                        
+          if (el.name.indexOf('parts[') === 0) return;
+          if (el.name === 'rate') return;
+          if (el.type === 'button' || el.type === 'submit' || el.disabled) return;
+          if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
+          if (el.tagName === 'SELECT') {
+            const val = el.value;
+            const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = el.name; inp.value = val; f.appendChild(inp);
+            return;
           }
-        } catch(e) { /* ignore */ }
-      }
-
-      // live update on input changes via delegation
-      const rateRowsEl = document.getElementById('rateRows');
-      if (rateRowsEl) {
-        rateRowsEl.addEventListener('input', function(e){
-          if (!e.target) return; // defensive
-          if (e.target.name && e.target.name.indexOf('[importo]') !== -1) updatePartsSum();
+          if (el.type === 'file') return;
+          const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = el.name; inp.value = el.value; f.appendChild(inp);
         });
-      }
-
-      // initialize sum on load
-      updatePartsSum();
-
-      // Annulla: submit a sanitized clone of the form to /pendenze/preview
-      const annullaBtn = document.getElementById('btnAnnulla');
-      if (annullaBtn) {
-        annullaBtn.addEventListener('click', function(){
-          const origForm = document.querySelector('form');
-          if (!origForm) return;
-          const f = document.createElement('form');
-          f.method = 'post';
-          f.action = '/pendenze/preview';
-          // clone inputs (serialize current visible values)
-          Array.from(origForm.elements).forEach(function(el){
-            if (!el.name) return;                        
-            // If this is a parts input (rate fields) skip it: Annulla should NOT persist rate edits
-            if (el.name.indexOf('parts[') === 0) return;
-            // skip the client-side rate count control
-            if (el.name === 'rate') return;
-            // skip buttons
-            if (el.type === 'button' || el.type === 'submit' || el.disabled) return;
-            // handle checkboxes/radios
-            if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
-            if (el.tagName === 'SELECT') {
-              const val = el.value;
-              const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = el.name; inp.value = val; f.appendChild(inp);
-              return;
-            }
-            if (el.type === 'file') return; // skip files
-            // preserve array-like names (except parts) by creating hidden inputs with same name
-            const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = el.name; inp.value = el.value; f.appendChild(inp);
-          });
-          document.body.appendChild(f);
-          f.submit();
-        });
-      }
+        document.body.appendChild(f);
+        f.submit();
+      });
+    }
   })();
   </script>
 {% endblock %}

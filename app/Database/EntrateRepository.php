@@ -23,7 +23,7 @@ class EntrateRepository
      */
     public function listAbilitateByDominio(string $idDominio): array
     {
-        $stmt = $this->pdo->prepare('SELECT id_entrata, COALESCE(descrizione_locale, descrizione) AS descrizione, tipo_contabilita FROM entrate_tipologie WHERE id_dominio = :id AND abilitato_backoffice = 1 AND external_url IS NULL ORDER BY COALESCE(descrizione_locale, descrizione) ASC');
+        $stmt = $this->pdo->prepare('SELECT id_entrata, COALESCE(descrizione_locale, descrizione) AS descrizione, tipo_contabilita, tipo_bollo FROM entrate_tipologie WHERE id_dominio = :id AND abilitato_backoffice = 1 AND external_url IS NULL ORDER BY COALESCE(descrizione_locale, descrizione) ASC');
         $stmt->execute([':id' => $idDominio]);
         return $stmt->fetchAll();
     }
@@ -70,7 +70,7 @@ class EntrateRepository
 
         $placeholders = implode(',', array_fill(0, count($allEntrate), '?'));
         $stmt = $this->pdo->prepare(
-            "SELECT id_entrata, COALESCE(descrizione_locale, descrizione) AS descrizione, tipo_contabilita
+            "SELECT id_entrata, COALESCE(descrizione_locale, descrizione) AS descrizione, tipo_contabilita, tipo_bollo
              FROM entrate_tipologie
              WHERE id_dominio = ? AND abilitato_backoffice = 1 AND external_url IS NULL
                AND id_entrata IN ({$placeholders})

@@ -1,14 +1,569 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Home - GovPay{% endblock %}
+{% block title %}Dashboard - GovPay{% endblock %}
 
 {% block content %}
-  <h2 class="it-title">Benvenuto in GovPay Interaction Layer (GIL)</h2>
-  <p>Questo applicativo serve a interagire con un istanza PagoPA gestita con un nodo <a href="https://govpay.readthedocs.io/">GovPay</a>.</p>
-  <div class="mt-3">
-    <a href="/guida" class="btn btn-primary">
-      <i class="fas fa-book-open me-2"></i>Apri la guida rapida
-    </a>
+  {# 1. Welcome Section #}
+  {% set first = current_user ? current_user.first_name|default('') : '' %}
+  {% set last = current_user ? current_user.last_name|default('') : '' %}
+  {% set display_name = (first != '' or last != '') ? (first ~ (last != '' ? ' ' ~ last|upper : '')) : (current_user ? current_user.email : 'Utente') %}
+  <div class="bo-home-welcome">
+    <div class="d-flex align-items-center gap-3">
+      <div class="bo-brand-logo-mark" aria-hidden="true" style="font-size: 2.2rem; color: var(--ms-gold-500); flex-shrink: 0;">
+        {% if app_logo.type == 'img' %}
+          <img src="{{ app_logo.src }}" alt="" style="height: 54px; width: auto; object-fit: contain;">
+        {% else %}
+          <i class="fas fa-building" aria-hidden="true"></i>
+        {% endif %}
+      </div>
+      <div>
+        <h1 style="font-size: 1.6rem; margin-bottom: 2px;">Ciao, {{ display_name }}! 👋</h1>
+        <p class="mb-0 text-muted" style="font-size: 0.92rem;">
+          Sei connesso come <strong class="text-primary">{{ current_user.role|upper }}</strong>. Questa è la dashboard operativa di <strong>{{ app_entity.name }}</strong> (ID Dominio: <code>{{ id_dominio }}</code>).
+          <br>
+          <span style="font-size: 0.86rem; display: inline-block; margin-top: 4px;">
+            <i class="fas fa-info-circle text-info me-1" aria-hidden="true"></i>
+            {% if current_user.role == 'superadmin' %}
+              <strong>Consiglio operativo</strong>: Puoi attivare o arrestare i servizi di background direttamente dal pannello <em>GIL Services Hub</em> a destra.
+            {% else %}
+              <strong>Stato sistema</strong>: Tutti i servizi di sincronizzazione e integrazione flussi sono monitorati in tempo reale nel pannello a destra.
+            {% endif %}
+          </span>
+        </p>
+      </div>
+    </div>
   </div>
 
+  {# 2. Backlog Warning Bar #}
+  {% set total_backlog = biz_queue_remaining + (tefa_enabled|default(false) ? tefa_queue_remaining : 0) %}
+  {% if total_backlog > 0 %}
+    <div class="bo-backlog-bar shadow-sm">
+      <div class="d-flex align-items-center gap-2">
+        <i class="fas fa-triangle-exclamation text-warning" style="font-size: 1.1rem;" aria-hidden="true"></i>
+        <span>
+          Ci sono <strong>{{ total_backlog|number_format(0, ',', '.') }}</strong> transazioni in attesa di elaborazione
+          ({% if biz_queue_remaining > 0 %}<strong>{{ biz_queue_remaining }}</strong> Flussi Esterni{% endif %}
+          {% if biz_queue_remaining > 0 and tefa_queue_remaining > 0 and tefa_enabled|default(false) %} e {% endif %}
+          {% if tefa_queue_remaining > 0 and tefa_enabled|default(false) %}<strong>{{ tefa_queue_remaining }}</strong> TEFA{% endif %}).
+        </span>
+      </div>
+      <div class="d-flex gap-2">
+        {% if biz_queue_remaining > 0 %}
+          <a href="/pagamenti/report-ragioneria?q=1" class="btn btn-warning btn-sm" style="color: var(--ms-ink) !important; border: 1px solid rgba(0,0,0,0.15) !important;">
+            <i class="fas fa-arrow-right me-1" aria-hidden="true"></i> Flussi Esterni
+          </a>
+        {% endif %}
+        {% if tefa_queue_remaining > 0 and tefa_enabled|default(false) %}
+          <a href="/pagamenti/report-tefa?q=1" class="btn btn-warning btn-sm" style="color: var(--ms-ink) !important; border: 1px solid rgba(0,0,0,0.15) !important;">
+            <i class="fas fa-arrow-right me-1" aria-hidden="true"></i> Quota TEFA
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# 3. Hero Metric Cards Grid #}
+  <div class="row g-3 mb-4">
+    {# Card 1: Incassi Complessivi #}
+    <div class="col-sm-6 {{ tefa_enabled|default(false) ? 'col-lg-3' : 'col-lg-4' }}">
+      <div class="card bo-hero-card shadow-sm" style="--accent-color: var(--ms-gold-500);">
+        <div class="card-body">
+          <div class="bo-hero-card-icon" style="--bg-light: var(--ms-gold-100); --color: var(--ms-gold-700);">
+            <i class="fas fa-wallet" aria-hidden="true"></i>
+          </div>
+          <span class="bo-hero-card-label">Incassi Complessivi</span>
+          <div class="bo-hero-card-value">€ {{ totals.amount|number_format(2, ',', '.') }}</div>
+          <div class="bo-hero-card-meta">
+            <i class="fas fa-circle-check text-success" aria-hidden="true"></i>
+            <span><strong>{{ totals.count|number_format(0, ',', '.') }}</strong> transazioni totali</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Card 2: Sincronizzazione Ragioneria #}
+    <div class="col-sm-6 {{ tefa_enabled|default(false) ? 'col-lg-3' : 'col-lg-4' }}">
+      <div class="card bo-hero-card shadow-sm" style="--accent-color: var(--ms-green-600);">
+        <div class="card-body">
+          <div class="bo-hero-card-icon" style="--bg-light: var(--ms-green-100); --color: var(--ms-green-700);">
+            <i class="fas fa-database" aria-hidden="true"></i>
+          </div>
+          <span class="bo-hero-card-label">Sincronizzazione Ragioneria</span>
+          <div class="bo-hero-card-value">{{ daemons.ragioneria.running ? 'Attivo' : 'Arrestato' }}</div>
+          <div class="bo-hero-card-meta">
+            <span class="status-dot {{ daemons.ragioneria.running ? 'active' : 'stopped' }}" aria-hidden="true"></span>
+            <span>Sincronizzazione Flussi Interni</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Card 3: Biz Events Scanner #}
+    <div class="col-sm-6 {{ tefa_enabled|default(false) ? 'col-lg-3' : 'col-lg-4' }}">
+      <div class="card bo-hero-card shadow-sm" style="--accent-color: var(--bi-primary);">
+        <div class="card-body">
+          <div class="bo-hero-card-icon" style="--bg-light: var(--bi-primary-a8); --color: var(--bi-primary);">
+            <i class="fas fa-receipt" aria-hidden="true"></i>
+          </div>
+          <span class="bo-hero-card-label">Ricevute Flussi Esterni</span>
+          <div class="bo-hero-card-value">{{ biz_counts.PROCESSED|number_format(0, ',', '.') }}</div>
+          <div class="bo-hero-card-meta">
+            <span>
+              {% if biz_counts.PENDING > 0 %}<strong class="text-warning">{{ biz_counts.PENDING }}</strong> in attesa · {% endif %}
+              {% if biz_counts.ERROR > 0 %}<strong class="text-danger">{{ biz_counts.ERROR }}</strong> errori{% else %}Elaborate con successo{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Card 4: Classificatore TEFA #}
+    {% if tefa_enabled|default(false) %}
+    <div class="col-sm-6 col-lg-3">
+      <div class="card bo-hero-card shadow-sm" style="--accent-color: var(--ms-purple-600);">
+        <div class="card-body">
+          <div class="bo-hero-card-icon" style="--bg-light: var(--ms-purple-100); --color: var(--ms-purple-600);">
+            <i class="fas fa-building-columns" aria-hidden="true"></i>
+          </div>
+          <span class="bo-hero-card-label">Classificazione TEFA</span>
+          <div class="bo-hero-card-value">{{ tefa_counts.PROCESSED|number_format(0, ',', '.') }}</div>
+          <div class="bo-hero-card-meta">
+            <span>
+              {% if tefa_counts.PENDING > 0 %}<strong class="text-warning">{{ tefa_counts.PENDING }}</strong> in attesa · {% endif %}
+              {% if tefa_counts.ERROR > 0 %}<strong class="text-danger">{{ tefa_counts.ERROR }}</strong> errori{% else %}Analizzate correttamente{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# 4. Interactive Charts Section #}
+  <div class="row g-3 mb-4">
+    {# Chart 1: Combined trend of last 6 months #}
+    <div class="col-lg-8">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-light border-bottom py-2">
+          <div class="d-flex align-items-center gap-2">
+            <h3 class="h6 mb-0">Andamento Incassi (Ultimi 6 Mesi)</h3>
+            <span class="text-muted small">| Totale mensile riscosso ed esito pagamenti</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="position: relative; height: 300px; width: 100%;">
+            <canvas id="monthlyTrendChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Chart 2: Distribution by Channel #}
+    <div class="col-lg-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-light border-bottom py-2">
+          <div class="d-flex align-items-center gap-2">
+            <h3 class="h6 mb-0">Ripartizione Canale</h3>
+            <span class="text-muted small">| Incassi reali</span>
+          </div>
+        </div>
+        <div class="card-body d-flex flex-column align-items-center justify-content-center">
+          <div style="position: relative; height: 200px; width: 100%;">
+            <canvas id="channelDistributionChart"></canvas>
+          </div>
+          <div class="mt-3 text-center w-100">
+            <div class="d-flex justify-content-around text-muted small">
+              <div>
+                <span class="badge" style="background-color: var(--bi-primary); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 4px; vertical-align: middle;"></span>
+                Flussi Interni: <strong>{{ channels_data.govpay|number_format(0, ',', '.') }}</strong>
+              </div>
+              <div>
+                <span class="badge" style="background-color: var(--ms-purple-600); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 4px; vertical-align: middle;"></span>
+                Flussi Esterni: <strong>{{ channels_data.external|number_format(0, ',', '.') }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# 5. Daemons control & Activity Hub #}
+  <div class="row g-3">
+    {# Recent flussi synchronized #}
+    <div class="col-lg-7">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-light border-bottom py-2">
+          <div class="d-flex align-items-center gap-2">
+            <h3 class="h6 mb-0">Ultimi Flussi Rendicontati</h3>
+            <span class="text-muted small">| Aggiornamenti ragioneria</span>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          {% if recent_flussi is empty %}
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
+              <p class="mb-0">Nessun flusso sincronizzato presente in archivio.</p>
+            </div>
+          {% else %}
+            <div class="table-responsive">
+              <table class="table table-striped align-middle mb-0" style="font-size: 0.88rem;">
+                <thead>
+                  <tr>
+                    <th scope="col">Data Regolamento</th>
+                    <th scope="col">ID Flusso</th>
+                    <th scope="col">Sorgente</th>
+                    <th scope="col" class="text-end">Transazioni</th>
+                    <th scope="col" class="text-end">Importo Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for flusso in recent_flussi %}
+                    <tr>
+                      <td class="fw-semibold">{{ flusso.data_regolamento }}</td>
+                      <td>
+                        <a href="/pagamenti/ricerca-flussi?q=1&idFlusso={{ flusso.id_flusso|url_encode }}&idDominio={{ id_dominio|url_encode }}" class="text-decoration-none">
+                          <code>{{ flusso.id_flusso|slice(0, 30) }}{% if flusso.id_flusso|length > 30 %}...{% endif %}</code>
+                        </a>
+                      </td>
+                      <td>
+                        {% if flusso.is_govpay == 1 %}
+                          <span class="badge bg-primary">Flussi Interni</span>
+                        {% else %}
+                          <span class="badge" style="background-color: var(--ms-purple-600); color: #fff;">Flussi Esterni</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-end">{{ flusso.transazioni|number_format(0, ',', '.') }}</td>
+                      <td class="text-end fw-bold">€ {{ flusso.importo_totale|number_format(2, ',', '.') }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Daemon Controller Hub #}
+    <div class="col-lg-5">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-light border-bottom py-2">
+          <div class="d-flex align-items-center gap-2">
+            <h3 class="h6 mb-0">GIL Services Hub</h3>
+            <span class="text-muted small">| Stato dei servizi di integrazione</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="d-flex flex-column gap-3">
+            {% set is_superadmin = current_user.role == 'superadmin' %}
+            
+            {# Daemon: Ragioneria Sync #}
+            <div class="daemon-service-item">
+              <div class="d-flex align-items-center justify-content-between">
+                <span class="daemon-service-name">
+                  <i class="fas fa-database" aria-hidden="true"></i> Sincronizzazione Flussi Interni
+                </span>
+                <span class="badge {{ daemons.ragioneria.running ? 'bg-success' : 'bg-secondary' }}">
+                  {{ daemons.ragioneria.running ? 'Attivo' : 'Arrestato' }}
+                </span>
+              </div>
+              <p class="daemon-service-desc">Scarica e sincronizza i flussi FDR ragioneria da GovPay nel database locale.</p>
+              {% if is_superadmin %}
+                <div class="daemon-service-controls">
+                  {% if daemons.ragioneria.running %}
+                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon('ragioneria', 'stop')">
+                      <i class="fas fa-stop me-1" aria-hidden="true"></i> Arresta
+                    </button>
+                  {% else %}
+                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon('ragioneria', 'run')">
+                      <i class="fas fa-play me-1" aria-hidden="true"></i> Avvia
+                    </button>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+
+            {# Daemon: Biz Scanner #}
+            <div class="daemon-service-item">
+              <div class="d-flex align-items-center justify-content-between">
+                <span class="daemon-service-name">
+                  <i class="fas fa-receipt" aria-hidden="true"></i> Scanner Flussi Esterni (pagoPA)
+                </span>
+                <span class="badge {{ daemons.biz.running ? 'bg-success' : 'bg-secondary' }}">
+                  {{ daemons.biz.running ? 'Attivo' : 'Arrestato' }}
+                </span>
+              </div>
+              <p class="daemon-service-desc">Accoda pendenze non-GovPay e arricchisce i dati leggendo da Biz Events pagoPA.</p>
+              {% if is_superadmin %}
+                <div class="daemon-service-controls">
+                  {% if daemons.biz.running %}
+                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon('biz', 'stop')">
+                      <i class="fas fa-stop me-1" aria-hidden="true"></i> Arresta
+                    </button>
+                  {% else %}
+                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon('biz', 'run')">
+                      <i class="fas fa-play me-1" aria-hidden="true"></i> Avvia
+                    </button>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+
+            {# Daemon: TEFA Classificator #}
+            {% if tefa_enabled|default(false) %}
+            <div class="daemon-service-item">
+              <div class="d-flex align-items-center justify-content-between">
+                <span class="daemon-service-name">
+                  <i class="fas fa-building-columns" aria-hidden="true"></i> Classificatore TEFA
+                </span>
+                <span class="badge {{ daemons.tefa.running ? 'bg-success' : 'bg-secondary' }}">
+                  {{ daemons.tefa.running ? 'Attivo' : 'Arrestato' }}
+                </span>
+              </div>
+              <p class="daemon-service-desc">Classifica i flussi Biz Events identificando la quota provinciale TEFA.</p>
+              {% if is_superadmin %}
+                <div class="daemon-service-controls">
+                  {% if daemons.tefa.running %}
+                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon('tefa', 'stop')">
+                      <i class="fas fa-stop me-1" aria-hidden="true"></i> Arresta
+                    </button>
+                  {% else %}
+                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon('tefa', 'run')">
+                      <i class="fas fa-play me-1" aria-hidden="true"></i> Avvia
+                    </button>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+            {% endif %}
+            
+          </div>
+        </div>
+      </div>
+    </div>
+
+  {# 6. Breakdown by Noticing Type (Tipologie Pendenze) #}
+  <div class="row g-3 mt-3 mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header bg-light border-bottom py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <h3 class="h6 mb-0">Ripartizione per Tipologia di Pendenza</h3>
+            <span class="text-muted small d-none d-md-inline">| Analisi dei maggiori flussi di entrata dell'Ente</span>
+          </div>
+          <div class="small text-muted fw-semibold" style="font-size: 0.84rem;">
+            Volume complessivo incassato: <span class="text-primary fs-6 fw-bold">€ {{ totals.amount|number_format(2, ',', '.') }}</span>
+          </div>
+        </div>
+        <div class="card-body">
+          {% if tipologie_stats is empty %}
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
+              <p class="mb-0">Nessun dato registrato sulle tipologie di pendenza.</p>
+            </div>
+          {% else %}
+            <div class="row g-3">
+              {% for item in tipologie_stats %}
+                {% set percent = totals.amount > 0 ? (item.importo_totale / totals.amount * 100) : 0 %}
+                {% set is_extra = loop.index0 >= 6 %}
+                <div class="col-md-6 col-xl-4{{ is_extra ? ' d-none bo-extra-tipologia' : '' }}">
+                  <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
+                    <div>
+                      <div class="mb-2">
+                        <h4 class="h6 mb-0 text-dark fw-bold" style="font-size: 0.92rem; line-height: 1.35;">
+                          {{ item.tipologia_desc }}
+                        </h4>
+                      </div>
+                      <div class="text-muted small mb-3">
+                        <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
+                        <strong>{{ item.transazioni|number_format(0, ',', '.') }}</strong> transazioni
+                      </div>
+                    </div>
+                    <div>
+                      <div class="d-flex justify-content-between align-items-end mb-1">
+                        <span class="fw-bold text-dark" style="font-size: 1.1rem;">€ {{ item.importo_totale|number_format(2, ',', '.') }}</span>
+                        <span class="small fw-semibold text-primary" style="font-size: 0.8rem;">{{ percent|round(1) }}%</span>
+                      </div>
+                      <div class="progress" style="height: 6px;" title="Quota del {{ percent|round(2) }}% sul totale incassato">
+                        <div class="progress-bar progress-bar-striped bg-primary" role="progressbar" style="width: {{ percent }}%" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+
+            {% if tipologie_stats|length > 6 %}
+              <div class="text-center mt-4">
+                <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2" onclick="toggleExtraTipologie()">
+                  <i class="fas fa-chevron-down me-2" id="bo-toggle-icon"></i>
+                  <span id="bo-toggle-text">Mostra tutte le tipologie ({{ tipologie_stats|length }})</span>
+                </button>
+              </div>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# 7. Custom Scripts for Chart.js & Ajax Daemon toggling #}
+  <script src="/assets/chartjs/chart.umd.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      // ── Charts Implementation ──────────────────────────────────────
+      const monthlyData = {{ monthly_trend_json|raw }};
+      
+      // Chart 1: Monthly Trend Line/Bar Combo Chart
+      const ctxTrend = document.getElementById("monthlyTrendChart");
+      if (ctxTrend && typeof Chart !== 'undefined') {
+        new Chart(ctxTrend.getContext("2d"), {
+          type: "bar",
+          data: {
+            labels: monthlyData.map(item => item.label),
+            datasets: [
+              {
+                type: "line",
+                label: "Numero Transazioni",
+                borderColor: "#C9A13B", // crown gold
+                borderWidth: 3,
+                fill: false,
+                tension: 0.35,
+                yAxisID: "y-count",
+                data: monthlyData.map(item => item.count)
+              },
+              {
+                type: "bar",
+                label: "Importo Incassato (€)",
+                backgroundColor: "rgba(74, 42, 110, 0.75)", // purple from stemma
+                hoverBackgroundColor: "var(--ms-purple-600)",
+                borderRadius: 4,
+                yAxisID: "y-amount",
+                data: monthlyData.map(item => item.amount)
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'top',
+                labels: {
+                  boxWidth: 12,
+                  font: { family: 'Titillium Web', size: 12 }
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false }
+              },
+              "y-amount": {
+                type: "linear",
+                position: "left",
+                ticks: {
+                  callback: function(value) { return '€ ' + value.toLocaleString('it-IT'); }
+                },
+                grid: { color: "#f1f5f9" }
+              },
+              "y-count": {
+                type: "linear",
+                position: "right",
+                grid: { drawOnChartArea: false },
+                ticks: {
+                  precision: 0
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Chart 2: Channel Distribution Doughnut Chart
+      const ctxChannel = document.getElementById("channelDistributionChart");
+      if (ctxChannel && typeof Chart !== 'undefined') {
+        const govpayCount = {{ channels_data.govpay }};
+        const externalCount = {{ channels_data.external }};
+        
+        new Chart(ctxChannel.getContext("2d"), {
+          type: "doughnut",
+          data: {
+            labels: ["Flussi Interni", "Flussi Esterni"],
+            datasets: [{
+              data: [govpayCount, externalCount],
+              backgroundColor: ["#0066CC", "#4A2A6E"], // bi-primary blue vs stemma purple
+              borderWidth: 2,
+              borderColor: "#fff"
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false }
+            },
+            cutout: "70%"
+          }
+        });
+      }
+    });
+
+    // ── Daemon Controller AJAX ───────────────────────────────────────
+    async function toggleDaemon(job, action) {
+      if (!confirm(`Sei sicuro di voler ${action === 'run' ? 'avviare' : 'arrestare'} il servizio ${job}?`)) {
+        return;
+      }
+      
+      const btn = event?.currentTarget;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i> Attendi...`;
+      }
+      
+      try {
+        const response = await fetch(`/impostazioni/cron/${job}/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        const result = await response.json();
+        if (result.ok) {
+          window.location.reload();
+        } else {
+          alert("Errore: " + (result.error || "Impossibile completare l'azione."));
+          if (btn) btn.disabled = false;
+        }
+      } catch (e) {
+        alert("Errore di rete: " + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ── Toggle Extra Tipologie Pendenze ──────────────────────────────
+    function toggleExtraTipologie() {
+      const extraCards = document.querySelectorAll('.bo-extra-tipologia');
+      const btnText = document.getElementById('bo-toggle-text');
+      const btnIcon = document.getElementById('bo-toggle-icon');
+      
+      let isHidden = true;
+      extraCards.forEach(card => {
+        if (card.classList.contains('d-none')) {
+          card.classList.remove('d-none');
+          isHidden = false;
+        } else {
+          card.classList.add('d-none');
+          isHidden = true;
+        }
+      });
+      
+      if (isHidden) {
+        btnText.textContent = "Mostra tutte le tipologie (" + (6 + extraCards.length) + ")";
+        btnIcon.className = "fas fa-chevron-down me-2";
+      } else {
+        btnText.textContent = "Mostra meno";
+        btnIcon.className = "fas fa-chevron-up me-2";
+      }
+    }
+  </script>
 {% endblock %}

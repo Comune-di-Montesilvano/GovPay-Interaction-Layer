@@ -1,10 +1,10 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white border-bottom-0 pb-0">
-    <h5 class="mb-1"><i class="fas fa-clock me-2 text-primary"></i>Gestione Daemon</h5>
+    <h5 class="mb-1"><i class="fas fa-clock me-2 text-primary"></i>Gestione Servizi di Integrazione</h5>
     <p class="text-muted small mb-0">Avvia e ferma i processi in background. I log vengono salvati su file.</p>
   </div>
   <div class="card-body">
-
+  
     <form method="POST" action="/impostazioni/cron/set-scan-date" class="mb-4 p-3 border rounded bg-light">
       <label class="form-label small fw-semibold mb-1">
         <i class="fas fa-calendar-day me-1 text-primary"></i>Data inizio sincronizzazione flussi
@@ -14,7 +14,7 @@
                style="max-width:180px" value="{{ ragioneria_scan_da|default('') }}">
         <button type="submit" class="btn btn-primary btn-sm">Salva</button>
       </div>
-      <div class="text-muted small mt-1">Comune a ragioneria e TEFA. Il daemon ragioneria scarica tutti i flussi da questa data in avanti.</div>
+      <div class="text-muted small mt-1">Comune a ragioneria e TEFA. Il servizio di sincronizzazione scarica tutti i flussi da questa data in avanti.</div>
     </form>
 
     <form method="POST" action="/impostazioni/cron/reset-range" class="mb-4 p-3 border rounded bg-light"
@@ -123,10 +123,10 @@
       const res  = await fetch('/impostazioni/cron/' + jobKey + '/run', { method: 'POST', body });
       const json = await res.json();
       if (json.ok) {
-        impToast('Daemon avviato.', true);
+        impToast('Servizio avviato.', true);
         setTimeout(() => location.reload(), 1200);
       } else {
-        impToast(json.error || 'Errore avvio daemon.', false);
+        impToast(json.error || 'Errore avvio servizio.', false);
       }
     } catch (e) {
       impToast('Errore di rete: ' + e.message, false);
@@ -141,7 +141,7 @@
         impToast('Segnale di stop inviato.', true);
         setTimeout(() => location.reload(), 1500);
       } else {
-        impToast(json.error || 'Errore stop daemon.', false);
+        impToast(json.error || 'Errore arresto servizio.', false);
       }
     } catch (e) {
       impToast('Errore di rete: ' + e.message, false);

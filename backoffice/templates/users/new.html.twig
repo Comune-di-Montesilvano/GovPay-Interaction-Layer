@@ -1,12 +1,12 @@
 {% extends 'base.html.twig' %}
 {% block content %}
-<div class="container my-5" style="max-width:640px;">
+<div class="bo-form-shell bo-form-shell-md">
   <h1 class="h4 mb-3">Nuovo utente</h1>
   {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
   <form method="post" action="/users/new" autocomplete="off">
     {# Hidden dummy fields to discourage browser autofill #}
-    <input type="text" name="fakeusernameremembered" autocomplete="username" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true" tabindex="-1">
-    <input type="password" name="fakepasswordremembered" autocomplete="new-password" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true" tabindex="-1">
+    <input type="text" name="fakeusernameremembered" autocomplete="username" class="bo-autofill-trap" aria-hidden="true" tabindex="-1">
+    <input type="password" name="fakepasswordremembered" autocomplete="new-password" class="bo-autofill-trap" aria-hidden="true" tabindex="-1">
     <div class="mb-3">
       <label class="form-label">Email</label>
   <input class="form-control" type="email" name="email" required autocomplete="email">
@@ -33,5 +33,5 @@
     <button class="btn btn-primary" type="submit">Crea</button>
     <a class="btn btn-outline-secondary" href="/impostazioni?tab=utenti">Annulla</a>
   </form>
-  </div>
+</div>
 {% endblock %}

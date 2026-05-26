@@ -291,6 +291,13 @@ class TracciatoService
 
             if ($voiceMode === 'bollo') {
                 $vv['tipoBollo'] = $finalTipoBollo;
+                $vv['hashDocumento'] = !empty($vv['hashDocumento'])
+                    ? (string)$vv['hashDocumento']
+                    : base64_encode(hash('sha256', ($vv['descrizione'] ?? '') . '|' . ($vv['idVocePendenza'] ?? '') . '|' . uniqid('', true), true));
+                $prov = !empty($vv['provinciaResidenza']) ? $vv['provinciaResidenza'] : ($merged['provinciaResidenza'] ?? '');
+                if ($prov !== '') {
+                    $vv['provinciaResidenza'] = strtoupper(trim((string)$prov));
+                }
             } elseif ($voiceMode === 'entrata') {
                 $vv['ibanAccredito'] = $finalIban;
                 $vv['tipoContabilita'] = $finalTipoContabilita;

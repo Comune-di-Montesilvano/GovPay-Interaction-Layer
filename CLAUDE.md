@@ -119,9 +119,29 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 | GovPay | Core pagamenti, rendicontazione, ricevute |
 | pagoPA Checkout | Gateway pagamento online |
 | pagoPA Biz Events | Recupero ricevute |
+| @e.bollo (pagoPA) | Acquisto e validazione Marca da Bollo Telematica |
 | pagoPA GPD | Gestione posizioni debitorie |
 | App IO | Notifiche e pagamenti cittadini |
 | SPID / CIE | Autenticazione federata cittadini |
+
+## Nuove Funzionalità Chiave (Maggio 2026)
+
+1. **Riprogettazione UI Backoffice**:
+   - **Dashboard in tempo reale**: Grafici combinati Chart.js (trend mensili incassi e transazioni), doughnut split flussi interni (GovPay) vs esterni (Biz Events), e breakdown per tipologia di pendenza (Top 6 predefinita ed espansione a tutte con bottone toggle e animazione client-side).
+   - **GIL Services Hub**: Gestione asincrona AJAX dei demoni contabili (`biz`, `tefa`, `ragioneria`, `pendenze-massive`) direttamente dalla home per i superadmin (avvio, arresto e log live).
+   - **Gerarchia Visiva**: Sidebar con icone FontAwesome nidificate, testate delle card compatte ed allineate a sinistra con paginazione integrata, e badges di stato a contrasto elevato in tinte pastello con bordi coordinati.
+   - **Piani di Rateizzazione Lineari**: Algoritmo automatico in JS che ricalcola scadenze, frequenze di intervallo e importi residui in tempo reale al cambio di qualsiasi campo (redistribuzione progressiva), eliminando tutti i vecchi bottoni "Ricalcola".
+   - **Datepicker Contabile**: Premium Date Picker (Litepicker) con input manuale sbloccato (validazione anni bisestili) e pulsanti rapidi preimpostati per ragioneria (*Mese Corrente*, *Mese Precedente*, *Anno Corrente*, *Anno Precedente*, *Azzera*) uniformati su tutte le 6 ricerche/report contabili e disposti in una griglia orizzontale affiancata senza wrapping orizzontale.
+
+2. **Ottimizzazione Mobile & UI Frontoffice**:
+   - Hamburger menu a scomparsa per i link principali e selettore lingua compresso in `<select>` nativo su mobile.
+   - Rimozione di qualsiasi overflow orizzontale (gap bianchi fissati con `overflow-x: hidden`).
+   - Pulsanti SPID e primari isolati graficamente da override dei colori di link, garantendo testo bianco ad alto contrasto (#ffffff) in tutti gli stati (`:hover`, `:focus`, `:active`).
+   - Allineamento ed uniformazione della pagina "Paga un avviso" (`avviso.html.twig`) al design system, eliminando clipping di layout.
+   - Percorsi di checkout errore/annullamento arricchiti con pulsante "Vai al carrello" e restrizione dell'area personale solo ad utenti loggati.
+
+3. **Marca da Bollo Telematica (@e.bollo)**:
+   - Integrazione completa del flusso di inserimento e pagamento del bollo telematico, sia in backoffice che in frontoffice (`bollo.html.twig`, `avviso-bollo.html.twig`).
 
 ## Configurazione: DB vs .env
 

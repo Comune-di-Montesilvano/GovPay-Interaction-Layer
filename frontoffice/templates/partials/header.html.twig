@@ -12,12 +12,21 @@
       <span><span class="gov-dot"></span>{{ 'Sito ufficiale della Pubblica Amministrazione'|trans }}</span>
     </div>
     <div class="right">
-      <div class="lang-switch">
+      <div class="lang-switch lang-switch-desktop">
         <a href="?lang=it" class="{{ current_locale == 'it' ? 'active' : '' }}">IT</a>
         <a href="?lang=en" class="{{ current_locale == 'en' ? 'active' : '' }}">EN</a>
         <a href="?lang=fr" class="{{ current_locale == 'fr' ? 'active' : '' }}">FR</a>
         <a href="?lang=es" class="{{ current_locale == 'es' ? 'active' : '' }}">ES</a>
         <a href="?lang=de" class="{{ current_locale == 'de' ? 'active' : '' }}">DE</a>
+      </div>
+      <div class="lang-switch-mobile" style="display:none;">
+        <select class="lang-select-input" onchange="location = this.value;" aria-label="{{ 'Seleziona lingua'|trans }}">
+          <option value="?lang=it" {{ current_locale == 'it' ? 'selected' : '' }}>IT</option>
+          <option value="?lang=en" {{ current_locale == 'en' ? 'selected' : '' }}>EN</option>
+          <option value="?lang=fr" {{ current_locale == 'fr' ? 'selected' : '' }}>FR</option>
+          <option value="?lang=es" {{ current_locale == 'es' ? 'selected' : '' }}>ES</option>
+          <option value="?lang=de" {{ current_locale == 'de' ? 'selected' : '' }}>DE</option>
+        </select>
       </div>
     </div>
   </div>
@@ -79,21 +88,33 @@
 
 {# ── 3. Sticky main nav ── #}
 <nav class="main-nav" aria-label="{{ 'Navigazione principale'|trans }}">
-  <div class="container">
-    <a class="nav-item{{ current_path == '/' ? ' active' : '' }}" href="/">{{ 'Home'|trans }}</a>
-    <a class="nav-item{{ current_path starts with '/pagamento-avviso' ? ' active' : '' }}" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
-    <a class="nav-item{{ current_path starts with '/pagamento-spontaneo' ? ' active' : '' }}" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
-    {% if spid_enabled %}
-      <a class="nav-item{{ current_path starts with '/pendenze' ? ' active' : '' }}" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
-    {% endif %}
-    <a class="nav-item{{ current_path starts with '/guida' ? ' active' : '' }}" href="/guida">{{ 'Guida'|trans }}</a>
+  <div class="container main-nav-container">
+    <button class="nav-toggle-btn" id="nav-toggle-btn" aria-label="{{ 'Apri menu'|trans }}" aria-expanded="false" aria-controls="fo-nav-menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: block;">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
+
+    <div class="nav-menu" id="fo-nav-menu">
+      <a class="nav-item{{ current_path == '/' ? ' active' : '' }}" href="/">{{ 'Home'|trans }}</a>
+      <a class="nav-item{{ current_path starts with '/pagamento-avviso' ? ' active' : '' }}" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
+      <a class="nav-item{{ current_path starts with '/pagamento-spontaneo' ? ' active' : '' }}" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+      {% if spid_enabled %}
+        <a class="nav-item{{ current_path starts with '/pendenze' ? ' active' : '' }}" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+      {% endif %}
+      <a class="nav-item{{ current_path starts with '/guida' ? ' active' : '' }}" href="/guida">{{ 'Guida'|trans }}</a>
+    </div>
+
     <div class="spacer"></div>
+
     <a class="cart-btn" href="/carrello" aria-label="{{ 'Carrello'|trans }}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
         <path d="M3 4h2l3 12h11l2-8H7"/>
       </svg>
-      {{ 'Carrello'|trans }}
+      <span class="cart-btn-text">{{ 'Carrello'|trans }}</span>
       <span class="badge cart-badge"{% if cart_count|default(0) == 0 %} style="display:none;"{% endif %}>{{ cart_count|default(0) }}</span>
     </a>
   </div>
@@ -120,17 +141,37 @@
 (function(){
   var btn = document.getElementById('fo-user-btn');
   var menu = document.getElementById('fo-user-dropdown');
-  if (!btn || !menu) return;
-  btn.addEventListener('click', function(e){
-    e.stopPropagation();
-    var open = menu.classList.toggle('open');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    menu.setAttribute('aria-hidden', open ? 'false' : 'true');
-  });
-  document.addEventListener('click', function(){
-    menu.classList.remove('open');
-    btn.setAttribute('aria-expanded', 'false');
-    menu.setAttribute('aria-hidden', 'true');
-  });
+  if (btn && menu) {
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var open = menu.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      menu.setAttribute('aria-hidden', open ? 'false' : 'true');
+    });
+    document.addEventListener('click', function(){
+      menu.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      menu.setAttribute('aria-hidden', 'true');
+    });
+  }
+
+  // Hamburger menu toggle for mobile
+  var navBtn = document.getElementById('nav-toggle-btn');
+  var navMenu = document.getElementById('fo-nav-menu');
+  if (navBtn && navMenu) {
+    navBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var open = navMenu.classList.toggle('open');
+      navBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      navBtn.classList.toggle('active');
+    });
+    document.addEventListener('click', function(e){
+      if (!navMenu.contains(e.target) && e.target !== navBtn && !navBtn.contains(e.target)) {
+        navMenu.classList.remove('open');
+        navBtn.classList.remove('active');
+        navBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
 })();
 </script>
