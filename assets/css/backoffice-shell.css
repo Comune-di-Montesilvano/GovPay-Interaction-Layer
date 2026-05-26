@@ -1881,5 +1881,21 @@ body.bo-sidebar-collapsed .bo-topbar {
 }
 
 
-
+/* ── Daemon Log Panel – terminal dark style ─────────────────────────────── */
+#daemon-log-output,
+pre#daemon-log-output {
+  background-color: #111827 !important;   /* near-black terminal bg */
+  color: #d1fae5 !important;              /* mint-green terminal text */
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 0.78rem !important;
+  line-height: 1.6 !important;
+  border: 1px solid #1f2937 !important;
+  border-radius: 0.5rem !important;
+  max-height: 420px !important;
+  overflow-y: auto !important;
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+  padding: 1rem 1.25rem !important;
+  margin: 0 !important;
+}
 

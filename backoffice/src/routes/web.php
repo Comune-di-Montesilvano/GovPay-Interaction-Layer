@@ -240,6 +240,12 @@ return function (App $app, Twig $twig): void {
         return $controller->guida($request, $response);
     });
 
+    // Dashboard AJAX: tipologie per periodo
+    $app->get('/api/dashboard/tipologie', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new HomeController($twig);
+        return $controller->apiTipologie($request, $response);
+    });
+
     // Statistiche
     $app->get('/statistiche', function(Request $request, Response $response) use ($twig): Response {
         $controller = new StatisticheController($twig);

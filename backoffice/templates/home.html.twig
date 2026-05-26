@@ -352,57 +352,66 @@
             <h3 class="h6 mb-0">Ripartizione per Tipologia di Pendenza</h3>
             <span class="text-muted small d-none d-md-inline">| Analisi dei maggiori flussi di entrata dell'Ente</span>
           </div>
-          <div class="small text-muted fw-semibold" style="font-size: 0.84rem;">
-            Volume complessivo incassato: <span class="text-primary fs-6 fw-bold">€ {{ totals.amount|number_format(2, ',', '.') }}</span>
+          <div class="d-flex align-items-center flex-wrap gap-3">
+            {# Period selector pills #}
+            <div class="btn-group btn-group-sm" role="group" aria-label="Periodo tipologie" id="bo-tipologie-periodo">
+              <button type="button" class="btn btn-outline-primary" data-periodo="30d">Ultimi 30 gg</button>
+              <button type="button" class="btn btn-outline-primary" data-periodo="last_month">Mese scorso</button>
+              <button type="button" class="btn btn-outline-primary" data-periodo="6m">Ultimi 6 mesi</button>
+              <button type="button" class="btn btn-primary" data-periodo="1y">Ultimo anno</button>
+            </div>
+            <div class="small text-muted fw-semibold" style="font-size: 0.84rem;">
+              Totale periodo: <span id="bo-tipologie-total" class="text-primary fs-6 fw-bold">€ {{ totals.amount|number_format(2, ',', '.') }}</span>
+            </div>
           </div>
         </div>
         <div class="card-body">
-          {% if tipologie_stats is empty %}
-            <div class="p-4 text-center text-muted">
-              <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
-              <p class="mb-0">Nessun dato registrato sulle tipologie di pendenza.</p>
-            </div>
-          {% else %}
-            <div class="row g-3">
-              {% for item in tipologie_stats %}
-                {% set percent = totals.amount > 0 ? (item.importo_totale / totals.amount * 100) : 0 %}
-                {% set is_extra = loop.index0 >= 6 %}
-                <div class="col-md-6 col-xl-4{{ is_extra ? ' d-none bo-extra-tipologia' : '' }}">
-                  <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
-                    <div>
-                      <div class="mb-2">
-                        <h4 class="h6 mb-0 text-dark fw-bold" style="font-size: 0.92rem; line-height: 1.35;">
-                          {{ item.tipologia_desc }}
-                        </h4>
+          <div id="bo-tipologie-grid-wrap">
+            {% if tipologie_stats is empty %}
+              <div class="p-4 text-center text-muted" id="bo-tipologie-empty">
+                <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
+                <p class="mb-0">Nessun dato registrato sulle tipologie di pendenza.</p>
+              </div>
+            {% else %}
+              <div class="row g-3" id="bo-tipologie-grid">
+                {% for item in tipologie_stats %}
+                  {% set percent = totals.amount > 0 ? (item.importo_totale / totals.amount * 100) : 0 %}
+                  {% set is_extra = loop.index0 >= 6 %}
+                  <div class="col-md-6 col-xl-4{{ is_extra ? ' d-none bo-extra-tipologia' : '' }}">
+                    <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
+                      <div>
+                        <div class="mb-2">
+                          <h4 class="h6 mb-0 text-dark fw-bold" style="font-size: 0.92rem; line-height: 1.35;">
+                            {{ item.tipologia_desc }}
+                          </h4>
+                        </div>
+                        <div class="text-muted small mb-3">
+                          <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
+                          <strong>{{ item.transazioni|number_format(0, ',', '.') }}</strong> transazioni
+                        </div>
                       </div>
-                      <div class="text-muted small mb-3">
-                        <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
-                        <strong>{{ item.transazioni|number_format(0, ',', '.') }}</strong> transazioni
-                      </div>
-                    </div>
-                    <div>
-                      <div class="d-flex justify-content-between align-items-end mb-1">
-                        <span class="fw-bold text-dark" style="font-size: 1.1rem;">€ {{ item.importo_totale|number_format(2, ',', '.') }}</span>
-                        <span class="small fw-semibold text-primary" style="font-size: 0.8rem;">{{ percent|round(1) }}%</span>
-                      </div>
-                      <div class="progress" style="height: 6px;" title="Quota del {{ percent|round(2) }}% sul totale incassato">
-                        <div class="progress-bar progress-bar-striped bg-primary" role="progressbar" style="width: {{ percent }}%" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                      <div>
+                        <div class="d-flex justify-content-between align-items-end mb-1">
+                          <span class="fw-bold text-dark" style="font-size: 1.1rem;">€ {{ item.importo_totale|number_format(2, ',', '.') }}</span>
+                          <span class="small fw-semibold text-primary" style="font-size: 0.8rem;">{{ percent|round(1) }}%</span>
+                        </div>
+                        <div class="progress" style="height: 6px;" title="Quota del {{ percent|round(2) }}% sul totale incassato">
+                          <div class="progress-bar progress-bar-striped bg-primary" role="progressbar" style="width: {{ percent }}%" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              {% endfor %}
-            </div>
+                {% endfor %}
+              </div>
 
-            {% if tipologie_stats|length > 6 %}
-              <div class="text-center mt-4">
-                <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2" onclick="toggleExtraTipologie()">
+              <div class="text-center mt-4" id="bo-tipologie-toggle-wrap" {% if tipologie_stats|length <= 6 %}style="display:none"{% endif %}>
+                <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2">
                   <i class="fas fa-chevron-down me-2" id="bo-toggle-icon"></i>
                   <span id="bo-toggle-text">Mostra tutte le tipologie ({{ tipologie_stats|length }})</span>
                 </button>
               </div>
             {% endif %}
-          {% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -540,30 +549,127 @@
       }
     }
 
-    // ── Toggle Extra Tipologie Pendenze ──────────────────────────────
-    function toggleExtraTipologie() {
-      const extraCards = document.querySelectorAll('.bo-extra-tipologia');
-      const btnText = document.getElementById('bo-toggle-text');
-      const btnIcon = document.getElementById('bo-toggle-icon');
-      
-      let isHidden = true;
-      extraCards.forEach(card => {
-        if (card.classList.contains('d-none')) {
-          card.classList.remove('d-none');
-          isHidden = false;
-        } else {
-          card.classList.add('d-none');
-          isHidden = true;
-        }
-      });
-      
-      if (isHidden) {
-        btnText.textContent = "Mostra tutte le tipologie (" + (6 + extraCards.length) + ")";
-        btnIcon.className = "fas fa-chevron-down me-2";
-      } else {
-        btnText.textContent = "Mostra meno";
-        btnIcon.className = "fas fa-chevron-up me-2";
+    // ── Ripartizione Tipologie: period selector + AJAX reload ────────
+    (function () {
+      const periodoGroup  = document.getElementById('bo-tipologie-periodo');
+      const gridWrap      = document.getElementById('bo-tipologie-grid-wrap');
+      const totalSpan     = document.getElementById('bo-tipologie-total');
+      let expanded        = false;
+
+      // Format number Italian-style with 2 decimals
+      function fmtEur(val) {
+        return '€\u00a0' + Number(val).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
-    }
+      function fmtNum(val) {
+        return Number(val).toLocaleString('it-IT');
+      }
+
+      function buildGrid(tipologie, total) {
+        if (!tipologie || tipologie.length === 0) {
+          gridWrap.innerHTML = `
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-info-circle mb-2" style="font-size:1.5rem" aria-hidden="true"></i>
+              <p class="mb-0">Nessun dato nel periodo selezionato.</p>
+            </div>`;
+          return;
+        }
+
+        let cardsHtml = '';
+        tipologie.forEach(function (item, idx) {
+          const percent = total > 0 ? (item.importo_totale / total * 100) : 0;
+          const isExtra = idx >= 6;
+          cardsHtml += `
+            <div class="col-md-6 col-xl-4${isExtra && !expanded ? ' d-none bo-extra-tipologia' : (isExtra ? ' bo-extra-tipologia' : '')}">
+              <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
+                <div>
+                  <div class="mb-2">
+                    <h4 class="h6 mb-0 text-dark fw-bold" style="font-size:0.92rem;line-height:1.35">${item.tipologia_desc}</h4>
+                  </div>
+                  <div class="text-muted small mb-3">
+                    <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
+                    <strong>${fmtNum(item.transazioni)}</strong> transazioni
+                  </div>
+                </div>
+                <div>
+                  <div class="d-flex justify-content-between align-items-end mb-1">
+                    <span class="fw-bold text-dark" style="font-size:1.1rem">${fmtEur(item.importo_totale)}</span>
+                    <span class="small fw-semibold text-primary" style="font-size:0.8rem">${percent.toFixed(1)}%</span>
+                  </div>
+                  <div class="progress" style="height:6px" title="Quota del ${percent.toFixed(2)}% sul totale">
+                    <div class="progress-bar progress-bar-striped bg-primary" role="progressbar"
+                         style="width:${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"></div>
+                  </div>
+                </div>
+              </div>
+            </div>`;
+        });
+
+        const toggleWrapHtml = tipologie.length > 6 ? `
+          <div class="text-center mt-4" id="bo-tipologie-toggle-wrap">
+            <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2">
+              <i class="fas fa-chevron-${expanded ? 'up' : 'down'} me-2" id="bo-toggle-icon"></i>
+              <span id="bo-toggle-text">${expanded ? 'Mostra meno' : 'Mostra tutte le tipologie (' + tipologie.length + ')'}</span>
+            </button>
+          </div>` : '';
+
+        gridWrap.innerHTML = `<div class="row g-3" id="bo-tipologie-grid">${cardsHtml}</div>${toggleWrapHtml}`;
+
+        // Re-bind the toggle button
+        const toggleBtn = document.getElementById('bo-btn-toggle-tipologie');
+        if (toggleBtn) toggleBtn.addEventListener('click', toggleExtraTipologie);
+      }
+
+      function toggleExtraTipologie() {
+        const extraCards = document.querySelectorAll('.bo-extra-tipologia');
+        const btnText    = document.getElementById('bo-toggle-text');
+        const btnIcon    = document.getElementById('bo-toggle-icon');
+        expanded = !expanded;
+        extraCards.forEach(card => {
+          card.classList.toggle('d-none', !expanded);
+        });
+        if (expanded) {
+          btnText.textContent = 'Mostra meno';
+          btnIcon.className   = 'fas fa-chevron-up me-2';
+        } else {
+          btnText.textContent = 'Mostra tutte le tipologie (' + (6 + extraCards.length) + ')';
+          btnIcon.className   = 'fas fa-chevron-down me-2';
+        }
+      }
+
+      async function loadTipologie(periodo) {
+        // Spinner
+        gridWrap.innerHTML = `
+          <div class="p-5 text-center text-muted">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+          </div>`;
+        try {
+          const res  = await fetch('/api/dashboard/tipologie?periodo=' + encodeURIComponent(periodo));
+          const data = await res.json();
+          if (totalSpan) totalSpan.textContent = fmtEur(data.total);
+          expanded = false;
+          buildGrid(data.tipologie, data.total);
+        } catch (e) {
+          gridWrap.innerHTML = '<div class="p-4 text-center text-danger">Errore nel caricamento dei dati.</div>';
+        }
+      }
+
+      // Wire up period buttons
+      if (periodoGroup) {
+        periodoGroup.addEventListener('click', function (e) {
+          const btn = e.target.closest('[data-periodo]');
+          if (!btn) return;
+          // Update active state
+          periodoGroup.querySelectorAll('button').forEach(b => {
+            b.classList.toggle('btn-primary', b === btn);
+            b.classList.toggle('btn-outline-primary', b !== btn);
+          });
+          loadTipologie(btn.dataset.periodo);
+        });
+      }
+
+      // Bind the initial static toggle button (if more than 6 rendered server-side)
+      const initToggleBtn = document.getElementById('bo-btn-toggle-tipologie');
+      if (initToggleBtn) initToggleBtn.addEventListener('click', toggleExtraTipologie);
+    })();
   </script>
 {% endblock %}
