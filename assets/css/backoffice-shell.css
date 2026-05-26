@@ -275,16 +275,6 @@ body.bo-shell {
   outline: 0;
 }
 
-.bo-topbar-search kbd {
-  border: 1px solid var(--bo-border-strong);
-  border-radius: 4px;
-  background: #fff;
-  color: var(--bo-ink-2);
-  font-size: 11px;
-  line-height: 1;
-  padding: 4px 5px;
-}
-
 .bo-search-badge {
   display: none;
   align-items: center;
@@ -1304,9 +1294,6 @@ body.bo-sidebar-collapsed .bo-topbar {
     min-width: 120px;
   }
 
-  .bo-topbar-search kbd {
-    display: none;
-  }
 }
 
 @media (max-width: 680px) {
