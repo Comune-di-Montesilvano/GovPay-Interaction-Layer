@@ -288,6 +288,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
     job="${autostart_file##*/daemon-}"
     job="${job%.autostart}"
     case "$job" in
+      biz)             script="scripts/cron_biz_scanner.php" ;;
       ragioneria)       script="scripts/cron_ragioneria.php" ;;
       tefa)             script="scripts/cron_tefa_scanner.php" ;;
       pendenze-massive) script="scripts/cron_pendenze_massive.php" ;;

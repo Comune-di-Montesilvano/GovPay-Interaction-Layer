@@ -587,6 +587,7 @@ Il tab **Impostazioni → Cron** gestisce i daemon di background:
 
 | Daemon | Scopo |
 |---|---|
+| `cron_biz_scanner.php` | Scansiona i Biz Events e popola `biz_ricevute` |
 | `cron_ragioneria.php` | Sincronizza flussi GovPay nella tabella `flussi_rendicontazioni`; ciclo ogni 30 min |
 | `cron_tefa_scanner.php` | Processa IUR dalla cache, arricchisce via Biz Events per TEFA |
 | `cron_pendenze_massive.php` | Elabora lotti pendenze massive in stato `PENDING` |
