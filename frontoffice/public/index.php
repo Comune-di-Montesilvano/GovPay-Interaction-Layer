@@ -3783,6 +3783,38 @@ $routes = [
             if (!empty($baseContext['selected_service'])) {
                 $baseContext['form_data']['idTipoPendenza'] = $baseContext['selected_service']['id'];
             }
+            if (!empty($baseContext['pendenza_result'])) {
+                $pr         = $baseContext['pendenza_result'];
+                $payerArr   = is_array($pr['soggetto_pagatore'] ?? null) ? $pr['soggetto_pagatore'] : [];
+                $rawEmail   = trim((string)($payerArr['email'] ?? ''));
+                $payerEmail = filter_var($rawEmail, FILTER_VALIDATE_EMAIL);
+                if ($payerEmail !== false && $payerEmail !== '') {
+                    $payerDisplay = trim((string)($payerArr['anagrafica'] ?? '')) ?: $payerEmail;
+                    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+                    $siteBase = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+                    $toAbsolute = static function (string $url) use ($siteBase): string {
+                        return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
+                    };
+                    try {
+                        $mailResult = \App\Services\MailerService::forSuite('frontoffice')->sendSpontaneoAvviso(
+                            $payerEmail,
+                            $payerDisplay,
+                            [
+                                'causale'       => (string)($pr['causale'] ?? ''),
+                                'importo'       => $pr['importo'] ?? 0,
+                                'numeroAvviso'  => (string)($pr['numeroAvviso'] ?? ''),
+                                'data_scadenza' => (string)($pr['data_scadenza'] ?? ''),
+                                'download_url'  => $toAbsolute((string)($pr['download_url'] ?? '')),
+                                'checkout_url'  => $toAbsolute((string)($pr['checkout_url'] ?? '')),
+                            ]
+                        );
+                        Logger::getInstance()->info('Email avviso spontaneo', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
+                    } catch (\Throwable $e) {
+                        Logger::getInstance()->warning('Email avviso spontaneo non inviata', ['err' => $e->getMessage()]);
+                    }
+                }
+            }
         } else {
             $baseContext['form_data'] = $baseContext['form_data'] ?? ['idTipoPendenza' => $selectedService['id'] ?? ''];
 

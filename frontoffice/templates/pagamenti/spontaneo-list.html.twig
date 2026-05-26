@@ -2,329 +2,197 @@
 
 {% block title %}{{ 'Seleziona il servizio da pagare'|trans }} - {{ app_entity.name }}{% endblock %}
 
-{% block head %}
-  <style>
-    body { background: #f6f8fb; }
-    .page-hero {
-      padding: 3rem 0 1rem;
-      background: linear-gradient(120deg, #05193d 0%, #003a6d 70%, #005fcc 100%);
-      color: #fff;
-    }
-    .page-hero .breadcrumb-item + .breadcrumb-item::before {
-      color: rgba(255,255,255,0.6);
-    }
-    .page-hero .breadcrumb-item a { color: rgba(255,255,255,0.85); }
-    .service-grid-title {
-      font-size: 1rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #5c6f82;
-      font-weight: 600;
-    }
-    .service-card {
-      display: block;
-      height: 100%;
-      border-radius: 20px;
-      padding: 1.5rem;
-      border: 1px solid #dde5f0;
-      background: #fff;
-      text-decoration: none;
-      color: inherit;
-      box-shadow: 0 10px 40px rgba(5, 25, 61, 0.06);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .service-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 45px rgba(5, 25, 61, 0.1);
-    }
-    .service-card__icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 999px;
-      background: #eef3fb;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .service-card--external {
-      border-style: dashed;
-      background: #fdf8ee;
-    }
-    .service-card--external .service-card__icon {
-      background: #fff3d6;
-    }
-  </style>
+{% block content %}
+
+{# ── Page header ── #}
+<div class="page-head">
+  <div class="container">
+    <div class="crumbs">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="sep">/</span>
+      <span class="current">{{ 'Pagamento spontaneo'|trans }}</span>
+    </div>
+    <h1>{{ 'Genera un pagamento spontaneo'|trans }}</h1>
+    <p class="page-sub">{{ 'Seleziona la tipologia di pagamento per continuare. Alcuni servizi ti porteranno su un portale esterno indicato dall\'Ente.'|trans }}</p>
+  </div>
+</div>
+
+<section class="block">
+  <div class="container">
+
+    {# ── Stepper ── #}
+    <div class="steps" style="margin-bottom:var(--sp-5);">
+      <div class="step active">
+        <span class="n">1</span>
+        <span>{{ 'Scegli il servizio'|trans }}</span>
+      </div>
+      <div class="bar"></div>
+      <div class="step">
+        <span class="n">2</span>
+        <span>{{ 'Compila il modulo'|trans }}</span>
+      </div>
+      <div class="bar"></div>
+      <div class="step">
+        <span class="n">3</span>
+        <span>{{ 'Avviso generato'|trans }}</span>
+      </div>
+    </div>
+
+    {% if selection_error %}
+      <div class="alert alert-warning" style="margin-bottom:var(--sp-4);" role="alert">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div>{{ selection_error }}</div>
+      </div>
+    {% endif %}
+
+    {# ── Search ── #}
+    <div class="field" style="max-width:480px;margin-bottom:var(--sp-5);">
+      <div style="position:relative;">
+        <input
+          id="serviceSearch"
+          type="search"
+          class="input"
+          placeholder="{{ 'Cerca per tipologia o descrizione'|trans }}"
+          autocomplete="off"
+          style="padding-left:38px;"
+        >
+        <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--fg-3);pointer-events:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </div>
+    </div>
+
+    {# ── Services grid ── #}
+    {% set all_services = (internal_services|default([]))|merge(external_services|default([])) %}
+    {% if all_services %}
+      <div class="svc-grid" id="svc-grid">
+        {% for service in all_services %}
+          {% set isExternal = (service.type|default('internal')) == 'external' %}
+          <a
+            class="svc-tile{{ isExternal ? ' svc-tile--external' : '' }}"
+            href="/pagamento-spontaneo?tipologia={{ service.id }}"
+            data-service-id="{{ service.id|default('')|e('html_attr') }}"
+            data-service-label="{{ service.label|default('')|e('html_attr') }}"
+            data-service-desc="{{ service.descrizione_estesa|default('')|e('html_attr') }}"
+          >
+            <div class="icon-wrap">
+              {% if isExternal %}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              {% else %}
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              {% endif %}
+            </div>
+            <h3>{{ service.label }}</h3>
+            <p>
+              {% if service.descrizione_estesa is defined and service.descrizione_estesa is not empty %}
+                {{ service.descrizione_estesa }}
+              {% elseif isExternal %}
+                {{ 'Verrai reindirizzato al portale esterno dell\'Ente.'|trans }}
+              {% else %}
+                {{ 'Richiedi l\'emissione dell\'avviso e completa il pagamento su questo portale.'|trans }}
+              {% endif %}
+            </p>
+            <span class="arrow">
+              {{ isExternal ? 'Vai al servizio'|trans : 'Seleziona'|trans }}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+      <p id="svc-empty" style="display:none;color:var(--fg-3);margin-top:var(--sp-4);">{{ 'Nessun servizio trovato per la ricerca effettuata.'|trans }}</p>
+    {% else %}
+      <p style="color:var(--fg-3);">{{ 'Al momento non sono disponibili tipologie.'|trans }}</p>
+    {% endif %}
+
+  </div>
+</section>
+
 {% endblock %}
 
-{% block content %}
-  <section class="page-hero">
-    <div class="container-xxl">
-      <div class="row align-items-center g-3">
-        <div class="col-lg-8">
-          <nav aria-label="{{ 'Percorso'|trans }}" class="mb-2">
-            <ol class="breadcrumb mb-0">
-              <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
-              <li class="breadcrumb-item active" aria-current="page">{{ 'Pagamento spontaneo'|trans }}</li>
-            </ol>
-          </nav>
-          <p class="text-uppercase small mb-2 text-white-50">{{ 'Servizi PagoPA'|trans }}</p>
-          <h1 class="display-6 fw-semibold mb-3">{{ 'Scegli il servizio da pagare'|trans }}</h1>
-          <p class="mb-0 lead text-white-75">{{ 'Seleziona la tipologia di pagamento per continuare. Alcuni servizi ti porteranno su un portale esterno indicato dall\'Ente.'|trans }}</p>
-        </div>
-      </div>
-    </div>
-  </section>
+{% block scripts %}
+{{ parent() }}
+<script>
+(function(){
+  function initServiceSearch(){
+    var input = document.getElementById('serviceSearch');
+    if (!input) return;
 
-  <section class="py-5">
-    <div class="container-xxl">
-      {% if selection_error %}
-        <div class="alert alert-warning" role="alert">
-          {{ selection_error }}
-        </div>
-      {% endif %}
+    function safeLower(s){ return (s || '').toString().toLowerCase(); }
+    function foldAccents(s){
+      try { return s.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch(e){ return s; }
+    }
+    function tokenize(s){
+      var x = foldAccents(safeLower(s)).trim().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (!x) return [];
+      return x.split(/\s+/).filter(Boolean);
+    }
+    function bestScore(qt, idT, lblT, descT){
+      var best = 0;
+      lblT.forEach(function(t){ if(t===qt) best=Math.max(best,60); else if(t.indexOf(qt)===0) best=Math.max(best,50); });
+      idT.forEach(function(t){ if(t===qt) best=Math.max(best,40); else if(t.indexOf(qt)===0) best=Math.max(best,30); });
+      descT.forEach(function(t){ if(t===qt) best=Math.max(best,10); else if(t.indexOf(qt)===0) best=Math.max(best,8); });
+      return best;
+    }
 
-      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
-        <div>
-          <p class="service-grid-title mb-1">{{ 'Servizi PagoPA'|trans }}</p>
-          <h2 class="h3 fw-semibold mb-0">{{ 'Seleziona la tipologia di pagamento'|trans }}</h2>
-        </div>
-        <p class="text-muted mb-0">{{ 'L\'elenco mostra le tipologie attive per il dominio'|trans }} {{ app_entity.name }}.</p>
-      </div>
+    var tiles = Array.prototype.slice.call(document.querySelectorAll('#svc-grid [data-service-label]'));
+    var emptyMsg = document.getElementById('svc-empty');
+    var entries = tiles.map(function(tile, i){
+      return {
+        el: tile,
+        origIdx: i,
+        idT: tokenize(tile.getAttribute('data-service-id') || ''),
+        lblT: tokenize(tile.getAttribute('data-service-label') || ''),
+        descT: tokenize(tile.getAttribute('data-service-desc') || ''),
+        lblSort: foldAccents(safeLower(tile.getAttribute('data-service-label') || '')).trim()
+      };
+    });
 
-      <div class="d-flex flex-column flex-md-row align-items-md-center gap-2 mb-4">
-        <div class="flex-grow-1">
-          <label for="serviceSearch" class="form-label visually-hidden">{{ 'Cerca tipologie'|trans }}</label>
-          <input id="serviceSearch" type="search" class="form-control" placeholder="{{ 'Cerca per tipologia o descrizione'|trans }}" autocomplete="off" aria-label="{{ 'Cerca per tipologia o descrizione'|trans }}">
-        </div>
-        <button id="serviceSearchClear" type="button" class="btn btn-outline-secondary">{{ 'Pulisci'|trans }}</button>
-      </div>
+    function applyFilter(){
+      var qT = tokenize(input.value || '');
+      var grid = document.getElementById('svc-grid');
+      if (!grid) return;
+      var visibleCount = 0;
 
-      {% set all_services = (internal_services|default([]))|merge(external_services|default([])) %}
-      {% if all_services %}
-        <div class="row g-4">
-          {% for service in all_services %}
-            {% set isExternal = (service.type|default('internal')) == 'external' %}
-            <div class="col-md-6 col-xl-4">
-              <a class="service-card {{ isExternal ? 'service-card--external' : '' }}" href="/pagamento-spontaneo?tipologia={{ service.id }}" data-service-id="{{ service.id|default('')|e('html_attr') }}" data-service-label="{{ service.label|default('')|e('html_attr') }}" data-service-desc="{{ service.descrizione_estesa|default('')|e('html_attr') }}">
-                {% if isExternal %}
-                  <span class="badge text-bg-light text-secondary text-uppercase small mb-3">{{ 'Portale esterno'|trans }}</span>
-                {% else %}
-                  <span class="badge text-bg-primary-subtle text-primary-emphasis text-uppercase small mb-3">{{ 'PagoPA'|trans }}</span>
-                {% endif %}
-
-                <h3 class="h5 fw-semibold mb-2">{{ service.label }}</h3>
-
-                {% if isExternal %}
-                  {% if service.descrizione_estesa is defined and service.descrizione_estesa is not empty %}
-                    <p class="text-muted mb-4">{{ service.descrizione_estesa|nl2br }}</p>
-                  {% else %}
-                    <p class="text-muted mb-4">{{ 'Verrai reindirizzato al portale esterno dell\'Ente.'|trans }}</p>
-                  {% endif %}
-                  <div class="d-flex align-items-center gap-2 text-secondary fw-semibold">
-                    {{ 'Vai al servizio'|trans }}
-                    <span class="service-card__icon" aria-hidden="true">
-                      <svg class="icon"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-chevron-right"></use></svg>
-                    </span>
-                  </div>
-                {% else %}
-                  <p class="text-muted mb-4">
-                    {% if service.descrizione_estesa is defined and service.descrizione_estesa is not empty %}
-                      {{ service.descrizione_estesa|nl2br }}
-                    {% else %}
-                      {{ 'Richiedi l\'emissione dell\'avviso e completa il pagamento su questo portale.'|trans }}
-                    {% endif %}
-                  </p>
-                  <span class="service-card__icon" aria-hidden="true">
-                    <svg class="icon"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-arrow-right"></use></svg>
-                  </span>
-                {% endif %}
-              </a>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="text-muted">{{ 'Al momento non sono disponibili tipologie.'|trans }}</p>
-      {% endif %}
-    </div>
-  </section>
-
-  {% block scripts %}
-    <script>
-      (function(){
-        function initServiceSearch(){
-          var input = document.getElementById('serviceSearch');
-          var clearBtn = document.getElementById('serviceSearchClear');
-          if(!input || !clearBtn) return;
-
-          function safeLower(s){
-            return (s || '').toString().toLowerCase();
-          }
-
-          function foldAccents(s){
-            try{
-              return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-            }catch(e){
-              return s;
-            }
-          }
-
-          function tokenize(s){
-            var x = foldAccents(safeLower(s)).trim();
-            x = x.replace(/[^a-z0-9]+/g, ' ').trim();
-            if(!x) return [];
-            return x.split(/\s+/).filter(Boolean);
-          }
-
-          function bestTokenMatchScore(qToken, idTokens, labelTokens, descTokens){
-            var best = 0;
-
-            for(var i=0;i<labelTokens.length;i++){
-              var t = labelTokens[i];
-              if(t === qToken){ best = Math.max(best, 60); continue; }
-              if(t.indexOf(qToken) === 0){ best = Math.max(best, 50); }
-            }
-
-            for(var j=0;j<idTokens.length;j++){
-              var it = idTokens[j];
-              if(it === qToken){ best = Math.max(best, 40); continue; }
-              if(it.indexOf(qToken) === 0){ best = Math.max(best, 30); }
-            }
-
-            for(var k=0;k<descTokens.length;k++){
-              var dt = descTokens[k];
-              if(dt === qToken){ best = Math.max(best, 10); continue; }
-              if(dt.indexOf(qToken) === 0){ best = Math.max(best, 8); }
-            }
-
-            return best;
-          }
-
-          var cards = Array.prototype.slice.call(document.querySelectorAll('[data-service-label]'));
-          if(!cards.length) return;
-
-          var entries = [];
-          var rowOrder = new Map();
-          cards.forEach(function(card){
-            var col = card.closest('.col-md-6') || card.parentElement;
-            if(!col) return;
-            var row = col.parentElement;
-            if(!row) return;
-
-            if(!rowOrder.has(row)){
-              rowOrder.set(row, []);
-            }
-            var originalIndex = rowOrder.get(row).length;
-            rowOrder.get(row).push(col);
-
-            var idVal = card.getAttribute('data-service-id') || '';
-            var labelVal = card.getAttribute('data-service-label') || '';
-            var descVal = card.getAttribute('data-service-desc') || '';
-
-            entries.push({
-              card: card,
-              col: col,
-              row: row,
-              originalIndex: originalIndex,
-              idTokens: tokenize(idVal),
-              labelTokens: tokenize(labelVal),
-              descTokens: tokenize(descVal),
-              labelSort: foldAccents(safeLower(labelVal)).trim()
-            });
+      entries.forEach(function(e){
+        var score = 0, matched = 0;
+        if (qT.length > 0) {
+          qT.forEach(function(qt){
+            if (qt.length < 2) return;
+            var s = bestScore(qt, e.idT, e.lblT, e.descT);
+            if (s > 0){ matched++; score += s; }
           });
-
-          function applyFilter(){
-            var q = input.value || '';
-            var qTokens = tokenize(q);
-
-            // Nessuna query: mostra tutto e ripristina ordine originale
-            if(qTokens.length === 0){
-              entries.forEach(function(e){ e.col.classList.remove('d-none'); });
-              rowOrder.forEach(function(cols, row){
-                cols.sort(function(a,b){
-                  return (a._origIndex || 0) - (b._origIndex || 0);
-                });
-                cols.forEach(function(col){ row.appendChild(col); });
-              });
-              return;
-            }
-
-            // Prepara mappa originalIndex anche su DOM (una tantum)
-            entries.forEach(function(e){
-              if(e.col._origIndex === undefined){
-                e.col._origIndex = e.originalIndex;
-              }
-            });
-
-            // Calcolo score per entry
-            entries.forEach(function(e){
-              var matchedTokens = 0;
-              var baseScore = 0;
-
-              for(var i=0;i<qTokens.length;i++){
-                var qt = qTokens[i];
-                if(qt.length < 2) continue;
-                var s = bestTokenMatchScore(qt, e.idTokens, e.labelTokens, e.descTokens);
-                if(s > 0){
-                  matchedTokens++;
-                  baseScore += s;
-                }
-              }
-
-              // Ordinamento: prima chi matcha più token, poi score
-              e._matchedTokens = matchedTokens;
-              e._score = matchedTokens > 0 ? (matchedTokens * 1000 + baseScore) : 0;
-            });
-
-            // Visibilità + riordino per ciascuna row
-            var byRow = new Map();
-            entries.forEach(function(e){
-              if(!byRow.has(e.row)) byRow.set(e.row, []);
-              byRow.get(e.row).push(e);
-            });
-
-            byRow.forEach(function(list, row){
-              var visible = [];
-              var hidden = [];
-
-              list.forEach(function(e){
-                if(e._score > 0){
-                  e.col.classList.remove('d-none');
-                  visible.push(e);
-                }else{
-                  e.col.classList.add('d-none');
-                  hidden.push(e);
-                }
-              });
-
-              visible.sort(function(a,b){
-                if(b._matchedTokens !== a._matchedTokens) return b._matchedTokens - a._matchedTokens;
-                if(b._score !== a._score) return b._score - a._score;
-                if(a.labelSort < b.labelSort) return -1;
-                if(a.labelSort > b.labelSort) return 1;
-                return a.originalIndex - b.originalIndex;
-              });
-              hidden.sort(function(a,b){ return a.originalIndex - b.originalIndex; });
-
-              visible.concat(hidden).forEach(function(e){ row.appendChild(e.col); });
-            });
-          }
-
-          input.addEventListener('input', applyFilter);
-          clearBtn.addEventListener('click', function(){
-            input.value = '';
-            input.focus();
-            applyFilter();
-          });
-
-          applyFilter();
+          score = matched > 0 ? matched * 1000 + score : 0;
         }
+        e._score = score;
+        e._matched = matched;
+      });
 
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', initServiceSearch);
-        } else {
-          initServiceSearch();
-        }
-      })();
-    </script>
-  {% endblock %}
+      if (qT.length === 0) {
+        entries.sort(function(a,b){ return a.origIdx - b.origIdx; });
+        entries.forEach(function(e){ e.el.style.display = ''; grid.appendChild(e.el); visibleCount++; });
+      } else {
+        var visible = entries.filter(function(e){ return e._score > 0; });
+        var hidden = entries.filter(function(e){ return e._score === 0; });
+        visible.sort(function(a,b){
+          if (b._matched !== a._matched) return b._matched - a._matched;
+          if (b._score !== a._score) return b._score - a._score;
+          return a.lblSort < b.lblSort ? -1 : a.lblSort > b.lblSort ? 1 : a.origIdx - b.origIdx;
+        });
+        visible.forEach(function(e){ e.el.style.display = ''; grid.appendChild(e.el); });
+        hidden.forEach(function(e){ e.el.style.display = 'none'; });
+        visibleCount = visible.length;
+      }
+
+      if (emptyMsg) emptyMsg.style.display = visibleCount === 0 ? '' : 'none';
+    }
+
+    input.addEventListener('input', applyFilter);
+    applyFilter();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initServiceSearch);
+  } else {
+    initServiceSearch();
+  }
+})();
+</script>
 {% endblock %}

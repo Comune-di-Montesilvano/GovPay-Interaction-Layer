@@ -2,173 +2,169 @@
 
 {% block title %}{{ 'Il mio carrello'|trans }} – {{ app_entity.name }}{% endblock %}
 
-{% block head %}
-<style>
-  body { background: #f4f6fb; }
-  .cart-hero {
-    background: linear-gradient(135deg, #05193d 0%, #003a6d 50%, #0062b8 100%);
-    color: #fff;
-    border-radius: 24px;
-    box-shadow: 0 25px 60px rgba(9,26,62,.12);
-  }
-  .cart-card {
-    border-radius: 20px;
-    border: none;
-    box-shadow: 0 20px 50px rgba(9,26,62,.08);
-  }
-  .total-bar {
-    border-radius: 16px;
-    background: linear-gradient(90deg, #05193d, #0062b8);
-    color: #fff;
-  }
-  .btn-checkout {
-    background: #f5a623;
-    color: #05193d;
-    font-weight: 700;
-    border: none;
-    border-radius: 999px;
-    padding: 0.75rem 2rem;
-    font-size: 1.05rem;
-  }
-  .btn-checkout:hover,
-  .btn-checkout:focus { background: #e09420; color: #05193d; }
-  .btn-remove { color: #dc3545; border: none; background: transparent; }
-  .btn-remove:hover { color: #a71c2a; }
-</style>
-{% endblock %}
-
 {% set items = cart_items|default([]) %}
 
 {% block content %}
-<div class="container-xxl py-4">
-  <nav aria-label="{{ 'Percorso'|trans }}" class="mb-3">
-    <ol class="breadcrumb mb-0">
-      <li class="breadcrumb-item"><a href="/">{{ 'Home'|trans }}</a></li>
-      <li class="breadcrumb-item active" aria-current="page">{{ 'Carrello'|trans }}</li>
-    </ol>
-  </nav>
 
-  <div class="cart-hero p-4 p-lg-5 mb-4">
-    <p class="text-uppercase small mb-2 text-white-50">{{ 'Pagamento multiplo'|trans }}</p>
-    <h1 class="h3 mb-1">
-      <i class="fa-solid fa-cart-shopping me-2"></i>
-      {{ 'Il mio carrello'|trans }}
-    </h1>
-    <p class="text-white-50 mb-0">{{ 'Qui trovi gli avvisi che hai aggiunto. Puoi rimuoverli o procedere al pagamento in un\'unica sessione PagoPA.'|trans }}</p>
+{# ── Page header ── #}
+<div class="page-head">
+  <div class="container">
+    <div class="crumbs">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="sep">/</span>
+      <span class="current">{{ 'Carrello'|trans }}</span>
+    </div>
+    <h1>{{ 'Il mio carrello'|trans }}</h1>
+    <p class="page-sub">{{ 'Puoi rimuovere avvisi o procedere al pagamento in un\'unica sessione pagoPA.'|trans }}</p>
   </div>
-
-  {% if items is empty %}
-    <div class="card cart-card p-4 text-center py-5">
-      <div class="mb-3 fs-1 text-muted"><i class="fa-solid fa-cart-shopping"></i></div>
-      <h2 class="h5 mb-2">{{ 'Il carrello è vuoto'|trans }}</h2>
-      <p class="text-muted">{{ 'Cerca un avviso o genera un pagamento spontaneo per aggiungere avvisi al carrello.'|trans }}</p>
-      <div class="d-flex gap-2 justify-content-center">
-        <a class="btn btn-primary" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
-        <a class="btn btn-outline-secondary" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
-      </div>
-    </div>
-  {% else %}
-    <div class="card cart-card">
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table align-middle mb-0" id="cart-table">
-            <thead class="table-light">
-              <tr>
-                <th>{{ 'Causale'|trans }}</th>
-                <th class="d-none d-md-table-cell">{{ 'Scadenza'|trans }}</th>
-                <th class="text-end">{{ 'Importo'|trans }}</th>
-                <th class="text-end">{{ 'Rimuovi'|trans }}</th>
-              </tr>
-            </thead>
-            <tbody id="cart-tbody">
-              {% for item in items %}
-              <tr id="row-{{ item.id_pendenza }}" data-importo="{{ item.importo_cents }}">
-                <td>
-                  <div class="fw-semibold">{{ item.causale|default('—') }}</div>
-                  {% if item.numero_avviso %}
-                    <small class="text-muted font-monospace">{{ item.numero_avviso }}</small>
-                  {% endif %}
-                </td>
-                <td class="d-none d-md-table-cell">
-                  {% if item.data_scadenza %}
-                    {{ item.data_scadenza|date('d/m/Y') }}
-                  {% else %}
-                    <span class="text-muted">—</span>
-                  {% endif %}
-                </td>
-                <td class="text-end fw-semibold text-nowrap">
-                  {% if item.importo is not null %}
-                    € {{ item.importo|number_format(2, ',', '.') }}
-                  {% else %}—{% endif %}
-                </td>
-                <td class="text-end">
-                  <button type="button" class="btn-remove btn" aria-label="{{ 'Rimuovi dal carrello'|trans }}"
-                          data-id="{{ item.id_pendenza }}">
-                    <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                  </button>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="total-bar p-4 mt-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
-      <div>
-        <div class="text-white-50 small text-uppercase mb-1">{{ 'Totale da pagare'|trans }}</div>
-        <div class="fs-3 fw-bold" id="cart-total">€ {{ total_euro|number_format(2, ',', '.') }}</div>
-        <div class="text-white-50 small" id="cart-items-count">{{ items|length }} {{ items|length == 1 ? 'avviso'|trans : 'avvisi'|trans }}</div>
-      </div>
-      <div class="d-flex gap-3 align-items-center">
-        {% if can_checkout %}
-          <form method="post" action="/carrello/checkout" id="cart-checkout-form">
-            {% for item in items %}
-              <input type="hidden" name="pendenze[]" value="{{ item.id_pendenza }}" class="cart-hidden-input">
-            {% endfor %}
-          </form>
-          <button type="submit" form="cart-checkout-form" class="btn-checkout btn" id="btn-checkout">
-            <i class="fa-solid fa-lock me-1"></i>{{ 'Procedi al pagamento'|trans }}
-          </button>
-        {% else %}
-          <button class="btn-checkout btn" disabled title="{{ 'Configurazione checkout non disponibile'|trans }}">
-            <i class="fa-solid fa-lock me-1"></i>{{ 'Procedi al pagamento'|trans }}
-          </button>
-        {% endif %}
-        <a class="btn btn-outline-light btn-sm" href="/pagamento-avviso">{{ 'Aggiungi avviso'|trans }}</a>
-      </div>
-    </div>
-  {% endif %}
 </div>
 
+<section class="block">
+  <div class="container">
+
+    {% if items is empty %}
+
+      {# ── Empty state ── #}
+      <div class="card card-pad" style="max-width:480px;margin:0 auto;text-align:center;padding:var(--sp-7) var(--sp-5);">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--fg-4);margin:0 auto var(--sp-4);" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+        <h2 style="margin:0 0 var(--sp-2);font-size:20px;">{{ 'Il carrello è vuoto'|trans }}</h2>
+        <p style="margin:0 0 var(--sp-5);color:var(--fg-2);font-size:14px;">{{ 'Cerca un avviso o genera un pagamento spontaneo per aggiungere avvisi al carrello.'|trans }}</p>
+        <div style="display:flex;gap:var(--sp-3);justify-content:center;flex-wrap:wrap;">
+          <a class="btn btn-primary" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
+          <a class="btn btn-ghost" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+        </div>
+      </div>
+
+    {% else %}
+
+      {# ── Split: table | aside totals ── #}
+      <div class="split">
+
+        {# ── Cart table ── #}
+        <div>
+          <div class="table-wrap">
+            <table class="table" id="cart-table">
+              <thead>
+                <tr>
+                  <th>{{ 'Causale'|trans }}</th>
+                  <th>{{ 'Scadenza'|trans }}</th>
+                  <th style="text-align:right;">{{ 'Importo'|trans }}</th>
+                  <th style="text-align:right;">{{ 'Rimuovi'|trans }}</th>
+                </tr>
+              </thead>
+              <tbody id="cart-tbody">
+                {% for item in items %}
+                  <tr id="row-{{ item.id_pendenza }}" data-importo="{{ item.importo_cents }}" style="cursor:default;">
+                    <td>
+                      <div style="font-weight:600;">{{ item.causale|default('—') }}</div>
+                      {% if item.numero_avviso %}
+                        <div class="mono" style="font-size:12px;color:var(--fg-3);">{{ item.numero_avviso }}</div>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if item.data_scadenza %}
+                        {{ item.data_scadenza|date('d/m/Y') }}
+                      {% else %}
+                        <span style="color:var(--fg-3);">—</span>
+                      {% endif %}
+                    </td>
+                    <td class="amount" style="text-align:right;">
+                      {% if item.importo is not null %}
+                        € {{ item.importo|number_format(2, ',', '.') }}
+                      {% else %}—{% endif %}
+                    </td>
+                    <td style="text-align:right;">
+                      <button
+                        type="button"
+                        class="btn-remove btn btn-ghost"
+                        aria-label="{{ 'Rimuovi dal carrello'|trans }}"
+                        data-id="{{ item.id_pendenza }}"
+                        style="color:var(--ms-danger,#d93025);padding:var(--sp-1) var(--sp-2);"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                      </button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# ── Aside: totals + checkout ── #}
+        <aside class="aside">
+          <div class="card card-pad" style="position:sticky;top:calc(var(--nav-h,64px) + var(--sp-3));">
+            <h3 style="margin-bottom:var(--sp-4);">{{ 'Riepilogo'|trans }}</h3>
+
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+              <span style="font-size:13px;color:var(--fg-2);" id="cart-items-count">{{ items|length }} {{ items|length == 1 ? 'avviso'|trans : 'avvisi'|trans }}</span>
+            </div>
+            <div style="font-size:26px;font-weight:700;color:var(--bi-primary);margin-bottom:var(--sp-1);" id="cart-total">€ {{ total_euro|number_format(2, ',', '.') }}</div>
+            <p style="font-size:12px;color:var(--fg-3);margin:0 0 var(--sp-5);">{{ 'Totale da pagare'|trans }}</p>
+
+            {% if can_checkout %}
+              <form method="post" action="/carrello/checkout" id="cart-checkout-form">
+                {% for item in items %}
+                  <input type="hidden" name="pendenze[]" value="{{ item.id_pendenza }}" class="cart-hidden-input">
+                {% endfor %}
+              </form>
+              <button type="submit" form="cart-checkout-form" class="btn btn-primary" id="btn-checkout" style="width:100%;justify-content:center;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                {{ 'Procedi al pagamento'|trans }}
+              </button>
+            {% else %}
+              <button class="btn btn-primary" disabled style="width:100%;justify-content:center;" title="{{ 'Configurazione checkout non disponibile'|trans }}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                {{ 'Procedi al pagamento'|trans }}
+              </button>
+            {% endif %}
+
+            <a class="btn btn-ghost" href="/pagamento-avviso" style="width:100%;justify-content:center;margin-top:var(--sp-2);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+              {{ 'Aggiungi avviso'|trans }}
+            </a>
+          </div>
+        </aside>
+
+      </div>
+    {% endif %}
+
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{{ parent() }}
 <script>
 (function () {
-  const parseJsonSafely = (window.GovPayUi && window.GovPayUi.parseJsonSafely)
+  var parseJsonSafely = (window.GovPayUi && window.GovPayUi.parseJsonSafely)
     ? window.GovPayUi.parseJsonSafely
-    : (response) => response.json();
+    : function(response) { return response.json(); };
 
   function formatEuro(cents) {
-    const euros = cents / 100;
-    return '€\u00a0' + euros.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    var euros = cents / 100;
+    return '€ ' + euros.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
 
   function recalcTotal() {
-    const rows = document.querySelectorAll('#cart-tbody tr[data-importo]');
-    let total = 0;
-    rows.forEach(r => { total += parseInt(r.dataset.importo || '0', 10); });
-    const totalEl = document.getElementById('cart-total');
-    const countEl = document.getElementById('cart-items-count');
+    var rows = document.querySelectorAll('#cart-tbody tr[data-importo]');
+    var total = 0;
+    rows.forEach(function(r) { total += parseInt(r.dataset.importo || '0', 10); });
+    var totalEl = document.getElementById('cart-total');
+    var countEl = document.getElementById('cart-items-count');
     if (totalEl) totalEl.textContent = formatEuro(total);
-    if (countEl) { const n = rows.length; countEl.textContent = n + ' ' + (n === 1 ? '{{ "avviso"|trans }}' : '{{ "avvisi"|trans }}'); }
+    if (countEl) {
+      var n = rows.length;
+      countEl.textContent = n + ' ' + (n === 1 ? '{{ "avviso"|trans }}' : '{{ "avvisi"|trans }}');
+    }
 
-    // Update hidden inputs of checkout form
-    const form = document.getElementById('cart-checkout-form');
+    var form = document.getElementById('cart-checkout-form');
     if (form) {
-      form.querySelectorAll('.cart-hidden-input').forEach(el => el.remove());
-      rows.forEach(row => {
-        const rowId = row.id.replace('row-', '');
-        const inp = document.createElement('input');
+      form.querySelectorAll('.cart-hidden-input').forEach(function(el) { el.remove(); });
+      rows.forEach(function(row) {
+        var rowId = row.id.replace('row-', '');
+        var inp = document.createElement('input');
         inp.type = 'hidden';
         inp.name = 'pendenze[]';
         inp.value = rowId;
@@ -177,37 +173,32 @@
       });
     }
 
-    // Disable checkout if empty
-    const btn = document.getElementById('btn-checkout');
+    var btn = document.getElementById('btn-checkout');
     if (btn) btn.disabled = rows.length === 0;
   }
 
   function updateNavBadge(count) {
-    const badges = document.querySelectorAll('.cart-badge');
-    badges.forEach(b => {
+    document.querySelectorAll('.cart-badge').forEach(function(b) {
       b.textContent = count;
       b.style.display = count > 0 ? '' : 'none';
     });
   }
 
-  document.querySelectorAll('.btn-remove').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const id = this.dataset.id;
+  document.querySelectorAll('.btn-remove').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = this.dataset.id;
       if (!id) return;
-      const body = new URLSearchParams({ idPendenza: id });
-      fetch('/carrello/rimuovi', { method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => parseJsonSafely(r))
-        .then(data => {
-          if (data && data.error) {
-            alert(data.error);
-            return;
-          }
-          const row = document.getElementById('row-' + id);
+      var body = new URLSearchParams({ idPendenza: id });
+      fetch('/carrello/rimuovi', { method: 'POST', body: body, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(r) { return parseJsonSafely(r); })
+        .then(function(data) {
+          if (data && data.error) { alert(data.error); return; }
+          var row = document.getElementById('row-' + id);
           if (row) row.remove();
           recalcTotal();
           updateNavBadge(data.count || 0);
         })
-        .catch((err) => {
+        .catch(function(err) {
           alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
           window.location.reload();
         });
