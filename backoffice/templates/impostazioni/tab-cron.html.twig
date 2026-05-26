@@ -61,7 +61,7 @@
             </div>
             {% endif %}
 
-            <div class="d-flex gap-2 mt-auto">
+            <div class="d-flex gap-2 mt-auto flex-wrap">
               {% if running %}
               <button class="btn btn-danger btn-sm" onclick="daemonStop('{{ jobKey }}')">
                 <i class="fas fa-stop me-1"></i>Ferma
@@ -69,6 +69,11 @@
               {% else %}
               <button class="btn btn-success btn-sm" onclick="daemonStart('{{ jobKey }}')">
                 <i class="fas fa-play me-1"></i>Avvia
+              </button>
+              {% endif %}
+              {% if jobKey == 'ragioneria' and running %}
+              <button class="btn btn-outline-warning btn-sm" onclick="ragioneriaRescan()" title="Riscansiona tutti i flussi dalla data configurata (senza cancellare i dati)">
+                <i class="fas fa-rotate me-1"></i>Riscansiona tutto
               </button>
               {% endif %}
               <button class="btn btn-outline-secondary btn-sm" onclick="showLog('{{ jobKey }}')">
@@ -137,6 +142,21 @@
         setTimeout(() => location.reload(), 1500);
       } else {
         impToast(json.error || 'Errore stop daemon.', false);
+      }
+    } catch (e) {
+      impToast('Errore di rete: ' + e.message, false);
+    }
+  };
+
+  window.ragioneriaRescan = async function () {
+    if (!confirm('Avviare una riscansione completa di tutti i flussi dalla data configurata?\nI dati esistenti non verranno cancellati.')) return;
+    try {
+      const res  = await fetch('/impostazioni/cron/ragioneria/rescan', { method: 'POST' });
+      const json = await res.json();
+      if (json.ok) {
+        impToast('Segnale rescan inviato. Il prossimo ciclo riscansionerà tutto.', true);
+      } else {
+        impToast(json.error || 'Errore invio segnale rescan.', false);
       }
     } catch (e) {
       impToast('Errore di rete: ' + e.message, false);

@@ -13,6 +13,11 @@ class FlussiRendicontazioniRepository
         $this->ensureTable();
     }
 
+    public function getPdo(): PDO
+    {
+        return $this->pdo;
+    }
+
     /**
      * @param array<int,array<string,mixed>> $rows
      */

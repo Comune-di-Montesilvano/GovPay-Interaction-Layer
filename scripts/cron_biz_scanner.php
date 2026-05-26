@@ -170,9 +170,9 @@ while (true) {
             }
 
             if ($result['status'] === 'RATE_LIMITED') {
-                for ($attempt = 1; $attempt < 5 && $result['status'] === 'RATE_LIMITED'; $attempt++) {
-                    $log("  IUR={$iur}: rate limit 429 (tentativo {$attempt}/5) - pausa 2s...");
-                    sleep(2);
+                for ($attempt = 1; $attempt < 6 && $result['status'] === 'RATE_LIMITED'; $attempt++) {
+                    $log("  IUR={$iur}: rate limit 429 (tentativo {$attempt}/6) - pausa " . ($attempt+1) . "s...");
+                    sleep($attempt+1); // 2s, 3s, 4s, 5s
                     try {
                         $result = $service->enrichOne($row, $idDominio);
                     } catch (\Throwable $e) {
