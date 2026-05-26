@@ -219,6 +219,81 @@ class HomeController
         ]);
     }
 
+    public function apiTipologie(Request $request, Response $response): Response
+    {
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $pdo = Connection::getPDO();
+
+        $periodo = (string)($request->getQueryParams()['periodo'] ?? '1y');
+
+        // Build date constraint based on selected period
+        $now = new \DateTimeImmutable('now');
+        switch ($periodo) {
+            case 'last_month':
+                $firstDay = $now->modify('first day of last month')->setTime(0, 0, 0);
+                $lastDay  = $now->modify('last day of last month')->setTime(23, 59, 59);
+                $dateCondition = "AND f.data_regolamento BETWEEN :date_from AND :date_to";
+                $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d'), ':date_to' => $lastDay->format('Y-m-d')];
+                break;
+            case '6m':
+                $firstDay = $now->modify('-6 months')->setTime(0, 0, 0);
+                $dateCondition = "AND f.data_regolamento >= :date_from";
+                $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];
+                break;
+            case '1y':
+                $firstDay = $now->modify('-1 year')->setTime(0, 0, 0);
+                $dateCondition = "AND f.data_regolamento >= :date_from";
+                $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];
+                break;
+            default: // 1y
+                $periodo = '1y';
+                $firstDay = $now->modify('-1 year')->setTime(0, 0, 0);
+                $dateCondition = "AND f.data_regolamento >= :date_from";
+                $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];
+                break;
+        }
+
+        $tipologieStats = [];
+        $totalAmount    = 0.0;
+        try {
+            // Total for this period
+            $stmtTot = $pdo->prepare(
+                "SELECT SUM(importo) AS a FROM flussi_rendicontazioni f WHERE f.id_dominio = :dom $dateCondition"
+            );
+            $stmtTot->execute($bindings);
+            $rowTot = $stmtTot->fetch();
+            $totalAmount = (float)($rowTot['a'] ?? 0.0);
+
+            // Breakdown by tipologia
+            $stmt = $pdo->prepare("
+                SELECT
+                    COALESCE(e.descrizione_locale, e.descrizione, f.cod_entrata, 'Altre pendenze / Esterni') AS tipologia_desc,
+                    f.cod_entrata,
+                    COUNT(*) AS transazioni,
+                    SUM(f.importo) AS importo_totale
+                FROM flussi_rendicontazioni f
+                LEFT JOIN entrate_tipologie e
+                    ON e.id_entrata = f.cod_entrata
+                   AND e.id_dominio = f.id_dominio
+                WHERE f.id_dominio = :dom
+                $dateCondition
+                GROUP BY f.cod_entrata, e.descrizione_locale, e.descrizione
+                ORDER BY importo_totale DESC
+            ");
+            $stmt->execute($bindings);
+            $tipologieStats = $stmt->fetchAll() ?: [];
+        } catch (\Throwable $_) {}
+
+        $payload = json_encode([
+            'total'     => $totalAmount,
+            'tipologie' => $tipologieStats,
+            'periodo'   => $periodo,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        $response->getBody()->write($payload);
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
     public function guida(Request $request, Response $response): Response
     {
         if (isset($_SESSION['user'])) {

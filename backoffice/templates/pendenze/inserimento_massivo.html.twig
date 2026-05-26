@@ -3,213 +3,287 @@
 {% block title %}Pendenze - Inserimento massivo{% endblock %}
 
 {% block content %}
-<div class="container my-4">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="it-title">Inserimento Massivo Pendenze</h1>
-      <p class="text-muted">Carica un file CSV per creare pendenze multiple. Scarica il template per avere le intestazioni corrette.</p>
+<div class="container-fluid px-4 py-4">
+
+  {# ── Header ─────────────────────────────────────────────────────────── #}
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h1 class="h4 fw-bold mb-1">Inserimento Massivo Pendenze</h1>
+      <p class="text-muted small mb-0">
+        Carica un file CSV per creare pendenze multiple.
+        <a href="/pendenze/massivo/template-csv" class="text-primary fw-semibold">Scarica il template</a>
+        per avere le intestazioni corrette.
+      </p>
     </div>
+    <a href="/pendenze/massivo/template-csv" class="btn btn-outline-primary btn-sm">
+      <i class="fas fa-download me-1"></i>Scarica template CSV
+    </a>
   </div>
 
+  {# ── Error alert ─────────────────────────────────────────────────────── #}
   {% if errors is defined and errors|length > 0 %}
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="alert alert-danger" role="alert">
-          <strong>Errore caricamento:</strong>
-          <ul class="mb-0 mt-1">
-            {% for err in errors %}
-              <li>{{ err }}</li>
-            {% endfor %}
-          </ul>
-        </div>
+    <div class="alert alert-danger d-flex gap-2 mb-4" role="alert">
+      <i class="fas fa-circle-exclamation fs-5 flex-shrink-0 mt-1"></i>
+      <div>
+        <strong>Errore caricamento:</strong>
+        <ul class="mb-0 mt-1 ps-3">
+          {% for err in errors %}
+            <li class="small">{{ err }}</li>
+          {% endfor %}
+        </ul>
       </div>
     </div>
   {% endif %}
 
-  <div class="row">
+  {# ── Two-column layout ───────────────────────────────────────────────── #}
+  <div class="row g-4 align-items-start">
+
+    {# ── LEFT: upload card ─────────────────────────────────────────────── #}
     <div class="col-lg-8">
-      {# Form upload #}
-      <div class="card-wrapper card-space mb-4">
-        <div class="card card-bg">
-          <div class="card-body">
-            <h5 class="card-title">1. Caricamento CSV</h5>
-            <p class="card-text text-muted small mb-3">Scarica il template CSV, compilalo e trascinalo qui sotto.</p>
-            <form method="post" action="/pendenze/massivo/upload" enctype="multipart/form-data" id="massiveUploadForm">
-              <div class="mb-3">
-                <a href="/pendenze/massivo/template-csv" class="btn btn-outline-primary btn-icon btn-sm mb-3">
-                  <i class="fas fa-download"></i>
-                  <span>Scarica template CSV</span>
-                </a>
-              </div>
-              <div class="mb-3">
-                <p class="form-text small mb-2">Intestazioni richieste: <code>TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;RATA;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE</code></p>
-                
-                <div class="upload-dragdrop-wrapper">
-                  <input type="file" name="csv_file" class="upload-dragdrop" id="csvFile" accept=".csv" required data-bs-upload-dragdrop>
-                  <label for="csvFile">Trascina qui il file oppure clicca per selezionarlo</label>
-                </div>
-              </div>
-              
-              <div class="d-flex align-items-center mt-3">
-                <button type="submit" class="btn btn-primary btn-icon" id="uploadSubmitBtn">
-                  <i class="fas fa-upload"></i>
-                  <span>Carica & Anteprima</span>
-                </button>
-                <div id="uploadSpinner" class="spinner-border text-primary ms-3 d-none" role="status">
-                  <span class="visually-hidden">Caricamento in corso...</span>
-                </div>
-              </div>
-            </form>
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light border-bottom py-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary rounded-circle d-flex align-items-center justify-content-center" style="width:26px;height:26px;font-size:.8rem;">1</span>
+            <h2 class="h6 mb-0 fw-bold">Caricamento CSV</h2>
           </div>
+        </div>
+        <div class="card-body p-4">
+          <p class="text-muted small mb-3">Scarica il template CSV, compilalo e trascinalo qui sotto.</p>
+
+          {# Columns hint — scrollable pill box #}
+          <div class="mb-4">
+            <p class="small fw-semibold text-muted mb-1">
+              <i class="fas fa-table-columns me-1 text-primary"></i>Intestazioni richieste:
+            </p>
+            <div class="p-2 rounded border bg-light" style="overflow-x:auto;white-space:nowrap;">
+              <code class="small text-secondary">TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;RATA;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE</code>
+            </div>
+          </div>
+
+          <form method="post" action="/pendenze/massivo/upload" enctype="multipart/form-data" id="massiveUploadForm">
+
+            {# Drop zone #}
+            <div class="mb-4">
+              <label for="csvFile" id="csvDropLabel"
+                     class="d-flex flex-column align-items-center justify-content-center gap-2 rounded border border-2 border-primary border-dashed p-5 text-center"
+                     style="cursor:pointer;transition:background .2s;"
+                     onmouseover="this.style.background='#f0f7ff'"
+                     onmouseout="this.style.background=''">
+                <i class="fas fa-cloud-arrow-up fa-2x text-primary"></i>
+                <span class="text-primary fw-semibold">Trascina qui il file CSV</span>
+                <span class="text-muted small">oppure <span class="text-primary text-decoration-underline">clicca per selezionarlo</span></span>
+                <span id="csvFileName" class="badge bg-primary-subtle text-primary d-none mt-1" style="font-size:.8rem;"></span>
+              </label>
+              <input type="file" name="csv_file" class="d-none" id="csvFile" accept=".csv" required>
+            </div>
+
+            <div class="d-flex align-items-center gap-3">
+              <button type="submit" class="btn btn-primary px-4" id="uploadSubmitBtn">
+                <i class="fas fa-upload me-2"></i>Carica &amp; Anteprima
+              </button>
+              <div id="uploadSpinner" class="d-none d-flex align-items-center gap-2 text-muted small">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Caricamento...</span>
+                </div>
+                Analisi in corso...
+              </div>
+            </div>
+          </form>
         </div>
       </div>
 
-      {# Anteprima e Selezione Tipologia #}
+      {# ── Preview section ─────────────────────────────────────────────── #}
       {% if preview is defined %}
-        <div class="card-wrapper card-space mb-4" id="previewSection">
-          <div class="card card-bg">
-            <div class="card-body">
-              <h5 class="card-title">2. Anteprima e Importazione</h5>
-              <div class="alert alert-info" role="alert">
-                Righe valide trovate: <strong>{{ preview.valid_count }}</strong> su {{ preview.total_count }}. 
-                {% if preview.valid_count > 0 %}Vengono mostrate le prime 2 righe valide per verifica.{% endif %}
-              </div>
-        <script>
-          document.addEventListener("DOMContentLoaded", function() {
-            setTimeout(() => {
-              const el = document.getElementById('previewSection');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }
-            }, 100);
-          });
-        </script>
-
-              {% if preview.valid_count > 0 %}
-                <div class="table-responsive mb-4">
-                  <table class="table table-sm table-striped">
-                    <thead>
-                      <tr>
-                        <th>R.</th><th>Tipo</th><th>Identificativo</th><th>Anagrafica</th><th>Causale</th><th>Importo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for r in preview.first_valid %}
-                        <tr>
-                          <td>{{ r._row }}</td>
-                          <td>{{ r.tipo }}</td>
-                          <td>{{ r.identificativo }}</td>
-                          <td>{{ r.anagrafica }} {{ r.nome }}</td>
-                          <td>{{ r.causale }}</td>
-                          <td>€ {{ r.importo|number_format(2, ',', '.') }}</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-                
-                <form method="post" action="/pendenze/massivo/conferma" class="mt-3 border-top pt-3">
-                  <input type="hidden" name="batch_id" value="{{ preview.batch_id }}">
-                  <div class="mb-3">
-                    <label for="massivoTipo" class="active t-primary">Tipologia pendenza *</label>
-                    <div class="select-wrapper">
-                      <select id="massivoTipo" name="idTipoPendenza" class="form-select" required>
-                        <option value="">Seleziona tipologia...</option>
-                        {% for t in tipologie_pendenze|default([]) %}
-                          <option value="{{ t.id_entrata }}">{{ t.nome|default(t.descrizione)|e }}</option>
-                        {% endfor %}
-                      </select>
-                    </div>
-                  </div>
-                  <button type="submit" class="btn btn-primary btn-icon mt-2" onclick="this.innerHTML='<span class=\'spinner-border spinner-border-sm\' role=\'status\' aria-hidden=\'true\'></span> Elaborazione...'; this.form.submit();">
-                    <i class="fas fa-cogs"></i>
-                    <span>Conferma e Invia in elaborazione</span>
-                  </button>
-                </form>
-              {% endif %}
-
-              {% if preview.invalid_count > 0 %}
-                <div class="callout callout-danger mt-4">
-                  <div class="callout-title">
-                    <i class="fas fa-triangle-exclamation text-danger"></i>
-                    Errori riscontrati
-                  </div>
-                  <p>Sono stati riscontrati errori in <strong>{{ preview.invalid_count }}</strong> righe. Queste non verranno importate.</p>
-                  <a href="/pendenze/massivo/errori-csv?batch={{ preview.batch_id }}" class="btn btn-danger btn-xs mt-2">Scarica CSV errori</a>
-                </div>
-              {% endif %}
+        <div class="card border-0 shadow-sm mt-4" id="previewSection">
+          <div class="card-header bg-light border-bottom py-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-success rounded-circle d-flex align-items-center justify-content-center" style="width:26px;height:26px;font-size:.8rem;">2</span>
+              <h2 class="h6 mb-0 fw-bold">Anteprima e Importazione</h2>
             </div>
+          </div>
+          <div class="card-body p-4">
+
+            <script>
+              document.addEventListener("DOMContentLoaded", function() {
+                setTimeout(() => {
+                  const el = document.getElementById('previewSection');
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+              });
+            </script>
+
+            <div class="alert alert-info d-flex gap-2 mb-4" role="alert">
+              <i class="fas fa-circle-info fs-5 flex-shrink-0 mt-1"></i>
+              <div>
+                Righe valide trovate: <strong>{{ preview.valid_count }}</strong> su {{ preview.total_count }}.
+                {% if preview.valid_count > 0 %}
+                  Vengono mostrate le prime 2 righe valide per verifica.
+                {% endif %}
+              </div>
+            </div>
+
+            {% if preview.valid_count > 0 %}
+              <div class="table-responsive mb-4">
+                <table class="table table-sm table-hover align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>#</th>
+                      <th>Tipo</th>
+                      <th>Identificativo</th>
+                      <th>Anagrafica</th>
+                      <th>Causale</th>
+                      <th class="text-end">Importo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in preview.first_valid %}
+                      <tr>
+                        <td class="text-muted small">{{ r._row }}</td>
+                        <td><span class="badge bg-secondary-subtle text-secondary">{{ r.tipo }}</span></td>
+                        <td class="font-monospace small">{{ r.identificativo }}</td>
+                        <td>{{ r.anagrafica }} {{ r.nome }}</td>
+                        <td class="small text-muted">{{ r.causale }}</td>
+                        <td class="text-end fw-bold">€ {{ r.importo|number_format(2, ',', '.') }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <form method="post" action="/pendenze/massivo/conferma" class="border-top pt-4">
+                <input type="hidden" name="batch_id" value="{{ preview.batch_id }}">
+                <div class="mb-3" style="max-width:400px;">
+                  <label for="massivoTipo" class="form-label fw-semibold small">Tipologia pendenza <span class="text-danger">*</span></label>
+                  <select id="massivoTipo" name="idTipoPendenza" class="form-select form-select-sm" required>
+                    <option value="">Seleziona tipologia...</option>
+                    {% for t in tipologie_pendenze|default([]) %}
+                      <option value="{{ t.id_entrata }}">{{ t.nome|default(t.descrizione)|e }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <button type="submit" class="btn btn-success px-4"
+                        onclick="this.innerHTML='<span class=\'spinner-border spinner-border-sm me-2\' role=\'status\'></span>Elaborazione...'; this.form.submit();">
+                  <i class="fas fa-check me-2"></i>Conferma e Invia in elaborazione
+                </button>
+              </form>
+            {% endif %}
+
+            {% if preview.invalid_count > 0 %}
+              <div class="alert alert-warning d-flex gap-2 mt-4" role="alert">
+                <i class="fas fa-triangle-exclamation fs-5 flex-shrink-0 mt-1"></i>
+                <div>
+                  <strong>{{ preview.invalid_count }} righe con errori</strong> — queste non verranno importate.
+                  <div class="mt-2">
+                    <a href="/pendenze/massivo/errori-csv?batch={{ preview.batch_id }}" class="btn btn-sm btn-outline-danger">
+                      <i class="fas fa-download me-1"></i>Scarica CSV errori
+                    </a>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+
           </div>
         </div>
       {% endif %}
     </div>
 
-    {# Tabella lato destro: Stato caricamenti #}
+    {# ── RIGHT: Storico ────────────────────────────────────────────────── #}
     <div class="col-lg-4">
-      <div class="card-wrapper">
-        <div class="card card-bg">
-          <div class="card-body p-3">
-            <h5 class="card-title">Storico Caricamenti</h5>
-            {% if batch_list is defined and batch_list|length > 0 %}
-              <div class="mt-3">
-                {% for b in batch_list %}
-                  <div class="border-bottom pb-2 mb-2">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                      <span class="fw-bold small">{{ b.file_batch_id }}</span>
-                      <a href="/pendenze/massivo/dettaglio?batch={{ b.file_batch_id }}" class="btn btn-outline-primary btn-xs" title="Dettaglio">
-                        <i class="fas fa-circle-info"></i>
-                      </a>
-                    </div>
-                    <div class="d-flex justify-content-start gap-1 align-items-center mb-1 flex-wrap">
-                      {% if b.pending > 0 %}<span class="badge bg-secondary text-white" title="In coda">{{ b.pending }} PEND.</span>{% endif %}
-                      {% if b.processing > 0 %}<span class="badge bg-info text-white" title="In elaborazione">{{ b.processing }} PROC.</span>{% endif %}
-                      {% if b.success > 0 %}<span class="badge bg-success text-white" title="Importate">{{ b.success }} OK</span>{% endif %}
-                      {% if b.error > 0 %}<span class="badge bg-danger text-white" title="Errori">{{ b.error }} ERR</span>{% endif %}
-                    </div>
-                    <div class="small text-muted">Totale righe: {{ b.totale }}</div>
-                  </div>
-                {% endfor %}
-              </div>
-            {% else %}
-              <p class="small text-muted mt-3">Nessun caricamento precedente.</p>
-            {% endif %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light border-bottom py-3 d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-clock-rotate-left text-primary"></i>
+            <h2 class="h6 mb-0 fw-bold">Storico Caricamenti</h2>
           </div>
+          <a href="/pendenze/massivo/storico" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-list me-1"></i>Tutti
+          </a>
+        </div>
+        <div class="card-body p-0">
+          {% if batch_list is defined and batch_list|length > 0 %}
+            <ul class="list-group list-group-flush">
+              {% for b in batch_list %}
+                <li class="list-group-item px-4 py-3">
+                  <div class="d-flex justify-content-between align-items-start mb-1">
+                    <span class="font-monospace small text-dark fw-semibold" style="font-size:.78rem;">{{ b.file_batch_id }}</span>
+                    <a href="/pendenze/massivo/dettaglio?batch={{ b.file_batch_id }}"
+                       class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:.75rem;" title="Dettaglio">
+                      <i class="fas fa-arrow-up-right-from-square"></i>
+                    </a>
+                  </div>
+                  <div class="d-flex gap-1 flex-wrap">
+                    {% if b.pending > 0 %}<span class="badge bg-secondary">{{ b.pending }} in coda</span>{% endif %}
+                    {% if b.processing > 0 %}<span class="badge bg-info text-white">{{ b.processing }} proc.</span>{% endif %}
+                    {% if b.success > 0 %}<span class="badge bg-success">{{ b.success }} ok</span>{% endif %}
+                    {% if b.error > 0 %}<span class="badge bg-danger">{{ b.error }} err</span>{% endif %}
+                  </div>
+                  <div class="text-muted mt-1" style="font-size:.78rem;">{{ b.totale }} righe totali</div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-inbox fa-2x mb-2 d-block text-secondary"></i>
+              <small>Nessun caricamento precedente.</small>
+            </div>
+          {% endif %}
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
 <script>
-  document.addEventListener("DOMContentLoaded", function() {
-    const form = document.getElementById('massiveUploadForm');
-    const input = document.getElementById('csvFile');
-    const btn = document.getElementById('uploadSubmitBtn');
-    const spi = document.getElementById('uploadSpinner');
-    
-    // Auto-submit quando viene selezionato un file per un flusso agevole
+  document.addEventListener("DOMContentLoaded", function () {
+    const input  = document.getElementById('csvFile');
+    const label  = document.getElementById('csvDropLabel');
+    const fname  = document.getElementById('csvFileName');
+    const form   = document.getElementById('massiveUploadForm');
+    const btn    = document.getElementById('uploadSubmitBtn');
+    const spi    = document.getElementById('uploadSpinner');
+
+    function handleFile(file) {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        alert('Seleziona solo file CSV');
+        input.value = '';
+        return;
+      }
+      fname.textContent = file.name;
+      fname.classList.remove('d-none');
+      btn.classList.add('d-none');
+      spi.classList.remove('d-none');
+      form.submit();
+    }
+
     if (input) {
-      input.addEventListener('change', function() {
-        if (this.files && this.files.length > 0) {
-          let f = this.files[0];
-          if (!f.name.toLowerCase().endsWith('.csv')) {
-             alert("Seleziona solo file CSV");
-             this.value = ''; // reset
-             return;
-          }
-          // Mostra spinner e nascondi bottone in attesa
-          btn.classList.add('d-none');
-          spi.classList.remove('d-none');
-          form.submit();
+      input.addEventListener('change', function () {
+        handleFile(this.files?.[0]);
+      });
+    }
+
+    // Drag & drop on label
+    if (label) {
+      label.addEventListener('dragover', e => { e.preventDefault(); label.style.background = '#e8f4ff'; });
+      label.addEventListener('dragleave', () => { label.style.background = ''; });
+      label.addEventListener('drop', e => {
+        e.preventDefault();
+        label.style.background = '';
+        const file = e.dataTransfer?.files?.[0];
+        if (file) {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          handleFile(file);
         }
       });
     }
 
-    // Gestione visuale del submit nel caso venga cliccato manualmente il bottone
     if (form) {
-      form.addEventListener('submit', function() {
-         btn.classList.add('d-none');
-         spi.classList.remove('d-none');
+      form.addEventListener('submit', function () {
+        btn.classList.add('d-none');
+        spi.classList.remove('d-none');
       });
     }
   });
