@@ -2529,6 +2529,7 @@ class ImpostazioniController
             'APP_ENTITY_NAME'              => $entity['name']                   ?? '',
             'APP_ENTITY_SUFFIX'            => $entity['suffix']                 ?? '',
             'APP_ENTITY_GOVERNMENT'        => $entity['government']             ?? '',
+            'APP_ENTITY_WEBSITE'           => $entity['url']                    ?? '',
             'APP_SUPPORT_EMAIL'            => $entity['support_email']          ?? '',
             'APP_SUPPORT_PHONE'            => $entity['support_phone']          ?? '',
             'APP_SUPPORT_HOURS'            => $entity['support_hours']          ?? '',
