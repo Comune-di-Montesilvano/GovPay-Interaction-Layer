@@ -41,6 +41,9 @@ description:
       - Dashboard con statistiche e grafici
       - Inserimento massivo pendenze tramite lotti
       - Deploy containerizzato tramite Docker Compose e Portainer
+    screenshots:
+      - https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/blob/main/docs/images/FrontOffice.png
+      - https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/blob/main/docs/images/BackOffice.png
 legal:
   license: EUPL-1.2
   mainCopyrightOwner: Comune di Montesilvano
