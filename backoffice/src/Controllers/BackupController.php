@@ -516,8 +516,8 @@ class BackupController
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Esegue il dump del DB via PDO e restituisce il path del file .sql.gz temporaneo,
-     * oppure null se non è possibile connettersi o estrarre i dati.
+     * Esegue il dump del DB via PDO e lo scrive in streaming nel file compresso,
+     * consumando pochissima memoria ed evitando fetchAll su grandi volumi.
      */
     private function runMysqldump(): ?string
     {
@@ -527,10 +527,10 @@ class BackupController
             return null;
         }
 
+        $outFile = null;
+        $gz = null;
         try {
             $pdo = Connection::getPDO();
-            $sql = "SET FOREIGN_KEY_CHECKS=0;\n\n";
-
             $tables = $pdo->query("SHOW TABLES")->fetchAll(\PDO::FETCH_COLUMN);
 
             // Raccoglie DDL per tutte le tabelle prima di generare il dump
@@ -551,42 +551,58 @@ class BackupController
                 return $aFk ? 1 : -1;
             });
 
-            foreach ($tables as $table) {
-                $ddl = $ddls[$table];
-                $sql .= "DROP TABLE IF EXISTS `{$table}`;\n";
-                $sql .= $ddl . ";\n\n";
-
-                $rows = $pdo->query("SELECT * FROM `{$table}`")->fetchAll(\PDO::FETCH_ASSOC);
-                if (!empty($rows)) {
-                    $cols = '`' . implode('`, `', array_keys($rows[0])) . '`';
-                    foreach ($rows as $r) {
-                        $vals = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $r);
-                        $sql .= "INSERT INTO `{$table}` ({$cols}) VALUES (" . implode(', ', $vals) . ");\n";
-                    }
-                    $sql .= "\n";
-                }
-            }
-
-            $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
-
             $outFile = sys_get_temp_dir() . '/gil-dbdump-' . bin2hex(random_bytes(6)) . '.sql.gz';
             $gz = gzopen($outFile, 'wb9');
             if ($gz === false) {
                 Logger::getInstance()->warning('mysqldump: impossibile aprire file gz di output');
                 return null;
             }
-            gzwrite($gz, $sql);
+
+            gzwrite($gz, "SET FOREIGN_KEY_CHECKS=0;\n\n");
+
+            foreach ($tables as $table) {
+                $ddl = $ddls[$table];
+                gzwrite($gz, "DROP TABLE IF EXISTS `{$table}`;\n");
+                gzwrite($gz, $ddl . ";\n\n");
+
+                // Utilizziamo un cursore per consumare una riga alla volta senza fetchAll in memoria
+                $stmt = $pdo->query("SELECT * FROM `{$table}`");
+                $first = true;
+                $cols = '';
+
+                while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                    if ($first) {
+                        $cols = '`' . implode('`, `', array_keys($row)) . '`';
+                        $first = false;
+                    }
+                    $vals = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $row);
+                    gzwrite($gz, "INSERT INTO `{$table}` ({$cols}) VALUES (" . implode(', ', $vals) . ");\n");
+                }
+                
+                if (!$first) {
+                    gzwrite($gz, "\n");
+                }
+            }
+
+            gzwrite($gz, "SET FOREIGN_KEY_CHECKS=1;\n");
             gzclose($gz);
+            $gz = null;
 
             return $outFile;
         } catch (\Throwable $e) {
+            if ($gz !== null) {
+                @gzclose($gz);
+            }
+            if ($outFile !== null) {
+                @unlink($outFile);
+            }
             Logger::getInstance()->warning('mysqldump PDO fallito', ['error' => $e->getMessage()]);
             return null;
         }
     }
 
     /**
-     * Ripristina il DB da un file .sql.gz via PDO (senza mysql CLI).
+     * Ripristina il DB in modo efficiente riga per riga dal file .sql.gz via PDO.
      */
     private function runMysqlRestore(string $gzFile): void
     {
@@ -595,32 +611,37 @@ class BackupController
             throw new \RuntimeException("Impossibile aprire il dump compresso per il ripristino.");
         }
 
-        $sql = '';
-        while (!gzeof($gz)) {
-            $sql .= gzread($gz, 65536);
-        }
-        gzclose($gz);
-
-        if (trim($sql) === '') {
-            throw new \RuntimeException("Il dump del database è vuoto: ripristino annullato.");
-        }
-
         try {
             $pdo = Connection::getPDO();
             $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
 
-            $statements = array_filter(
-                array_map('trim', explode(";\n", $sql)),
-                fn($s) => $s !== ''
-            );
-
-            foreach ($statements as $stmt) {
-                $pdo->exec($stmt);
+            $currentStmt = '';
+            while (!gzeof($gz)) {
+                $line = gzgets($gz, 1048576); // Legge fino a 1MB per riga
+                if ($line === false) {
+                    break;
+                }
+                
+                $trimmed = trim($line);
+                if ($trimmed === '') {
+                    continue;
+                }
+                
+                $currentStmt .= $line;
+                
+                // Se la riga finisce con un punto e virgola (ignorando gli spazi bianchi),
+                // abbiamo terminato un'istruzione SQL completa.
+                if (str_ends_with($trimmed, ';')) {
+                    $pdo->exec($currentStmt);
+                    $currentStmt = '';
+                }
             }
 
             $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
         } catch (\Throwable $e) {
             throw new \RuntimeException("Ripristino DB fallito: " . $e->getMessage(), 0, $e);
+        } finally {
+            @gzclose($gz);
         }
     }
 
