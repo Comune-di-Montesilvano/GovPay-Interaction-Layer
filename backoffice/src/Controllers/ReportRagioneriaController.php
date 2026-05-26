@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\SettingsRepository;
+use App\Database\BizRepository;
 use App\Database\EntrateRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -50,6 +51,15 @@ class ReportRagioneriaController
             'tassonomie' => $this->parseTaxonomySelection($params),
             'page'       => max(1, (int)($params['page'] ?? 1)),
         ];
+
+        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
+        if ($filters['idDominio'] !== '') {
+            try {
+                $bizCounts = (new BizRepository())->getCounts($filters['idDominio']);
+            } catch (\Throwable $_) {
+                // Keep report available even if Biz table is temporarily unavailable.
+            }
+        }
 
         // Carica tipologie censite dal DB per il filtro
         $tipologieRepo    = new EntrateRepository();
@@ -192,10 +202,42 @@ class ReportRagioneriaController
             'refresh_cache_url' => null,
             'page_size'        => self::PAGE_SIZE,
             'tipologie_censite' => $tipologieCensite,
+            'biz_counts'       => $bizCounts,
             'raw_payload_json' => null,
             'csv_link'         => $csvLink,
             'app_debug'        => $this->isAppDebug(),
         ]);
+    }
+
+    public function resetBizErrors(Request $request, Response $response): Response
+    {
+        $this->exposeCurrentUser();
+
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+
+        $body = (array)($request->getParsedBody() ?? []);
+        $idDominio = trim((string)($body['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
+        $reset = 0;
+
+        if ($idDominio !== '') {
+            $reset = (new BizRepository())->resetErrors($idDominio);
+        }
+
+        $_SESSION['flash'][] = [
+            'type' => 'success',
+            'text' => sprintf('Reset errori Biz completato: %d pendenze riportate in PENDING.', $reset),
+        ];
+
+        $returnUrl = trim((string)($body['return_url'] ?? ''));
+        if ($returnUrl === '' || str_starts_with($returnUrl, '/pagamenti/report-ragioneria') === false) {
+            $returnUrl = '/pagamenti/report-ragioneria?q=1&idDominio=' . rawurlencode($idDominio);
+        }
+
+        return $response
+            ->withHeader('Location', $returnUrl)
+            ->withStatus(302);
     }
 
     private function exportCsv(Response $response, array $filters): Response

@@ -27,8 +27,49 @@
     </div>
   {% endif %}
 
-  {# ── Filtri ──────────────────────────────────────────────────────────── #}
   {% set f = filters ?? {} %}
+  {% set biz = biz_counts|default({'PENDING': 0, 'PROCESSED': 0, 'ERROR': 0, 'SKIPPED': 0, 'total': 0}) %}
+  <div class="card shadow-sm mb-4 border-danger-subtle">
+    <div class="card-header bg-danger bg-opacity-10 border-bottom py-3 d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2">
+      <div>
+        <h2 class="h6 mb-0">Stato pendenze Biz</h2>
+        <p class="small text-muted mb-0">Contatori globali su tabella biz_ricevute per il dominio selezionato</p>
+      </div>
+      <form method="post" action="/pagamenti/report-ragioneria/biz-reset-errors" class="m-0">
+        <input type="hidden" name="idDominio" value="{{ f.idDominio|default('') }}">
+        <input type="hidden" name="return_url" value="/pagamenti/report-ragioneria?q=1&idDominio={{ f.idDominio|default('')|url_encode }}">
+        <button type="submit" class="btn btn-outline-danger" {% if (biz.ERROR|default(0)) <= 0 %}disabled{% endif %}>
+          Reset errori Biz ({{ biz.ERROR|default(0) }})
+        </button>
+      </form>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 text-center">
+        <div class="col-6 col-md-2">
+          <div class="small text-muted text-uppercase">Totali</div>
+          <div class="h4 mb-0">{{ biz.total|default(0) }}</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <div class="small text-muted text-uppercase">Pending</div>
+          <div class="h4 mb-0 text-primary">{{ biz.PENDING|default(0) }}</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <div class="small text-muted text-uppercase">Processed</div>
+          <div class="h4 mb-0 text-success">{{ biz.PROCESSED|default(0) }}</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <div class="small text-muted text-uppercase">Error</div>
+          <div class="h4 mb-0 text-danger">{{ biz.ERROR|default(0) }}</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <div class="small text-muted text-uppercase">Skipped</div>
+          <div class="h4 mb-0 text-secondary">{{ biz.SKIPPED|default(0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Filtri ──────────────────────────────────────────────────────────── #}
   <form method="get" action="/pagamenti/report-ragioneria" class="card shadow-sm mb-4" id="reportRagioneriaForm">
     <input type="hidden" name="q" value="1">
     <div class="card-header bg-light border-bottom py-3">
