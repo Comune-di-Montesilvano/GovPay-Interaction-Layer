@@ -1,24 +1,65 @@
 {% extends 'base.html.twig' %}
 
 {% block content %}
-<div class="container my-5" style="max-width: 480px;">
-  <h1 class="h3 mb-4">Accedi</h1>
-  {% if error %}
-    <div class="alert alert-danger">{{ error }}</div>
-  {% endif %}
-  <form method="post" action="/login">
-    <div class="mb-3">
-      <label for="email" class="form-label">Email</label>
-      <input type="email" class="form-control" id="email" name="email" required value="{{ last_email|default('') }}">
+<section class="bo-login-wrap">
+  <div class="bo-login-grid">
+    <aside class="bo-login-hero">
+      <div class="bo-login-brand">
+        <span class="bo-login-brand-mark" aria-hidden="true">
+          {% if app_logo.type == 'img' %}
+            <img src="{{ app_logo.src }}" alt="" class="bo-login-brand-logo-img">
+          {% else %}
+            <i class="fas fa-building bo-login-brand-logo-fallback" aria-hidden="true"></i>
+          {% endif %}
+        </span>
+        <div class="bo-login-brand-copy">
+          <strong>{{ app_entity.name }}</strong>
+          <small>{{ app_entity.suffix }}</small>
+        </div>
+      </div>
+
+      <p class="bo-login-kicker">Sportello Pagamenti</p>
+      <h1>Backoffice operatori</h1>
+      <p class="bo-login-lead">
+        Gestisci pendenze, rendicontazioni e configurazioni da un unico punto operativo.
+      </p>
+      <ul class="bo-login-points">
+        <li><i class="fas fa-shield-alt" aria-hidden="true"></i>Accesso riservato e tracciato</li>
+        <li><i class="fas fa-file-invoice-dollar" aria-hidden="true"></i>Controllo completo delle pendenze</li>
+        <li><i class="fas fa-chart-line" aria-hidden="true"></i>Monitoraggio rapido dei flussi</li>
+      </ul>
+      <div class="bo-login-meta">
+        <span class="bo-login-dot" aria-hidden="true"></span>
+        <span>Ambiente operativo attivo</span>
+      </div>
+    </aside>
+
+    <div class="bo-login-card">
+      <h2>Accedi al backoffice</h2>
+      <p>Inserisci le credenziali del tuo account operatore.</p>
+
+      {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/login" class="bo-login-form">
+        <div class="mb-3">
+          <label for="email" class="form-label">Email</label>
+          <input type="email" class="form-control" id="email" name="email" required value="{{ last_email|default('') }}" autocomplete="email">
+        </div>
+        <div class="mb-3">
+          <label for="password" class="form-label">Password</label>
+          <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 bo-login-submit">Entra</button>
+
+        <div class="bo-login-links mt-3">
+          <a href="/password-dimenticata" class="small">Hai dimenticato la password?</a>
+          <a href="/guida" class="small text-muted">Guida operativa</a>
+        </div>
+      </form>
     </div>
-    <div class="mb-3">
-      <label for="password" class="form-label">Password</label>
-      <input type="password" class="form-control" id="password" name="password" required>
-    </div>
-    <button type="submit" class="btn btn-primary">Entra</button>
-    <div class="mt-3">
-      <a href="/password-dimenticata" class="text-muted small">Hai dimenticato la password?</a>
-    </div>
-  </form>
-</div>
+  </div>
+</section>
 {% endblock %}

@@ -1,14 +1,16 @@
 /* Piccolo CSS personalizzato per GOVPAY */
-body { background: #f8f9fa; }
+body:not(.bo-shell) { background: #f8f9fa; }
 .it-title { color: #003366; }
 .container .card { margin-top: 1rem; }
 #pendenze-output { white-space: pre-wrap; background: #fff; padding: 1rem; border-radius: 6px; border: 1px solid #e6e6e6; }
 
 /* Sticky footer layout: il footer resta al fondo della finestra, senza coprire i contenuti */
 html, body { height: 100%; }
-body { display: flex; flex-direction: column; min-height: 100vh; }
-main, #main, main.container { flex: 1 0 auto; }
-footer.it-footer { margin-top: auto; }
+body:not(.bo-shell) { display: flex; flex-direction: column; min-height: 100vh; }
+body:not(.bo-shell) main,
+body:not(.bo-shell) #main,
+body:not(.bo-shell) main.container { flex: 1 0 auto; }
+body:not(.bo-shell) footer.it-footer { margin-top: auto; }
 
 /* Quando il footer è fixed-bottom, evita che copra i contenuti */
 .pb-footer { padding-bottom: 6rem; }
@@ -74,13 +76,13 @@ html {
     color: #fff !important;
 }
 
-body {
+body:not(.bo-shell) {
   width: 100vw;
   overflow-x: hidden;
 }
 
 @supports (overflow-x: clip) {
-  body {
+	body:not(.bo-shell) {
     overflow-x: clip;
   }
 }

@@ -157,11 +157,18 @@ body.bo-shell {
   color: #b8c4d4;
 }
 
-.bo-nav-item i {
+.bo-nav-item i,
+.bo-nav-subitem i {
   width: 16px;
   font-size: 14px;
   text-align: center;
 }
+
+.bo-nav-subitem i {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
 
 .bo-nav-item:hover,
 .bo-nav-subitem:hover {
@@ -1673,6 +1680,206 @@ body.bo-sidebar-collapsed .bo-topbar {
   color: var(--bo-ink-1) !important;
   font-size: 0.95rem !important;
 }
+
+/* Premium Datepicker Quick Selectors Styles */
+.bo-datepicker-quick-selects {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bo-datepicker-quick-btn {
+  display: inline-block;
+  background-color: #f1f4f8;
+  color: var(--bo-ink-2);
+  border: 1px solid var(--bo-border);
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-decoration: none;
+  line-height: 1.4;
+  outline: none;
+}
+
+.bo-datepicker-quick-btn:hover {
+  background-color: var(--bo-accent);
+  color: #ffffff !important;
+  border-color: var(--bo-accent);
+}
+
+.bo-datepicker-quick-btn.btn-clear {
+  color: #d32f2f;
+  background-color: #ffebee;
+  border-color: #ffcdd2;
+}
+
+.bo-datepicker-quick-btn.btn-clear:hover {
+  background-color: #d32f2f;
+  color: #ffffff !important;
+  border-color: #d32f2f;
+}
+
+/* Premium Litepicker CSS Overrides */
+:root {
+  --lp-primary-color: #0066cc;
+  --lp-primary-color-hover: #004c99;
+  --lp-bg-color: #ffffff;
+  --lp-text-color: #283545;
+  --lp-border-color: #cbd5e1;
+  --lp-range-bg-color: #e0f2fe;
+}
+
+.litepicker {
+  font-family: "Figtree", "Titillium Web", sans-serif !important;
+  background-color: var(--lp-bg-color) !important;
+  border: 1px solid var(--lp-border-color) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 16px -6px rgba(0, 0, 0, 0.04) !important;
+  padding: 12px !important;
+  z-index: 9999 !important;
+}
+
+.litepicker .container__months {
+  background-color: transparent !important;
+  gap: 16px !important;
+  flex-wrap: nowrap !important;
+  width: auto !important;
+}
+
+.litepicker .container__months .month-item {
+  background-color: transparent !important;
+}
+
+.litepicker .container__months .month-item-header {
+  font-weight: 700 !important;
+  color: var(--bo-ink-1) !important;
+  padding: 8px 0 !important;
+  font-size: 14px !important;
+}
+
+.litepicker .container__months .month-item-header select {
+  font-family: inherit !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--bo-ink-2) !important;
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  outline: none !important;
+  cursor: pointer !important;
+  transition: border-color 0.15s ease-in-out, background-color 0.15s ease-in-out !important;
+}
+
+.litepicker .container__months .month-item-header select:hover {
+  background-color: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.litepicker .container__months .month-item-weekdays-row {
+  color: #94a3b8 !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+}
+
+.litepicker .container__days .day-item {
+  color: var(--lp-text-color) !important;
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.litepicker .container__days .day-item:hover {
+  background-color: #f1f5f9 !important;
+  color: var(--bo-ink-1) !important;
+}
+
+.litepicker .container__days .day-item.is-today {
+  color: var(--lp-primary-color) !important;
+  font-weight: 700 !important;
+  background-color: #f0f7ff !important;
+}
+
+.litepicker .container__days .day-item.is-in-range {
+  background-color: var(--lp-range-bg-color) !important;
+  color: var(--lp-primary-color) !important;
+  border-radius: 0 !important;
+}
+
+.litepicker .container__days .day-item.is-start-date {
+  border-top-left-radius: 6px !important;
+  border-bottom-left-radius: 6px !important;
+  background-color: var(--lp-primary-color) !important;
+  color: #ffffff !important;
+}
+
+.litepicker .container__days .day-item.is-end-date {
+  border-top-right-radius: 6px !important;
+  border-bottom-right-radius: 6px !important;
+  background-color: var(--lp-primary-color) !important;
+  color: #ffffff !important;
+}
+
+.litepicker .container__days .day-item.is-selected {
+  background-color: var(--lp-primary-color) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 102, 204, 0.2) !important;
+}
+
+.litepicker .container__footer {
+  background-color: #f8fafc !important;
+  border-top: 1px solid var(--lp-border-color) !important;
+  padding: 10px 12px !important;
+  border-bottom-left-radius: 12px !important;
+  border-bottom-right-radius: 12px !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+}
+
+.litepicker .container__footer .button-apply,
+.litepicker .container__footer .button-cancel {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 5px 12px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.litepicker .container__footer .button-apply {
+  background-color: var(--lp-primary-color) !important;
+  color: #ffffff !important;
+  border: 1px solid var(--lp-primary-color) !important;
+}
+
+.litepicker .container__footer .button-apply:hover {
+  background-color: var(--lp-primary-color-hover) !important;
+  border-color: var(--lp-primary-color-hover) !important;
+}
+
+.litepicker .container__footer .button-cancel {
+  background-color: #ffffff !important;
+  color: var(--bo-ink-2) !important;
+  border: 1px solid var(--lp-border-color) !important;
+}
+
+.litepicker .container__footer .button-cancel:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
 
 
 

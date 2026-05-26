@@ -11,7 +11,6 @@
 
     <meta name="description" content="${SATOSA_UI_DESCRIPTION_IT}">
     <!-- CSS -->
-    <link rel="stylesheet" href="{{ static }}spid/bootstrap-italia.css">
     <!-- Extra CSS/Javascript -->
 
     <link rel="shortcut icon" href="{{ static }}spid/favicon-32x32.png">
@@ -230,7 +229,6 @@
     </footer>
 
     <script>window.__PUBLIC_PATH__ = "{{ static }}spid/fonts"</script>
-    <script src="{{ static }}spid/bootstrap-italia.js"></script>
 
     <script src="{{ static }}spid/spid-sp-access-button.js"></script>
     <script src="{{ static }}spid/spid_button.js"></script>

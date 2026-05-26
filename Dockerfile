@@ -1,5 +1,5 @@
 ######################################################################
-# STAGE 1: Asset Builder (Bootstrap Italia + Font Awesome)
+# STAGE 1: Asset Builder (Font Awesome + Chart.js)
 ######################################################################
 FROM node:lts-trixie-slim AS asset_builder
 
@@ -15,9 +15,6 @@ WORKDIR /app
 # VARIABILI GLOBALI DI CONFIGURAZIONE
 # ----------------------------------------------------------------------
 
-# Variabile per il tag di Bootstrap Italia
-ARG BOOTSTRAP_TAG="v2.18.0"
-
 # Variabili per Font Awesome
 ARG FA_VERSION="7.2.0"
 ENV FA_URL=https://github.com/FortAwesome/Font-Awesome/releases/download/${FA_VERSION}/fontawesome-free-${FA_VERSION}-web.zip
@@ -26,17 +23,7 @@ ENV FA_DIR="fontawesome-free-${FA_VERSION}-web"
 # Variabili per Chart.js
 ARG CHARTJS_VERSION="4.5.1"
 
-# 1. Scarica e compila Bootstrap Italia
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    wget -q "https://github.com/italia/bootstrap-italia/archive/refs/tags/${BOOTSTRAP_TAG}.tar.gz" \
-         -O /tmp/bootstrap.tar.gz && \
-    tar -xzf /tmp/bootstrap.tar.gz --strip-components=1 -C . && \
-    rm /tmp/bootstrap.tar.gz && \
-    echo "Compilo Bootstrap-italia versione ${BOOTSTRAP_TAG}..." && \
-    npm ci && \
-    npm run build
-
-# 2. Scarica Font Awesome in questa fase per usarlo come asset copiabile nella Fase 2
+# 1. Scarica Font Awesome in questa fase per usarlo come asset copiabile nella Fase 2
 RUN mkdir -p /tmp/fa_download && \
     cd /tmp/fa_download && \
     echo "Scarico Font Awesome ${FA_VERSION}..." && \
@@ -45,7 +32,7 @@ RUN mkdir -p /tmp/fa_download && \
     mv ${FA_DIR} /app/fontawesome-dist && \
     rm -rf /tmp/fa_download
 
-# 3. Scarica Chart.js (bundle UMD) per distribuirlo localmente tramite npm
+# 2. Scarica Chart.js (bundle UMD) per distribuirlo localmente tramite npm
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     mkdir -p /app/chartjs-dist && \
     echo "Scarico Chart.js ${CHARTJS_VERSION} via npm..." && \
@@ -55,7 +42,6 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     cp /tmp/chartjs-download/node_modules/chart.js/dist/chart.umd.min.js.map /app/chartjs-dist/chart.umd.min.js.map && \
     rm -rf /tmp/chartjs-download
 
-# Il risultato della compilazione di Bootstrap Italia è in /app/dist
 # Il risultato del download di Font Awesome è in /app/fontawesome-dist
 # Il risultato del download di Chart.js è in /app/chartjs-dist
 
@@ -102,8 +88,7 @@ COPY --link --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # COPIA ASSET FRONT-END
 # ----------------------------------------------------------------------
 
-RUN mkdir -p public/assets/bootstrap-italia public/assets/fontawesome
-COPY --chown=www-app:www-data --from=asset_builder /app/dist/ /var/www/html/public/assets/bootstrap-italia/
+RUN mkdir -p public/assets/fontawesome
 
 # Copia Font Awesome (Asset scaricati dalla Fase 1)
 ENV FA_DEST="/var/www/html/public/assets/fontawesome"

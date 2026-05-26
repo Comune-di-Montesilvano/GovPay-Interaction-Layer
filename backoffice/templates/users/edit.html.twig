@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 {% block content %}
-<div class="container my-5" style="max-width:720px;">
+<div class="bo-form-shell bo-form-shell-lg">
   <h1 class="h4 mb-3">Modifica utente</h1>
   {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
   {% if edit_user.is_disabled %}
@@ -11,10 +11,10 @@
 
   <form method="post" action="/users/{{ edit_user.id }}/edit" autocomplete="off">
     <input type="text" name="fakeusernameremembered" autocomplete="username"
-           style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
+        class="bo-autofill-trap"
            aria-hidden="true" tabindex="-1">
     <input type="password" name="fakepasswordremembered" autocomplete="current-password"
-           style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
+        class="bo-autofill-trap"
            aria-hidden="true" tabindex="-1">
 
     <div class="row g-3 mb-3">
@@ -107,7 +107,7 @@
             <span class="badge bg-secondary">tutte visibili</span>
           {% endif %}
         </label>
-        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;">
+        <div class="border rounded p-2 bo-scroll-y bo-scroll-y-sm">
           {% for tip in all_tipologie %}
             <div class="form-check form-check-sm">
               <input class="form-check-input" type="checkbox"
@@ -134,7 +134,7 @@
             <span class="badge bg-info">{{ grp_count }} assegnati</span>
           {% endif %}
         </label>
-        <div class="border rounded p-2" style="max-height:150px;overflow-y:auto;">
+        <div class="border rounded p-2 bo-scroll-y bo-scroll-y-xs">
           {% for g in all_groups %}
             <div class="form-check form-check-sm">
               <input class="form-check-input" type="checkbox"

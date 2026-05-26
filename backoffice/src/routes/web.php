@@ -283,6 +283,15 @@ return function (App $app, Twig $twig): void {
         return $controller->showInsert($request, $response);
     });
 
+    $app->get('/pendenze/nuova-bollo', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new PendenzeController($twig);
+        return $controller->showNuovaBollo($request, $response);
+    });
+    $app->post('/pendenze/nuova-bollo', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new PendenzeController($twig);
+        return $controller->showNuovaBollo($request, $response);
+    });
+
     // Anteprima/preview prima della creazione pendenza
     $app->post('/pendenze/preview', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);

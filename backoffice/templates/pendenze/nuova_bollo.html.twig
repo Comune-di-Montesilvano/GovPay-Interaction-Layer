@@ -1,0 +1,366 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Nuova Marca da Bollo{% endblock %}
+
+{% block content %}
+
+{% if errors is defined and errors %}
+  <div class="alert alert-danger" role="alert">
+    <ul class="mb-0">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{% if not disponibile %}
+  <div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2" aria-hidden="true"></i>
+    Tipologia <strong>{{ id_tipo_pendenza }}</strong> non configurata o non abilitata per il backoffice. Contatta l'amministratore.
+  </div>
+{% endif %}
+
+<form id="bolloForm" method="post" action="/pendenze" class="card border-0 shadow-sm mb-4" {% if not disponibile %}inert{% endif %}>
+  <input type="hidden" name="return" value="/pendenze/ricerca">
+  {% if id_dominio %}
+    <input type="hidden" name="idDominio" value="{{ id_dominio }}">
+  {% endif %}
+  <input type="hidden" name="idTipoPendenza" value="{{ id_tipo_pendenza }}">
+  <input type="hidden" name="tipoBollo" value="{{ tipo_bollo }}">
+
+  <div class="card-header bg-light border-bottom py-2">
+    <div class="lh-1">
+      <h2 class="h6 mb-0">Nuova Marca da Bollo Telematica</h2>
+      <small class="text-muted" style="font-size:0.75rem;">Ogni documento vale € 16,00. Massimo 5 documenti per pendenza.</small>
+    </div>
+  </div>
+
+  <div class="card-body">
+
+    {# ── Soggetto pagatore ── #}
+    <h3 class="h6 fw-bold border-bottom pb-2 mb-3">Soggetto pagatore</h3>
+    <div class="row g-3 mb-3">
+      <div class="col-12">
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="soggettoPagatore[tipo]" id="soggettoPF" value="F"
+            {{ (old.soggettoPagatore.tipo is defined and old.soggettoPagatore.tipo == 'G') ? '' : 'checked' }}>
+          <label class="form-check-label" for="soggettoPF">Persona fisica</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="soggettoPagatore[tipo]" id="soggettoPJ" value="G"
+            {{ (old.soggettoPagatore.tipo is defined and old.soggettoPagatore.tipo == 'G') ? 'checked' : '' }}>
+          <label class="form-check-label" for="soggettoPJ">Persona giuridica</label>
+        </div>
+      </div>
+      {% set tipoSog = old.soggettoPagatore.tipo|default('F') %}
+      <div class="col-md-4">
+        <label id="identificativoLabel" for="identificativo" class="form-label small fw-semibold">
+          {{ tipoSog == 'G' ? 'Partita IVA' : 'Codice fiscale' }} <span class="text-danger">*</span>
+        </label>
+        <input id="identificativo" name="soggettoPagatore[identificativo]" type="text" class="form-control"
+          placeholder="{{ tipoSog == 'G' ? 'P.IVA' : 'CF' }}" required autocomplete="off"
+          value="{{ old.soggettoPagatore.identificativo|default('') }}" style="text-transform:uppercase;">
+      </div>
+      <div class="col-md-4">
+        <label id="lblAnagrafica" for="anagrafica" class="form-label small fw-semibold">
+          {{ tipoSog == 'G' ? 'Ragione sociale' : 'Cognome' }} <span class="text-danger">*</span>
+        </label>
+        <input id="anagrafica" name="soggettoPagatore[anagrafica]" type="text" class="form-control"
+          placeholder="{{ tipoSog == 'G' ? 'Ragione sociale' : 'Cognome' }}" required
+          value="{{ old.soggettoPagatore.anagrafica|default('') }}">
+      </div>
+      <div class="col-md-4" id="colNome" style="{{ tipoSog == 'G' ? 'display:none;' : '' }}">
+        <label for="nome" class="form-label small fw-semibold">Nome</label>
+        <input id="nome" name="soggettoPagatore[nome]" type="text" class="form-control"
+          placeholder="Nome" autocomplete="off" value="{{ old.soggettoPagatore.nome|default('') }}">
+      </div>
+    </div>
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <label for="email" class="form-label small fw-semibold">Email (opzionale)</label>
+        <input id="email" name="soggettoPagatore[email]" type="email" class="form-control"
+          placeholder="esempio@dominio.it" value="{{ old.soggettoPagatore.email|default('') }}">
+      </div>
+    </div>
+
+    {# ── Dati pendenza ── #}
+    <h3 class="h6 fw-bold border-bottom pb-2 mb-3">Dati pendenza</h3>
+    <div class="row g-3 mb-3">
+      <div class="col-md-2">
+        <label for="annoRiferimento" class="form-label small fw-semibold">Anno <span class="text-danger">*</span></label>
+        <input id="annoRiferimento" name="annoRiferimento" type="number" class="form-control"
+          min="2000" max="2099" required value="{{ old.annoRiferimento|default(default_anno) }}">
+      </div>
+      <div class="col-md-4">
+        <label for="provinciaResidenza" class="form-label small fw-semibold">Provincia di residenza <span class="text-danger">*</span></label>
+        <input id="provinciaResidenza" name="provinciaResidenza" type="text" class="form-control"
+          maxlength="2" pattern="[A-Za-z]{2}" placeholder="Es. RM" required autocomplete="off"
+          value="{{ old.provinciaResidenza|default('') }}" style="text-transform:uppercase; max-width:80px;">
+        <div class="form-text">Sigla provincia (2 lettere)</div>
+      </div>
+      <div class="col-md-6">
+        <label for="causaleDisplay" class="form-label small fw-semibold">Causale</label>
+        <input id="causaleDisplay" name="causale" type="text" class="form-control" readonly
+          value="{{ old.causale|default('') }}" placeholder="Generata automaticamente dai documenti">
+        <input type="hidden" id="importoHidden" name="importo" value="{{ old.importo|default('') }}">
+      </div>
+    </div>
+
+    {# ── Documenti ── #}
+    <h3 class="h6 fw-bold border-bottom pb-2 mb-3">Documenti</h3>
+    <p class="small text-muted mb-3">
+      Inserisci la descrizione di ogni documento. Puoi allegare il file per legarlo digitalmente alla marca; altrimenti il collegamento verrà generato automaticamente.
+    </p>
+
+    <div id="documenti-container">
+      {# Riga documento 0 (sempre presente) #}
+      <div class="documento-row border rounded p-3 mb-3 position-relative" data-idx="0">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-semibold small text-muted">Documento 1</span>
+          <button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi" disabled
+            aria-label="Rimuovi documento" title="Rimuovi">
+            <i class="fas fa-times" aria-hidden="true"></i>
+          </button>
+        </div>
+        <input type="hidden" name="voci[0][idVocePendenza]" value="1">
+        <input type="hidden" name="voci[0][importo]" value="16.00">
+        <input type="hidden" name="voci[0][tipoBollo]" id="tipoBollo_0" value="{{ tipo_bollo }}">
+        <input type="hidden" name="voci[0][hashDocumento]" id="hash_0" value="{{ old.voci[0].hashDocumento|default('') }}">
+        <div class="mb-2">
+          <label for="desc_0" class="form-label small">Descrizione <span class="text-danger">*</span></label>
+          <input id="desc_0" name="voci[0][descrizione]" type="text" class="form-control form-control-sm descrizione-input" required
+            placeholder="Es. Certificato anagrafico prot. 12345" value="{{ old.voci[0].descrizione|default('') }}">
+        </div>
+        <div class="mb-1">
+          <label for="file_0" class="form-label small">
+            <input type="checkbox" id="chk_file_0" class="form-check-input me-1 chk-allega" data-idx="0">
+            Allega file per legarlo alla marca
+          </label>
+          <input id="file_0" name="file_0_unused" type="file" class="form-control form-control-sm file-input d-none"
+            accept=".pdf,.doc,.docx,.txt,.xml,.p7m" data-idx="0">
+        </div>
+        <div id="hash_status_0" class="small text-muted"></div>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <button type="button" id="btnAggiungi" class="btn btn-sm btn-outline-secondary">
+        <i class="fas fa-plus me-1" aria-hidden="true"></i> Aggiungi documento
+      </button>
+      <span class="ms-auto fw-semibold">
+        Totale: <span id="importoTotale">€ 16,00</span>
+      </span>
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+      <button type="submit" formaction="/pendenze/preview" formmethod="post" class="btn btn-primary">
+        <i class="fas fa-eye me-1" aria-hidden="true"></i> Anteprima
+      </button>
+      <a class="btn btn-outline-secondary" href="/pendenze/ricerca">Annulla</a>
+    </div>
+
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+{{ parent() }}
+<script>
+(function(){
+  var MAX_DOCS = 5;
+  var IMPORTO_UNIT = 16.00;
+  var tipoBollo = {{ tipo_bollo|json_encode }};
+  var count = 1;
+
+  function updateCausaleImporto() {
+    var anno = document.getElementById('annoRiferimento');
+    var annoVal = anno ? anno.value.trim() : '';
+    var rows = document.querySelectorAll('.documento-row');
+    var totale = rows.length * IMPORTO_UNIT;
+    var causale = 'Marca da bollo - Anno ' + annoVal + ' - N.' + rows.length + ' document' + (rows.length == 1 ? 'o' : 'i');
+    document.getElementById('causaleDisplay').value = causale;
+    document.getElementById('importoHidden').value = totale.toFixed(2);
+    document.getElementById('importoTotale').textContent = '€ ' + totale.toFixed(2).replace('.', ',');
+  }
+
+  function updateRemoveButtons() {
+    var btns = document.querySelectorAll('.btn-rimuovi');
+    btns.forEach(function(b){ b.disabled = (btns.length === 1); });
+  }
+
+  function reindex() {
+    var rows = document.querySelectorAll('.documento-row');
+    rows.forEach(function(row, i) {
+      row.setAttribute('data-idx', i);
+      row.querySelector('.fw-semibold.small').textContent = 'Documento ' + (i+1);
+      // update name attrs
+      row.querySelectorAll('[name]').forEach(function(el) {
+        el.name = el.name.replace(/voci\[\d+\]/, 'voci[' + i + ']');
+      });
+      // update ids
+      ['desc_', 'file_', 'hash_', 'hash_status_', 'tipoBollo_', 'chk_file_'].forEach(function(prefix){
+        var el = row.querySelector('[id^="' + prefix + '"]');
+        if (el) { el.id = prefix + i; }
+      });
+      // update data-idx on file input and checkbox
+      var fi = row.querySelector('.file-input');
+      if (fi) fi.setAttribute('data-idx', i);
+      var chk = row.querySelector('.chk-allega');
+      if (chk) { chk.setAttribute('data-idx', i); chk.setAttribute('for', 'file_' + i); }
+      // update label for on chk
+      var lbl = row.querySelector('label[for^="chk_file_"]');
+      if (lbl) lbl.setAttribute('for', 'chk_file_' + i);
+    });
+    count = rows.length;
+    updateRemoveButtons();
+    updateCausaleImporto();
+    document.getElementById('btnAggiungi').disabled = (rows.length >= MAX_DOCS);
+  }
+
+  function makeRow(idx) {
+    var div = document.createElement('div');
+    div.className = 'documento-row border rounded p-3 mb-3 position-relative';
+    div.setAttribute('data-idx', idx);
+    div.innerHTML =
+      '<div class="d-flex justify-content-between align-items-center mb-2">' +
+        '<span class="fw-semibold small text-muted">Documento ' + (idx+1) + '</span>' +
+        '<button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi" aria-label="Rimuovi documento" title="Rimuovi">' +
+          '<i class="fas fa-times" aria-hidden="true"></i></button>' +
+      '</div>' +
+      '<input type="hidden" name="voci[' + idx + '][idVocePendenza]" value="' + (idx+1) + '">' +
+      '<input type="hidden" name="voci[' + idx + '][importo]" value="16.00">' +
+      '<input type="hidden" name="voci[' + idx + '][tipoBollo]" id="tipoBollo_' + idx + '" value="' + tipoBollo + '">' +
+      '<input type="hidden" name="voci[' + idx + '][hashDocumento]" id="hash_' + idx + '" value="">' +
+      '<div class="mb-2">' +
+        '<label for="desc_' + idx + '" class="form-label small">Descrizione <span class="text-danger">*</span></label>' +
+        '<input id="desc_' + idx + '" name="voci[' + idx + '][descrizione]" type="text" class="form-control form-control-sm descrizione-input" required placeholder="Es. Certificato anagrafico prot. 12345">' +
+      '</div>' +
+      '<div class="mb-1">' +
+        '<label for="chk_file_' + idx + '" class="form-label small">' +
+          '<input type="checkbox" id="chk_file_' + idx + '" class="form-check-input me-1 chk-allega" data-idx="' + idx + '">' +
+          'Allega file per legarlo alla marca' +
+        '</label>' +
+        '<input id="file_' + idx + '" name="file_' + idx + '_unused" type="file" class="form-control form-control-sm file-input d-none" accept=".pdf,.doc,.docx,.txt,.xml,.p7m" data-idx="' + idx + '">' +
+      '</div>' +
+      '<div id="hash_status_' + idx + '" class="small text-muted"></div>';
+    return div;
+  }
+
+  async function computeHash(file, idx) {
+    var status = document.getElementById('hash_status_' + idx);
+    var hashInput = document.getElementById('hash_' + idx);
+    if (!status || !hashInput) return;
+    status.textContent = 'Calcolo impronta in corso…';
+    try {
+      var buf = await file.arrayBuffer();
+      var digest = await crypto.subtle.digest('SHA-256', buf);
+      var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(digest)));
+      hashInput.value = b64;
+      status.textContent = 'Impronta calcolata: ' + file.name;
+      status.className = 'small text-success';
+    } catch(e) {
+      hashInput.value = '';
+      status.textContent = 'Errore nel calcolo impronta. Il collegamento verrà generato automaticamente.';
+      status.className = 'small text-warning';
+    }
+  }
+
+  function clearHash(idx) {
+    var hashInput = document.getElementById('hash_' + idx);
+    var status = document.getElementById('hash_status_' + idx);
+    if (hashInput) hashInput.value = '';
+    if (status) { status.textContent = ''; status.className = 'small text-muted'; }
+  }
+
+  document.addEventListener('change', function(e) {
+    // checkbox toggle file input
+    if (e.target.classList.contains('chk-allega')) {
+      var idx = e.target.getAttribute('data-idx');
+      var fi = document.getElementById('file_' + idx);
+      if (fi) {
+        fi.classList.toggle('d-none', !e.target.checked);
+        if (!e.target.checked) {
+          fi.value = '';
+          clearHash(idx);
+        }
+      }
+    }
+    // file selected → compute hash
+    if (e.target.classList.contains('file-input')) {
+      var idx = e.target.getAttribute('data-idx');
+      if (e.target.files && e.target.files[0]) {
+        computeHash(e.target.files[0], idx);
+      } else {
+        clearHash(idx);
+      }
+    }
+    // uppercase provincia
+    if (e.target.id === 'provinciaResidenza') {
+      e.target.value = e.target.value.toUpperCase();
+    }
+    // uppercase identificativo
+    if (e.target.id === 'identificativo') {
+      e.target.value = e.target.value.toUpperCase();
+    }
+  });
+
+  document.addEventListener('input', function(e) {
+    if (e.target.id === 'annoRiferimento') updateCausaleImporto();
+    if (e.target.id === 'provinciaResidenza') e.target.value = e.target.value.toUpperCase();
+    if (e.target.id === 'identificativo') e.target.value = e.target.value.toUpperCase();
+  });
+
+  // PF/PG toggle
+  document.addEventListener('change', function(e) {
+    if (e.target.name === 'soggettoPagatore[tipo]') {
+      var isPJ = e.target.value === 'G';
+      var lblId = document.getElementById('identificativoLabel');
+      var lblAn = document.getElementById('lblAnagrafica');
+      var ident = document.getElementById('identificativo');
+      var anagrafica = document.getElementById('anagrafica');
+      var colNome = document.getElementById('colNome');
+      if (lblId) lblId.textContent = isPJ ? 'Partita IVA *' : 'Codice fiscale *';
+      if (lblAn) lblAn.textContent = isPJ ? 'Ragione sociale *' : 'Cognome *';
+      if (ident) ident.placeholder = isPJ ? 'P.IVA' : 'CF';
+      if (anagrafica) anagrafica.placeholder = isPJ ? 'Ragione sociale' : 'Cognome';
+      if (colNome) colNome.style.display = isPJ ? 'none' : '';
+    }
+  });
+
+  // Add document
+  document.getElementById('btnAggiungi').addEventListener('click', function() {
+    var rows = document.querySelectorAll('.documento-row');
+    if (rows.length >= MAX_DOCS) return;
+    var idx = rows.length;
+    document.getElementById('documenti-container').appendChild(makeRow(idx));
+    count = idx + 1;
+    updateRemoveButtons();
+    updateCausaleImporto();
+    document.getElementById('btnAggiungi').disabled = (count >= MAX_DOCS);
+  });
+
+  // Remove document (delegated)
+  document.getElementById('documenti-container').addEventListener('click', function(e) {
+    var btn = e.target.closest('.btn-rimuovi');
+    if (!btn) return;
+    var rows = document.querySelectorAll('.documento-row');
+    if (rows.length <= 1) return;
+    btn.closest('.documento-row').remove();
+    reindex();
+  });
+
+  // Pre-show file input if hash was restored (old)
+  document.querySelectorAll('.documento-row').forEach(function(row) {
+    var idx = row.getAttribute('data-idx');
+    var hashEl = document.getElementById('hash_' + idx);
+    if (hashEl && hashEl.value) {
+      var status = document.getElementById('hash_status_' + idx);
+      if (status) { status.textContent = 'Impronta già presente (da form precedente).'; status.className = 'small text-info'; }
+    }
+  });
+
+  updateCausaleImporto();
+  updateRemoveButtons();
+})();
+</script>
+{% endblock %}

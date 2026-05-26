@@ -315,9 +315,10 @@
               <input id="voce_imp_{{ idx }}" name="voci[{{ idx }}][importo]" type="number" step="0.01" min="0.01" class="form-control" placeholder="0.00" value="{{ voce.importo|default('') }}" required>
           </div>
         </div>
-        <div class="col-md-1 d-flex align-items-center">
+        <div class="col-md-1">
+          <label class="d-none d-md-block">&nbsp;</label>
           {% if can_remove_voci and idx|default(0) > 0 %}
-            <button type="button" class="btn btn-outline-danger btn-sm remove-voce" title="Rimuovi voce">
+            <button type="button" class="btn btn-outline-danger btn-sm remove-voce w-100" title="Rimuovi voce">
               <span aria-hidden="true">✖</span>
               <span class="visually-hidden">Rimuovi voce</span>
             </button>
@@ -343,12 +344,13 @@
           <input id="voce_imp_0" name="voci[0][importo]" type="number" step="0.01" min="0.01" class="form-control" placeholder="0.00" value="{{ old.importo|default('') }}" required>
         </div> 
       </div>
-      <div class="form-group col-md-1 d-flex align-items-center">
-            <button type="button" id="addVoceBtn" class="btn btn-outline-primary btn-sm" title="Aggiungi voce">
-              <span aria-hidden="true">✚</span>
-              <span class="visually-hidden">Aggiungi voce</span>
-            </button>
-        </div>
+      <div class="form-group col-md-1">
+        <label class="d-none d-md-block">&nbsp;</label>
+        <button type="button" id="addVoceBtn" class="btn btn-outline-primary btn-sm w-100" title="Aggiungi voce">
+          <span aria-hidden="true">✚</span>
+          <span class="visually-hidden">Aggiungi voce</span>
+        </button>
+      </div>
     </div>
   {% endif %}
 </div>
@@ -358,6 +360,7 @@
 {% set advanced_has_values = (old.ibanAccredito|default('') != '')
   or (old.codiceContabilita|default(old.codEntrata|default('')) != '')
   or (old.tipoBollo|default('') != '')
+  or (old.provinciaResidenza|default('') != '')
   or (old.tipoContabilita|default('') != '')
   or (old.direzione|default('') != '')
   or (old.divisione|default('') != '')
@@ -379,6 +382,11 @@
     <div class="form-group col-md-4">
       <label for="tipoBollo" class="active">Tipo bollo (opzionale)</label>
       <input id="tipoBollo" name="tipoBollo" type="text" maxlength="16" class="form-control" placeholder="Es. 01" value="{{ old.tipoBollo|default('') }}">
+    </div>
+    <div class="form-group col-md-4">
+      <label for="provinciaResidenza" class="active">Provincia residenza (bollo)</label>
+      <input id="provinciaResidenza" name="provinciaResidenza" type="text" maxlength="2" class="form-control text-uppercase" placeholder="Es. PE" value="{{ old.provinciaResidenza|default('') }}" style="text-transform:uppercase">
+      <div class="form-text small">Sigla provincia (2 lettere). Obbligatoria per voci di tipo bollo.</div>
     </div>
     <div class="form-group col-md-4">
       <div class="select-wrapper">
@@ -457,9 +465,10 @@
           <input id="voce_imp_${voceIndex}" name="voci[${voceIndex}][importo]" type="number" step="0.01" min="0.01" class="form-control" placeholder="0.00" required>
         </div>
       </div>
-      <div class="form-group col-md-1 d-flex align-items-center">
+      <div class="form-group col-md-1">
+        <label class="d-none d-md-block">&nbsp;</label>
         {% if can_remove_voci %}
-        <button type="button" class="btn btn-outline-danger btn-sm remove-voce">✖</button>
+        <button type="button" class="btn btn-outline-danger btn-sm remove-voce w-100">✖</button>
         {% endif %}
       </div>`;
     container.appendChild(row);

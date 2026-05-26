@@ -21,9 +21,9 @@
 
       <div style="display:flex;flex-wrap:wrap;gap:var(--sp-3);margin-bottom:var(--sp-5);">
         {% if spid_enabled and (not is_logged_in) %}
-          <a class="btn btn-primary" href="{{ login_path }}">{{ 'Accedi per riprovare'|trans }}</a>
+          <a class="btn btn-primary" href="/carrello" style="color: #ffffff !important;">{{ 'Vai al carrello'|trans }}</a>
         {% else %}
-          <a class="btn btn-primary" href="{{ detail_path }}">{{ 'Torna alla pendenza'|trans }}</a>
+          <a class="btn btn-primary" href="{{ detail_path }}" style="color: #ffffff !important;">{{ 'Torna alla pendenza'|trans }}</a>
         {% endif %}
         {% for item in pdf_items|default([]) %}
           <a class="btn btn-outline" href="{{ item.pdf_url }}" target="_blank" rel="noopener">
@@ -35,7 +35,9 @@
             {% endif %}
           </a>
         {% endfor %}
-        <a class="btn btn-ghost" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+        {% if is_logged_in %}
+          <a class="btn btn-ghost" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+        {% endif %}
         <a class="btn btn-ghost" href="/">{{ 'Torna alla home'|trans }}</a>
       </div>
 

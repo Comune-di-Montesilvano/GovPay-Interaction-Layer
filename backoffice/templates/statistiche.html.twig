@@ -8,9 +8,6 @@
       <h1 class="h4 mb-1">Statistiche dei pagamenti</h1>
       <p class="text-muted mb-0">Aggregazioni fornite dall'API Backoffice di reportistica</p>
     </div>
-    <div>
-      <a href="/" class="btn btn-outline-secondary"><i class="fas fa-home me-1"></i> Home</a>
-    </div>
   </div>
 
   {% if errors is defined and errors %}
@@ -23,13 +20,13 @@
 
   {% set f = filters ?? {} %}
   <form method="get" action="/statistiche" class="card shadow-sm mb-4">
-    <div class="card-header bg-light border-bottom py-3">
-      <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-2">
-        <div>
+    <div class="card-header bg-light border-bottom py-2">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2">
           <h2 class="h6 mb-0">Filtri</h2>
-          <p class="small text-muted mb-0">Scegli intervallo temporale e raggruppamento</p>
+          <span class="text-muted small d-none d-md-inline">| Scegli intervallo temporale e raggruppamento</span>
         </div>
-        <button type="submit" class="btn btn-primary"><i class="fas fa-sync me-1"></i> Aggiorna</button>
+        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-sync me-1"></i> Aggiorna</button>
       </div>
     </div>
     <div class="card-body">
@@ -37,9 +34,16 @@
         <div class="col-md-6">
           <label class="form-label">Intervallo date</label>
           <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="statsDaVis" class="form-control" placeholder="Da" autocomplete="off" readonly style="cursor:pointer;">
+            <input type="text" id="statsDaVis" class="form-control bo-cursor-pointer" placeholder="Da" autocomplete="off">
             <span class="text-muted small">–</span>
-            <input type="text" id="statsAVis" class="form-control" placeholder="A" autocomplete="off" readonly style="cursor:pointer;">
+            <input type="text" id="statsAVis" class="form-control bo-cursor-pointer" placeholder="A" autocomplete="off">
+          </div>
+          <div class="bo-datepicker-quick-selects">
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
+            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
           </div>
           <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
           <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
@@ -82,28 +86,24 @@
     </div>
 
     <div class="card shadow-sm mb-4">
-      <div class="card-header bg-light border-bottom py-3">
-        <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center gap-2">
-          <div>
-            <h3 class="h6 mb-0">Distribuzione importi</h3>
-            <p class="small text-muted mb-0">Somma degli incassi per categoria</p>
-          </div>
-        </div>
+    <div class="card-header bg-light border-bottom py-2">
+      <div class="d-flex align-items-center gap-2">
+        <h3 class="h6 mb-0">Distribuzione importi</h3>
+        <span class="text-muted small d-none d-md-inline">| Somma degli incassi per categoria</span>
       </div>
+    </div>
       <div class="card-body">
         <canvas id="statsAmountChart" height="280"></canvas>
       </div>
     </div>
 
     <div class="card shadow-sm mb-4">
-      <div class="card-header bg-light border-bottom py-3">
-        <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center gap-2">
-          <div>
-            <h3 class="h6 mb-0">Numero pagamenti</h3>
-            <p class="small text-muted mb-0">Conteggio transazioni per categoria</p>
-          </div>
-        </div>
+    <div class="card-header bg-light border-bottom py-2">
+      <div class="d-flex align-items-center gap-2">
+        <h3 class="h6 mb-0">Numero pagamenti</h3>
+        <span class="text-muted small d-none d-md-inline">| Conteggio transazioni per categoria</span>
       </div>
+    </div>
       <div class="card-body">
         <canvas id="statsCountChart" height="280"></canvas>
       </div>
@@ -144,9 +144,9 @@
         <table id="statsDetailTable" class="table table-striped align-middle mb-0">
           <thead>
             <tr>
-              <th scope="col" class="stats-sort" data-col="0" style="cursor:pointer;" title="Ordina">Categoria <i class="fas fa-sort text-muted ms-1 small"></i></th>
-              <th scope="col" class="stats-sort text-end" data-col="1" style="cursor:pointer;" title="Ordina">Numero pagamenti <i class="fas fa-sort text-muted ms-1 small"></i></th>
-              <th scope="col" class="stats-sort text-end" data-col="2" style="cursor:pointer;" title="Ordina">Importo <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort bo-cursor-pointer" data-col="0" title="Ordina">Categoria <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="1" title="Ordina">Numero pagamenti <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="2" title="Ordina">Importo <i class="fas fa-sort text-muted ms-1 small"></i></th>
             </tr>
           </thead>
           <tbody>
@@ -355,36 +355,9 @@
   const aEl   = document.getElementById('statsAVis');
   const daHid = document.getElementById('dataDa');
   const aHid  = document.getElementById('dataA');
-  if (!daEl || !aEl || typeof Litepicker === 'undefined') return;
-
-  const toDisplay = iso => iso ? iso.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1') : '';
-  if (daHid.value) daEl.value = toDisplay(daHid.value);
-  if (aHid.value)  aEl.value  = toDisplay(aHid.value);
-
-  new Litepicker({
-    element: daEl,
-    elementEnd: aEl,
-    singleMode: false,
-    numberOfMonths: 1,
-    numberOfColumns: 1,
-    format: 'DD/MM/YYYY',
-    lang: 'it-IT',
-    tooltipText: { one: 'giorno', other: 'giorni' },
-    autoApply: true,
-    resetButton: true,
-    setup(picker) {
-      picker.on('selected', (d1, d2) => {
-        daHid.value = d1.format('YYYY-MM-DD');
-        aHid.value  = d2.format('YYYY-MM-DD');
-      });
-      picker.on('clear:selection', () => {
-        daHid.value = '';
-        aHid.value  = '';
-        daEl.value  = '';
-        aEl.value   = '';
-      });
-    }
-  });
+  if (daEl && aEl && daHid && aHid && typeof window.initBackofficeDatePicker !== 'undefined') {
+    window.initBackofficeDatePicker(daEl, aEl, daHid, aHid);
+  }
 })();
 </script>
 {% endblock %}

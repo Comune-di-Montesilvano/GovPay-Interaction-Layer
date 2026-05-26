@@ -1,28 +1,23 @@
-<footer class="it-footer text-white mt-4 fixed-bottom">
-  <div class="it-footer-main mt-2">
-    <div class="container">
-      <div class="row align-items-center">
-        <div class="py-2 col-12 col-md-4 text-start">
-          {{ app_entity.full }}
-        </div>
-        <div class="py-2 col-12 col-md-4 text-center d-none d-md-block">
-          {% if app_ref_url %}
-            <a href="{{ app_ref_url }}"
-               target="_blank" rel="noopener noreferrer"
-               class="text-white text-decoration-none small opacity-75"
-               title="Vai al repository GitHub">
-              <i class="fab fa-github me-1"></i>GovPayInteractionLayer {{ app_version_label }}
-            </a>
-          {% else %}
-            <span class="text-white small opacity-75">
-              <i class="fab fa-github me-1"></i>GovPayInteractionLayer {{ app_version_label }}
-            </span>
-          {% endif %}
-        </div>
-        <div class="py-2 col-12 col-md-4 text-end d-none d-md-block">
-          <img src="/img/logo-pagopa-bianco.svg" alt="PagoPA" style="height:30px" />
-        </div>
-      </div>
+<footer class="bo-footer" role="contentinfo">
+  <div class="bo-footer-inner">
+    <div class="bo-footer-entity">{{ app_entity.full }}</div>
+
+    <div class="bo-footer-version d-none d-md-flex">
+      {% if app_ref_url %}
+        <a href="{{ app_ref_url }}" target="_blank" rel="noopener noreferrer" title="Vai al repository GitHub">
+          <i class="fab fa-github" aria-hidden="true"></i>
+          <span>GovPayInteractionLayer {{ app_version_label }}</span>
+        </a>
+      {% else %}
+        <span>
+          <i class="fab fa-github" aria-hidden="true"></i>
+          <span>GovPayInteractionLayer {{ app_version_label }}</span>
+        </span>
+      {% endif %}
+    </div>
+
+    <div class="bo-footer-brand d-none d-md-block">
+      <img src="/img/logo-pagopa-bianco.svg" alt="PagoPA" class="bo-footer-pagopa-logo">
     </div>
   </div>
 </footer>

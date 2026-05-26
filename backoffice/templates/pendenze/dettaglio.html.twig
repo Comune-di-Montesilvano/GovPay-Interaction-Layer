@@ -39,6 +39,23 @@
   {% if pendenza %}
     {% set r = pendenza %}
 
+    {# Rilevamento marca da bollo: sopprime avviso PDF e rate (GovPay non genera avvisi per MBT) #}
+    {% set is_bollo = (r.tipoPendenza is defined and r.tipoPendenza.idTipoPendenza is defined and r.tipoPendenza.idTipoPendenza == 'BOLLOT')
+        or (r.voci is defined and r.voci|length > 0 and r.voci[0].tipoBollo is defined and r.voci[0].tipoBollo is not null and r.voci[0].tipoBollo != '') %}
+
+    {% if is_bollo %}
+      {% set _voci_list = r.voci is defined ? r.voci : [] %}
+      <div class="alert alert-info d-flex align-items-start gap-2 mt-3 mb-2">
+        <i class="fas fa-stamp fa-lg flex-shrink-0 mt-1" aria-hidden="true"></i>
+        <div>
+          <strong>Marca da Bollo Telematica</strong> — {{ _voci_list|length }} voce/i da € 16,00 ciascuna.
+          {% set _prov = (_voci_list|length > 0 and _voci_list[0].provinciaResidenza is defined) ? _voci_list[0].provinciaResidenza : '' %}
+          {% if _prov %}Provincia di residenza: <strong>{{ _prov }}</strong>.{% endif %}
+          Avviso PDF e rateizzazione non applicabili.
+        </div>
+      </div>
+    {% endif %}
+
     {# Raccogli il piano di rateizzazione e normalizza a lista 'rate_info' #}
     {# Normalizziamo la sorgente dei dati delle rate: preferiamo documento.rata, altrimenti proprieta.rate #}
     {% set possible = (r.documento is defined and r.documento.rata is defined) ? r.documento.rata : ((r.proprieta is defined and r.proprieta.rate is defined) ? r.proprieta.rate : []) %}
@@ -256,7 +273,7 @@
           {# Bottoni in alto, accanto alla zona pagamento #}
           {% if idDom and (r.numeroAvviso or topRppPath or (displayed_rates|length > 0)) %}
           <div class="d-flex align-items-center gap-2 ms-auto">
-            {% if idDom and r.numeroAvviso %}
+            {% if idDom and r.numeroAvviso and not is_bollo %}
               <a class="btn btn-primary btn-sm" href="/avvisi/{{ idDom|url_encode }}/{{ r.numeroAvviso|url_encode }}" target="_blank" rel="noopener" title="Scarica avviso (PDF)">
                 <i class="fas fa-file-pdf me-1"></i> Avviso
               </a>
@@ -275,7 +292,7 @@
                 {% endif %}
               {% endfor %}
             {% endif %}
-            {% if numeri|length > 0 %}
+            {% if numeri|length > 0 and not is_bollo %}
               <button id="stampa-rate-btn" class="btn btn-success btn-sm" title="Scarica l'avviso multirata (PDF)">
                 <i class="fas fa-clipboard-list me-1"></i> Rate
               </button>
@@ -499,10 +516,16 @@
                   <th scope="col">Descrizione</th>
                   <th scope="col" class="text-end text-nowrap">Importo</th>
                   <th scope="col">Stato</th>
-                  <th scope="col">Descrizione tipologia</th>
-                  <th scope="col">IBAN</th>
-                  <th scope="col">Tipo cont.</th>
-                  <th scope="col">Contabilità</th>
+                  {% if is_bollo %}
+                    <th scope="col">Tipo bollo</th>
+                    <th scope="col">Provincia</th>
+                    <th scope="col">Impronta documento</th>
+                  {% else %}
+                    <th scope="col">Descrizione tipologia</th>
+                    <th scope="col">IBAN</th>
+                    <th scope="col">Tipo cont.</th>
+                    <th scope="col">Contabilità</th>
+                  {% endif %}
                 </tr>
               </thead>
               <tbody>
@@ -516,36 +539,45 @@
                       {% set st_voce = voce.stato|default('') %}
                       {% include 'partials/state_badge.html.twig' with { state: st_voce, pill: false, small: true } %}
                     </td>
-                    <td class="text-break small">
-                      {% set codice = voce.codiceContabilita|default('') %}
-                      {# Cerca nella lista tipologie l'oggetto con id_entrata == codice #}
-                      {% set desc_tipologia = null %}
-                      {% if tipologie is iterable %}
-                        {% for t in tipologie %}
-                          {% if t.id_entrata is defined and t.id_entrata == codice %}
-                            {% set desc_tipologia = t.descrizione|default(desc_tipologia) %}
-                          {% endif %}
-                        {% endfor %}
-                      {% endif %}
-                      {{ desc_tipologia|default(voce.codiceContabilita | default('—')) }}
-                    </td>
-                    <td class="text-break small">{{ voce.ibanAccredito|default('—') }}</td>
-                    <td class="text-nowrap">{{ voce.tipoContabilita|default('—') }}</td>
-                    <td>
-                      {% if voce.contabilita is defined and voce.contabilita.quote is iterable and voce.contabilita.quote|length > 0 %}
-                        {% for q in voce.contabilita.quote %}
-                          <div class="small text-muted">
-                            {% set capitolo = q.capitolo|default('') %}
-                            {% set anno = q.anno_esercizio is defined ? q.anno_esercizio : (q.annoEsercizio|default('')) %}
-                            {% if capitolo %}<strong>Cap:</strong> {{ capitolo }}{% endif %}
-                            {% if anno %} <span class="ms-1"><strong>Anno:</strong> {{ anno }}</span>{% endif %}
-                            {% if q.importo is defined %} <div class="text-end">{{ q.importo|number_format(2, ',', '.') }} €</div>{% endif %}
-                          </div>
-                        {% endfor %}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
+                    {% if is_bollo %}
+                      <td>{{ voce.tipoBollo|default('—') }}</td>
+                      <td>{{ voce.provinciaResidenza|default('—') }}</td>
+                      <td>
+                        {% if voce.hashDocumento is defined and voce.hashDocumento %}
+                          <code class="small user-select-all" title="{{ voce.hashDocumento }}">{{ voce.hashDocumento|slice(0,24) }}&hellip;</code>
+                        {% else %}—{% endif %}
+                      </td>
+                    {% else %}
+                      <td class="text-break small">
+                        {% set codice = voce.codiceContabilita|default('') %}
+                        {% set desc_tipologia = null %}
+                        {% if tipologie is iterable %}
+                          {% for t in tipologie %}
+                            {% if t.id_entrata is defined and t.id_entrata == codice %}
+                              {% set desc_tipologia = t.descrizione|default(desc_tipologia) %}
+                            {% endif %}
+                          {% endfor %}
+                        {% endif %}
+                        {{ desc_tipologia|default(voce.codiceContabilita | default('—')) }}
+                      </td>
+                      <td class="text-break small">{{ voce.ibanAccredito|default('—') }}</td>
+                      <td class="text-nowrap">{{ voce.tipoContabilita|default('—') }}</td>
+                      <td>
+                        {% if voce.contabilita is defined and voce.contabilita.quote is iterable and voce.contabilita.quote|length > 0 %}
+                          {% for q in voce.contabilita.quote %}
+                            <div class="small text-muted">
+                              {% set capitolo = q.capitolo|default('') %}
+                              {% set anno = q.anno_esercizio is defined ? q.anno_esercizio : (q.annoEsercizio|default('')) %}
+                              {% if capitolo %}<strong>Cap:</strong> {{ capitolo }}{% endif %}
+                              {% if anno %} <span class="ms-1"><strong>Anno:</strong> {{ anno }}</span>{% endif %}
+                              {% if q.importo is defined %} <div class="text-end">{{ q.importo|number_format(2, ',', '.') }} €</div>{% endif %}
+                            </div>
+                          {% endfor %}
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                    {% endif %}
                   </tr>
                 {% endfor %}
               </tbody>
@@ -680,11 +712,16 @@
                     <tr>
                       <td>{{ attempt.display_id ?: '—' }}</td>
                       <td class="text-nowrap">{% if attempt.timestamp %}{{ attempt.timestamp|date('d/m/Y H:i:s') }}{% else %}—{% endif %}</td>
-                      <td{% if attempt.state_detail %} title="{{ attempt.state_detail }}"{% endif %}>
+                      <td>
                         {% if attempt.state %}
                           {% include 'partials/state_badge.html.twig' with { state: attempt.state, pill: true, small: true } %}
                         {% else %}
                           —
+                        {% endif %}
+                        {% if attempt.state_detail %}
+                          <div class="small text-muted mt-1" style="max-width: 250px; font-size: 0.75rem; line-height: 1.2;">
+                            {{ attempt.state_detail }}
+                          </div>
                         {% endif %}
                       </td>
                       <td class="text-end text-nowrap">{% if attempt.amount is not null %}{{ attempt.amount|number_format(2, ',', '.') }} €{% else %}—{% endif %}</td>

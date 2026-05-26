@@ -118,6 +118,17 @@ return (function (): array {
         \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true'
     );
 
+    $bollotAttivo = false;
+    $bollotIdTipo = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+    $bollotIdDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '');
+    if ($bollotIdDominio) {
+        try {
+            $det = (new \App\Database\EntrateRepository())->findDetails($bollotIdDominio, $bollotIdTipo);
+            $bollotAttivo = $det !== null;
+        } catch (\Throwable $_) {}
+    }
+    $twig->getEnvironment()->addGlobal('bollot_attivo', $bollotAttivo);
+
     $app->add(TwigMiddleware::create($app, $twig));
 
     // Ensure storage logs directory exists and register logger global

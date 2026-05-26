@@ -294,6 +294,153 @@
     });
   })();
   };
+
+  // Reusable Premium DatePicker Helper with dropdowns, typing support, and quick ranges
+  window.initBackofficeDatePicker = function(elDa, elA, hidDa, hidA) {
+    if (!elDa || !elA || !hidDa || !hidA || typeof Litepicker === 'undefined') return;
+
+    const toIt = (iso) => {
+      if (!iso) return '';
+      const [y, m, d] = iso.split('-');
+      return d && m && y ? `${d}/${m}/${y}` : iso;
+    };
+
+    const formatDateIso = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + d;
+    };
+
+    const parseItDate = (str) => {
+      if (!str) return null;
+      const match = str.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!match) return null;
+      const d = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10) - 1;
+      const y = parseInt(match[3], 10);
+      const date = new Date(y, m, d);
+      if (date.getFullYear() === y && date.getMonth() === m && date.getDate() === d) {
+        return date;
+      }
+      return null;
+    };
+
+    if (hidDa.value) elDa.value = toIt(hidDa.value);
+    if (hidA.value)  elA.value  = toIt(hidA.value);
+
+    elDa.removeAttribute('readonly');
+    elA.removeAttribute('readonly');
+
+    const picker = new Litepicker({
+      element: elDa,
+      elementEnd: elA,
+      singleMode: false,
+      format: 'DD/MM/YYYY',
+      lang: 'it-IT',
+      autoApply: true,
+      resetButton: true,
+      numberOfMonths: 2,
+      numberOfColumns: 2,
+      dropdowns: {
+        minYear: 2020,
+        maxYear: new Date().getFullYear() + 2,
+        months: true,
+        years: true,
+      },
+      tooltipText: { one: 'giorno', other: 'giorni' },
+      setup(p) {
+        p.on('selected', (d1, d2) => {
+          hidDa.value = d1.format('YYYY-MM-DD');
+          hidA.value  = d2.format('YYYY-MM-DD');
+        });
+        p.on('clear:selection', () => {
+          hidDa.value = '';
+          hidA.value  = '';
+          elDa.value  = '';
+          elA.value   = '';
+        });
+      },
+    });
+
+    const syncFromInputs = () => {
+      const d1 = parseItDate(elDa.value);
+      const d2 = parseItDate(elA.value);
+      if (d1 && d2) {
+        picker.setDateRange(d1, d2);
+        hidDa.value = formatDateIso(d1);
+        hidA.value = formatDateIso(d2);
+      } else if (d1) {
+        picker.setDateRange(d1, d1);
+        hidDa.value = formatDateIso(d1);
+        hidA.value = formatDateIso(d1);
+      }
+    };
+
+    elDa.addEventListener('blur', syncFromInputs);
+    elA.addEventListener('blur', syncFromInputs);
+    elDa.addEventListener('change', syncFromInputs);
+    elA.addEventListener('change', syncFromInputs);
+
+    window.setBackofficeQuickRange = function(type) {
+      const today = new Date();
+      let d1 = new Date();
+      let d2 = new Date();
+
+      switch(type) {
+        case 'today':
+          d1 = today;
+          d2 = today;
+          break;
+        case 'yesterday':
+          const yesterday = new Date();
+          yesterday.setDate(today.getDate() - 1);
+          d1 = yesterday;
+          d2 = yesterday;
+          break;
+        case 'last7':
+          const l7 = new Date();
+          l7.setDate(today.getDate() - 6);
+          d1 = l7;
+          d2 = today;
+          break;
+        case 'last30':
+          const l30 = new Date();
+          l30.setDate(today.getDate() - 29);
+          d1 = l30;
+          d2 = today;
+          break;
+        case 'thisMonth':
+          d1 = new Date(today.getFullYear(), today.getMonth(), 1);
+          d2 = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          break;
+        case 'lastMonth':
+          d1 = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          d2 = new Date(today.getFullYear(), today.getMonth(), 0);
+          break;
+        case 'thisYear':
+          d1 = new Date(today.getFullYear(), 0, 1);
+          d2 = new Date(today.getFullYear(), 11, 31);
+          break;
+        case 'lastYear':
+          d1 = new Date(today.getFullYear() - 1, 0, 1);
+          d2 = new Date(today.getFullYear() - 1, 11, 31);
+          break;
+        case 'clear':
+          picker.clearSelection();
+          return;
+      }
+
+      elDa.value = toIt(formatDateIso(d1));
+      elA.value = toIt(formatDateIso(d2));
+      hidDa.value = formatDateIso(d1);
+      hidA.value = formatDateIso(d2);
+      picker.setDateRange(d1, d2);
+    };
+
+    return picker;
+  };
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', onReady);
   } else {

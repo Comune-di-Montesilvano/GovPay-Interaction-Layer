@@ -16,10 +16,10 @@
   {% set highlight = highlight_id|default('') %}
   <form method="get" action="/pagamenti/ricerca-flussi" class="card shadow-sm mb-4">
     <input type="hidden" name="q" value="1" />
-    <div class="card-header bg-light border-bottom py-3">
-      <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-1">
-        <h2 class="h5 mb-0">Ricerca flussi di rendicontazione</h2>
-        <p class="mb-0 text-muted small">Compila uno o più campi</p>
+    <div class="card-header bg-light border-bottom py-2">
+      <div class="d-flex align-items-center gap-2">
+        <h2 class="h6 mb-0">Ricerca flussi di rendicontazione</h2>
+        <small class="text-muted">| Compila uno o più campi</small>
       </div>
     </div>
     <div class="card-body">
@@ -48,9 +48,16 @@
         <div class="form-group col-md-4">
           <label for="dataDaVis">Intervallo date</label>
           <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="dataDaVis" class="form-control form-control-sm" placeholder="Da" autocomplete="off" readonly style="cursor:pointer;">
+            <input type="text" id="dataDaVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="Da" autocomplete="off">
             <span class="text-muted small">–</span>
-            <input type="text" id="dataAVis" class="form-control form-control-sm" placeholder="A" autocomplete="off" readonly style="cursor:pointer;">
+            <input type="text" id="dataAVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="A" autocomplete="off">
+          </div>
+          <div class="bo-datepicker-quick-selects">
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
+            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
+            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
           </div>
           <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
           <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
@@ -118,13 +125,10 @@
 
   {% if query_made and results %}
     <div class="card shadow-sm">
-      <div class="card-header bg-light border-bottom py-3">
-        <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-2">
-          <div>
-            <h3 class="h6 text-uppercase text-secondary mb-1">Risultati</h3>
-            <p class="mb-0 small text-muted">Elenco dei flussi di rendicontazione</p>
-          </div>
+      <div class="card-header bg-light border-bottom py-2">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <div class="d-flex align-items-center gap-2">
+            <h3 class="h6 text-uppercase text-secondary mb-0">Risultati</h3>
             <span class="badge rounded-pill text-bg-primary">
               {% if num_risultati is not null %}
                 {{ num_risultati }}
@@ -132,17 +136,18 @@
                 --
               {% endif %}
             </span>
-            {% if prev_url or next_url %}
-              <div class="btn-group btn-group-sm" role="group" aria-label="Paginazione rapida">
-                {% if prev_url %}
-                  <a class="btn btn-outline-primary" href="{{ prev_url }}" title="Vai alla pagina precedente">&laquo;</a>
-                {% endif %}
-                {% if next_url %}
-                  <a class="btn btn-outline-primary" href="{{ next_url }}" title="Vai alla pagina successiva">&raquo;</a>
-                {% endif %}
-              </div>
-            {% endif %}
+            <span class="text-muted small d-none d-md-inline">| Elenco dei flussi di rendicontazione</span>
           </div>
+          {% if prev_url or next_url %}
+            <div class="btn-group btn-group-sm" role="group" aria-label="Paginazione rapida">
+              {% if prev_url %}
+                <a class="btn btn-outline-primary" href="{{ prev_url }}" title="Vai alla pagina precedente">&laquo;</a>
+              {% endif %}
+              {% if next_url %}
+                <a class="btn btn-outline-primary" href="{{ next_url }}" title="Vai alla pagina successiva">&raquo;</a>
+              {% endif %}
+            </div>
+          {% endif %}
         </div>
       </div>
       <div class="table-responsive">
@@ -242,20 +247,8 @@
   const elA   = document.getElementById('dataAVis');
   const hidDa = document.getElementById('dataDa');
   const hidA  = document.getElementById('dataA');
-  if (elDa && elA && hidDa && hidA && typeof Litepicker !== 'undefined') {
-    const toIt = (iso) => { const [y,m,d] = (iso||'').split('-'); return d ? `${d}/${m}/${y}` : ''; };
-    if (hidDa.value) elDa.value = toIt(hidDa.value);
-    if (hidA.value)  elA.value  = toIt(hidA.value);
-    new Litepicker({
-      element: elDa, elementEnd: elA,
-      singleMode: false, format: 'DD/MM/YYYY', lang: 'it-IT',
-      autoApply: true, resetButton: true, numberOfMonths: 1, numberOfColumns: 1,
-      tooltipText: { one: 'giorno', other: 'giorni' },
-      setup(p) {
-        p.on('selected', (d1, d2) => { hidDa.value = d1.format('YYYY-MM-DD'); hidA.value = d2.format('YYYY-MM-DD'); });
-        p.on('clear:selection', () => { hidDa.value = ''; hidA.value = ''; elDa.value = ''; elA.value = ''; });
-      },
-    });
+  if (elDa && elA && hidDa && hidA && typeof window.initBackofficeDatePicker !== 'undefined') {
+    window.initBackofficeDatePicker(elDa, elA, hidDa, hidA);
   }
 })();
 </script>

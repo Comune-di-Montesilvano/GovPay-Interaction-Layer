@@ -60,14 +60,14 @@
                         {% if b.pending > 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/pausa" style="display:inline-block">
                             <button class="btn btn-outline-warning btn-xs mb-1" title="Sospendi le elaborazioni del lotto in coda">
-                              <svg class="icon icon-xs icon-warning"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-pause"></use></svg> Pausa
+                              <i class="fas fa-pause"></i> Pausa
                             </button>
                           </form>
                         {% endif %}
                         {% if b.paused > 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/riprendi" style="display:inline-block">
                             <button class="btn btn-outline-success btn-xs mb-1" title="Riprendi le elaborazioni (torneranno in coda)">
-                              <svg class="icon icon-xs icon-success"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-play"></use></svg> Riprendi
+                              <i class="fas fa-play"></i> Riprendi
                             </button>
                           </form>
                         {% endif %}
@@ -76,7 +76,7 @@
                         {% if b.processing == 0 and b.success == 0 and b.error == 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/elimina" onsubmit="return confirm('Eliminare fisicamente questo batch per ripulire la tabella?');" style="display:inline-block">
                             <button class="btn btn-outline-danger btn-xs mb-1" title="Elimina intero lotto in coda">
-                              <svg class="icon icon-xs icon-danger"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-close"></use></svg> Elimina
+                              <i class="fas fa-xmark"></i> Elimina
                             </button>
                           </form>
                         {% endif %}
@@ -85,7 +85,7 @@
                         {% if b.success > 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/annulla" onsubmit="return confirm('ATTENZIONE: Stai per richiamare in blocco l\'annullamento al Nodo per tutte le {{ b.success }} pendenze andate a buon fine in questo lotto. Vuoi procedere?');" style="display:inline-block">
                             <button class="btn btn-outline-danger btn-xs mb-1 ms-1" title="Annulla le pendenze completate di questo batch">
-                              <svg class="icon icon-xs icon-danger"><use href="/assets/bootstrap-italia/svg/sprites.svg#it-error"></use></svg> Annulla Pendenze (*{{ b.success }})
+                              <i class="fas fa-triangle-exclamation"></i> Annulla Pendenze (*{{ b.success }})
                             </button>
                           </form>
                         {% endif %}
