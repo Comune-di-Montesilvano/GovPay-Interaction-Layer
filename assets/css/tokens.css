@@ -1,0 +1,268 @@
+/* ============================================================================
+   Montesilvano Design System — Colors & Type
+   ============================================================================
+   Based on:
+   - Stemma comunale (purple/gold/green + Italian tricolor)
+   - Bootstrap Italia / Designers Italia ".italia" design system (mandatory for
+     Italian public administrations per Linee guida AGID, art. 53 CAD)
+   - ProntoPA (Tailwind / Figtree, brandizable primary/secondary vars)
+   - GovPay-Interaction-Layer (Bootstrap Italia, #003366 institutional navy)
+   ============================================================================ */
+
+/* ---------- FONT FACES ----------
+   Primary: Titillium Web — the .italia design system typeface, used by every
+   conformant Comune website. Loaded from Google Fonts (Bunny.net-style mirror).
+   Secondary: Lora — serif for editorial / civic content (optional).
+   Mono:     JetBrains Mono — administrative data, codice fiscale, protocollo.
+   Fallback: Figtree from ProntoPA is kept as a secondary sans for dashboards.
+*/
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;600;700;900&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Figtree:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ============= COLOR — BRAND (dallo stemma) ============= */
+  --ms-purple-900: #2C184A;   /* shadow of shield */
+  --ms-purple-700: #3B2162;
+  --ms-purple-600: #4A2A6E;   /* primary purple of stemma shield */
+  --ms-purple-500: #5E3788;
+  --ms-purple-300: #9C82BD;
+  --ms-purple-100: #E8DFF4;
+  --ms-purple-050: #F5F0FB;
+
+  --ms-green-900: #14431D;
+  --ms-green-700: #1B5E20;
+  --ms-green-600: #2E7D32;   /* stemma mountains / laurel */
+  --ms-green-500: #43A047;
+  --ms-green-300: #81C784;
+  --ms-green-100: #D6EDD8;
+
+  --ms-gold-700:  #8E6F1F;
+  --ms-gold-600:  #B58E2F;
+  --ms-gold-500:  #C9A13B;   /* crown gold */
+  --ms-gold-300:  #E4BD56;
+  --ms-gold-100:  #F6E7BA;
+
+  /* Italian tricolor (ribbon) */
+  --it-green:  #008C45;
+  --it-white:  #F4F5F0;
+  --it-red:    #CD212A;
+
+  /* ============= COLOR — INSTITUTIONAL (.italia) ============= */
+  /* Bootstrap Italia canonical institutional blue */
+  --bi-primary:     #06c;       /* #0066CC */
+  --bi-primary-h:   #004080;
+  --bi-primary-a4:  rgba(0,102,204,.04);
+  --bi-primary-a8:  rgba(0,102,204,.08);
+  --bi-primary-a16: rgba(0,102,204,.16);
+
+  /* Institutional navy used in GovPay (.it-title) */
+  --bi-navy:        #003366;
+
+  /* ============= COLOR — NEUTRALS ============= */
+  --ms-ink:       #17324D;   /* .italia body ink */
+  --ms-ink-soft:  #425A76;
+  --ms-slate-900: #0F172A;
+  --ms-slate-800: #1E293B;
+  --ms-slate-700: #334155;
+  --ms-slate-600: #475569;
+  --ms-slate-500: #64748B;
+  --ms-slate-400: #94A3B8;
+  --ms-slate-300: #CBD5E1;
+  --ms-slate-200: #E2E8F0;
+  --ms-slate-100: #F1F5F9;
+  --ms-slate-050: #F8FAFC;
+  --ms-white:     #FFFFFF;
+
+  /* ============= COLOR — SEMANTIC (.italia alignment) ============= */
+  --ms-success:    #008758;   /* .italia success */
+  --ms-success-bg: #E6F5EE;
+  --ms-warning:    #A66300;
+  --ms-warning-bg: #FFF4D9;
+  --ms-danger:     #D9364F;   /* .italia danger */
+  --ms-danger-bg:  #FCE6E9;
+  --ms-info:       #0073E6;
+  --ms-info-bg:    #E5F1FC;
+
+  /* ============= SEMANTIC FOREGROUND / BACKGROUND ============= */
+  --fg-1: var(--ms-ink);        /* primary text */
+  --fg-2: var(--ms-slate-700);  /* secondary text */
+  --fg-3: var(--ms-slate-500);  /* muted / meta */
+  --fg-inverse: var(--ms-white);
+  --fg-link: var(--bi-primary);
+  --fg-link-hover: var(--bi-primary-h);
+
+  --bg-0: var(--ms-white);       /* card surface */
+  --bg-1: var(--ms-slate-050);   /* app background */
+  --bg-2: var(--ms-slate-100);   /* subtle panel */
+  --bg-inverse: var(--ms-slate-900);
+
+  --border-1: var(--ms-slate-200);
+  --border-2: var(--ms-slate-300);
+  --border-strong: var(--ms-slate-600);
+  --border-focus: var(--bi-primary);
+
+  /* Brand role tokens — point these at the PA identity */
+  --brand-primary:   var(--bi-primary);   /* institutional blue — CTAs, links, headers */
+  --brand-secondary: var(--ms-purple-600); /* identity purple from stemma */
+  --brand-accent:    var(--ms-gold-500);   /* civic highlight */
+
+  /* ============= TYPE — FAMILIES ============= */
+  --font-sans:    'Titillium Web', 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif:   'Lora', Georgia, 'Times New Roman', serif;
+  --font-mono:    'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-display: 'Titillium Web', serif; /* use heavy 700/900 Titillium for display */
+
+  /* ============= TYPE — SIZES (modular scale, 1.125) ============= */
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-14: 0.875rem;
+  --fs-16: 1rem;
+  --fs-18: 1.125rem;
+  --fs-20: 1.25rem;
+  --fs-24: 1.5rem;
+  --fs-28: 1.75rem;
+  --fs-32: 2rem;
+  --fs-40: 2.5rem;
+  --fs-48: 3rem;
+  --fs-64: 4rem;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-normal: 1.5;
+  --lh-loose: 1.7;
+
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-black: 900;
+
+  /* ============= SPACING (8px base, .italia compatible) ============= */
+  --sp-0:  0;
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  24px;
+  --sp-6:  32px;
+  --sp-7:  48px;
+  --sp-8:  64px;
+  --sp-9:  96px;
+
+  /* ============= RADII ============= */
+  --r-0: 0;
+  --r-sm: 4px;     /* inputs, chips (.italia) */
+  --r-md: 8px;     /* cards */
+  --r-lg: 12px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* ============= SHADOWS (flat, institutional) ============= */
+  --shadow-0: none;
+  --shadow-1: 0 1px 2px rgba(23,50,77,.06);
+  --shadow-2: 0 2px 6px rgba(23,50,77,.08), 0 1px 2px rgba(23,50,77,.04);
+  --shadow-3: 0 6px 16px rgba(23,50,77,.10), 0 2px 4px rgba(23,50,77,.06);
+  --shadow-focus: 0 0 0 4px rgba(0,102,204,.25);
+
+  /* ============= MOTION ============= */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(.2,.7,.3,1);
+  --ease-in-out: cubic-bezier(.4,.1,.3,1);
+}
+
+/* ---------- SEMANTIC TYPE SCALE ---------- */
+.ms-display-1,
+h1.ms-display {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-64);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+  color: var(--fg-1);
+}
+h1, .ms-h1 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-40);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.005em;
+  color: var(--fg-1);
+  margin: 0 0 var(--sp-4);
+}
+h2, .ms-h2 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-28);
+  line-height: var(--lh-snug);
+  color: var(--fg-1);
+  margin: 0 0 var(--sp-3);
+}
+h3, .ms-h3 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-20);
+  line-height: var(--lh-snug);
+  color: var(--fg-1);
+  margin: 0 0 var(--sp-3);
+}
+h4, .ms-h4 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-16);
+  line-height: var(--lh-snug);
+  color: var(--fg-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--sp-2);
+}
+p, .ms-p {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-16);
+  line-height: var(--lh-normal);
+  color: var(--fg-2);
+  margin: 0 0 var(--sp-4);
+}
+.ms-lead {
+  font-size: var(--fs-20);
+  line-height: var(--lh-normal);
+  color: var(--fg-2);
+}
+.ms-small, small {
+  font-size: var(--fs-13);
+  color: var(--fg-3);
+}
+.ms-eyebrow {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand-primary);
+}
+.ms-mono, code, pre {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+a, .ms-link {
+  color: var(--fg-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+a:hover, .ms-link:hover { color: var(--fg-link-hover); }
+
+/* ---------- BASE RESETS ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-16);
+  line-height: var(--lh-normal);
+  color: var(--fg-1);
+  background: var(--bg-1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
