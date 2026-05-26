@@ -4104,23 +4104,24 @@ $routes = [
                     'stato' => $statoRaw,
                 ],
                 'pagination' => (static function () use ($data, $page, $perPage, $rows): array {
-                    $meta = is_array($data['metadatiPaginazione'] ?? null) ? $data['metadatiPaginazione'] : [];
-                    $numRis = (int)($data['numRisultati'] ?? $meta['numRisultati'] ?? $meta['num_risultati'] ?? 0);
-                    $rpp    = (int)($data['risultatiPerPagina'] ?? $meta['risultatiPerPagina'] ?? $perPage);
-                    $pag    = (int)($data['pagina'] ?? $meta['pagina'] ?? $page);
+                    $meta       = is_array($data['metadatiPaginazione'] ?? null) ? $data['metadatiPaginazione'] : [];
+                    $numPag     = (int)($data['numPagine'] ?? $meta['numPagine'] ?? 0);
+                    $numRis     = (int)($data['numRisultati'] ?? $meta['numRisultati'] ?? $meta['num_risultati'] ?? 0);
+                    $rpp        = (int)($data['risultatiPerPagina'] ?? $meta['risultatiPerPagina'] ?? $perPage);
+                    $pag        = (int)($data['pagina'] ?? $meta['pagina'] ?? $page);
                     if ($rpp < 1) { $rpp = $perPage; }
-                    // Euristica: se numRisultati non è disponibile ma la pagina è piena, presumi che ci sia altra pagina
-                    $hasMore = $numRis > 0
-                        ? ($pag * $rpp < $numRis)
-                        : (count($rows) >= $rpp);
-                    $totalPages = $numRis > 0
-                        ? (int) max(1, (int) ceil($numRis / $rpp))
-                        : ($hasMore ? $pag + 1 : $pag);
+                    if ($numPag > 0) {
+                        $totalPages = $numPag;
+                    } elseif ($numRis > 0) {
+                        $totalPages = (int) max(1, (int) ceil($numRis / $rpp));
+                    } else {
+                        $totalPages = count($rows) >= $rpp ? $pag + 1 : $pag;
+                    }
                     return [
-                        'pagina'              => $pag,
+                        'pagina'               => $pag,
                         'risultati_per_pagina' => $rpp,
-                        'num_risultati'       => $numRis,
-                        'total_pages'         => $totalPages,
+                        'num_risultati'        => $numRis,
+                        'total_pages'          => $totalPages,
                     ];
                 })(),
             ],
