@@ -211,6 +211,12 @@ while (true) {
     }
 
     if ((int)$queueResult['queued'] === 0 && (int)$pendingInScope === 0) {
+        $resetErrors = $repo->resetErrors((string)$idDominio);
+        if ($resetErrors > 0) {
+            $log("Reset ERROR Biz -> PENDING: {$resetErrors} record. Riavvio ciclo immediato...");
+            continue;
+        }
+
         if ((int)$counts['PENDING'] > 0) {
             $log('Nessun elemento nuovo e nessun PENDING in-scope. Restano PENDING fuori filtro data. Prossimo tra 15 minuti...');
         } else {

@@ -257,6 +257,10 @@ return function (App $app, Twig $twig): void {
         $controller = new ReportRagioneriaController($twig);
         return $controller->index($request, $response);
     });
+    $app->post('/pagamenti/report-ragioneria/biz-reset-errors', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new ReportRagioneriaController($twig);
+        return $controller->resetBizErrors($request, $response);
+    });
 
     // Pendenze
     $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {
