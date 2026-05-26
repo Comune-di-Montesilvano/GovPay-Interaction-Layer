@@ -24,8 +24,9 @@ $log = static function (string $msg): void {
     flush();
 };
 
-$pidFile = '/tmp/cron-ragioneria.pid';
-$stopFile = '/tmp/cron-stop-ragioneria';
+$pidFile    = '/tmp/cron-ragioneria.pid';
+$stopFile   = '/tmp/cron-stop-ragioneria';
+$rescanFile = '/tmp/cron-rescan-ragioneria';
 
 if (file_exists($pidFile)) {
     $existingPid = (int)file_get_contents($pidFile);
@@ -47,6 +48,17 @@ $checkStop = static function () use ($stopFile, $log): void {
         $log('Segnale di stop ricevuto. Uscita.');
         exit(0);
     }
+};
+
+// Returns true and resets rolling window if a rescan signal was received.
+$checkRescan = static function () use ($rescanFile, $log, &$rollingFrom): bool {
+    if (file_exists($rescanFile)) {
+        @unlink($rescanFile);
+        $rollingFrom = null;
+        $log('Segnale rescan ricevuto: prossimo ciclo scan completo da data configurazione.');
+        return true;
+    }
+    return false;
 };
 
 if (function_exists('pcntl_async_signals')) {
@@ -90,15 +102,23 @@ $repo = new FlussiRendicontazioniRepository();
 
 $log('Daemon ragioneria avviato.');
 
+// After the first full scan we use a rolling window (max synced date - 3 days) so
+// subsequent cycles only re-query recent flussi from GovPay instead of the full history.
+$rollingFrom = null;
+
 while (true) {
     $checkStop();
+    $checkRescan();
 
-    $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa)) {
-        $scanDa = date('Y-01-01', strtotime('-1 year'));
+    $scanDaConfig = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDaConfig)) {
+        $scanDaConfig = date('Y-01-01', strtotime('-1 year'));
     }
 
-    $log("Ciclo scan da {$scanDa}... ");
+    // Use rolling window when available; fall back to full config date.
+    $scanDa = $rollingFrom ?? $scanDaConfig;
+
+    $log("Ciclo scan da {$scanDa}" . ($rollingFrom !== null ? ' [finestra scorrevole]' : ' [scan completo]') . '...');
 
     $newRows = 0;
     $cycleRowsTotal = 0;
@@ -166,6 +186,10 @@ while (true) {
         $log('Ordine scansione cronologico (vecchio -> nuovo): [' . $oldest . ' .. ' . $newest . ']');
     }
 
+    $existingFlussi = loadExistingFlussiIds($repo->getPdo(), $idDominio);
+    $cutoffDate = date('Y-m-d', strtotime('-15 days'));
+    $skipped = 0;
+
     $scanIndex = 0;
     foreach ($flussiToScan as $flussoItem) {
         $checkStop();
@@ -176,6 +200,12 @@ while (true) {
         $dominioFlusso = (string)($flussoItem['dominio']['idDominio'] ?? $flussoItem['idDominio'] ?? $idDominio);
         $dataFlussoScan = (string)($flussoItem['dataFlusso'] ?? '');
         if ($idFlusso === '' || $dominioFlusso === '') {
+            continue;
+        }
+
+        // Skip flussi already in DB that are old enough to be immutable.
+        if (isset($existingFlussi[$idFlusso]) && $dataFlussoScan !== '' && $dataFlussoScan < $cutoffDate) {
+            $skipped++;
             continue;
         }
 
@@ -234,15 +264,23 @@ while (true) {
     }
 
     $log(sprintf(
-        'Ciclo completato. Flussi letti=%d, righe_parse_totali=%d, govpay_si=%d, govpay_no=%d, righe_upsert=%d',
+        'Ciclo completato. Flussi letti=%d skippati=%d, righe_parse_totali=%d, govpay_si=%d, govpay_no=%d, righe_upsert=%d',
         $flussiCount,
+        $skipped,
         $cycleRowsTotal,
         $cycleGovPayYes,
         max(0, $cycleRowsTotal - $cycleGovPayYes),
         $newRows
     ));
 
+    // Update rolling window: max synced date - 3 days (overlap to catch late-arriving flussi).
+    $maxDate = getMaxSyncedFlussoDate($repo->getPdo(), $idDominio);
+    if ($maxDate !== null) {
+        $rollingFrom = date('Y-m-d', strtotime($maxDate . ' -15 days'));
+    }
+
     if ($newRows > 0) {
+        $log("Nuovi dati trovati, prossimo ciclo da {$rollingFrom} [finestra scorrevole].");
         continue;
     }
 
@@ -251,6 +289,31 @@ while (true) {
         $checkStop();
         sleep(10);
     }
+}
+
+/**
+ * Returns the most recent data_flusso stored in DB for the given domain, or null if none.
+ */
+function getMaxSyncedFlussoDate(\PDO $pdo, string $idDominio): ?string
+{
+    $stmt = $pdo->prepare('SELECT MAX(data_flusso) FROM flussi_rendicontazioni WHERE id_dominio = :id_dominio');
+    $stmt->execute([':id_dominio' => $idDominio]);
+    $value = $stmt->fetchColumn();
+    return (is_string($value) && $value !== '') ? substr($value, 0, 10) : null;
+}
+
+/**
+ * Returns a set (id_flusso => true) of flusso IDs already present in DB for the given domain.
+ */
+function loadExistingFlussiIds(\PDO $pdo, string $idDominio): array
+{
+    $stmt = $pdo->prepare('SELECT DISTINCT id_flusso FROM flussi_rendicontazioni WHERE id_dominio = :id_dominio');
+    $stmt->execute([':id_dominio' => $idDominio]);
+    $ids = [];
+    while ($row = $stmt->fetch(\PDO::FETCH_NUM)) {
+        $ids[(string)$row[0]] = true;
+    }
+    return $ids;
 }
 
 function buildGovPayClient(): Client

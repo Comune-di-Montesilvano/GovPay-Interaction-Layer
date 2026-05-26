@@ -231,6 +231,19 @@ class CronController
             ->withStatus(302);
     }
 
+    public function forceRescan(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+
+        if (!self::isDaemonRunning('ragioneria')) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Daemon ragioneria non attivo.'], 400);
+        }
+
+        file_put_contents('/tmp/cron-rescan-ragioneria', '1');
+
+        return $this->jsonResponse($response, ['ok' => true, 'message' => 'Segnale rescan inviato: il prossimo ciclo riscansionerà tutti i flussi dalla data configurata.']);
+    }
+
     public function log(Request $request, Response $response, array $args): Response
     {
         $this->requireSuperadmin();
