@@ -1341,7 +1341,7 @@ class ConfigurazioneController
 
         // ── IO Services ───────────────────────────────────────────────────
         $ioServices = []; $ioServicesTipologie = [];
-        if ($canEditConfig && $tab === 'servizi_io') {
+        if ($canEditConfig && in_array($tab, ['servizi_io', 'tipologie', 'tassonomie'], true)) {
             try {
                 $ioRepo              = new \App\Database\IoServiceRepository();
                 $ioServices          = $ioRepo->listAll();
