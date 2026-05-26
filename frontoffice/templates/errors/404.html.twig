@@ -3,24 +3,20 @@
 {% block title %}{{ 'Pagina non trovata'|trans }} - {{ app_entity.name }}{% endblock %}
 
 {% block content %}
-  <section class="py-5">
-    <div class="container-xxl">
-      <div class="row justify-content-center">
-        <div class="col-lg-8">
-          <div class="text-center py-5">
-            <p class="text-uppercase text-muted small mb-2">{{ 'Errore 404'|trans }}</p>
-            <h1 class="display-5 mb-3">{{ 'La pagina richiesta non &egrave; disponibile'|trans|raw }}</h1>
-            <p class="lead text-muted mb-4">{{ 'Il contenuto che stai cercando potrebbe essere stato spostato oppure non &egrave; piu\' disponibile. Torna alla home o contatta l\'assistenza.'|trans|raw }}</p>
-            <div class="d-flex gap-3 justify-content-center flex-wrap">
-              <a class="btn btn-primary" href="/">{{ 'Torna alla home'|trans }}</a>
-              <a class="btn btn-outline-primary" href="mailto:{{ support_email }}">{{ 'Scrivi all\'assistenza'|trans }}</a>
-            </div>
-            {% if requested_path is defined %}
-              <p class="small text-muted mt-4 mb-0">{{ 'Percorso richiesto:'|trans }} <code>{{ requested_path }}</code></p>
-            {% endif %}
-          </div>
-        </div>
+<section class="block">
+  <div class="container">
+    <div style="max-width:560px;margin:0 auto;text-align:center;padding:var(--sp-8) 0;">
+      <p style="font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--fg-3);margin:0 0 var(--sp-3);">{{ 'Errore 404'|trans }}</p>
+      <h1 style="font-size:32px;margin:0 0 var(--sp-3);">{{ 'La pagina richiesta non è disponibile'|trans }}</h1>
+      <p style="font-size:16px;color:var(--fg-2);margin:0 0 var(--sp-5);">{{ 'Il contenuto che stai cercando potrebbe essere stato spostato oppure non è più disponibile. Torna alla home o contatta l\'assistenza.'|trans }}</p>
+      <div style="display:flex;gap:var(--sp-3);justify-content:center;flex-wrap:wrap;">
+        <a class="btn btn-primary" href="/">{{ 'Torna alla home'|trans }}</a>
+        <a class="btn btn-outline" href="mailto:{{ support_email }}">{{ 'Scrivi all\'assistenza'|trans }}</a>
       </div>
+      {% if requested_path is defined %}
+        <p style="font-size:12px;color:var(--fg-3);margin:var(--sp-5) 0 0;">{{ 'Percorso richiesto:'|trans }} <code>{{ requested_path }}</code></p>
+      {% endif %}
     </div>
-  </section>
+  </div>
+</section>
 {% endblock %}

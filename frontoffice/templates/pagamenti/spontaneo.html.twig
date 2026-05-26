@@ -5,357 +5,437 @@
 {% set old = form_data|default({}) %}
 {% set payer = old.soggettoPagatore|default({}) %}
 {% set selected = selected_service|default(null) %}
+{% set is_done = (pendenza_result is defined and pendenza_result) %}
 
 {% block content %}
+
 {# ── Page header ── #}
-<section class="fo-page-header">
-  <div class="fo-page-header-inner">
-    <nav class="fo-breadcrumb" aria-label="{{ 'Percorso'|trans }}">
+<div class="page-head">
+  <div class="container">
+    <div class="crumbs">
       <a href="/">{{ 'Home'|trans }}</a>
-      <span class="fo-breadcrumb-sep" aria-hidden="true">›</span>
-      <span aria-current="page">{{ 'Pagamento spontaneo'|trans }}</span>
-    </nav>
-    <div class="fo-ph-badge">{{ 'Servizi pagoPA'|trans }}</div>
-    <h1>{{ 'Genera un avviso pagoPA'|trans }}</h1>
-    <p>{{ 'Compila il modulo con i dati del servizio e del soggetto pagatore. Al termine verrà creato subito l\'avviso pagoPA e potrai scaricarlo in PDF.'|trans }}</p>
-    {% if selected %}
-      <p style="margin-top:var(--fo-sp-2); color:rgba(255,255,255,.75); font-size:14px;">
-        {{ 'Servizio'|trans }}: <strong style="color:#fff;">{{ selected.label }}</strong>
-      </p>
-    {% endif %}
+      <span class="sep">/</span>
+      <span class="current">{{ 'Pagamento spontaneo'|trans }}</span>
+    </div>
+    <h1>{{ 'Genera un pagamento spontaneo'|trans }}</h1>
+    <p class="page-sub">{{ 'Non hai ricevuto un avviso ma devi pagare un importo all\'ente? Seleziona il servizio, compila i dati e ottieni subito un codice avviso pagoPA.'|trans }}</p>
   </div>
-</section>
+</div>
 
-{# ── Form section ── #}
-<section class="fo-form-section">
-  <div class="container-xxl">
-    <div class="row g-4">
+{# ── Content ── #}
+<section class="block">
+  <div class="container">
 
-      {# ── Main form column ── #}
-      <div class="col-lg-8">
-        <form class="fo-form-card" method="post" action="/pagamento-spontaneo">
-          <div class="fo-form-card-body">
-            <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-4">
-              <div>
-                <p class="fo-field-section mb-1">{{ 'Modulo di generazione'|trans }}</p>
-                <h2 class="h3 mb-0">{{ 'Dati del pagamento'|trans }}</h2>
+    {# ── Stepper ── #}
+    <div class="steps" style="margin-bottom:var(--sp-5);">
+      <div class="step{{ not is_done ? ' done' : ' done' }}">
+        <span class="n">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span>{{ 'Scegli il servizio'|trans }}</span>
+      </div>
+      <div class="bar"></div>
+      <div class="step{{ is_done ? ' done' : ' active' }}">
+        <span class="n">
+          {% if is_done %}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+          {% else %}
+            2
+          {% endif %}
+        </span>
+        <span>{{ 'Compila il modulo'|trans }}</span>
+      </div>
+      <div class="bar"></div>
+      <div class="step{{ is_done ? ' active' : '' }}">
+        <span class="n">3</span>
+        <span>{{ 'Avviso generato'|trans }}</span>
+      </div>
+    </div>
+
+    {# ── STEP 3: avviso generated ── #}
+    {% if is_done %}
+      {% set codice_avviso = pendenza_result.numeroAvviso|default('—') %}
+      <div class="alert alert-success" style="margin-bottom:var(--sp-4);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        <div>
+          <strong>{{ 'Avviso pagoPA generato.'|trans }}</strong>
+          {% if payer.email|default('') %}
+            {{ 'Lo abbiamo inviato anche a'|trans }} <span style="font-family:var(--font-mono);">{{ payer.email }}</span>.
+          {% endif %}
+          {{ 'Procedi al pagamento o aggiungilo al carrello.'|trans }}
+        </div>
+      </div>
+
+      <div class="split">
+        <div>
+          <div class="avviso-card">
+            <div class="avviso-header">
+              <div class="from">
+                {{ 'Ente creditore'|trans }}
+                <strong>{{ app_entity.name }}</strong>
               </div>
-              <div class="text-md-end small" style="color:var(--fo-fg-3);">
-                <span>{{ 'Campi contrassegnati da * sono obbligatori'|trans }}</span>
+              <span class="status status-pay"><span class="dot"></span>{{ 'Da pagare'|trans }}</span>
+            </div>
+            <div class="avviso-body">
+              <div class="avviso-row">
+                <div class="k">{{ 'Codice avviso (IUV)'|trans }}</div>
+                <div class="v mono">{{ codice_avviso }}</div>
+              </div>
+              {% if pendenza_result.causale is defined %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Causale'|trans }}</div>
+                <div class="v">{{ pendenza_result.causale }}</div>
+              </div>
+              {% endif %}
+              {% if payer.nome|default('') or payer.anagrafica|default('') %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Soggetto pagatore'|trans }}</div>
+                <div class="v">
+                  <strong>{{ payer.nome|default('') }} {{ payer.anagrafica|default('') }}</strong>
+                  {% if payer.identificativo|default('') %}
+                    <br/><span class="mono" style="font-size:13px;color:var(--fg-3);">{{ payer.identificativo }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              {% endif %}
+              {% if pendenza_result.data_scadenza is defined and pendenza_result.data_scadenza %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Scadenza'|trans }}</div>
+                <div class="v">{{ pendenza_result.data_scadenza|date('d/m/Y') }}</div>
+              </div>
+              {% endif %}
+              <div class="avviso-row">
+                <div class="k">{{ 'Importo dovuto'|trans }}</div>
+                <div class="v amount">€&nbsp;{{ pendenza_result.importo|number_format(2, ',', '.') }}</div>
               </div>
             </div>
-
-            {% if form_errors is defined and form_errors %}
-              <div class="alert alert-danger" role="status">
-                <h3 class="h6 mb-2">{{ 'Controlla i dati inseriti'|trans }}</h3>
-                <ul class="mb-0 ps-3">
-                  {% for error in form_errors %}
-                    <li>{{ error|trans }}</li>
-                  {% endfor %}
-                </ul>
-              </div>
-            {% endif %}
-
-            {% if form_feedback %}
-              <div class="alert alert-{{ form_feedback.type|default('info') }}" role="status">
-                <h3 class="h6 mb-1">{{ form_feedback.title|trans }}</h3>
-                <p class="mb-0">{{ form_feedback.message|trans }}</p>
-              </div>
-            {% endif %}
-
-            {% if pendenza_result is defined and pendenza_result %}
-              {% set codice_avviso = pendenza_result.numeroAvviso|default('—') %}
-              <div class="fo-result-card">
-                <div class="fo-result-row">
-                  <div>
-                    <div class="fo-result-label">{{ 'Codice avviso / IUV'|trans }}</div>
-                    <div class="fo-result-val">{{ codice_avviso }}</div>
-                  </div>
-                  <div>
-                    <div class="fo-result-label">{{ 'Importo'|trans }}</div>
-                    <div class="fo-result-val">€ {{ pendenza_result.importo|number_format(2, ',', '.') }}</div>
-                  </div>
-                  <div>
-                    <div class="fo-result-label">{{ 'Causale'|trans }}</div>
-                    <div class="fo-result-val">{{ pendenza_result.causale|default('—') }}</div>
-                  </div>
-                  {% if pendenza_result.data_scadenza %}
-                    <div>
-                      <div class="fo-result-label">{{ 'Scadenza'|trans }}</div>
-                      <div class="fo-result-val">{{ pendenza_result.data_scadenza|date('d/m/Y') }}</div>
-                    </div>
-                  {% endif %}
-                </div>
-                <p style="font-size:13px; color:var(--fo-fg-3); margin-bottom:var(--fo-sp-4);">
-                  {{ 'Per pagare online usa il pulsante dedicato e inserisci il codice avviso quando richiesto.'|trans }}
-                </p>
-                <div class="d-flex flex-wrap gap-3">
-                  {% if pendenza_result.checkout_url %}
-                    <button
-                      type="button"
-                      class="btn btn-primary"
-                      id="btn-cart-add"
-                      data-id="{{ pendenza_result.idPendenza|default('') }}"
-                      aria-label="{{ 'Aggiungi al carrello'|trans }}"
-                    >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true">
-                        <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
-                        <path d="M3 4h2l3 12h11l2-8H7"/>
-                      </svg>
-                      <span id="btn-cart-label">{{ 'Aggiungi al carrello'|trans }}</span>
-                    </button>
-                  {% endif %}
-                  <a class="btn btn-outline-primary" href="{{ pendenza_result.checkout_url|default(pay_portal_url|default('https://checkout.pagopa.it/')) }}" target="_blank" rel="noopener">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true">
-                      <path d="m13 3-7 11h5l-1 7 7-11h-5z"/>
-                    </svg>
-                    {{ 'Paga subito'|trans }}
-                  </a>
-                  {% if pendenza_result.download_url %}
-                    <a class="btn btn-outline-primary" href="{{ pendenza_result.download_url }}" target="_blank" rel="noopener">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true">
-                        <path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>
-                      </svg>
-                      {{ 'Stampa / Scarica PDF'|trans }}
-                    </a>
-                  {% else %}
-                    <button class="btn btn-outline-primary" type="button" disabled>{{ 'PDF disponibile a breve'|trans }}</button>
-                  {% endif %}
-                  <a class="btn btn-outline-secondary" href="/pagamento-spontaneo">{{ 'Genera un altro avviso'|trans }}</a>
-                </div>
-              </div>
-            {% endif %}
-
-            {% if pendenza_result is not defined or not pendenza_result %}
-            <div class="row g-3">
-              {% if selected %}
-                <div class="col-12">
-                  <label class="form-label">{{ 'Servizio da pagare *'|trans }}</label>
-                  <div style="border:1px solid var(--fo-border-2); border-radius:var(--fo-r-md); padding:var(--fo-sp-3) var(--fo-sp-4); background:var(--fo-bg-1); display:flex; align-items:center; justify-content:space-between; gap:var(--fo-sp-4); flex-wrap:wrap;">
-                    <div>
-                      <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--fo-fg-3);">{{ 'Tipologia selezionata'|trans }}</div>
-                      <div style="font-weight:600; color:var(--fo-fg-1);">{{ selected.label }}</div>
-                    </div>
-                    <a class="btn btn-outline-secondary btn-sm" href="/pagamento-spontaneo">{{ 'Cambia servizio'|trans }}</a>
-                  </div>
-                  <input type="hidden" id="idTipoPendenza" name="idTipoPendenza" value="{{ selected.id }}">
-                </div>
-              {% else %}
-                <div class="col-md-6">
-                  <label for="idTipoPendenza" class="form-label">{{ 'Servizio da pagare *'|trans }}</label>
-                  <select class="form-select" id="idTipoPendenza" name="idTipoPendenza" required>
-                    <option value="">{{ 'Seleziona'|trans }}</option>
-                    {% for option in service_options %}
-                      <option value="{{ option.id }}" {% if old.idTipoPendenza|default('') == option.id %}selected{% endif %}>{{ option.label }}</option>
-                    {% endfor %}
-                  </select>
-                  <div class="form-text">{{ 'Scegli la voce corrispondente al pagamento che vuoi generare.'|trans }}</div>
-                </div>
+            <div class="avviso-actions">
+              {% if pendenza_result.download_url %}
+                <a class="btn btn-ghost" href="{{ pendenza_result.download_url }}" target="_blank" rel="noopener">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                  {{ 'Stampa / PDF'|trans }}
+                </a>
               {% endif %}
-              <div class="col-md-3">
-                {% set selected_year = old.annoRiferimento|default(default_year|default('now'|date('Y'))) %}
-                {% set start_year = (default_year|default('now'|date('Y'))) + 1 %}
-                {% set end_year = (default_year|default('now'|date('Y'))) - 5 %}
-                <label for="annoRiferimento" class="form-label">{{ 'Anno di riferimento *'|trans }}</label>
-                <select id="annoRiferimento" name="annoRiferimento" class="form-select" required>
-                  {% if selected_year is defined and selected_year not in range(start_year, end_year) %}
-                    <option value="{{ selected_year }}" selected>{{ selected_year }}</option>
-                  {% endif %}
-                  {% for y in range(start_year, end_year) %}
-                    <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+              {% if pendenza_result.checkout_url %}
+                <button
+                  type="button"
+                  class="btn btn-outline"
+                  id="btn-cart-add"
+                  data-id="{{ pendenza_result.idPendenza|default('') }}"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+                  <span id="btn-cart-label">{{ 'Aggiungi al carrello'|trans }}</span>
+                </button>
+                <a class="btn btn-primary" href="{{ pendenza_result.checkout_url }}" target="_blank" rel="noopener">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+                  {{ 'Paga subito'|trans }}
+                </a>
+              {% endif %}
+            </div>
+          </div>
+
+          <div style="margin-top:var(--sp-4);">
+            <a class="btn btn-ghost" href="/pagamento-spontaneo">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+              {{ 'Genera un altro avviso'|trans }}
+            </a>
+          </div>
+        </div>
+
+        <aside class="aside">
+          <div class="card card-pad">
+            <h3>{{ 'Prossimi passaggi'|trans }}</h3>
+            <ol style="margin:0;padding-left:18px;font-size:14px;color:var(--fg-2);line-height:1.7;">
+              <li>{{ 'Stampa o salva il PDF dell\'avviso'|trans }}</li>
+              <li>{{ 'Avvia il pagamento online (pagoPA)'|trans }}</li>
+              <li>{{ 'Conserva la ricevuta digitale'|trans }}</li>
+            </ol>
+          </div>
+        </aside>
+      </div>
+
+    {# ── STEP 2: form ── #}
+    {% else %}
+
+      {% if form_errors is defined and form_errors %}
+        <div class="alert alert-danger" style="margin-bottom:var(--sp-4);" role="alert">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div>
+            <strong>{{ 'Controlla i dati inseriti'|trans }}</strong>
+            <ul style="margin:4px 0 0;padding-left:18px;">
+              {% for error in form_errors %}<li>{{ error|trans }}</li>{% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if form_feedback is defined and form_feedback %}
+        <div class="alert alert-{{ form_feedback.type|default('info') }}" style="margin-bottom:var(--sp-4);" role="status">
+          <div>
+            <strong>{{ form_feedback.title|trans }}</strong>
+            <p style="margin:4px 0 0;">{{ form_feedback.message|trans }}</p>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="split">
+        <div>
+          <div class="card card-pad-lg">
+
+            {# Servizio selezionato #}
+            {% if selected %}
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3);gap:var(--sp-3);">
+                <span class="ms-eyebrow">{{ 'Servizio selezionato'|trans }}</span>
+                <a class="btn btn-ghost btn-sm" href="/pagamento-spontaneo">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  {{ 'Cambia servizio'|trans }}
+                </a>
+              </div>
+              <h2 style="margin:0 0 var(--sp-5);font-size:22px;">{{ selected.label }}</h2>
+              <input type="hidden" name="idTipoPendenza" value="{{ selected.id }}">
+            {% endif %}
+
+            <form method="post" action="/pagamento-spontaneo">
+              {% if selected %}
+                <input type="hidden" name="idTipoPendenza" value="{{ selected.id }}">
+              {% endif %}
+
+              {# ══ SEZIONE: Soggetto pagatore (PRIMA) ══ #}
+              <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 var(--sp-3);">{{ 'Soggetto pagatore'|trans }}</h3>
+
+              {# Segmented control tipo #}
+              {% set tipo = payer.tipo|default('F') %}
+              <div style="margin-bottom:var(--sp-4);">
+                <div class="seg" id="seg-tipo">
+                  <button type="button" class="{{ tipo != 'G' ? 'on' : '' }}" data-tipo="F" id="btn-tipo-pf">{{ 'Persona fisica'|trans }}</button>
+                  <button type="button" class="{{ tipo == 'G' ? 'on' : '' }}" data-tipo="G" id="btn-tipo-pg">{{ 'Persona giuridica'|trans }}</button>
+                </div>
+                <input type="hidden" id="soggettoPagatore_tipo" name="soggettoPagatore[tipo]" value="{{ tipo }}">
+              </div>
+
+              {# PF: Nome + Cognome affiancati #}
+              <div id="pf-fields" {% if tipo == 'G' %}style="display:none;"{% endif %}>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="nome" id="nomeLabel">{{ 'Nome'|trans }}<span class="required">*</span></label>
+                    <input class="input" type="text" id="nome" name="soggettoPagatore[nome]" value="{{ payer.nome|default('') }}" autocomplete="given-name">
+                  </div>
+                  <div class="field">
+                    <label for="anagrafica" id="anagraficaLabel">{{ 'Cognome'|trans }}<span class="required">*</span></label>
+                    <input class="input" type="text" id="anagrafica" name="soggettoPagatore[anagrafica]" value="{{ payer.anagrafica|default('') }}" autocomplete="family-name">
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="identificativo" id="identificativoLabel">{{ 'Codice fiscale'|trans }}<span class="required">*</span></label>
+                  <input class="input mono" type="text" id="identificativo" name="soggettoPagatore[identificativo]" value="{{ payer.identificativo|default('') }}" maxlength="16" placeholder="RSSMRA00A01H501Z" autocomplete="off">
+                  <p class="hint">{{ '16 caratteri.'|trans }}</p>
+                </div>
+              </div>
+
+              {# PG: Ragione sociale + PIVA #}
+              <div id="pg-fields" {% if tipo != 'G' %}style="display:none;"{% endif %}>
+                <div class="field">
+                  <label for="anagrafica-pg">{{ 'Ragione sociale'|trans }}<span class="required">*</span></label>
+                  <input class="input" type="text" id="anagrafica-pg" name="soggettoPagatore[anagrafica]" value="{{ tipo == 'G' ? payer.anagrafica|default('') : '' }}" autocomplete="organization">
+                </div>
+                <div class="field">
+                  <label for="identificativo-pg">{{ 'Partita IVA'|trans }}<span class="required">*</span></label>
+                  <input class="input mono" type="text" id="identificativo-pg" name="soggettoPagatore[identificativo]" value="{{ tipo == 'G' ? payer.identificativo|default('') : '' }}" maxlength="11" placeholder="IT00000000000" autocomplete="off">
+                </div>
+              </div>
+
+              {# Email + Telefono #}
+              <div class="field-row">
+                <div class="field">
+                  <label for="email">{{ 'Email di contatto'|trans }}<span class="required">*</span></label>
+                  <input class="input" type="email" id="email" name="soggettoPagatore[email]" value="{{ payer.email|default('') }}" required placeholder="esempio@dominio.it">
+                  <p class="hint">{{ 'Riceverai qui l\'avviso pagoPA e la ricevuta.'|trans }}</p>
+                </div>
+                <div class="field">
+                  <label for="telefono">{{ 'Telefono (opzionale)'|trans }}</label>
+                  <input class="input" type="tel" id="telefono" name="soggettoPagatore[telefono]" value="{{ payer.telefono|default('') }}" placeholder="+39 …">
+                </div>
+              </div>
+
+              {# Divider #}
+              <div style="height:1px;background:var(--border-1);margin:var(--sp-5) 0;"></div>
+
+              {# ══ SEZIONE: Dati del pagamento (DOPO) ══ #}
+              <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 var(--sp-3);">{{ 'Dati del pagamento'|trans }}</h3>
+
+              {% if not selected %}
+              <div class="field">
+                <label for="idTipoPendenza">{{ 'Servizio da pagare'|trans }}<span class="required">*</span></label>
+                <select class="select" id="idTipoPendenza" name="idTipoPendenza" required>
+                  <option value="">{{ 'Seleziona'|trans }}</option>
+                  {% for option in service_options %}
+                    <option value="{{ option.id }}" {% if old.idTipoPendenza|default('') == option.id %}selected{% endif %}>{{ option.label }}</option>
                   {% endfor %}
                 </select>
+                <p class="hint">{{ 'Scegli la voce corrispondente al pagamento che vuoi generare.'|trans }}</p>
               </div>
-              <div class="col-md-3">
-                <label for="importo" class="form-label">{{ 'Importo (&euro;) *'|trans|raw }}</label>
-                <div class="input-group">
-                  <span class="input-group-text">&euro;</span>
-                  <input type="number" step="0.01" min="0.01" class="form-control" id="importo" name="importo" value="{{ old.importo|default('') }}" required placeholder="0.00">
-                </div>
-                <div class="form-text">{{ 'Inserisci l\'importo in euro (esempio 125,50).'|trans }}</div>
-              </div>
-            </div>
+              {% endif %}
 
-            <div class="row g-3 mt-1">
-              <div class="col-12">
-                <label for="causale" class="form-label">{{ 'Causale / descrizione *'|trans }}</label>
-                <input type="text" class="form-control" id="causale" name="causale" value="{{ old.causale|default('') }}" maxlength="140" required placeholder="{{ 'Descrivi il motivo del pagamento'|trans }}">
-                <div class="d-flex justify-content-between small mt-1" style="color:var(--fo-fg-3);">
-                  <span>{{ 'Max 140 caratteri.'|trans }}</span>
-                  <span id="causaleCounter">0/140</span>
+              <div class="field-row">
+                <div class="field">
+                  <label for="importo">{{ 'Importo (€)'|trans }}<span class="required">*</span></label>
+                  <input class="input mono" type="number" step="0.01" min="0.01" id="importo" name="importo" value="{{ old.importo|default('') }}" required placeholder="125,50">
                 </div>
-              </div>
-            </div>
-
-            <hr class="fo-field-divider">
-            <p class="fo-field-section mb-2">{{ 'Soggetto pagatore'|trans }}</p>
-
-            <div class="row g-3 align-items-end">
-              <div class="col-12">
-                {% set tipo = payer.tipo|default('F') %}
-                <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="soggettoPagatore[tipo]" id="soggettoPF" value="F" {% if tipo != 'G' %}checked{% endif %}>
-                  <label class="form-check-label" for="soggettoPF">{{ 'Persona fisica'|trans }}</label>
-                </div>
-                <div class="form-check form-check-inline">
-                  <input class="form-check-input" type="radio" name="soggettoPagatore[tipo]" id="soggettoPJ" value="G" {% if tipo == 'G' %}checked{% endif %}>
-                  <label class="form-check-label" for="soggettoPJ">{{ 'Persona giuridica'|trans }}</label>
+                <div class="field">
+                  {% set selected_year = old.annoRiferimento|default(default_year|default('now'|date('Y'))) %}
+                  {% set start_year = (default_year|default('now'|date('Y'))) + 1 %}
+                  {% set end_year = (default_year|default('now'|date('Y'))) - 5 %}
+                  <label for="annoRiferimento">{{ 'Anno di riferimento'|trans }}<span class="required">*</span></label>
+                  <select class="select" id="annoRiferimento" name="annoRiferimento" required>
+                    {% if selected_year is defined and selected_year not in range(start_year, end_year) %}
+                      <option value="{{ selected_year }}" selected>{{ selected_year }}</option>
+                    {% endif %}
+                    {% for y in range(start_year, end_year) %}
+                      <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                  </select>
                 </div>
               </div>
-              <div class="col-md-4">
-                <label for="identificativo" class="form-label" id="identificativoLabel">{{ tipo == 'G' ? 'Partita IVA *'|trans : 'Codice fiscale *'|trans }}</label>
-                <input type="text" class="form-control" id="identificativo" name="soggettoPagatore[identificativo]" value="{{ payer.identificativo|default('') }}" required placeholder="{{ tipo == 'G' ? 'IT00000000000' : 'RSSMRA00A01H501Z' }}" autocomplete="off">
-              </div>
-              <div class="col-md-4">
-                <label for="anagrafica" class="form-label" id="anagraficaLabel">{{ tipo == 'G' ? 'Ragione sociale *'|trans : 'Cognome *'|trans }}</label>
-                <input type="text" class="form-control" id="anagrafica" name="soggettoPagatore[anagrafica]" value="{{ payer.anagrafica|default('') }}" required autocomplete="off">
-              </div>
-              <div class="col-md-4" id="nomeWrapper" style="{{ tipo == 'G' ? 'display:none;' : '' }}">
-                <label for="nome" class="form-label">{{ 'Nome'|trans }}</label>
-                <input type="text" class="form-control" id="nome" name="soggettoPagatore[nome]" value="{{ payer.nome|default('') }}" autocomplete="off">
-              </div>
-            </div>
 
-            <div class="row g-3 mt-1">
-              <div class="col-md-6">
-                <label for="email" class="form-label">{{ 'Email di contatto *'|trans }}</label>
-                <input type="email" class="form-control" id="email" name="soggettoPagatore[email]" value="{{ payer.email|default('') }}" required placeholder="esempio@dominio.it">
+              <div class="field">
+                <label for="causale">{{ 'Causale / descrizione'|trans }}<span class="required">*</span></label>
+                <input class="input" type="text" id="causale" name="causale" value="{{ old.causale|default('') }}" maxlength="140" required placeholder="{{ 'Es. TARI 2026 — rata 1 — Via Aldo Moro 14'|trans }}">
+                <div style="display:flex;justify-content:space-between;margin-top:4px;">
+                  <p class="hint" style="margin:0;">{{ 'Max 140 caratteri. Sarà riportata sull\'avviso e nella causale del pagamento.'|trans }}</p>
+                  <span class="hint" id="causaleCounter">0/140</span>
+                </div>
               </div>
-              <div class="col-md-6">
-                <label for="telefono" class="form-label">{{ 'Telefono (opzionale)'|trans }}</label>
-                <input type="tel" class="form-control" id="telefono" name="soggettoPagatore[telefono]" value="{{ payer.telefono|default('') }}" placeholder="333 1234567">
-              </div>
-            </div>
 
-            <div class="alert alert-info mt-4" role="note">
-              <p class="mb-1 fw-semibold">{{ 'Come funziona'|trans }}</p>
-              <ul class="mb-0 ps-3">
-                <li>{{ 'compila i dati e genera subito l\'avviso pagoPA;'|trans }}</li>
-                <li>{{ 'scarica il PDF oppure paga online con il codice avviso.'|trans }}</li>
-              </ul>
-            </div>
-
-            <div class="form-check mt-4">
-              <input class="form-check-input" type="checkbox" value="1" id="privacy" required name="privacy">
-              <label class="form-check-label" for="privacy">
-                {{ 'Dichiaro di aver letto l\'informativa privacy dell\'Ente e autorizzo il trattamento dei dati per finalita\' connesse al presente pagamento.'|trans }}
+              {# Privacy #}
+              <label class="checkbox" style="margin-top:var(--sp-4);">
+                <input type="checkbox" name="privacy" value="1" required>
+                <span>{{ 'Dichiaro di aver letto l\'informativa privacy dell\'Ente e autorizzo il trattamento dei dati per le finalità connesse al presente pagamento.'|trans }}</span>
               </label>
-            </div>
 
-            <div class="d-flex gap-3 flex-wrap mt-4">
-              <button type="submit" class="btn btn-primary btn-lg px-4">{{ 'Genera avviso'|trans }}</button>
-              <a class="btn btn-outline-secondary btn-lg" href="/">{{ 'Annulla'|trans }}</a>
-            </div>
-            {% endif %}
+              {# Actions #}
+              <div style="display:flex;gap:var(--sp-3);justify-content:space-between;flex-wrap:wrap;margin-top:var(--sp-5);">
+                <a class="btn btn-ghost" href="/pagamento-spontaneo">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                  {{ 'Precedente'|trans }}
+                </a>
+                <button type="submit" class="btn btn-primary btn-lg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  {{ 'Genera avviso'|trans }}
+                </button>
+              </div>
+
+            </form>
           </div>
-        </form>
+        </div>
+
+        <aside class="aside">
+          <div class="card card-pad">
+            <h3>{{ 'Cosa succede dopo'|trans }}</h3>
+            <ul>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>{{ 'Generiamo subito l\'avviso pagoPA e lo inviamo via email.'|trans }}</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+                <span>{{ 'Potrai pagarlo online o aggiungerlo al carrello.'|trans }}</span>
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                <span>{{ 'Oppure stamparlo per pagare in tabaccheria/sportello PSP.'|trans }}</span>
+              </li>
+            </ul>
+          </div>
+          <div class="card card-pad" style="background:var(--ms-warning-bg);border-color:rgba(166,99,0,.2);">
+            <h3 style="color:var(--ms-warning);">{{ 'Controlla i dati'|trans }}</h3>
+            <p style="margin:0;font-size:13px;color:var(--fg-2);line-height:1.55;">
+              {{ 'Una volta generato l\'avviso, codice fiscale, importo e causale non sono più modificabili. Verifica tutto prima di confermare.'|trans }}
+            </p>
+          </div>
+          {% if support_email or support_phone %}
+          <div class="card card-pad">
+            <h3>{{ 'Serve supporto?'|trans }}</h3>
+            <ul>
+              {% if support_phone %}
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+                <span class="mono">{{ support_phone }}</span>{% if support_hours %} <span style="color:var(--fg-3);font-size:12px;">({{ support_hours }})</span>{% endif %}
+              </li>
+              {% endif %}
+              {% if support_email %}
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/></svg>
+                <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+              </li>
+              {% endif %}
+            </ul>
+          </div>
+          {% endif %}
+        </aside>
       </div>
 
-      {# ── Sidebar ── #}
-      <div class="col-lg-4">
-        <div class="fo-sidebar-card mb-4">
-          <div class="fo-sidebar-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>
-            </svg>
-          </div>
-          <h3>{{ 'Documenti utili'|trans }}</h3>
-          <p>{{ 'Tienili a portata di mano per velocizzare la compilazione:'|trans }}</p>
-          <ul>
-            <li>{{ 'Codice fiscale o partita IVA del pagatore'|trans }}</li>
-            <li>{{ 'Dettagli del servizio (numero pratica, periodo, ecc.)'|trans }}</li>
-            <li>{{ 'Indirizzo email per ricevere l\'avviso pagoPA'|trans }}</li>
-          </ul>
-        </div>
-        {% if support_email or support_phone or support_location %}
-        <div class="fo-sidebar-card">
-          <h3>{{ 'Serve supporto?'|trans }}</h3>
-          {% if support_email %}
-            <p>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;color:var(--fo-primary);" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/>
-              </svg>
-              <a href="mailto:{{ support_email }}" style="color:var(--fo-primary);">{{ support_email }}</a>
-            </p>
-          {% endif %}
-          {% if support_phone %}
-            <p>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;color:var(--fo-primary);" aria-hidden="true">
-                <path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/>
-              </svg>
-              {{ support_phone }}{% if support_hours %} <span style="color:var(--fo-fg-3);">({{ support_hours }})</span>{% endif %}
-            </p>
-          {% endif %}
-          {% if support_location %}
-            <p style="font-size:13px; color:var(--fo-fg-3);">{{ support_location|raw }}</p>
-          {% endif %}
-        </div>
-        {% endif %}
-      </div>
+    {% endif %}
 
-    </div>
   </div>
 </section>
+
 {% endblock %}
 
 {% block scripts %}
-  {{ parent() }}
-  <script>
-    (function(){
-      const pf = document.getElementById('soggettoPF');
-      const pj = document.getElementById('soggettoPJ');
-      const identificativoLabel = document.getElementById('identificativoLabel');
-      const identificativoInput = document.getElementById('identificativo');
-      const anagraficaLabel = document.getElementById('anagraficaLabel');
-      const anagraficaInput = document.getElementById('anagrafica');
-      const nomeInput = document.getElementById('nome');
-      const nomeWrapper = document.getElementById('nomeWrapper');
-      const causale = document.getElementById('causale');
-      const counter = document.getElementById('causaleCounter');
+{{ parent() }}
+<script>
+(function(){
+  // Segmented control tipo soggetto
+  var segTipo = document.getElementById('seg-tipo');
+  var tipoInput = document.getElementById('soggettoPagatore_tipo');
+  var pfFields = document.getElementById('pf-fields');
+  var pgFields = document.getElementById('pg-fields');
+  var pfBtn = document.getElementById('btn-tipo-pf');
+  var pgBtn = document.getElementById('btn-tipo-pg');
 
-      function upcaseInput(el){
-        if(!el) return;
-        el.value = (el.value || '').toUpperCase();
-      }
+  function switchTipo(tipo) {
+    if (!tipoInput) return;
+    tipoInput.value = tipo;
+    if (tipo === 'G') {
+      pfFields && (pfFields.style.display = 'none');
+      pgFields && (pgFields.style.display = '');
+      pfBtn && pfBtn.classList.remove('on');
+      pgBtn && pgBtn.classList.add('on');
+      // Disable PF inputs so they don't submit
+      document.querySelectorAll('#pf-fields input').forEach(function(el){ el.disabled = true; });
+      document.querySelectorAll('#pg-fields input').forEach(function(el){ el.disabled = false; });
+    } else {
+      pfFields && (pfFields.style.display = '');
+      pgFields && (pgFields.style.display = 'none');
+      pfBtn && pfBtn.classList.add('on');
+      pgBtn && pgBtn.classList.remove('on');
+      document.querySelectorAll('#pf-fields input').forEach(function(el){ el.disabled = false; });
+      document.querySelectorAll('#pg-fields input').forEach(function(el){ el.disabled = true; });
+    }
+  }
 
-      function updatePersona(type){
-        if(!identificativoLabel || !anagraficaLabel) return;
-        if(type === 'G'){
-          identificativoLabel.textContent = '{{ "Partita IVA *"|trans|escape("js") }}';
-          identificativoInput.placeholder = 'IT00000000000';
-          anagraficaLabel.textContent = '{{ "Ragione sociale *"|trans|escape("js") }}';
-          if(nomeWrapper) nomeWrapper.style.display = 'none';
-        } else {
-          identificativoLabel.textContent = '{{ "Codice fiscale *"|trans|escape("js") }}';
-          identificativoInput.placeholder = 'RSSMRA00A01H501Z';
-          anagraficaLabel.textContent = '{{ "Cognome *"|trans|escape("js") }}';
-          if(nomeWrapper) nomeWrapper.style.display = '';
-        }
-      }
+  if (pfBtn) pfBtn.addEventListener('click', function(){ switchTipo('F'); });
+  if (pgBtn) pgBtn.addEventListener('click', function(){ switchTipo('G'); });
 
-      [identificativoInput, anagraficaInput, nomeInput].forEach(function(input){
-        if(!input) return;
-        input.addEventListener('input', function(){ upcaseInput(input); });
-        input.addEventListener('blur', function(){ upcaseInput(input); });
-      });
+  // Init
+  switchTipo(tipoInput ? tipoInput.value : 'F');
 
-      [pf,pj].forEach(function(radio){
-        if(!radio) return;
-        radio.addEventListener('change', function(){
-          if(this.checked) updatePersona(this.value);
-        });
-      });
+  // Auto-uppercase CF/PIVA
+  ['nome','identificativo','identificativo-pg','anagrafica','anagrafica-pg'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', function(){ el.value = el.value.toUpperCase(); });
+    el.addEventListener('blur', function(){ el.value = el.value.toUpperCase(); });
+  });
 
-      updatePersona(pf && pf.checked ? 'F' : 'G');
-
-      if(causale && counter){
-        const syncCounter = function(){
-          const value = causale.value || '';
-          counter.textContent = value.length + '/140';
-        };
-        causale.addEventListener('input', syncCounter);
-        syncCounter();
-      }
-    })();
-  </script>
+  // Causale counter
+  var causale = document.getElementById('causale');
+  var counter = document.getElementById('causaleCounter');
+  if (causale && counter) {
+    var sync = function(){ counter.textContent = (causale.value || '').length + '/140'; };
+    causale.addEventListener('input', sync);
+    sync();
+  }
+})();
+</script>
 {% endblock %}

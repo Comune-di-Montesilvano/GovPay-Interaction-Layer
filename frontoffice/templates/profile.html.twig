@@ -3,38 +3,61 @@
 {% block title %}{{ 'Profilo'|trans }}{% endblock %}
 
 {% block content %}
-  <div class="container-xxl py-4">
-    <div class="row">
-      <div class="col-12 col-lg-8">
-        <h1 class="h3 mb-3">{{ 'Profilo'|trans }}</h1>
+<div class="page-head">
+  <div class="container">
+    <div class="crumbs">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="sep">/</span>
+      <span class="current">{{ 'Profilo'|trans }}</span>
+    </div>
+    <h1>{{ 'Profilo'|trans }}</h1>
+  </div>
+</div>
 
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <dl class="row mb-0">
-              <dt class="col-sm-4">{{ 'Nome'|trans }}</dt>
-              <dd class="col-sm-8">{{ profile.first_name|default('') }}</dd>
+<section class="block">
+  <div class="container">
+    <div style="max-width:640px;">
 
-              <dt class="col-sm-4">{{ 'Cognome'|trans }}</dt>
-              <dd class="col-sm-8">{{ profile.last_name|default('') }}</dd>
-
-              <dt class="col-sm-4">{{ 'Email'|trans }}</dt>
-              <dd class="col-sm-8">{{ profile.email|default('') }}</dd>
-
-              <dt class="col-sm-4">{{ 'Codice fiscale'|trans }}</dt>
-              <dd class="col-sm-8">{{ profile.fiscal_number|default('') }}</dd>
-
-              <dt class="col-sm-4">{{ 'IdP'|trans }}</dt>
-              <dd class="col-sm-8">{{ profile.provider_name|default(profile.provider_id|default('')) }}</dd>
-            </dl>
-          </div>
+      <div class="avviso-card" style="margin-bottom:var(--sp-4);">
+        <div class="avviso-header">
+          <div class="from">{{ 'Dati personali'|trans }} <strong>{{ 'Area personale'|trans }}</strong></div>
         </div>
-
-        <div class="mt-3">
-          <a class="btn btn-outline-primary" href="/">{{ 'Torna alla home'|trans }}</a>
-          <a class="btn btn-outline-primary" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
-          <a class="btn btn-outline-danger" href="/logout">{{ 'Logout'|trans }}</a>
+        <div class="avviso-body">
+          {% if profile.first_name|default('') or profile.last_name|default('') %}
+            <div class="avviso-row">
+              <span class="k">{{ 'Nome'|trans }}</span>
+              <span class="v">{{ profile.first_name|default('') }}</span>
+            </div>
+            <div class="avviso-row">
+              <span class="k">{{ 'Cognome'|trans }}</span>
+              <span class="v">{{ profile.last_name|default('') }}</span>
+            </div>
+          {% endif %}
+          {% if profile.email|default('') %}
+            <div class="avviso-row">
+              <span class="k">{{ 'Email'|trans }}</span>
+              <span class="v">{{ profile.email }}</span>
+            </div>
+          {% endif %}
+          <div class="avviso-row">
+            <span class="k">{{ 'Codice fiscale'|trans }}</span>
+            <span class="v mono">{{ profile.fiscal_number|default('') }}</span>
+          </div>
+          {% if profile.provider_name|default(profile.provider_id|default('')) %}
+            <div class="avviso-row">
+              <span class="k">{{ 'IdP'|trans }}</span>
+              <span class="v">{{ profile.provider_name|default(profile.provider_id|default('')) }}</span>
+            </div>
+          {% endif %}
+        </div>
+        <div class="avviso-actions">
+          <a class="btn btn-ghost" href="/">{{ 'Torna alla home'|trans }}</a>
+          <a class="btn btn-outline" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+          <a class="btn btn-ghost" href="/logout" style="margin-left:auto;">{{ 'Logout'|trans }}</a>
         </div>
       </div>
+
     </div>
   </div>
+</section>
 {% endblock %}

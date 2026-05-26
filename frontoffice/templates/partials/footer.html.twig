@@ -1,73 +1,72 @@
 {# ============================================================
-   Frontoffice Footer — New design (2026)
-   pagoPA strip + simple dark footer
+   Frontoffice Footer — Design 2026
+   pagoPA strip + dark institutional footer
    ============================================================ #}
 
 {# ── pagoPA strip ── #}
-<div class="fo-pagopa-strip">
-  <div class="fo-ps-inner">
-    <div class="fo-ps-text">
-      <img src="/img/logo-pagopa-bianco.svg" alt="pagoPA" class="fo-ps-logo" />
+<section class="pagopa-strip">
+  <div class="container">
+    <div class="text">
+      <img src="/img/logo-pagopa-bianco.svg" alt="pagoPA" class="logo-pago" />
       <p>{{ 'I pagamenti vengono completati sul portale ufficiale <strong style="color:#fff">pagoPA</strong>: sicuro, tracciato, con ricevuta digitale immediata.'|trans|raw }}</p>
     </div>
-    <a class="fo-ps-link" href="https://www.pagopa.gov.it" target="_blank" rel="noopener noreferrer">
+    <a class="btn" href="https://www.pagopa.gov.it" target="_blank" rel="noopener noreferrer" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.6);">
       {{ "Cos'è pagoPA"|trans }}
     </a>
   </div>
-</div>
+</section>
 
-{# ── Footer ── #}
-<footer class="fo-site-footer">
-  <div class="fo-footer-inner">
-    <div class="fo-f-top">
-      <div class="fo-f-ident">
+{# ── Site footer ── #}
+<footer class="site-footer">
+  <div class="container">
+    <div class="f-top">
+      <div class="f-ident">
         {% if app_logo.type == 'img' %}
-          <img src="{{ app_logo.src }}" alt="{{ app_entity.name }}" class="fo-f-logo" />
+          <img src="{{ app_logo.src }}" alt="{{ app_entity.name }}" class="stemma" />
         {% else %}
-          <svg class="fo-f-logo-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <use xlink:href="{{ app_logo.src ?: '/assets/bootstrap-italia/svg/sprites.svg#it-pa' }}"></use>
+          <svg class="stemma" style="width:44px;height:44px;flex-shrink:0;filter:drop-shadow(0 2px 6px rgba(0,0,0,.3));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
           </svg>
         {% endif %}
         <div>
-          <div class="fo-f-name">{{ app_entity.name }}</div>
-          <div class="fo-f-sub">
+          <div class="title">{{ app_entity.name }}</div>
+          <div class="sub">
             {{ app_entity.full|default(app_entity.name) }}
             {% if app_entity.suffix %}<br/>{{ app_entity.suffix }}{% endif %}
           </div>
         </div>
       </div>
 
-      <div class="fo-f-help">
-        <span class="fo-f-help-label">{{ 'Assistenza pagamenti'|trans }}</span>
-        {% if support_email %}
-          <a href="mailto:{{ support_email }}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;" aria-hidden="true">
-              <rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/>
-            </svg>{{ support_email }}
-          </a>
-        {% endif %}
+      {% if support_email or support_phone %}
+      <div class="f-help">
+        <span class="f-help-lbl">{{ 'Assistenza pagamenti'|trans }}</span>
         {% if support_phone %}
-          <span style="color:#cbd5e1;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;" aria-hidden="true">
-              <path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/>
-            </svg>{{ support_phone }}{% if support_hours %} <span style="color:#94a3b8;">({{ support_hours }})</span>{% endif %}
-          </span>
+          <a href="tel:{{ support_phone|replace({' ':''}) }}">{{ support_phone }}</a>
+          {% if support_hours %}<span class="dot-sep">·</span><span class="muted-li">{{ support_hours }}</span>{% endif %}
+        {% endif %}
+        {% if support_email %}
+          {% if support_phone %}<span class="dot-sep">·</span>{% endif %}
+          <a href="mailto:{{ support_email }}">{{ support_email }}</a>
         {% endif %}
       </div>
+      {% endif %}
     </div>
   </div>
 
-  <div class="fo-f-bottom">
-    <div class="fo-footer-inner">
-      <div>© {{ "now"|date("Y") }} {{ app_entity.name }} —
+  <div class="f-bottom">
+    <div class="container">
+      <div>
+        © {{ "now"|date("Y") }} {{ app_entity.name }} —
         {% if app_repo_url %}
-          <a href="{{ app_repo_url }}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:underline; text-underline-offset:2px;">{{ 'Sportello pagamenti pagoPA'|trans }}{% if app_version_label %} (GIL {{ app_version_label }}){% endif %}</a>
+          <a href="{{ app_repo_url }}" target="_blank" rel="noopener noreferrer">{{ 'Sportello pagamenti pagoPA'|trans }}{% if app_version_label %} (GIL {{ app_version_label }}){% endif %}</a>
         {% else %}
           {{ 'Sportello pagamenti pagoPA'|trans }}{% if app_version_label %} (GIL {{ app_version_label }}){% endif %}
         {% endif %}
       </div>
-      <div class="fo-f-legal">
+      <div class="f-legal">
         <a href="/guida">{{ 'Guida'|trans }}</a>
+        <a href="/privacy">{{ 'Privacy'|trans }}</a>
+        <a href="/accessibilita">{{ 'Accessibilità'|trans }}</a>
       </div>
     </div>
   </div>

@@ -3,105 +3,133 @@
 {% block title %}{{ 'Guida'|trans }} - {{ app_entity.name }}{% endblock %}
 
 {% block content %}
-  <div class="container-xxl py-4">
-    <div class="row justify-content-center">
-      <div class="col-lg-10">
-        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
-          <div>
-            <h1 class="h2 mb-2">{{ 'Guida all\'utilizzo'|trans }}</h1>
-            <p class="text-muted mb-0">{{ 'Come pagare un avviso, generare un pagamento spontaneo, usare il carrello e consultare le ricevute.'|trans }}</p>
-          </div>
-          <div class="text-end d-flex gap-2">
-            <a class="btn btn-outline-warning" href="/carrello">
-              <i class="fa-solid fa-cart-shopping me-1"></i>{{ 'Carrello'|trans }}
-              {% if cart_count|default(0) > 0 %}
-                <span class="badge bg-warning text-dark ms-1">{{ cart_count }}</span>
-              {% endif %}
-            </a>
-            {% if spid_enabled and current_user %}
-              <a class="btn btn-outline-primary" href="/pendenze"><i class="fas fa-receipt me-2"></i>{{ 'Le mie pendenze'|trans }}</a>
-            {% endif %}
-          </div>
-        </div>
 
-        <div class="p-4 border rounded-4 bg-white mb-4">
-          <h2 class="h4 mb-3"><span class="badge bg-primary me-2">1</span>{{ 'Pagare un avviso ricevuto'|trans }}</h2>
-          <ol class="mb-3">
-            <li class="mb-2">{{ 'Apri <a href="/pagamento-avviso">Paga un avviso</a>.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Inserisci <strong>codice avviso / IUV</strong> e <strong>codice fiscale / P.IVA</strong> dell\'intestatario.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Verifica importo e scadenza. Poi scegli una delle tre azioni:'|trans }}
-              <ul class="mt-2">
-                <li>{{ '<strong>🛒 Aggiungi al carrello</strong> — per pagarlo insieme ad altri avvisi.'|trans|raw }}</li>
-                <li>{{ '<strong>⚡ Paga subito</strong> — redirect diretto a PagoPA per pagarlo immediatamente.'|trans|raw }}</li>
-                <li>{{ '<strong>🖨 Stampa / Scarica PDF</strong> — per stampare o pagare in un PSP fisico.'|trans|raw }}</li>
-              </ul>
-            </li>
-            <li>{{ 'Al termine, salva la ricevuta digitale ricevuta via email.'|trans }}</li>
-          </ol>
-        </div>
-
-        <div class="p-4 border rounded-4 bg-white mb-4">
-          <h2 class="h4 mb-3"><span class="badge bg-primary me-2">2</span>{{ 'Generare un pagamento spontaneo (senza avviso)'|trans }}</h2>
-          <ol class="mb-3">
-            <li class="mb-2">{{ 'Apri <a href="/pagamento-spontaneo">Pagamento spontaneo</a>.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Seleziona il servizio/causale e compila i dati richiesti.'|trans }}</li>
-            <li class="mb-2">{{ 'Inserisci l\'importo e conferma: verrà generato un avviso PagoPA.'|trans }}</li>
-            <li>{{ 'Scegli: <strong>Aggiungi al carrello</strong>, <strong>Paga subito</strong> o <strong>Stampa PDF</strong>.'|trans|raw }}</li>
-          </ol>
-        </div>
-
-        <div class="p-4 border rounded-4 bg-warning bg-opacity-10 border-warning mb-4">
-          <h2 class="h4 mb-3"><span class="badge bg-warning text-dark me-2">3</span>{{ 'Usare il carrello multi-pagamento'|trans }}</h2>
-          <p class="mb-3">{{ 'Il carrello ti permette di raccogliere fino a <strong>5 avvisi</strong> e pagarli tutti in una sola sessione PagoPA. Non è necessario il login.'|trans|raw }}</p>
-          <ol class="mb-3">
-            <li class="mb-2">{{ 'Clicca <strong>Aggiungi al carrello</strong> su ogni avviso che vuoi pagare (trovato o generato).'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Il badge <span class="badge bg-warning text-dark">N</span> nella barra in alto si aggiorna automaticamente.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Apri il <a href="/carrello">Carrello</a> per vedere il riepilogo e il totale.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Clicca <strong>Procedi al pagamento</strong>: verrai portato su PagoPA per pagare tutti gli avvisi in una volta.'|trans|raw }}</li>
-            <li>{{ 'Puoi rimuovere singoli avvisi dal carrello prima di pagare.'|trans }}</li>
-          </ol>
-        </div>
-
-        <div class="p-4 border rounded-4 bg-success bg-opacity-10 border-success mb-4">
-          <h2 class="h4 mb-3"><span class="badge bg-success me-2">4</span>{{ 'Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)'|trans }}</h2>
-          <p class="mb-3">{{ 'Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.'|trans|raw }}</p>
-          <ol class="mb-3">
-            <li class="mb-2">{{ 'Apri <a href="/pagamento-avviso">Paga un avviso</a>.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Se il pagamento risulta già effettuato, comparirà l\'anteprima dell\'avviso con il bottone <strong>Scarica la ricevuta</strong>.'|trans|raw }}</li>
-            <li>{{ 'Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.'|trans }}</li>
-          </ol>
-        </div>
-
-        {% if spid_enabled %}
-        <div class="p-4 border rounded-4 bg-white mb-4">
-          <h2 class="h4 mb-3"><span class="badge bg-primary me-2">5</span>{{ 'Consultare pendenze e ricevute (richiede accesso SPID/CIE)'|trans }}</h2>
-          <p class="mb-3">{{ 'La sezione <a href="/pendenze">Le mie pendenze</a> mostra le posizioni debitorie associate al tuo profilo.'|trans|raw }}</p>
-          <ul class="mb-0">
-            <li class="mb-2">{{ 'Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.'|trans|raw }}</li>
-            <li class="mb-2">{{ 'Apri il dettaglio di una pendenza per scaricarne la ricevuta (se già pagata).'|trans }}</li>
-            <li>{{ 'Se non visualizzi pendenze attese, verifica che il codice fiscale del profilo sia corretto e riprova il login.'|trans }}</li>
-          </ul>
-        </div>
-        {% endif %}
-
-        <div class="p-4 border rounded-4 bg-light mb-4">
-          <h2 class="h5 mb-2">{{ 'Accesso e sicurezza'|trans }}</h2>
-          {% if spid_enabled %}
-            <p class="mb-0">
-              {{ 'Il pagamento da avviso e il carrello funzionano <strong>anche senza login</strong>. L\'accesso con <strong>SPID/CIE</strong> è necessario solo per la sezione "Le mie pendenze" e le ricevute. Se il login non va a buon fine, tenta di ripetere l\'accesso o contatta l\'assistenza.'|trans|raw }}
-            </p>
-          {% else %}
-            <p class="mb-0">{{ 'In questo ambiente il login SPID/CIE non è abilitato. Tutti i pagamenti avvengono senza autenticazione.'|trans }}</p>
+<div class="page-head">
+  <div class="container">
+    <div class="crumbs">
+      <a href="/">{{ 'Home'|trans }}</a>
+      <span class="sep">/</span>
+      <span class="current">{{ 'Guida'|trans }}</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:var(--sp-4);">
+      <div>
+        <h1>{{ 'Guida all\'utilizzo'|trans }}</h1>
+        <p class="page-sub">{{ 'Come pagare un avviso, generare un pagamento spontaneo, usare il carrello e consultare le ricevute.'|trans }}</p>
+      </div>
+      <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;">
+        <a class="btn btn-ghost" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.4);color:#fff;" href="/carrello">
+          {{ 'Carrello'|trans }}
+          {% if cart_count|default(0) > 0 %}
+            <span class="badge" style="background:var(--fo-gold-500,#C9A13B);color:#1a1200;margin-left:4px;">{{ cart_count }}</span>
           {% endif %}
-        </div>
-
-        <div class="p-4 border rounded-4 bg-white">
-          <h2 class="h4 mb-3">{{ 'Assistenza'|trans }}</h2>
-          <p class="mb-2">{{ 'Scrivi a'|trans }} <a href="mailto:{{ support_email }}">{{ support_email }}</a> {{ 'oppure chiama'|trans }} {{ support_phone }} ({{ support_hours }}).</p>
-          <p class="mb-0">{{ support_location|raw }}</p>
-        </div>
+        </a>
+        {% if spid_enabled and current_user %}
+          <a class="btn btn-ghost" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.4);color:#fff;" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+        {% endif %}
       </div>
     </div>
   </div>
+</div>
+
+<section class="block">
+  <div class="container">
+    <div style="max-width:800px;display:flex;flex-direction:column;gap:var(--sp-4);">
+
+      <div class="card card-pad">
+        <h2 style="margin:0 0 var(--sp-3);font-size:18px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--bi-primary);color:#fff;border-radius:50%;font-size:13px;font-weight:700;font-family:var(--font-mono);margin-right:var(--sp-2);flex-shrink:0;">1</span>
+          {{ 'Pagare un avviso ricevuto'|trans }}
+        </h2>
+        <ol style="margin:0;padding-left:20px;line-height:1.8;color:var(--fg-1);">
+          <li style="margin-bottom:var(--sp-2);">{{ 'Apri <a href="/pagamento-avviso">Paga un avviso</a>.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Inserisci <strong>codice avviso / IUV</strong> e <strong>codice fiscale / P.IVA</strong> dell\'intestatario.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Verifica importo e scadenza. Poi scegli una delle tre azioni:'|trans }}
+            <ul style="margin-top:var(--sp-2);padding-left:20px;">
+              <li>{{ '<strong>Aggiungi al carrello</strong> — per pagarlo insieme ad altri avvisi.'|trans|raw }}</li>
+              <li>{{ '<strong>Paga subito</strong> — redirect diretto a pagoPA per pagarlo immediatamente.'|trans|raw }}</li>
+              <li>{{ '<strong>Stampa / Scarica PDF</strong> — per stampare o pagare in un PSP fisico.'|trans|raw }}</li>
+            </ul>
+          </li>
+          <li>{{ 'Al termine, salva la ricevuta digitale ricevuta via email.'|trans }}</li>
+        </ol>
+      </div>
+
+      <div class="card card-pad">
+        <h2 style="margin:0 0 var(--sp-3);font-size:18px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--bi-primary);color:#fff;border-radius:50%;font-size:13px;font-weight:700;font-family:var(--font-mono);margin-right:var(--sp-2);flex-shrink:0;">2</span>
+          {{ 'Generare un pagamento spontaneo (senza avviso)'|trans }}
+        </h2>
+        <ol style="margin:0;padding-left:20px;line-height:1.8;color:var(--fg-1);">
+          <li style="margin-bottom:var(--sp-2);">{{ 'Apri <a href="/pagamento-spontaneo">Pagamento spontaneo</a>.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Seleziona il servizio/causale e compila i dati richiesti.'|trans }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Inserisci l\'importo e conferma: verrà generato un avviso pagoPA.'|trans }}</li>
+          <li>{{ 'Scegli: <strong>Aggiungi al carrello</strong>, <strong>Paga subito</strong> o <strong>Stampa PDF</strong>.'|trans|raw }}</li>
+        </ol>
+      </div>
+
+      <div class="card card-pad" style="background:var(--ms-warning-bg,#fffbeb);border-color:rgba(217,147,0,.3);">
+        <h2 style="margin:0 0 var(--sp-3);font-size:18px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--ms-warning,#f59e0b);color:#1a1200;border-radius:50%;font-size:13px;font-weight:700;font-family:var(--font-mono);margin-right:var(--sp-2);flex-shrink:0;">3</span>
+          {{ 'Usare il carrello multi-pagamento'|trans }}
+        </h2>
+        <p style="margin:0 0 var(--sp-3);line-height:1.7;">{{ 'Il carrello ti permette di raccogliere fino a <strong>5 avvisi</strong> e pagarli tutti in una sola sessione pagoPA. Non è necessario il login.'|trans|raw }}</p>
+        <ol style="margin:0;padding-left:20px;line-height:1.8;color:var(--fg-1);">
+          <li style="margin-bottom:var(--sp-2);">{{ 'Clicca <strong>Aggiungi al carrello</strong> su ogni avviso che vuoi pagare (trovato o generato).'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Il contatore nella barra in alto si aggiorna automaticamente.'|trans }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Apri il <a href="/carrello">Carrello</a> per vedere il riepilogo e il totale.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Clicca <strong>Procedi al pagamento</strong>: verrai portato su pagoPA per pagare tutti gli avvisi in una volta.'|trans|raw }}</li>
+          <li>{{ 'Puoi rimuovere singoli avvisi dal carrello prima di pagare.'|trans }}</li>
+        </ol>
+      </div>
+
+      <div class="card card-pad" style="background:var(--ms-success-bg,#f0fdf4);border-color:rgba(0,135,88,.25);">
+        <h2 style="margin:0 0 var(--sp-3);font-size:18px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--ms-success,#008758);color:#fff;border-radius:50%;font-size:13px;font-weight:700;font-family:var(--font-mono);margin-right:var(--sp-2);flex-shrink:0;">4</span>
+          {{ 'Scaricare la ricevuta di un avviso già pagato (senza SPID/CIE)'|trans }}
+        </h2>
+        <p style="margin:0 0 var(--sp-3);line-height:1.7;">{{ 'Se hai pagato un avviso e vuoi recuperare la <strong>ricevuta</strong> non serve accedere con SPID/CIE: basta avere il numero avviso e il codice fiscale del debitore.'|trans|raw }}</p>
+        <ol style="margin:0;padding-left:20px;line-height:1.8;color:var(--fg-1);">
+          <li style="margin-bottom:var(--sp-2);">{{ 'Apri <a href="/pagamento-avviso">Paga un avviso</a>.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Inserisci <strong>numero avviso</strong> e <strong>codice fiscale del debitore</strong> e invia la verifica.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Se il pagamento risulta già effettuato, comparirà l\'anteprima dell\'avviso con il bottone <strong>Scarica la ricevuta</strong>.'|trans|raw }}</li>
+          <li>{{ 'Il link di download è valido per pochi minuti per ragioni di sicurezza: se scade, ripeti la ricerca.'|trans }}</li>
+        </ol>
+      </div>
+
+      {% if spid_enabled %}
+      <div class="card card-pad">
+        <h2 style="margin:0 0 var(--sp-3);font-size:18px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--bi-primary);color:#fff;border-radius:50%;font-size:13px;font-weight:700;font-family:var(--font-mono);margin-right:var(--sp-2);flex-shrink:0;">5</span>
+          {{ 'Consultare pendenze e ricevute (richiede accesso SPID/CIE)'|trans }}
+        </h2>
+        <p style="margin:0 0 var(--sp-3);line-height:1.7;">{{ 'La sezione <a href="/pendenze">Le mie pendenze</a> mostra le posizioni debitorie associate al tuo profilo.'|trans|raw }}</p>
+        <ul style="margin:0;padding-left:20px;line-height:1.8;color:var(--fg-1);">
+          <li style="margin-bottom:var(--sp-2);">{{ 'Puoi selezionare più pendenze pagabili direttamente dalla lista e cliccare <strong>Paga selezionate</strong>.'|trans|raw }}</li>
+          <li style="margin-bottom:var(--sp-2);">{{ 'Apri il dettaglio di una pendenza per scaricarne la ricevuta (se già pagata).'|trans }}</li>
+          <li>{{ 'Se non visualizzi pendenze attese, verifica che il codice fiscale del profilo sia corretto e riprova il login.'|trans }}</li>
+        </ul>
+      </div>
+      {% endif %}
+
+      <div class="card card-pad" style="background:var(--bg-2);">
+        <h2 style="font-size:16px;margin:0 0 var(--sp-2);">{{ 'Accesso e sicurezza'|trans }}</h2>
+        {% if spid_enabled %}
+          <p style="margin:0;line-height:1.7;">
+            {{ 'Il pagamento da avviso e il carrello funzionano <strong>anche senza login</strong>. L\'accesso con <strong>SPID/CIE</strong> è necessario solo per la sezione "Le mie pendenze" e le ricevute. Se il login non va a buon fine, tenta di ripetere l\'accesso o contatta l\'assistenza.'|trans|raw }}
+          </p>
+        {% else %}
+          <p style="margin:0;">{{ 'In questo ambiente il login SPID/CIE non è abilitato. Tutti i pagamenti avvengono senza autenticazione.'|trans }}</p>
+        {% endif %}
+      </div>
+
+      <div class="card card-pad">
+        <h2 style="font-size:18px;margin:0 0 var(--sp-3);">{{ 'Assistenza'|trans }}</h2>
+        <p style="margin:0 0 var(--sp-2);">{{ 'Scrivi a'|trans }} <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% if support_phone %} {{ 'oppure chiama'|trans }} {{ support_phone }}{% if support_hours %} ({{ support_hours }}){% endif %}{% endif %}.</p>
+        {% if support_location %}<p style="margin:0;color:var(--fg-2);">{{ support_location|raw }}</p>{% endif %}
+      </div>
+
+    </div>
+  </div>
+</section>
+
 {% endblock %}

@@ -1,105 +1,76 @@
 {# ============================================================
-   Frontoffice Header — New design (2026)
-   Three tiers:
+   Frontoffice Header — Design 2026
    1. Slim institutional bar (navy)
    2. Institutional header (white: logo + entity + login)
    3. Sticky main nav (Home, Paga avviso, Spontaneo, Pendenze, Guida + Cart)
    ============================================================ #}
 
 {# ── 1. Slim bar ── #}
-<div class="fo-slim-header">
-  <div class="container-xxl">
-    <div class="fo-slim-left">
-      <span><span class="fo-gov-dot"></span>{{ 'Sito ufficiale della Pubblica Amministrazione'|trans }}</span>
+<div class="slim-header">
+  <div class="container">
+    <div class="left">
+      <span><span class="gov-dot"></span>{{ 'Sito ufficiale della Pubblica Amministrazione'|trans }}</span>
     </div>
-    <div class="fo-slim-right">
-      {# Language dropdown — keep original BS5 dropdown markup, restyled via CSS #}
-      <div class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="font-size:12px; color:rgba(255,255,255,.9); padding:0; font-weight:600; font-family:inherit;">
-          <span>{{ current_locale|upper }}</span>
-        </a>
-        <div class="dropdown-menu dropdown-menu-end">
-          <div class="row">
-            <div class="col-12">
-              <div class="link-list-wrapper">
-                <ul class="link-list">
-                  <li><a class="dropdown-item list-item {{ current_locale == 'it' ? 'active' : '' }}" href="?lang=it"><span>ITA</span></a></li>
-                  <li><a class="dropdown-item list-item {{ current_locale == 'en' ? 'active' : '' }}" href="?lang=en"><span>ENG</span></a></li>
-                  <li><a class="dropdown-item list-item {{ current_locale == 'es' ? 'active' : '' }}" href="?lang=es"><span>ESP</span></a></li>
-                  <li><a class="dropdown-item list-item {{ current_locale == 'fr' ? 'active' : '' }}" href="?lang=fr"><span>FRA</span></a></li>
-                  <li><a class="dropdown-item list-item {{ current_locale == 'de' ? 'active' : '' }}" href="?lang=de"><span>DEU</span></a></li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
+    <div class="right">
+      <div class="lang-switch">
+        <a href="?lang=it" class="{{ current_locale == 'it' ? 'active' : '' }}">IT</a>
+        <a href="?lang=en" class="{{ current_locale == 'en' ? 'active' : '' }}">EN</a>
+        <a href="?lang=fr" class="{{ current_locale == 'fr' ? 'active' : '' }}">FR</a>
+        <a href="?lang=es" class="{{ current_locale == 'es' ? 'active' : '' }}">ES</a>
+        <a href="?lang=de" class="{{ current_locale == 'de' ? 'active' : '' }}">DE</a>
       </div>
     </div>
   </div>
 </div>
 
 {# ── 2. Institutional header ── #}
-<header class="fo-inst-header">
-  <div class="fo-inst-inner container-xxl">
-    <a class="fo-inst-brand" href="/">
+<header class="inst-header">
+  <div class="container" style="padding-top:var(--sp-4);padding-bottom:var(--sp-4);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-5);">
+    <a class="inst-brand" href="/">
       {% if app_logo.type == 'img' %}
-        <img src="{{ app_logo.src }}" alt="{{ app_entity.name }}" class="fo-inst-logo" />
+        <img src="{{ app_logo.src }}" alt="{{ app_entity.name }}" class="stemma" style="width:48px;height:auto;flex-shrink:0;" />
       {% else %}
-        <svg class="fo-inst-logo-svg" viewBox="0 0 24 24" aria-hidden="true">
-          <use xlink:href="{{ app_logo.src ?: '/assets/bootstrap-italia/svg/sprites.svg#it-pa' }}"></use>
+        <svg class="stemma" style="width:48px;height:48px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
         </svg>
       {% endif %}
       <div>
-        <div class="fo-inst-eyebrow">{{ 'Ente'|trans }}</div>
-        <div class="fo-inst-title">{{ app_entity.name }}</div>
-        {% if app_entity.suffix %}<div class="fo-inst-sub">{{ app_entity.suffix }}</div>{% endif %}
+        <div class="eyebrow">{{ 'Ente'|trans }}</div>
+        <div class="title">{{ app_entity.name }}</div>
+        {% if app_entity.suffix %}<div class="sub">{{ app_entity.suffix }}</div>{% endif %}
       </div>
     </a>
 
-    <div class="fo-inst-actions">
-      {# ── Login / user area — keep EXACTLY as original ── #}
+    <div class="inst-actions">
       {% if current_user %}
-        <div class="it-user-wrapper nav-item dropdown show">
-          <a aria-expanded="false" class="btn btn-primary btn-icon btn-full" data-bs-toggle="dropdown" href="#" id="fo-userDropdown">
-            {% set first = current_user.first_name|default('') %}
-            {% set last  = current_user.last_name|default('') %}
-            {% set show_name = (first != '') or (last != '') %}
-            {% set display_name = first ~ (last != '' ? ' ' ~ last|upper : '') %}
-            {% set initials = (first|slice(0,1)) ~ (last|slice(0,1)) %}
-            {% if show_name %}
-              <span class="d-none d-md-inline">{{ display_name }}</span>
-            {% else %}
-              <span class="d-none d-md-inline">{{ current_user.email }}</span>
-            {% endif %}
-            <span class="badge bg-light text-dark ms-2 d-none d-md-inline">{{ initials|upper }}</span>
-            <span class="d-inline d-md-none user-initials-avatar ms-2 d-flex align-items-center justify-content-center">{{ initials|upper }}</span>
-            <svg class="icon icon-white d-none d-lg-block ms-2" style="width:18px;height:18px;">
-              <use xlink:href="/assets/bootstrap-italia/svg/sprites.svg#it-expand"></use>
+        {% set first = current_user.first_name|default('') %}
+        {% set last  = current_user.last_name|default('') %}
+        {% set display_name = first ~ (last != '' ? ' ' ~ last|upper : '') %}
+        {% set initials = (first|slice(0,1)) ~ (last|slice(0,1)) %}
+        <div class="fo-user-menu" id="fo-user-menu">
+          <button class="btn btn-outline" id="fo-user-btn" aria-haspopup="true" aria-expanded="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
             </svg>
-          </a>
-          <div class="dropdown-menu dropdown-menu-end" aria-labelledby="fo-userDropdown">
-            <div class="row">
-              <div class="col-12">
-                <div class="link-list-wrapper px-3 py-2">
-                  <ul class="link-list list-unstyled mb-0">
-                    <li>
-                      <a class="list-item d-block text-dark py-1 {{ current_path == '/profile' ? 'active' : '' }}" href="/profile">{{ 'Profilo'|trans }}</a>
-                    </li>
-                    <li>
-                      <a class="list-item d-block text-dark py-1 {{ current_path == '/pendenze' ? 'active' : '' }}" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
-                    </li>
-                    <li>
-                      <a class="list-item d-block text-danger py-1" href="/logout">{{ 'Logout'|trans }}</a>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+            {{ display_name != '' ? display_name : current_user.email }}
+          </button>
+          <div class="fo-user-dropdown" id="fo-user-dropdown" aria-hidden="true">
+            <a href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+            <a href="/profile">{{ 'Profilo'|trans }}</a>
+            <a href="/logout" style="color:var(--ms-danger);">{{ 'Logout'|trans }}</a>
           </div>
         </div>
       {% else %}
         {% if spid_enabled %}
-          <a class="btn btn-primary btn-sm" href="/login">{{ 'Accedi'|trans }}</a>
+          <a class="btn btn-ghost" href="/guida" style="display:none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"/><path d="M12 17v-5M12 8h.01"/>
+            </svg>
+            {{ 'Guida'|trans }}
+          </a>
+          <a class="spid-btn" href="/login">
+            {{ 'Accedi'|trans }}
+          </a>
         {% endif %}
       {% endif %}
     </div>
@@ -107,65 +78,59 @@
 </header>
 
 {# ── 3. Sticky main nav ── #}
-<nav class="fo-main-nav" aria-label="{{ 'Navigazione principale'|trans }}">
-  <div class="fo-nav-inner container-xxl">
-    {# Hamburger (mobile only) #}
-    <button class="fo-hamburger" id="fo-nav-toggle" aria-label="{{ 'Menu'|trans }}" aria-expanded="false" aria-controls="fo-nav-links">
-      <svg class="fo-icon-menu" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M3 6h18M3 12h18M3 18h18"/>
-      </svg>
-      <svg class="fo-icon-close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M18 6 6 18M6 6l12 12"/>
-      </svg>
-    </button>
-
-    {# Nav links — desktop: display:contents (flex items inline); mobile: dropdown #}
-    <div class="fo-nav-links" id="fo-nav-links">
-      <a class="fo-nav-item{{ current_path == '/' ? ' active' : '' }}" href="/">
-        {{ 'Home'|trans }}
-      </a>
-      <a class="fo-nav-item{{ current_path starts with '/pagamento-avviso' ? ' active' : '' }}" href="/pagamento-avviso">
-        {{ 'Paga un avviso'|trans }}
-      </a>
-      <a class="fo-nav-item{{ current_path starts with '/pagamento-spontaneo' ? ' active' : '' }}" href="/pagamento-spontaneo">
-        {{ 'Pagamento spontaneo'|trans }}
-      </a>
-      {% if spid_enabled %}
-        <a class="fo-nav-item{{ current_path starts with '/pendenze' ? ' active' : '' }}" href="/pendenze">
-          {{ 'Le mie pendenze'|trans }}
-        </a>
-      {% endif %}
-      <a class="fo-nav-item{{ current_path starts with '/guida' ? ' active' : '' }}" href="/guida">
-        {{ 'Guida'|trans }}
-      </a>
-    </div>
-
-    <div class="fo-nav-spacer"></div>
-
-    <a class="fo-cart-btn" href="/carrello" aria-label="{{ 'Carrello'|trans }} ({{ cart_count|default(0) }} {{ cart_count|default(0) == 1 ? 'avviso'|trans : 'avvisi'|trans }})">
+<nav class="main-nav" aria-label="{{ 'Navigazione principale'|trans }}">
+  <div class="container">
+    <a class="nav-item{{ current_path == '/' ? ' active' : '' }}" href="/">{{ 'Home'|trans }}</a>
+    <a class="nav-item{{ current_path starts with '/pagamento-avviso' ? ' active' : '' }}" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
+    <a class="nav-item{{ current_path starts with '/pagamento-spontaneo' ? ' active' : '' }}" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+    {% if spid_enabled %}
+      <a class="nav-item{{ current_path starts with '/pendenze' ? ' active' : '' }}" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+    {% endif %}
+    <a class="nav-item{{ current_path starts with '/guida' ? ' active' : '' }}" href="/guida">{{ 'Guida'|trans }}</a>
+    <div class="spacer"></div>
+    <a class="cart-btn" href="/carrello" aria-label="{{ 'Carrello'|trans }}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
         <path d="M3 4h2l3 12h11l2-8H7"/>
       </svg>
       {{ 'Carrello'|trans }}
-      <span class="fo-cart-badge cart-badge" {% if cart_count|default(0) == 0 %}style="display:none;"{% endif %}>{{ cart_count|default(0) }}</span>
+      <span class="badge cart-badge"{% if cart_count|default(0) == 0 %} style="display:none;"{% endif %}>{{ cart_count|default(0) }}</span>
     </a>
   </div>
 </nav>
+
+<style>
+.fo-user-menu { position: relative; }
+.fo-user-dropdown {
+  display: none; position: absolute; right: 0; top: calc(100% + 6px); min-width: 180px;
+  background: #fff; border: 1px solid var(--border-1); border-radius: var(--r-md);
+  box-shadow: var(--shadow-3); z-index: 50; overflow: hidden;
+}
+.fo-user-dropdown.open { display: block; }
+.fo-user-dropdown a {
+  display: block; padding: 10px 16px; font-size: 14px; color: var(--fg-1);
+  text-decoration: none; font-weight: 500;
+}
+.fo-user-dropdown a:hover { background: var(--bg-2); }
+.lang-switch a { padding: 2px 6px; border-radius: 2px; text-decoration: none; color: rgba(255,255,255,.85); }
+.lang-switch a.active { background: rgba(255,255,255,.18); font-weight: 700; color: #fff; }
+.lang-switch a:hover { color: #fff; }
+</style>
 <script>
 (function(){
-  var toggle = document.getElementById('fo-nav-toggle');
-  var nav = toggle && toggle.closest('.fo-main-nav');
-  if (!toggle || !nav) return;
-  toggle.addEventListener('click', function(){
-    var open = nav.classList.toggle('fo-nav-open');
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  var btn = document.getElementById('fo-user-btn');
+  var menu = document.getElementById('fo-user-dropdown');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var open = menu.classList.toggle('open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menu.setAttribute('aria-hidden', open ? 'false' : 'true');
   });
-  document.addEventListener('click', function(e){
-    if (!nav.contains(e.target)) {
-      nav.classList.remove('fo-nav-open');
-      toggle.setAttribute('aria-expanded', 'false');
-    }
+  document.addEventListener('click', function(){
+    menu.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-hidden', 'true');
   });
 })();
 </script>

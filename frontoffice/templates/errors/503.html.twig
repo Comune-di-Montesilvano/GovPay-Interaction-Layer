@@ -3,25 +3,25 @@
 {% block title %}{{ 'Servizio non disponibile'|trans }}{% endblock %}
 
 {% block content %}
-  {# DEBUG SPID: errors={{ debug_spid_errors|default('none') }}, reason={{ debug_spid_reason|default('none') }}, session_info={{ debug_session_info|default('none') }} #}
-  <div class="container-xxl py-5">
-    <div class="row">
-      <div class="col-12 col-lg-8">
-        <h1 class="h3 mb-3">{{ 'Servizio non disponibile'|trans }}</h1>
-        <p class="text-muted mb-4">
-          {{ message|default('Operazione non disponibile in questo momento.'|trans) }}
-        </p>
-        {% if debug_spid_errors %}
-          <p class="small text-muted"><strong>{{ 'SPID errors'|trans }}:</strong> {{ debug_spid_errors }}</p>
-        {% endif %}
-        {% if debug_spid_reason %}
-          <p class="small text-muted"><strong>{{ 'Reason'|trans }}:</strong> {{ debug_spid_reason }}</p>
-        {% endif %}
-        {% if debug_session_info %}
-          <p class="small text-muted"><strong>{{ 'Session info'|trans }}:</strong> {{ debug_session_info }}</p>
-        {% endif %}
-        <a class="btn btn-outline-primary" href="/">{{ 'Torna alla home'|trans }}</a>
-      </div>
+{# DEBUG SPID: errors={{ debug_spid_errors|default('none') }}, reason={{ debug_spid_reason|default('none') }}, session_info={{ debug_session_info|default('none') }} #}
+<section class="block">
+  <div class="container">
+    <div style="max-width:640px;">
+      <h1 style="margin:0 0 var(--sp-3);">{{ 'Servizio non disponibile'|trans }}</h1>
+      <p style="color:var(--fg-2);margin:0 0 var(--sp-4);">
+        {{ message|default('Operazione non disponibile in questo momento.'|trans) }}
+      </p>
+      {% if debug_spid_errors %}
+        <p style="font-size:13px;color:var(--fg-3);margin:0 0 var(--sp-2);"><strong>{{ 'SPID errors'|trans }}:</strong> {{ debug_spid_errors }}</p>
+      {% endif %}
+      {% if debug_spid_reason %}
+        <p style="font-size:13px;color:var(--fg-3);margin:0 0 var(--sp-2);"><strong>{{ 'Reason'|trans }}:</strong> {{ debug_spid_reason }}</p>
+      {% endif %}
+      {% if debug_session_info %}
+        <p style="font-size:13px;color:var(--fg-3);margin:0 0 var(--sp-2);"><strong>{{ 'Session info'|trans }}:</strong> {{ debug_session_info }}</p>
+      {% endif %}
+      <a class="btn btn-outline" href="/">{{ 'Torna alla home'|trans }}</a>
     </div>
   </div>
+</section>
 {% endblock %}

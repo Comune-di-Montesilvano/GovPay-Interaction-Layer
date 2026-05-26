@@ -3,21 +3,17 @@
 {% block title %}{{ 'Troppi tentativi'|trans }} – {{ app_entity.name }}{% endblock %}
 
 {% block content %}
-  <section class="container py-5">
-    <div class="row justify-content-center">
-      <div class="col-12 col-md-8 col-lg-6">
-        <div class="card border-warning shadow-sm">
-          <div class="card-body p-4 p-md-5 text-center">
-            <div class="mb-3">
-              <i class="fa-solid fa-hourglass-half text-warning" style="font-size:3rem"></i>
-            </div>
-            <h1 class="h4 mb-3">{{ 'Troppi tentativi'|trans }}</h1>
-            <p class="mb-3">{{ 'Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.'|trans }}</p>
-            <p class="text-muted mb-4">{{ 'Riprova tra qualche minuto.'|trans }}</p>
-            <a class="btn btn-outline-primary" href="/">{{ 'Torna alla home'|trans }}</a>
-          </div>
-        </div>
+<section class="block">
+  <div class="container">
+    <div style="max-width:480px;margin:0 auto;">
+      <div class="card card-pad" style="text-align:center;padding:var(--sp-7) var(--sp-5);">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ms-warning,#f59e0b);margin:0 auto var(--sp-4);" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5"/><path d="M12 16h.01"/></svg>
+        <h1 style="font-size:20px;margin:0 0 var(--sp-3);">{{ 'Troppi tentativi'|trans }}</h1>
+        <p style="margin:0 0 var(--sp-3);color:var(--fg-1);">{{ 'Per la tua sicurezza abbiamo temporaneamente limitato le richieste da questa connessione.'|trans }}</p>
+        <p style="margin:0 0 var(--sp-5);color:var(--fg-2);">{{ 'Riprova tra qualche minuto.'|trans }}</p>
+        <a class="btn btn-outline" href="/">{{ 'Torna alla home'|trans }}</a>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 {% endblock %}

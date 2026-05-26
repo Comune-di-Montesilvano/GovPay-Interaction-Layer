@@ -43,11 +43,9 @@ class MailerService
      */
     public static function forSuite(string $suite = 'backoffice'): self
     {
-        $prefix = strtoupper($suite);
-
-        $dsn      = SettingsRepository::get($suite, 'mailer_dsn', 'null://null');
-        $fromAddr = SettingsRepository::get($suite, 'mailer_from_address', 'noreply@example.com');
-        $fromName = SettingsRepository::get($suite, 'mailer_from_name', '')
+        $dsn      = SettingsRepository::get('backoffice', 'mailer_dsn', 'null://null');
+        $fromAddr = SettingsRepository::get('backoffice', 'mailer_from_address', 'noreply@example.com');
+        $fromName = SettingsRepository::get('backoffice', 'mailer_from_name', '')
                     ?: SettingsRepository::get('entity', 'name', 'GIL');
 
         $transport = Transport::fromDsn($dsn);
@@ -856,4 +854,241 @@ HTML;
 
         return '';
       }
+
+    // -------------------------------------------------------------------------
+    // Base template frontoffice-style (riusabile per tutte le tipologie)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Shell HTML completa per email istituzionali.
+     * $bodyContent = HTML del contenuto centrale (tra header e footer).
+     */
+    private function renderEmailBase(
+        string $bodyContent,
+        string $appName,
+        string $title = '',
+        bool   $hasLogo = false,
+        string $logoSrc = ''
+    ): string {
+        $safeApp   = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $safeTitle = htmlspecialchars($title !== '' ? $title : $appName, ENT_QUOTES, 'UTF-8');
+        $year      = date('Y');
+
+        if ($hasLogo) {
+            $logoHtml = '<img src="cid:logo" alt="' . $safeApp . '" style="max-height:52px;max-width:180px;display:block;margin:0 auto 12px;" onerror="this.style.display=\'none\'">';
+        } elseif ($logoSrc !== '') {
+            $safeLogoSrc = htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8');
+            $logoHtml = '<img src="' . $safeLogoSrc . '" alt="' . $safeApp . '" style="max-height:52px;max-width:180px;display:block;margin:0 auto 12px;">';
+        } else {
+            $logoHtml = '';
+        }
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1.0">
+          <title>{$safeTitle} – {$safeApp}</title>
+        </head>
+        <body style="margin:0;padding:0;background:#edf2f7;font-family:'Helvetica Neue',Arial,sans-serif;color:#1a202c;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf2f7;">
+            <tr><td align="center" style="padding:32px 16px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.10);">
+                <!-- Header -->
+                <tr>
+                  <td style="background:#0066cc;padding:28px 32px;text-align:center;">
+                    {$logoHtml}
+                    <div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:.2px;">{$safeApp}</div>
+                  </td>
+                </tr>
+                <!-- Body -->
+                <tr>
+                  <td style="padding:32px;">
+                    {$bodyContent}
+                  </td>
+                </tr>
+                <!-- pagoPA strip -->
+                <tr>
+                  <td style="background:#004a99;padding:14px 32px;text-align:center;">
+                    <span style="color:rgba(255,255,255,.6);font-size:11px;text-transform:uppercase;letter-spacing:.08em;">Pagamenti tramite</span>
+                    <strong style="color:#ffffff;font-size:13px;display:block;margin-top:2px;letter-spacing:.4px;">pagoPA</strong>
+                  </td>
+                </tr>
+                <!-- Footer -->
+                <tr>
+                  <td style="background:#f7fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+                    <p style="margin:0;font-size:11px;color:#a0aec0;">&copy; {$year} {$safeApp} &middot; Messaggio generato automaticamente, non rispondere.</p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        HTML;
+    }
+
+    // -------------------------------------------------------------------------
+    // Notifica avviso spontaneo
+    // -------------------------------------------------------------------------
+
+    /**
+     * Invia notifica all'utente dopo la generazione di un avviso spontaneo.
+     *
+     * @param array $avviso Keys: causale, importo, numeroAvviso, data_scadenza,
+     *                      download_url, checkout_url
+     * @return array ['timestamp', 'esito', 'destinatario', 'canale'] + 'errore' on failure
+     */
+    public function sendSpontaneoAvviso(
+        string $toEmail,
+        string $toName,
+        array  $avviso,
+        string $appName = ''
+    ): array {
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+        $timestamp = date('Y-m-d H:i:s');
+
+        try {
+            $logoPath = $this->resolveLogoPath();
+            $hasLogo  = ($logoPath !== '' && is_file($logoPath));
+            $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
+
+            $causale = (string)($avviso['causale'] ?? 'Avviso pagoPA');
+            $content  = $this->renderSpontaneoContent($toName, $avviso, $appName);
+            $htmlBody = $this->renderEmailBase($content, $appName, $causale, $hasLogo, $logoSrc);
+            $textBody = $this->renderSpontaneoPlain($toName, $avviso, $appName);
+
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($toEmail, $toName))
+                ->subject("Avviso pagoPA generato — {$causale}")
+                ->html($htmlBody)
+                ->text($textBody);
+
+            if ($hasLogo) {
+                $email->embedFromPath($logoPath, 'logo');
+            }
+
+            $this->mailer->send($email);
+
+            return ['timestamp' => $timestamp, 'esito' => 'OK', 'destinatario' => $toEmail, 'canale' => 'email'];
+        } catch (\Throwable $e) {
+            return ['timestamp' => $timestamp, 'esito' => 'ERRORE', 'destinatario' => $toEmail, 'canale' => 'email', 'errore' => $e->getMessage()];
+        }
+    }
+
+    private function renderSpontaneoContent(string $toName, array $avviso, string $appName): string
+    {
+        $safeApp     = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $safeName    = htmlspecialchars($toName,  ENT_QUOTES, 'UTF-8');
+        $causale     = htmlspecialchars((string)($avviso['causale'] ?? '—'), ENT_QUOTES, 'UTF-8');
+        $importo     = number_format((float)($avviso['importo'] ?? 0), 2, ',', '.');
+        $iuv         = htmlspecialchars((string)($avviso['numeroAvviso'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $scadenza    = htmlspecialchars((string)($avviso['data_scadenza'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $downloadUrl = htmlspecialchars((string)($avviso['download_url'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $checkoutUrl = htmlspecialchars((string)($avviso['checkout_url'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $greeting    = $safeName !== '' ? 'Gentile <strong>' . $safeName . '</strong>,' : 'Gentile cittadino,';
+
+        $rowStyle   = 'padding:10px 16px;border-bottom:1px solid #f1f5f9;font-size:13px;vertical-align:top;';
+        $keyStyle   = $rowStyle . 'width:40%;color:#64748b;';
+        $valStyle   = $rowStyle . 'color:#0f172a;font-weight:500;';
+
+        $iuvRow = $iuv !== '' ? "
+          <tr>
+            <td style=\"{$keyStyle}\">Codice avviso (IUV)</td>
+            <td style=\"{$valStyle} font-family:monospace;letter-spacing:.05em;\">{$iuv}</td>
+          </tr>" : '';
+
+        $scadRow = $scadenza !== '' ? "
+          <tr>
+            <td style=\"{$keyStyle}\">Scadenza</td>
+            <td style=\"{$valStyle}\">{$scadenza}</td>
+          </tr>" : '';
+
+        $pdfBtn = $downloadUrl !== '' ? "
+              <td style=\"padding:0 6px 0 0;\">
+                <a href=\"{$downloadUrl}\" style=\"display:inline-block;padding:12px 22px;background:#f1f5f9;color:#0f172a;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #cbd5e1;\">Scarica PDF</a>
+              </td>" : '';
+
+        $payBtn = $checkoutUrl !== '' ? "
+              <td style=\"padding:0;\">
+                <a href=\"{$checkoutUrl}\" style=\"display:inline-block;padding:12px 22px;background:#0066cc;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:700;\">Paga subito</a>
+              </td>" : '';
+
+        $buttons = ($pdfBtn !== '' || $payBtn !== '') ? "
+          <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 auto 24px;\">
+            <tr>{$pdfBtn}{$payBtn}</tr>
+          </table>" : '';
+
+        return <<<HTML
+        <p style="margin:0 0 4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Avviso pagoPA generato</p>
+        <h2 style="margin:0 0 20px;font-size:22px;font-weight:700;color:#0f172a;">Pagamento spontaneo</h2>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#374151;">
+          {$greeting} il tuo avviso pagoPA è stato emesso con successo.
+          Puoi procedere al pagamento online oppure stampare l'avviso per pagare presso un PSP fisico.
+        </p>
+
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;margin:0 0 24px;">
+          <tr>
+            <td colspan="2" style="background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 16px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="font-size:12px;color:#64748b;">Ente creditore &nbsp;<strong style="color:#0f172a;">{$safeApp}</strong></td>
+                  <td align="right"><span style="background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;padding:3px 10px;border-radius:99px;white-space:nowrap;">&bull; Da pagare</span></td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {$iuvRow}
+          <tr>
+            <td style="{$keyStyle}">Causale</td>
+            <td style="{$valStyle}">{$causale}</td>
+          </tr>
+          <tr>
+            <td style="{$keyStyle}">Importo</td>
+            <td style="{$valStyle} font-size:15px;font-weight:700;">&euro;&nbsp;{$importo}</td>
+          </tr>
+          {$scadRow}
+        </table>
+
+        {$buttons}
+
+        <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.55;">
+          Per scaricare la ricevuta dopo il pagamento o recuperare l'avviso in futuro, torna su <strong>{$safeApp}</strong>
+          con il codice avviso e il codice fiscale del debitore.
+        </p>
+        HTML;
+    }
+
+    private function renderSpontaneoPlain(string $toName, array $avviso, string $appName): string
+    {
+        $greeting = $toName !== '' ? "Gentile {$toName}," : 'Gentile cittadino,';
+        $causale  = (string)($avviso['causale'] ?? '—');
+        $importo  = number_format((float)($avviso['importo'] ?? 0), 2, ',', '.');
+        $iuv      = (string)($avviso['numeroAvviso'] ?? '');
+        $scadenza = (string)($avviso['data_scadenza'] ?? '');
+        $pdfUrl   = (string)($avviso['download_url'] ?? '');
+        $payUrl   = (string)($avviso['checkout_url'] ?? '');
+
+        $iuvLine   = $iuv !== ''      ? "\nCodice avviso (IUV): {$iuv}"  : '';
+        $scadLine  = $scadenza !== '' ? "\nScadenza: {$scadenza}"         : '';
+        $pdfLine   = $pdfUrl !== ''   ? "\n\nScarica PDF avviso:\n{$pdfUrl}"  : '';
+        $payLine   = $payUrl !== ''   ? "\n\nPaga subito:\n{$payUrl}"         : '';
+
+        return <<<TEXT
+        {$greeting}
+
+        il tuo avviso pagoPA è stato generato con successo.
+
+        Causale: {$causale}
+        Importo: € {$importo}{$iuvLine}{$scadLine}{$pdfLine}{$payLine}
+
+        Per recuperare l'avviso in futuro, accedi a {$appName} con il codice avviso e il codice fiscale del debitore.
+
+        -- {$appName}
+        TEXT;
+    }
 }

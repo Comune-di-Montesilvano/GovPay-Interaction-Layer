@@ -3,146 +3,137 @@
 {% block content %}
 
 {# ── Hero ── #}
-<section class="fo-hero">
-  <div class="fo-hero-inner">
-    <div class="fo-hero-eyebrow">
-      <span class="fo-hero-pill">{{ 'Sportello digitale'|trans }}</span>
-      <span>{{ 'I pagamenti verso la PA, in un solo posto'|trans }}</span>
-    </div>
+<section class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">
+        <span class="pill">{{ 'Sportello digitale'|trans }}</span>
+        <span>{{ 'I pagamenti verso la PA, in un solo posto'|trans }}</span>
+      </div>
 
-    <h1>{{ 'I pagamenti all\'ente,<br>semplici e in regola.'|trans|raw }}</h1>
+      <h1>{{ 'I pagamenti all\'ente,<br>semplici e in regola.'|trans|raw }}</h1>
 
-    <p class="fo-hero-lead">
-      {{ 'Tributi, sanzioni, servizi educativi, concessioni e ogni altro pagamento. Paga in pochi clic — la ricevuta digitale ti arriva via email.'|trans }}
-    </p>
+      <p class="lead">
+        {{ 'Tributi, sanzioni, servizi educativi, concessioni e ogni altro pagamento. Paga in pochi clic — la ricevuta digitale ti arriva via email.'|trans }}
+      </p>
 
-    <div class="fo-hero-actions">
-      {# Primary CTA #}
-      <a class="fo-hero-cta primary" href="/pagamento-avviso">
-        <div class="fo-cta-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>
-          </svg>
-        </div>
-        <div>
-          <div class="fo-cta-title">{{ 'Paga o scarica la ricevuta'|trans }}</div>
-          <div class="fo-cta-desc">{{ 'Inserisci codice avviso e codice fiscale: paga online o scarica la ricevuta (se già pagato) senza login.'|trans }}</div>
-        </div>
-      </a>
-
-      <a class="fo-hero-cta" href="/pagamento-spontaneo">
-        <div class="fo-cta-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>
-          </svg>
-        </div>
-        <div>
-          <div class="fo-cta-title">{{ 'Pagamento spontaneo'|trans }}</div>
-          <div class="fo-cta-desc">{{ 'Non hai un avviso. Compila il modulo e genera la posizione debitoria.'|trans }}</div>
-        </div>
-      </a>
-
-      <a class="fo-hero-cta" href="/carrello">
-        <div class="fo-cta-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
-            <path d="M3 4h2l3 12h11l2-8H7"/>
-          </svg>
-        </div>
-        <div>
-          <div class="fo-cta-title">{{ 'Carrello multi-pagamento'|trans }}</div>
-          <div class="fo-cta-desc">{{ 'Fino a 5 avvisi pagati in un\'unica sessione pagoPA.'|trans }}</div>
-        </div>
-      </a>
-
-      {% if spid_enabled %}
-        <a class="fo-hero-cta" href="/pendenze">
-          <div class="fo-cta-icon">
+      <div class="hero-actions">
+        <a class="hero-cta primary" href="/pagamento-avviso">
+          <div class="icon-wrap">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>
             </svg>
           </div>
           <div>
-            <div class="fo-cta-title">{{ 'Le mie pendenze'|trans }}</div>
-            <div class="fo-cta-desc">{% if current_user %}{{ 'Consulta lo storico e scarica le ricevute.'|trans }}{% else %}{{ 'Accedi con SPID o CIE per vedere le tue pendenze.'|trans }}{% endif %}</div>
+            <div class="title">{{ 'Paga un avviso'|trans }}</div>
+            <div class="desc">{{ 'Hai ricevuto un bollettino: inserisci codice avviso e codice fiscale.'|trans }}</div>
           </div>
         </a>
-      {% else %}
-        {# Fallback 4th tile: ricevuta #}
-        <a class="fo-hero-cta" href="/pagamento-avviso">
-          <div class="fo-cta-icon">
+
+        <a class="hero-cta" href="/pagamento-spontaneo">
+          <div class="icon-wrap">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>
+              <path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>
             </svg>
           </div>
           <div>
-            <div class="fo-cta-title">{{ 'Scarica la ricevuta'|trans }}</div>
-            <div class="fo-cta-desc">{{ 'Già pagato? Inserisci avviso e codice fiscale per scaricare la ricevuta.'|trans }}</div>
+            <div class="title">{{ 'Pagamento spontaneo'|trans }}</div>
+            <div class="desc">{{ 'Devi pagare ma non hai un avviso. Compila il modulo e genera l\'avviso.'|trans }}</div>
           </div>
         </a>
-      {% endif %}
-    </div>
 
-    <div class="fo-hero-trust">
-      <span>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 3l8 3v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V6z"/><path d="m9 12 2 2 4-4"/>
-        </svg>
-        {{ 'Circuito ufficiale pagoPA'|trans }}
-      </span>
-      <span>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="m13 3-7 11h5l-1 7 7-11h-5z"/>
-        </svg>
-        {{ 'Ricevuta digitale immediata'|trans }}
-      </span>
-      <span>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="m5 13 4 4L19 7"/>
-        </svg>
-        {{ 'Stato aggiornato automaticamente'|trans }}
-      </span>
+        <a class="hero-cta" href="/carrello">
+          <div class="icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
+              <path d="M3 4h2l3 12h11l2-8H7"/>
+            </svg>
+          </div>
+          <div>
+            <div class="title">{{ 'Carrello multi-pagamento'|trans }}</div>
+            <div class="desc">{{ 'Fino a 5 avvisi pagati in un\'unica sessione pagoPA.'|trans }}</div>
+          </div>
+        </a>
+
+        {% if spid_enabled %}
+          <a class="hero-cta" href="/pendenze">
+            <div class="icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="title">{{ 'Le mie pendenze'|trans }}</div>
+              <div class="desc">{% if current_user %}{{ 'Consulta lo storico e scarica le ricevute.'|trans }}{% else %}{{ 'Accedi con SPID o CIE per vedere le tue pendenze.'|trans }}{% endif %}</div>
+            </div>
+          </a>
+        {% else %}
+          <a class="hero-cta" href="/pagamento-avviso">
+            <div class="icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>
+              </svg>
+            </div>
+            <div>
+              <div class="title">{{ 'Scarica la ricevuta'|trans }}</div>
+              <div class="desc">{{ 'Già pagato? Inserisci avviso e codice fiscale per scaricare la ricevuta.'|trans }}</div>
+            </div>
+          </a>
+        {% endif %}
+      </div>
+
+      <div class="hero-trust">
+        <div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>
+          {{ 'Circuito ufficiale pagoPA'|trans }}
+        </div>
+        <div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+          {{ 'Ricevuta digitale immediata'|trans }}
+        </div>
+        <div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+          {{ 'Stato aggiornato automaticamente'|trans }}
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
 {# ── Servizi in evidenza ── #}
 {% if featured_services is defined and featured_services %}
-<section class="fo-section" style="background:#fff; border-bottom:1px solid var(--fo-border-1);">
-  <div class="fo-container">
-    <div class="fo-section-head">
+<section class="block tight" style="background:#fff; border-bottom:1px solid var(--border-1);">
+  <div class="container">
+    <div class="section-head">
       <div>
-        <h2 class="fo-section-title">{{ 'Servizi più richiesti'|trans }}</h2>
-        <p class="fo-section-sub">{{ 'Accedi direttamente ai servizi più utilizzati.'|trans }}</p>
+        <h2 class="section-title">{{ 'Servizi più richiesti'|trans }}</h2>
+        <p class="section-sub">{{ 'Le tipologie di pagamento più frequenti gestite dall\'ente.'|trans }}</p>
       </div>
+      <a class="link-all" href="/pagamento-spontaneo">{{ 'Tutti i servizi →'|trans }}</a>
     </div>
-    <div class="fo-svc-grid">
+    <div class="svc-grid">
       {% for svc in featured_services %}
         {% set svc_url = svc.type == 'external' ? svc.external_url : '/pagamento-spontaneo?tipologia=' ~ svc.id|url_encode %}
         {% set svc_target = svc.type == 'external' ? '_blank' : '_self' %}
         {% set svc_rel = svc.type == 'external' ? 'noopener noreferrer' : '' %}
-        <a class="fo-svc-tile" href="{{ svc_url }}" target="{{ svc_target }}"{% if svc_rel %} rel="{{ svc_rel }}"{% endif %}>
-          <div class="fo-svc-icon">
+        <a class="svc-tile" href="{{ svc_url }}" target="{{ svc_target }}"{% if svc_rel %} rel="{{ svc_rel }}"{% endif %}>
+          <div class="icon-wrap">
             {% if svc.type == 'external' %}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             {% else %}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/>
-              </svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
             {% endif %}
           </div>
           <h3>{{ svc.label }}</h3>
-          {% if svc.descrizione_estesa %}
-            <p>{{ svc.descrizione_estesa }}</p>
-          {% else %}
-            <p>{{ svc.type == 'external' ? 'Accedi al servizio esterno.'|trans : 'Genera un avviso pagoPA per questo servizio.'|trans }}</p>
-          {% endif %}
-          <div class="fo-svc-arrow">
+          <p>
+            {% if svc.descrizione_estesa %}{{ svc.descrizione_estesa }}
+            {% elseif svc.type == 'external' %}{{ 'Accedi al servizio esterno.'|trans }}
+            {% else %}{{ 'Genera un avviso pagoPA per questo servizio.'|trans }}{% endif %}
+          </p>
+          <span class="arrow">
             {{ svc.type == 'external' ? 'Vai al servizio'|trans : 'Genera avviso'|trans }}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-          </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </span>
         </a>
       {% endfor %}
     </div>
@@ -151,71 +142,82 @@
 {% endif %}
 
 {# ── Come funziona ── #}
-<section class="fo-section" style="background:#fff; border-top:1px solid var(--fo-border-1); border-bottom:1px solid var(--fo-border-1);">
-  <div class="fo-container">
-    <div class="fo-section-head">
+<section class="block tight" style="background:#fff; border-top:1px solid var(--border-1); border-bottom:1px solid var(--border-1);">
+  <div class="container">
+    <div class="section-head">
       <div>
-        <h2 class="fo-section-title">{{ 'Come funziona'|trans }}</h2>
-        <p class="fo-section-sub">{{ 'Tre passaggi per completare un pagamento.'|trans }}</p>
+        <h2 class="section-title">{{ 'Come funziona'|trans }}</h2>
+        <p class="section-sub">{{ 'Tre passaggi per completare un pagamento verso l\'ente.'|trans }}</p>
       </div>
-      <a class="fo-link-all" href="/guida">{{ 'Guida completa →'|trans }}</a>
+      <a class="link-all" href="/guida">{{ 'Guida completa →'|trans }}</a>
     </div>
-    <div class="fo-how-grid">
-      <div class="fo-how-step">
-        <div class="fo-how-num">1</div>
+    <div class="svc-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="svc-tile" style="cursor:default;">
+        <div style="display:flex;gap:var(--sp-3);align-items:center;">
+          <div class="icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--bi-navy);">01</div>
+        </div>
         <h3>{{ 'Trova il tuo avviso'|trans }}</h3>
-        <p>{{ 'Cerca l\'avviso ricevuto inserendo il codice IUV e codice fiscale, oppure genera un pagamento spontaneo scegliendo il servizio.'|trans }}</p>
+        <p>{{ 'Cerca l\'avviso ricevuto inserendo codice IUV e codice fiscale, oppure genera un pagamento spontaneo.'|trans }}</p>
       </div>
-      <div class="fo-how-step">
-        <div class="fo-how-num">2</div>
+      <div class="svc-tile" style="cursor:default;">
+        <div style="display:flex;gap:var(--sp-3);align-items:center;">
+          <div class="icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--bi-navy);">02</div>
+        </div>
         <h3>{{ 'Scegli come pagare'|trans }}</h3>
-        <p>{{ 'Paga subito con redirect a pagoPA, aggiungilo al carrello insieme ad altri avvisi, oppure scarica il PDF per pagare allo sportello, in banca o tabaccheria.'|trans }}</p>
+        <p>{{ 'Paga subito con redirect a pagoPA, aggiungilo al carrello insieme ad altri avvisi, o scarica il PDF per pagare in tabaccheria.'|trans }}</p>
       </div>
-      <div class="fo-how-step">
-        <div class="fo-how-num">3</div>
+      <div class="svc-tile" style="cursor:default;">
+        <div style="display:flex;gap:var(--sp-3);align-items:center;">
+          <div class="icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--bi-navy);">03</div>
+        </div>
         <h3>{{ 'Ricevi la ricevuta'|trans }}</h3>
-        <p>{{ 'Lo stato dell\'avviso si aggiorna automaticamente. La ricevuta digitale ti arriva via email entro pochi minuti dal pagamento.'|trans }}</p>
+        <p>{{ 'Lo stato dell\'avviso si aggiorna automaticamente. La ricevuta digitale ti arriva via email entro pochi minuti.'|trans }}</p>
       </div>
     </div>
   </div>
 </section>
 
-{# ── Info / assistenza ── #}
-<section class="fo-section tight">
-  <div class="fo-container">
-    <div class="fo-info-bar">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>
-      </svg>
+{# ── Info bar ── #}
+<section class="block tight">
+  <div class="container">
+    <div class="alert alert-info">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
       <div>
         <strong>{{ 'Nessun login richiesto per pagare o scaricare la ricevuta.'|trans }}</strong>
-        {{ 'Con codice avviso e codice fiscale puoi verificare lo stato, pagare e (se già pagato) scaricare subito la ricevuta digitale. L\'accesso con SPID/CIE serve solo per lo storico completo delle tue pendenze.'|trans }}
-        <a href="/guida">{{ 'Leggi la guida →'|trans }}</a>
+        {{ 'Con codice avviso e codice fiscale puoi verificare lo stato, pagare e (se già pagato) scaricare subito la ricevuta digitale. L\'accesso con SPID/CIE serve solo per lo storico completo.'|trans }}
+        <a href="/guida" style="color:inherit;font-weight:600;">{{ 'Leggi la guida →'|trans }}</a>
       </div>
     </div>
 
     {% if support_email or support_phone or support_location %}
-    <div class="fo-assist-card" style="margin-top: var(--fo-sp-5);">
-      <h3>{{ 'Assistenza'|trans }}</h3>
-      {% if support_email %}
-        <div class="fo-assist-row">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/>
-          </svg>
+    <div class="card card-pad" style="margin-top:var(--sp-5); max-width:540px;">
+      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 var(--sp-3);font-weight:700;">{{ 'Assistenza'|trans }}</h3>
+      <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--sp-2);font-size:14px;color:var(--fg-2);">
+        {% if support_email %}
+        <li style="display:flex;gap:8px;align-items:center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--bi-primary);flex-shrink:0;" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/></svg>
           <a href="mailto:{{ support_email }}">{{ support_email }}</a>
-        </div>
-      {% endif %}
-      {% if support_phone %}
-        <div class="fo-assist-row">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/>
-          </svg>
-          <span>{{ support_phone }}{% if support_hours %} <span style="color:var(--fo-fg-3);">({{ support_hours }})</span>{% endif %}</span>
-        </div>
-      {% endif %}
-      {% if support_location %}
-        <div class="fo-assist-row" style="font-size:13px; color:var(--fo-fg-3);">{{ support_location|raw }}</div>
-      {% endif %}
+        </li>
+        {% endif %}
+        {% if support_phone %}
+        <li style="display:flex;gap:8px;align-items:center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--bi-primary);flex-shrink:0;" aria-hidden="true"><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+          <span>{{ support_phone }}{% if support_hours %} <span style="color:var(--fg-3);">({{ support_hours }})</span>{% endif %}</span>
+        </li>
+        {% endif %}
+        {% if support_location %}
+        <li style="font-size:13px;color:var(--fg-3);">{{ support_location|raw }}</li>
+        {% endif %}
+      </ul>
     </div>
     {% endif %}
   </div>
