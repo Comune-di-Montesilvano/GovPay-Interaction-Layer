@@ -252,6 +252,7 @@
 .bg-success { background: var(--success) !important; color: #fff !important; }
 .bg-info { background: var(--info) !important; color: #fff !important; }
 .bg-danger { background: var(--danger) !important; color: #fff !important; }
+.bg-warning { background: #fffbeb !important; color: #92400e !important; border: 1px solid #fde68a !important; }
 
 .btn {
   display: inline-flex;
