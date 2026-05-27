@@ -27,48 +27,6 @@
   {% endif %}
 
   {% set f = filters ?? {} %}
-  {% set biz = biz_counts|default({'PENDING': 0, 'PROCESSED': 0, 'ERROR': 0, 'SKIPPED': 0, 'total': 0}) %}
-  <div class="card shadow-sm mb-4 border-danger-subtle">
-    <div class="card-header bg-danger bg-opacity-10 border-bottom py-2">
-      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-        <div class="d-flex align-items-center gap-2">
-          <h2 class="h6 mb-0">Stato pendenze Biz</h2>
-          <span class="text-muted small d-none d-md-inline">| Contatori globali su tabella biz_ricevute per il dominio selezionato</span>
-        </div>
-        <form method="post" action="/pagamenti/report-ragioneria/biz-reset-errors" class="m-0">
-          <input type="hidden" name="idDominio" value="{{ f.idDominio|default('') }}">
-          <input type="hidden" name="return_url" value="/pagamenti/report-ragioneria?q=1&idDominio={{ f.idDominio|default('')|url_encode }}">
-          <button type="submit" class="btn btn-outline-danger btn-sm" {% if (biz.ERROR|default(0)) <= 0 %}disabled{% endif %}>
-            Reset errori Biz ({{ biz.ERROR|default(0) }})
-          </button>
-        </form>
-      </div>
-    </div>
-    <div class="card-body">
-      <div class="row g-3 text-center">
-        <div class="col-6 col-md-2">
-          <div class="small text-muted text-uppercase">Totali</div>
-          <div class="h4 mb-0">{{ biz.total|default(0) }}</div>
-        </div>
-        <div class="col-6 col-md-2">
-          <div class="small text-muted text-uppercase">Pending</div>
-          <div class="h4 mb-0 text-primary">{{ biz.PENDING|default(0) }}</div>
-        </div>
-        <div class="col-6 col-md-2">
-          <div class="small text-muted text-uppercase">Processed</div>
-          <div class="h4 mb-0 text-success">{{ biz.PROCESSED|default(0) }}</div>
-        </div>
-        <div class="col-6 col-md-2">
-          <div class="small text-muted text-uppercase">Error</div>
-          <div class="h4 mb-0 text-danger">{{ biz.ERROR|default(0) }}</div>
-        </div>
-        <div class="col-6 col-md-2">
-          <div class="small text-muted text-uppercase">Skipped</div>
-          <div class="h4 mb-0 text-secondary">{{ biz.SKIPPED|default(0) }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   {# ── Filtri ──────────────────────────────────────────────────────────── #}
   <form method="get" action="/pagamenti/report-ragioneria" class="card shadow-sm mb-4" id="reportRagioneriaForm">
@@ -141,6 +99,122 @@
       </div>
     </div>
   </form>
+
+  {% if query_made %}
+    {# ── Stato Elaborazione & Scansione Pendenze Esterne (Biz) ────────────────────────── #}
+    {% set biz = biz_counts|default({'PENDING': 0, 'PROCESSED': 0, 'ERROR': 0, 'SKIPPED': 0, 'total': 0}) %}
+    <div class="card shadow-sm mb-4 border-danger-subtle">
+      <div class="card-header bg-danger bg-opacity-10 border-bottom py-2">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <div class="d-flex align-items-center gap-2">
+            <h2 class="h6 mb-0 text-danger-emphasis"><i class="fas fa-tasks me-1"></i> Stato pendenze esterne (Biz)</h2>
+            <span class="text-muted small d-none d-md-inline">| Contatori globali e copertura scansione mensile</span>
+          </div>
+          <form method="post" action="/pagamenti/report-ragioneria/biz-reset-errors" class="m-0">
+            <input type="hidden" name="idDominio" value="{{ f.idDominio|default('') }}">
+            <input type="hidden" name="return_url" value="/pagamenti/report-ragioneria?q=1&idDominio={{ f.idDominio|default('')|url_encode }}">
+            <button type="submit" class="btn btn-outline-danger btn-sm" {% if (biz.ERROR|default(0)) <= 0 %}disabled{% endif %}>
+              Reset errori Biz ({{ biz.ERROR|default(0) }})
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row g-3 align-items-center">
+          
+          <!-- Column 1: Global Counters -->
+          <div class="col-12 col-lg-5">
+            <div class="small text-muted text-uppercase fw-semibold mb-2" style="font-size: 10px; letter-spacing: 0.05em;">Contatori globali Biz:</div>
+            <div class="row g-2 text-center">
+              <div class="col-4 col-md">
+                <div class="small text-muted" style="font-size: 9px;">TOTALI</div>
+                <div class="h5 mb-0 fw-bold">{{ biz.total|default(0) }}</div>
+              </div>
+              <div class="col-4 col-md">
+                <div class="small text-muted" style="font-size: 9px;">IN ATTESA</div>
+                <div class="h5 mb-0 fw-bold text-primary">{{ biz.PENDING|default(0) }}</div>
+              </div>
+              <div class="col-4 col-md">
+                <div class="small text-muted" style="font-size: 9px;">ELABORATE</div>
+                <div class="h5 mb-0 fw-bold text-success">{{ biz.PROCESSED|default(0) }}</div>
+              </div>
+              <div class="col-6 col-md">
+                <div class="small text-muted" style="font-size: 9px;">ERRORI</div>
+                <div class="h5 mb-0 fw-bold text-danger">{{ biz.ERROR|default(0) }}</div>
+              </div>
+              <div class="col-6 col-md">
+                <div class="small text-muted" style="font-size: 9px;">SCARTATE</div>
+                <div class="h5 mb-0 fw-bold text-secondary">{{ biz.SKIPPED|default(0) }}</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Column 2: Scan coverage & Legend -->
+          {% set mesi_nomi = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'] %}
+          <div class="col-12 col-lg-7 bo-divider-lg-start pt-3 pt-lg-0">
+            <div class="ps-lg-3">
+              
+              <!-- Row 2.1: Month status badges -->
+              {% if coverage|length > 0 %}
+              <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
+                <span class="fw-semibold text-muted me-1" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;">Scansione:</span>
+                {% for c in coverage %}
+                  {% set pct_ok = c.n_total > 0 ? (c.n_processed / c.n_total * 100)|round : 0 %}
+                  {% if c.n_pending > 0 %}
+                    {% set cls = 'text-bg-warning' %}
+                    {% set tip = 'In attesa: ' ~ c.n_pending ~ '/' ~ c.n_total %}
+                  {% elseif c.n_error > 0 %}
+                    {% set cls = 'text-bg-danger' %}
+                    {% set tip = 'Errori: ' ~ c.n_error ~ '/' ~ c.n_total %}
+                  {% elseif c.n_processed > 0 %}
+                    {% set cls = 'text-bg-success' %}
+                    {% set tip = 'Elaborati: ' ~ c.n_processed ~ '/' ~ c.n_total %}
+                  {% else %}
+                    {% set cls = 'text-bg-secondary' %}
+                    {% set tip = 'Solo SKIPPED: ' ~ c.n_skipped %}
+                  {% endif %}
+                  <span class="badge {{ cls }}" title="{{ tip }}" style="font-size:.75rem;cursor:default;padding:2px 8px !important;">
+                    {{ mesi_nomi[c.mese - 1] }} {{ c.anno }}
+                  </span>
+                {% endfor %}
+              </div>
+              {% endif %}
+              
+              <!-- Row 2.2: Warning periods & Legend inline -->
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top" style="border-top-color: var(--border-color) !important; font-size: 11px;">
+                <!-- Non-scanned periods -->
+                <div class="d-flex align-items-center">
+                  {% if mancanti_periodi is defined and mancanti_periodi|length > 0 %}
+                    <span class="text-warning-emphasis fw-semibold me-1">
+                      <i class="fas fa-triangle-exclamation text-warning me-1"></i>
+                      Mesi non scansionati:
+                    </span>
+                    <span class="text-muted">{{ mancanti_periodi|join(', ') }}</span>
+                  {% else %}
+                    <span class="text-success fw-semibold">
+                      <i class="fas fa-circle-check me-1"></i>
+                      Copertura scansione completa per il periodo selezionato.
+                    </span>
+                  {% endif %}
+                </div>
+                
+                <!-- Legend (with states as badges directly) -->
+                <div class="text-muted d-flex flex-wrap gap-2 align-items-center">
+                  <span class="fw-semibold text-muted">Legenda:</span>
+                  <span class="badge text-bg-success py-0.5 px-2" style="font-size: 10px; font-weight: 700; border-radius: 999px;">ELABORATO</span>
+                  <span class="badge text-bg-warning py-0.5 px-2" style="font-size: 10px; font-weight: 700; border-radius: 999px;">IN ATTESA</span>
+                  <span class="badge text-bg-danger py-0.5 px-2" style="font-size: 10px; font-weight: 700; border-radius: 999px;">ERRORI</span>
+                  <span class="badge text-bg-secondary py-0.5 px-2" style="font-size: 10px; font-weight: 700; border-radius: 999px;">SOLO SCARTATI</span>
+                </div>
+              </div>
+              
+            </div>
+          </div>
+          
+        </div>
+      </div>
+    </div>
+  {% endif %}
 
   {% if query_made and cache_info %}
     <div class="alert alert-secondary small">

@@ -106,6 +106,9 @@ class ReportRagioneriaController
         $prevUrl     = null;
         $nextUrl     = null;
 
+        $coverage = [];
+        $mancantiPeriodi = [];
+
         if ($queryMade) {
             if (!$errors) {
                 try {
@@ -181,6 +184,71 @@ class ReportRagioneriaController
                     $csvQuery['export'] = 'csv';
                     unset($csvQuery['page']);
                     $csvLink  = '/pagamenti/report-ragioneria?' . http_build_query($csvQuery);
+
+                    // Calcolo scansione mensile
+                    if ($filters['idDominio'] !== '') {
+                        try {
+                            $tefaRepo = new \App\Database\TefaRepository();
+                            $queryDa = $filters['dataDa'] !== '' ? $filters['dataDa'] : '1970-01-01';
+                            $queryA  = $filters['dataA'] !== '' ? $filters['dataA'] : '2099-12-31';
+                            $coverage = $tefaRepo->getCoverage($queryDa, $queryA, $filters['idDominio']);
+
+                            $daDate = new \DateTime($filters['dataDa'] !== '' ? $filters['dataDa'] : ($today->format('Y') - 1) . '-01-01');
+                            $aDate  = new \DateTime($filters['dataA'] !== '' ? $filters['dataA'] : $today->format('Y-m-d'));
+
+                            $mesiConDati = [];
+                            foreach ($coverage as $c) {
+                                $mesiConDati[$c['anno'] . '-' . $c['mese']] = true;
+                            }
+
+                            $current = clone $daDate;
+                            $current->modify('first day of this month');
+                            $end = clone $aDate;
+                            $end->modify('first day of this month');
+
+                            $missingMonths = [];
+                            while ($current <= $end) {
+                                $key = $current->format('Y-n');
+                                if (!isset($mesiConDati[$key])) {
+                                    $missingMonths[] = clone $current;
+                                }
+                                $current->modify('+1 month');
+                            }
+
+                            $ranges = [];
+                            $tempRange = [];
+                            foreach ($missingMonths as $m) {
+                                if ($tempRange === []) {
+                                    $tempRange[] = $m;
+                                } else {
+                                    $last = end($tempRange);
+                                    $diff = $last->diff($m);
+                                    $monthsDiff = ($diff->y * 12) + $diff->m;
+                                    if ($monthsDiff === 1) {
+                                        $tempRange[] = $m;
+                                    } else {
+                                        $ranges[] = $tempRange;
+                                        $tempRange = [$m];
+                                    }
+                                }
+                            }
+                            if ($tempRange !== []) {
+                                $ranges[] = $tempRange;
+                            }
+
+                            $mesiNomi = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+                            foreach ($ranges as $r) {
+                                if (count($r) === 1) {
+                                    $mancantiPeriodi[] = $mesiNomi[(int)$r[0]->format('n') - 1] . ' ' . $r[0]->format('Y');
+                                } else {
+                                    $first = $r[0];
+                                    $last  = end($r);
+                                    $mancantiPeriodi[] = $mesiNomi[(int)$first->format('n') - 1] . ' ' . $first->format('Y') . ' – ' . $mesiNomi[(int)$last->format('n') - 1] . ' ' . $last->format('Y');
+                                }
+                            }
+                        } catch (\Throwable $_) {}
+                    }
+
                 } catch (\Throwable $e) {
                     $errors[] = 'Errore report ragioneria: ' . $e->getMessage();
                 }
@@ -206,6 +274,8 @@ class ReportRagioneriaController
             'raw_payload_json' => null,
             'csv_link'         => $csvLink,
             'app_debug'        => $this->isAppDebug(),
+            'coverage'         => $coverage,
+            'mancanti_periodi' => $mancantiPeriodi,
         ]);
     }
 
