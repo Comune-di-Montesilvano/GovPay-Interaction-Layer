@@ -34,9 +34,26 @@ class AuthMiddleware implements MiddlewareInterface
             if (!empty($_SESSION['user']['is_disabled'])) {
                 $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Account disabilitato: effettua di nuovo l\'accesso dopo la riattivazione'];
                 unset($_SESSION['user']);
+                unset($_SESSION['session_token']);
                 $resp = new SlimResponse(302);
                 return $resp->withHeader('Location', '/login');
             }
+
+            // Single-session: kick session soppiantata da login più recente
+            $userId = (int)($_SESSION['user']['id'] ?? 0);
+            $sessionToken = $_SESSION['session_token'] ?? null;
+            if ($userId > 0) {
+                $repo = new \App\Auth\UserRepository();
+                $dbToken = $repo->getSessionToken($userId);
+                if ($dbToken === null || $sessionToken === null || !hash_equals($dbToken, $sessionToken)) {
+                    unset($_SESSION['user']);
+                    unset($_SESSION['session_token']);
+                    $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Sessione terminata: l\'account è stato usato da un\'altra postazione'];
+                    $resp = new SlimResponse(302);
+                    return $resp->withHeader('Location', '/login');
+                }
+            }
+
             return $handler->handle($request);
         }
 
