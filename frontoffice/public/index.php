@@ -1289,8 +1289,23 @@ if (!function_exists('frontoffice_process_bollo_request')) {
         $idPendenza   = $sendResult['idPendenza'] ?? '';
         $detail       = frontoffice_fetch_pagamenti_detail($idPendenza);
         $numeroAvviso = frontoffice_extract_numero_avviso($sendResult['response'] ?? null, $detail);
-        // MBT: GovPay non genera avvisi PDF per marca da bollo (422 Avviso non disponibile)
-        $downloadUrl  = null;
+        // MBT: GovPay non genera avvisi PDF per marca da bollo (422 Avviso non disponibile).
+        // Costruiamo l'URL del bollettino HTML stampabile come sostituto.
+        $_descParams = '';
+        foreach ($documenti as $_d) {
+            $_t = mb_substr(trim((string)($_d['titolo'] ?? '')), 0, 200);
+            if ($_t !== '') {
+                $_descParams .= '&desc[]=' . rawurlencode($_t);
+            }
+        }
+        $downloadUrl = '/avviso-bollo?'
+            . 'iuv='       . rawurlencode(preg_replace('/\D/', '', (string)($numeroAvviso ?? '')))
+            . '&ente='     . rawurlencode($idDominio)
+            . '&importo='  . (int)round($importoTotale * 100)
+            . '&causale='  . rawurlencode($causale)
+            . '&cf='       . rawurlencode($ident)
+            . '&scadenza=' . rawurlencode($detail['dataScadenza'] ?? $dataScadenza)
+            . $_descParams;
 
         // Whitelist per checkout senza login
         if ($idPendenza !== '' && session_status() === PHP_SESSION_ACTIVE) {
@@ -4154,6 +4169,38 @@ $routes = [
 
         if ($method === 'POST') {
             $result = frontoffice_process_bollo_request($_POST, $_FILES);
+            if (!empty($result['pendenza_result'])) {
+                $pr       = $result['pendenza_result'];
+                $payerArr = is_array($pr['soggetto_pagatore'] ?? null) ? $pr['soggetto_pagatore'] : [];
+                $rawEmail = trim((string)($payerArr['email'] ?? ''));
+                $payerEmail = filter_var($rawEmail, FILTER_VALIDATE_EMAIL);
+                if ($payerEmail !== false && $payerEmail !== '') {
+                    $payerDisplay = trim((string)($payerArr['anagrafica'] ?? '')) ?: $payerEmail;
+                    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+                    $siteBase   = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+                    $toAbsolute = static function (string $url) use ($siteBase): string {
+                        return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
+                    };
+                    try {
+                        $mailResult = \App\Services\MailerService::forSuite('frontoffice')->sendSpontaneoAvviso(
+                            $payerEmail,
+                            $payerDisplay,
+                            [
+                                'causale'       => (string)($pr['causale'] ?? ''),
+                                'importo'       => $pr['importo'] ?? 0,
+                                'numeroAvviso'  => (string)($pr['numeroAvviso'] ?? ''),
+                                'data_scadenza' => (string)($pr['data_scadenza'] ?? ''),
+                                'download_url'  => $toAbsolute((string)($pr['download_url'] ?? '')),
+                                'checkout_url'  => $toAbsolute((string)($pr['checkout_url'] ?? '')),
+                            ]
+                        );
+                        Logger::getInstance()->info('Email avviso bollo', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
+                    } catch (\Throwable $e) {
+                        Logger::getInstance()->warning('Email avviso bollo non inviata', ['err' => $e->getMessage()]);
+                    }
+                }
+            }
             return [
                 'template' => 'pagamenti/bollo.html.twig',
                 'context'  => array_merge(['default_year' => $defaultYear], $result),
@@ -4470,6 +4517,13 @@ $routes = [
         $causale  = mb_substr(trim((string)($_GET['causale'] ?? '')), 0, 140);
         $cfDeb    = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim((string)($_GET['cf'] ?? ''))));
         $scadenza = trim((string)($_GET['scadenza'] ?? ''));
+        if ($scadenza !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $scadenza)) {
+            try { $scadenza = (new \DateTime($scadenza))->format('d/m/Y'); } catch (\Throwable $e) {}
+        }
+        $desc     = array_values(array_filter(array_map(
+            static fn($d) => mb_substr(trim((string)$d), 0, 200),
+            (array)($_GET['desc'] ?? [])
+        ), static fn($d) => $d !== ''));
         if ($iuv === '' || $ente === '' || $importo <= 0) {
             http_response_code(400);
             return [
@@ -4481,7 +4535,7 @@ $routes = [
         $importoEur = number_format($importo / 100, 2, ',', '.');
         return [
             'template' => 'pagamenti/avviso-bollo.html.twig',
-            'context'  => compact('iuv', 'ente', 'importo', 'importoEur', 'causale', 'cfDeb', 'scadenza', 'qrString'),
+            'context'  => compact('iuv', 'ente', 'importo', 'importoEur', 'causale', 'cfDeb', 'scadenza', 'qrString', 'desc'),
         ];
     },
 ];
@@ -6021,7 +6075,18 @@ $twig->addExtension(new I18nExtension($translations, $currentLocale));
 
 $versionInfo = \App\Config\Config::getVersionInfo();
 
+$bollotAttivo = false;
+$bollotIdTipo = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+$bollotIdDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: $env('ID_DOMINIO', '');
+if ($bollotIdDominio) {
+    try {
+        $det = (new \App\Database\EntrateRepository())->findDetails($bollotIdDominio, $bollotIdTipo);
+        $bollotAttivo = $det !== null;
+    } catch (\Throwable $_) {}
+}
+
 $baseContext = [
+    'bollot_attivo' => $bollotAttivo,
     'app_entity' => [
         'name' => $entityName,
         'suffix' => $entitySuffix,

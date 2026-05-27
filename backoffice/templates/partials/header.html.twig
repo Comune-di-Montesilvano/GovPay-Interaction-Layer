@@ -109,7 +109,17 @@
     <div class="bo-sidebar-meta">
       <span class="bo-sidebar-status-dot" aria-hidden="true"></span>
       <span>Online</span>
-      <span class="bo-sidebar-version">{{ app_version_label }}</span>
+      {% if app_ref_url %}
+        <a class="bo-sidebar-version" href="{{ app_ref_url }}" target="_blank" rel="noopener noreferrer" title="Vai al repository GitHub ({{ app_version_label }})">
+          <i class="fab fa-github me-1" aria-hidden="true"></i>{{ app_version_label }}
+        </a>
+      {% elseif app_repo_url %}
+        <a class="bo-sidebar-version" href="{{ app_repo_url }}" target="_blank" rel="noopener noreferrer" title="Vai al repository GitHub ({{ app_version_label }})">
+          <i class="fab fa-github me-1" aria-hidden="true"></i>{{ app_version_label }}
+        </a>
+      {% else %}
+        <span class="bo-sidebar-version">{{ app_version_label }}</span>
+      {% endif %}
     </div>
   </aside>
 

@@ -87,7 +87,25 @@
           </div>
 
           <div class="avviso-actions">
-            {% if p.download_url %}
+            {% set is_bollo = voci|length > 0
+                and voci[0].tipoBollo is defined
+                and voci[0].tipoBollo is not null
+                and voci[0].tipoBollo != '' %}
+            {% if is_bollo %}
+              {% set _burl = '/avviso-bollo?iuv=' ~ (p.numero_avviso ?? '')|url_encode
+                  ~ '&ente=' ~ (p.id_dominio ?? '')|url_encode
+                  ~ '&importo=' ~ ((p.importo ?? 0) * 100)|round
+                  ~ '&causale=' ~ (p.causale ?? '')|url_encode
+                  ~ '&cf=' ~ (pagatore.identificativo ?? pagatore.codice_fiscale ?? '')|url_encode
+                  ~ '&scadenza=' ~ (p.data_scadenza ?? '')|url_encode %}
+              {% for v in voci %}
+                {% set _burl = _burl ~ '&desc[]=' ~ (v.descrizione ?? '')|url_encode %}
+              {% endfor %}
+              <a class="btn btn-outline" href="{{ _burl }}" target="_blank" rel="noopener">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
+                {{ 'Bollettino MBT'|trans }}
+              </a>
+            {% elseif p.download_url %}
               <a class="btn btn-outline" href="{{ p.download_url }}" target="_blank" rel="noopener">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
                 {{ 'Scarica PDF avviso'|trans }}

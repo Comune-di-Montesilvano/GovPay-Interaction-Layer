@@ -204,6 +204,14 @@ body.bo-shell {
 
 .bo-sidebar-version {
   margin-left: auto;
+  color: var(--bo-sidebar-muted) !important;
+  text-decoration: none !important;
+  transition: color 0.15s ease-in-out, opacity 0.15s ease-in-out;
+}
+
+.bo-sidebar-version:hover {
+  color: #ffffff !important;
+  opacity: 1;
 }
 
 .bo-topbar {

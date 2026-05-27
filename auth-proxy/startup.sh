@@ -262,6 +262,151 @@ stop_satosa() {
   fi
 }
 
+parse_and_log_spid_idps() {
+  local xml_file="$1"
+  python3 - "$xml_file" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+xml_path = sys.argv[1]
+try:
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    
+    MD_NS = "urn:oasis:names:tc:SAML:2.0:metadata"
+    
+    def local_name(tag):
+        return tag.split("}", 1)[-1] if "}" in tag else tag
+        
+    entities = []
+    if local_name(root.tag) == "EntityDescriptor":
+        entities.append(root)
+    
+    for elem in root.iter():
+        if local_name(elem.tag) == "EntityDescriptor":
+            if elem not in entities:
+                entities.append(elem)
+                
+    print("\n[startup] === ELENCO IDP SPID ATTIVI E LORO URL ===")
+    print(f"{'Nome IDP':<30} | {'EntityID':<45} | {'Endpoint SSO (POST)':<70}")
+    print("-" * 150)
+    
+    count = 0
+    for entity in entities:
+        entity_id = entity.get("entityID")
+        if not entity_id:
+            continue
+            
+        display_name = ""
+        for elem in entity.iter():
+            if local_name(elem.tag) == "Organization":
+                for org_child in elem:
+                    if local_name(org_child.tag) == "OrganizationDisplayName":
+                        lang = org_child.get("{http://www.w3.org/XML/1998/namespace}lang") or org_child.get("lang")
+                        if lang == "it" and org_child.text:
+                            display_name = org_child.text.strip()
+                            break
+                if not display_name:
+                    for org_child in elem:
+                        if local_name(org_child.tag) == "OrganizationName":
+                            lang = org_child.get("{http://www.w3.org/XML/1998/namespace}lang") or org_child.get("lang")
+                            if lang == "it" and org_child.text:
+                                display_name = org_child.text.strip()
+                                break
+        
+        if not display_name:
+            display_name = "N/D"
+            
+        sso_url = ""
+        for elem in entity.iter():
+            if local_name(elem.tag) == "SingleSignOnService":
+                binding = elem.get("Binding", "")
+                if "HTTP-POST" in binding:
+                    sso_url = elem.get("Location", "")
+                    break
+        if not sso_url:
+            for elem in entity.iter():
+                if local_name(elem.tag) == "SingleSignOnService":
+                    sso_url = elem.get("Location", "")
+                    break
+                    
+        print(f"{display_name[:28]:<30} | {entity_id[:43]:<45} | {sso_url:<70}")
+        count += 1
+        
+    print(f"[startup] ======================================== Totale IDP configurati: {count} ===\n")
+except Exception as e:
+    print(f"[startup] WARNING: Impossibile effettuare il parsing dei metadati IDP SPID: {e}")
+PY
+}
+
+fetch_spid_idps_metadata() {
+  local force="${1:-0}"
+  local _registry_url="${SATOSA_SPID_IDPS_REGISTRY_URL:-https://registry.spid.gov.it/metadata/idp/spid-entities-idps.xml}"
+  local _tmp_file="$(mktemp)"
+  
+  echo "[startup] Verifica e fetch dei metadata degli IDP SPID attivi da ${_registry_url}..."
+  
+  local _curl_opts="-sSL --max-time 30"
+  local _headers_file="$(mktemp)"
+  local _http_code=""
+  
+  if [ -s "$SPID_IDPS_FILE" ] && [ "$force" != "1" ]; then
+    local _mod_time
+    _mod_time=$(date -u -R -r "$SPID_IDPS_FILE" 2>/dev/null || true)
+    if [ -n "$_mod_time" ]; then
+      _http_code=$(curl $_curl_opts -H "If-Modified-Since: $_mod_time" -w "%{http_code}" -D "$_headers_file" "$_registry_url" -o "$_tmp_file" 2>/dev/null || echo "curl-fail")
+    else
+      _http_code=$(curl $_curl_opts -w "%{http_code}" -D "$_headers_file" "$_registry_url" -o "$_tmp_file" 2>/dev/null || echo "curl-fail")
+    fi
+  else
+    _http_code=$(curl $_curl_opts -w "%{http_code}" -D "$_headers_file" "$_registry_url" -o "$_tmp_file" 2>/dev/null || echo "curl-fail")
+  fi
+  
+  if [ "$_http_code" = "304" ]; then
+    echo "[startup] I metadata degli IDP SPID locali sono già aggiornati (HTTP 304)."
+    rm -f "$_tmp_file" "$_headers_file"
+    parse_and_log_spid_idps "$SPID_IDPS_FILE"
+    return 0
+  fi
+  
+  if [ "$_http_code" = "200" ] && [ -s "$_tmp_file" ]; then
+    if grep -q 'EntityDescriptor' "$_tmp_file"; then
+      mv "$_tmp_file" "$SPID_IDPS_FILE"
+      chmod 644 "$SPID_IDPS_FILE"
+      echo "[startup] Metadata degli IDP SPID scaricati e aggiornati con successo."
+      rm -f "$_headers_file"
+      parse_and_log_spid_idps "$SPID_IDPS_FILE"
+      return 1
+    else
+      echo "[startup] WARNING: file scaricato non sembra essere un metadata valido (EntityDescriptor non trovato)."
+    fi
+  else
+    local _fallback_url="https://registry.spid.gov.it/entities-idp"
+    if [ "$_registry_url" = "https://registry.spid.gov.it/entities-idp" ]; then
+      _fallback_url="https://registry.spid.gov.it/metadata/idp/spid-entities-idps.xml"
+    fi
+    echo "[startup] Fallback: tentativo di download dei metadata da ${_fallback_url}..."
+    local _fb_http_code
+    _fb_http_code=$(curl $_curl_opts -w "%{http_code}" "$_fallback_url" -o "$_tmp_file" 2>/dev/null || echo "curl-fail")
+    if [ "$_fb_http_code" = "200" ] && [ -s "$_tmp_file" ] && grep -q 'EntityDescriptor' "$_tmp_file"; then
+      mv "$_tmp_file" "$SPID_IDPS_FILE"
+      chmod 644 "$SPID_IDPS_FILE"
+      echo "[startup] Metadata degli IDP SPID scaricati dal fallback con successo."
+      rm -f "$_headers_file"
+      parse_and_log_spid_idps "$SPID_IDPS_FILE"
+      return 1
+    else
+      echo "[startup] WARNING: impossibile scaricare i metadata degli IDP SPID (HTTP=$_http_code, Fallback=$_fb_http_code)."
+    fi
+  fi
+  
+  rm -f "$_tmp_file" "$_headers_file"
+  if [ -s "$SPID_IDPS_FILE" ]; then
+    parse_and_log_spid_idps "$SPID_IDPS_FILE"
+  fi
+  return 0
+}
+
 setup_satosa() {
   local _pki_key="${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}"
   local _pki_cert="${SATOSA_PUBLIC_KEY:-./pki/cert.pem}"
@@ -433,6 +578,13 @@ if is_true "${SATOSA_USE_DEMO_SPID_IDP:-}"; then
   envsubst < "$TEMPLATES/wallets-spid-demo-override.json.template" > "$SATOSA_PROXY/static/config/wallets-spid-demo-override.json"
 else
   rm -f "$SATOSA_PROXY/static/config/wallets-spid-demo-override.json"
+fi
+
+# ── SPID active IDPs metadata ────────────────────────────────────────────────
+if is_true "${ENABLE_SPID:-false}"; then
+  mkdir -p "$SATOSA_PROXY/metadata/idp"
+  SPID_IDPS_FILE="$SATOSA_PROXY/metadata/idp/spid-entities-idps.xml"
+  fetch_spid_idps_metadata 0 || true
 fi
 
 # ── SPID validator metadata ──────────────────────────────────────────────────
@@ -961,6 +1113,65 @@ if is_true "${ENABLE_SPID:-false}"; then
   (while true; do
     sleep "${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}"
     ensure_sp_metadata 0 || true
+  done) &
+
+  # Watcher: controlla aggiornamenti per i metadata degli IDP SPID ogni 12 ore (43200 secondi)
+  (while true; do
+    sleep "${SPID_IDPS_METADATA_CHECK_INTERVAL_SECONDS:-43200}"
+    if ! fetch_spid_idps_metadata 0; then
+      echo "[watchdog] Rilevato aggiornamento nei metadata degli IDP SPID. Invio segnale di riavvio a SATOSA..."
+      if is_true "${SATOSA_USE_SPID_VALIDATOR:-}"; then
+        echo "[watchdog] Rigenero metadati integrando il validator..."
+        local _val_file="$SATOSA_PROXY/metadata/idp/spid-validator.xml"
+        local _val_url="${SATOSA_SPID_VALIDATOR_METADATA_URL:-https://validator.spid.gov.it/metadata.xml}"
+        local _val_tmp="$(mktemp)"
+        if curl -sSL --max-time 30 "$_val_url" -o "$_val_tmp" 2>/dev/null && grep -q 'validator.spid.gov.it' "$_val_tmp"; then
+          mv "$_val_tmp" "$_val_file"
+          chmod 644 "$_val_file"
+        else
+          rm -f "$_val_tmp"
+        fi
+        if [ -s "$_val_file" ] && [ -s "$SPID_IDPS_FILE" ]; then
+          python3 - "$SPID_IDPS_FILE" "$_val_file" <<'PY'
+import copy
+import sys
+import xml.etree.ElementTree as ET
+
+dst_path = sys.argv[1]
+val_path = sys.argv[2]
+MD_NS = "urn:oasis:names:tc:SAML:2.0:metadata"
+ET.register_namespace("md", MD_NS)
+
+def local_name(tag):
+    return tag.split("}", 1)[-1] if "}" in tag else tag
+
+def first_entity(root):
+    if local_name(root.tag) == "EntityDescriptor":
+        return root
+    return root.find(f".//{{{MD_NS}}}EntityDescriptor")
+
+dst_tree = ET.parse(dst_path)
+dst_root = dst_tree.getroot()
+val_root = ET.parse(val_path).getroot()
+val_entity = first_entity(val_root)
+
+if val_entity is not None:
+    entity_id = (val_entity.get("entityID") or "").strip()
+    if entity_id and dst_root.find(f".//{{{MD_NS}}}EntityDescriptor[@entityID='{entity_id}']") is None:
+        if local_name(dst_root.tag) == "EntityDescriptor":
+            wrapper = ET.Element(f"{{{MD_NS}}}EntitiesDescriptor")
+            wrapper.append(copy.deepcopy(dst_root))
+            wrapper.append(copy.deepcopy(val_entity))
+            dst_root = wrapper
+            dst_tree = ET.ElementTree(dst_root)
+        else:
+            dst_root.append(copy.deepcopy(val_entity))
+        dst_tree.write(dst_path, encoding="utf-8", xml_declaration=True)
+PY
+        fi
+      fi
+      touch "/tmp/restart_trigger"
+    fi
   done) &
 else
   echo "[startup] SPID disabilitato — generazione SP metadata saltata"

@@ -231,6 +231,179 @@ button { font-family: inherit; }
 .hero-trust div { display:flex; gap: 8px; align-items:center; }
 .hero-trust svg { width: 18px; height: 18px; color: var(--ms-gold-300); }
 
+/* --- Marca da Bollo Digitale card --- */
+.hero-inner.has-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.hero-trust-row {
+  width: 100%;
+}
+
+@media (min-width: 992px) {
+  .hero-inner.has-sidebar {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: var(--sp-6);
+    align-items: center;
+  }
+  .hero-inner.has-sidebar .hero-trust-row {
+    grid-column: span 2;
+  }
+}
+
+.hero-sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.bollo-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(228, 189, 86, 0.45); /* Elegant gold transparent border */
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all var(--dur-base) var(--ease-out);
+  overflow: hidden;
+}
+
+.bollo-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--ms-gold-300);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--ms-gold-300);
+}
+
+.bollo-card::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(228, 189, 86, 0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.bollo-card-badge {
+  display: flex;
+  margin-bottom: var(--sp-3);
+}
+
+.bollo-card-badge .badge-gold {
+  background: rgba(228, 189, 86, 0.15);
+  color: var(--ms-gold-300);
+  border: 1px solid rgba(228, 189, 86, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bollo-card-badge .badge-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--ms-gold-300);
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 8px var(--ms-gold-300);
+  animation: goldPulse 2s infinite var(--ease-in-out);
+}
+
+.bollo-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.bollo-icon-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(228, 189, 86, 0.12);
+  border: 1px solid rgba(228, 189, 86, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ms-gold-300);
+  flex-shrink: 0;
+}
+
+.bollo-card-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.bollo-card-body {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0 0 var(--sp-4) 0;
+}
+
+.bollo-card-footer {
+  display: flex;
+}
+
+/* Premium Gold Button */
+.btn-gold {
+  background: linear-gradient(135deg, var(--ms-gold-500) 0%, var(--ms-gold-600) 100%);
+  color: var(--ms-purple-900) !important; /* High contrast text */
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 4px 12px rgba(201, 161, 59, 0.35);
+  transition: all var(--dur-fast) var(--ease-out);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-gold:hover {
+  background: linear-gradient(135deg, var(--ms-gold-300) 0%, var(--ms-gold-500) 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(201, 161, 59, 0.45);
+}
+
+.btn-gold:active {
+  transform: translateY(0);
+}
+
+@keyframes goldPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(228, 189, 86, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(228, 189, 86, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(228, 189, 86, 0);
+  }
+}
+
 /* ============================================================================
    SECTION
    ============================================================================ */

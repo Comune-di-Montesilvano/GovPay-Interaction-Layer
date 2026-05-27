@@ -5,95 +5,136 @@
 {# ── Hero ── #}
 <section class="hero">
   <div class="container">
-    <div class="hero-inner">
-      <div class="hero-eyebrow">
-        <span class="pill">{{ 'Sportello digitale'|trans }}</span>
-        <span>{{ 'I pagamenti verso la PA, in un solo posto'|trans }}</span>
-      </div>
+    <div class="hero-inner{% if bollot_attivo %} has-sidebar{% endif %}">
+      <div class="hero-main">
+        <div class="hero-eyebrow">
+          <span class="pill">{{ 'Sportello digitale'|trans }}</span>
+          <span>{{ 'I pagamenti verso la PA, in un solo posto'|trans }}</span>
+        </div>
 
-      <h1>{{ 'I pagamenti all\'ente,<br>semplici e in regola.'|trans|raw }}</h1>
+        <h1>{{ 'I pagamenti all\'ente,<br>semplici e in regola.'|trans|raw }}</h1>
 
-      <p class="lead">
-        {{ 'Tributi, sanzioni, servizi educativi, concessioni e ogni altro pagamento. Paga in pochi clic — la ricevuta digitale ti arriva via email.'|trans }}
-      </p>
+        <p class="lead">
+          {{ 'Tributi, sanzioni, servizi educativi, concessioni e ogni altro pagamento. Paga in pochi clic — la ricevuta digitale ti arriva via email.'|trans }}
+        </p>
 
-      <div class="hero-actions">
-        <a class="hero-cta primary" href="/pagamento-avviso">
-          <div class="icon-wrap">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>
-            </svg>
-          </div>
-          <div>
-            <div class="title">{{ 'Paga un avviso'|trans }}</div>
-            <div class="desc">{{ 'Hai ricevuto un bollettino: inserisci codice avviso e codice fiscale.'|trans }}</div>
-          </div>
-        </a>
-
-        <a class="hero-cta" href="/pagamento-spontaneo">
-          <div class="icon-wrap">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>
-            </svg>
-          </div>
-          <div>
-            <div class="title">{{ 'Pagamento spontaneo'|trans }}</div>
-            <div class="desc">{{ 'Devi pagare ma non hai un avviso. Compila il modulo e genera l\'avviso.'|trans }}</div>
-          </div>
-        </a>
-
-        <a class="hero-cta" href="/carrello">
-          <div class="icon-wrap">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
-              <path d="M3 4h2l3 12h11l2-8H7"/>
-            </svg>
-          </div>
-          <div>
-            <div class="title">{{ 'Carrello multi-pagamento'|trans }}</div>
-            <div class="desc">{{ 'Fino a 5 avvisi pagati in un\'unica sessione pagoPA.'|trans }}</div>
-          </div>
-        </a>
-
-        {% if spid_enabled %}
-          <a class="hero-cta" href="/pendenze">
+        <div class="hero-actions">
+          <a class="hero-cta primary" href="/pagamento-avviso">
             <div class="icon-wrap">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>
               </svg>
             </div>
             <div>
-              <div class="title">{{ 'Le mie pendenze'|trans }}</div>
-              <div class="desc">{% if current_user %}{{ 'Consulta lo storico e scarica le ricevute.'|trans }}{% else %}{{ 'Accedi con SPID o CIE per vedere le tue pendenze.'|trans }}{% endif %}</div>
+              <div class="title">{{ 'Paga un avviso'|trans }}</div>
+              <div class="desc">{{ 'Hai ricevuto un bollettino: inserisci codice avviso e codice fiscale.'|trans }}</div>
             </div>
           </a>
-        {% else %}
-          <a class="hero-cta" href="/pagamento-avviso">
+
+          <a class="hero-cta" href="/pagamento-spontaneo">
             <div class="icon-wrap">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>
+                <path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/>
               </svg>
             </div>
             <div>
-              <div class="title">{{ 'Scarica la ricevuta'|trans }}</div>
-              <div class="desc">{{ 'Già pagato? Inserisci avviso e codice fiscale per scaricare la ricevuta.'|trans }}</div>
+              <div class="title">{{ 'Pagamento spontaneo'|trans }}</div>
+              <div class="desc">{{ 'Devi pagare ma non hai un avviso. Compila il modulo e genera l\'avviso.'|trans }}</div>
             </div>
           </a>
-        {% endif %}
+
+          <a class="hero-cta" href="/carrello">
+            <div class="icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/>
+                <path d="M3 4h2l3 12h11l2-8H7"/>
+              </svg>
+            </div>
+            <div>
+              <div class="title">{{ 'Carrello multi-pagamento'|trans }}</div>
+              <div class="desc">{{ 'Fino a 5 avvisi pagati in un\'unica sessione pagoPA.'|trans }}</div>
+            </div>
+          </a>
+
+          {% if spid_enabled %}
+            <a class="hero-cta" href="/pendenze">
+              <div class="icon-wrap">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                </svg>
+              </div>
+              <div>
+                <div class="title">{{ 'Le mie pendenze'|trans }}</div>
+                <div class="desc">{% if current_user %}{{ 'Consulta lo storico e scarica le ricevute.'|trans }}{% else %}{{ 'Accedi con SPID o CIE per vedere le tue pendenze.'|trans }}{% endif %}</div>
+              </div>
+            </a>
+          {% else %}
+            <a class="hero-cta" href="/pagamento-avviso">
+              <div class="icon-wrap">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>
+                </svg>
+              </div>
+              <div>
+                <div class="title">{{ 'Scarica la ricevuta'|trans }}</div>
+                <div class="desc">{{ 'Già pagato? Inserisci avviso e codice fiscale per scaricare la ricevuta.'|trans }}</div>
+              </div>
+            </a>
+          {% endif %}
+        </div>
       </div>
 
-      <div class="hero-trust">
-        <div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>
-          {{ 'Circuito ufficiale pagoPA'|trans }}
+      {% if bollot_attivo %}
+        <div class="hero-sidebar">
+          <div class="bollo-card">
+            <div class="bollo-card-badge">
+              <span class="badge-gold">
+                <span class="badge-dot"></span>
+                {{ 'Attivo'|trans }}
+              </span>
+            </div>
+            
+            <div class="bollo-card-header">
+              <div class="bollo-icon-circle">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="2 2"/>
+                  <circle cx="12" cy="12" r="3.5" fill="var(--ms-gold-100)" stroke="var(--ms-gold-600)"/>
+                  <path d="M12 9v6M9 12h6"/>
+                </svg>
+              </div>
+              <h3>{{ 'Marca da Bollo Digitale'|trans }}</h3>
+            </div>
+            
+            <p class="bollo-card-body">
+              {{ 'Acquista ed emetti online una marca da bollo digitale (tassa di bollo telematica) per le tue istanze amministrative.'|trans }}
+            </p>
+            
+            <div class="bollo-card-footer">
+              <a href="/pagamento-bollo" class="btn-gold">
+                <span>{{ 'Paga Marca da Bollo'|trans }}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+                </svg>
+              </a>
+            </div>
+          </div>
         </div>
-        <div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
-          {{ 'Ricevuta digitale immediata'|trans }}
-        </div>
-        <div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
-          {{ 'Stato aggiornato automaticamente'|trans }}
+      {% endif %}
+
+      <div class="hero-trust-row">
+        <div class="hero-trust">
+          <div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>
+            {{ 'Circuito ufficiale pagoPA'|trans }}
+          </div>
+          <div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+            {{ 'Ricevuta digitale immediata'|trans }}
+          </div>
+          <div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+            {{ 'Stato aggiornato automaticamente'|trans }}
+          </div>
         </div>
       </div>
     </div>

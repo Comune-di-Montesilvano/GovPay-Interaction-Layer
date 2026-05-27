@@ -1008,9 +1008,10 @@ HTML;
             <td style=\"{$valStyle}\">{$scadenza}</td>
           </tr>" : '';
 
+        $pdfLabel = str_contains($downloadUrl, '/avviso-bollo') ? 'Visualizza bollettino' : 'Scarica PDF avviso';
         $pdfBtn = $downloadUrl !== '' ? "
               <td style=\"padding:0 6px 0 0;\">
-                <a href=\"{$downloadUrl}\" style=\"display:inline-block;padding:12px 22px;background:#f1f5f9;color:#0f172a;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #cbd5e1;\">Scarica PDF</a>
+                <a href=\"{$downloadUrl}\" style=\"display:inline-block;padding:12px 22px;background:#f1f5f9;color:#0f172a;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;border:1px solid #cbd5e1;\">{$pdfLabel}</a>
               </td>" : '';
 
         $payBtn = $checkoutUrl !== '' ? "
@@ -1075,7 +1076,8 @@ HTML;
 
         $iuvLine   = $iuv !== ''      ? "\nCodice avviso (IUV): {$iuv}"  : '';
         $scadLine  = $scadenza !== '' ? "\nScadenza: {$scadenza}"         : '';
-        $pdfLine   = $pdfUrl !== ''   ? "\n\nScarica PDF avviso:\n{$pdfUrl}"  : '';
+        $pdfLabel2 = str_contains($pdfUrl, '/avviso-bollo') ? 'Visualizza bollettino' : 'Scarica PDF avviso';
+        $pdfLine   = $pdfUrl !== ''   ? "\n\n{$pdfLabel2}:\n{$pdfUrl}"  : '';
         $payLine   = $payUrl !== ''   ? "\n\nPaga subito:\n{$payUrl}"         : '';
 
         return <<<TEXT

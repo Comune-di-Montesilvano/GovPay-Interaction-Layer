@@ -26,10 +26,11 @@
 
         <div class="col-12">
           <div class="alert alert-info py-2 small mb-0" role="alert">
-            <strong>Cron consigliato:</strong>
-            <code>*/5 * * * * docker exec gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php</code><br>
-            Per la scansione storica iniziale, eseguire una tantum:<br>
-            <code>docker exec gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php --scan --da={{ 'now'|date('Y') }}-01-01 --a={{ 'now'|date('Y-m-d') }}</code>
+            <i class="fas fa-info-circle me-1"></i>
+            Il servizio di scansione TEFA in background può essere avviato e gestito direttamente dalla scheda 
+            <a href="/impostazioni?tab=cron" class="alert-link text-decoration-none fw-semibold">
+              <i class="fas fa-clock"></i> Servizi di Integrazione (Cron)
+            </a>.
           </div>
         </div>
       </div>
