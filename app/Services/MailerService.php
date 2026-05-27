@@ -987,7 +987,11 @@ HTML;
         $causale     = htmlspecialchars((string)($avviso['causale'] ?? '—'), ENT_QUOTES, 'UTF-8');
         $importo     = number_format((float)($avviso['importo'] ?? 0), 2, ',', '.');
         $iuv         = htmlspecialchars((string)($avviso['numeroAvviso'] ?? ''), ENT_QUOTES, 'UTF-8');
-        $scadenza    = htmlspecialchars((string)($avviso['data_scadenza'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $scadRaw     = (string)($avviso['data_scadenza'] ?? '');
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $scadRaw)) {
+            try { $scadRaw = (new \DateTimeImmutable($scadRaw))->format('d/m/Y'); } catch (\Throwable $e) {}
+        }
+        $scadenza    = htmlspecialchars($scadRaw, ENT_QUOTES, 'UTF-8');
         $downloadUrl = htmlspecialchars((string)($avviso['download_url'] ?? ''), ENT_QUOTES, 'UTF-8');
         $checkoutUrl = htmlspecialchars((string)($avviso['checkout_url'] ?? ''), ENT_QUOTES, 'UTF-8');
         $greeting    = $safeName !== '' ? 'Gentile <strong>' . $safeName . '</strong>,' : 'Gentile cittadino,';
@@ -1070,7 +1074,11 @@ HTML;
         $causale  = (string)($avviso['causale'] ?? '—');
         $importo  = number_format((float)($avviso['importo'] ?? 0), 2, ',', '.');
         $iuv      = (string)($avviso['numeroAvviso'] ?? '');
-        $scadenza = (string)($avviso['data_scadenza'] ?? '');
+        $scadRaw  = (string)($avviso['data_scadenza'] ?? '');
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $scadRaw)) {
+            try { $scadRaw = (new \DateTimeImmutable($scadRaw))->format('d/m/Y'); } catch (\Throwable $e) {}
+        }
+        $scadenza = $scadRaw;
         $pdfUrl   = (string)($avviso['download_url'] ?? '');
         $payUrl   = (string)($avviso['checkout_url'] ?? '');
 
