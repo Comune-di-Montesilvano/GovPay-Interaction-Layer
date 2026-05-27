@@ -708,12 +708,12 @@
           {% endif %}
         {% endif %}
   {% elseif currentTab == 'tipologie_esterne' %}
-        <h2 class="h5">Tipologie di pagamento esterne</h2>
-        <p class="text-muted small">Definisci collegamenti esterni per gestire specifiche tipologie di pagamento al di fuori di GovPay.</p>
+        <h2 class="h5">Pendenze esterne</h2>
+        <p class="text-muted small">Definisci collegamenti esterni per gestire specifiche pendenze esterne al di fuori di GovPay.</p>
 
         <div class="card border-0 shadow-sm mb-4">
           <div class="card-body">
-            <h3 class="h6 mb-3">Nuova tipologia esterna</h3>
+            <h3 class="h6 mb-3">Nuova pendenza esterna</h3>
             <form method="post" action="/configurazione/tipologie-esterne" class="row g-3 align-items-end">
               <div class="col-md-5">
                 <label for="tipologiaDescrizione" class="form-label small text-muted mb-1">Descrizione</label>
@@ -773,7 +773,7 @@
                       <button type="submit" class="btn btn-sm btn-primary me-1">Salva</button>
                       </form>
                       <form method="post" action="/configurazione/tipologie-esterne/{{ tipo.id }}/delete" class="d-inline">
-                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Rimuovere la tipologia esterna \"{{ tipo.descrizione|e('js') }}\"?');">Elimina</button>
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Rimuovere la pendenza esterna \"{{ tipo.descrizione|e('js') }}\"?');">Elimina</button>
                       </form>
                     </td>
                   </tr>
@@ -782,7 +782,7 @@
             </table>
           </div>
         {% else %}
-          <p class="text-muted mb-0">Non sono ancora state configurate tipologie di pagamento esterne.</p>
+          <p class="text-muted mb-0">Non sono ancora state configurate pendenze esterne.</p>
         {% endif %}
   {% elseif currentTab == 'gestionali' %}
         <h2 class="h5">Gestionali</h2>
