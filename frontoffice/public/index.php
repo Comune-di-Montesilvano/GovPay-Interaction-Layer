@@ -1272,7 +1272,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             'voci'             => $voci,
             'dataValidita'     => date('Y-m-d'),
             'dataScadenza'     => $dataScadenza,
-            'datiAllegati'     => ['sorgente' => 'BolloTelematico'],
+            'datiAllegati'     => frontoffice_build_dati_allegati(),
         ];
 
         $sendResult = frontoffice_send_pendenza_to_backoffice($payload);
@@ -1399,6 +1399,23 @@ if (!function_exists('frontoffice_prepare_payer')) {
         }
 
         return $payload;
+    }
+}
+
+if (!function_exists('frontoffice_build_dati_allegati')) {
+    function frontoffice_build_dati_allegati(): array
+    {
+        $datiAllegati = ['sorgente' => 'Spontaneo'];
+        if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['frontoffice_user']) && is_array($_SESSION['frontoffice_user'])) {
+            $foUser = $_SESSION['frontoffice_user'];
+            $datiAllegati['utente_autenticato'] = true;
+            $datiAllegati['utente_nome'] = $foUser['first_name'] ?? '';
+            $datiAllegati['utente_cognome'] = $foUser['last_name'] ?? '';
+            $datiAllegati['utente_cf'] = $foUser['fiscal_number'] ?? '';
+            $datiAllegati['utente_email'] = $foUser['email'] ?? '';
+            $datiAllegati['utente_provider'] = $foUser['provider_name'] ?? ($foUser['provider_id'] ?? '');
+        }
+        return $datiAllegati;
     }
 }
 
@@ -2801,7 +2818,7 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             'voci' => frontoffice_build_voci($idDominio, $idTipo, $causale, $importo),
             'dataValidita' => date('Y-m-d'),
             'dataScadenza' => $dataScadenza,
-            'datiAllegati' => ['sorgente' => 'Spontaneo'],
+            'datiAllegati' => frontoffice_build_dati_allegati(),
         ];
 
         $sendResult = frontoffice_send_pendenza_to_backoffice($payload);
