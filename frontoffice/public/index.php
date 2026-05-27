@@ -1332,6 +1332,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             ]);
         }
 
+        $checkoutToken = $idPendenza !== '' ? frontoffice_generate_checkout_token($idPendenza) : '';
         $context['pendenza_result'] = [
             'idPendenza'        => $idPendenza,
             'numeroAvviso'      => $numeroAvviso,
@@ -1340,7 +1341,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             'documenti'         => array_column($documenti, 'titolo'),
             'download_url'      => $downloadUrl,
             'checkout_url'      => $idPendenza !== ''
-                ? ('/pagamento-spontaneo/checkout?idPendenza=' . rawurlencode($idPendenza))
+                ? ('/pagamento-spontaneo/checkout?idPendenza=' . rawurlencode($idPendenza) . ($checkoutToken !== '' ? '&t=' . rawurlencode($checkoutToken) : ''))
                 : null,
             'cart_url'          => '/carrello',
             'cart_error'        => $cartError,
@@ -2245,6 +2246,39 @@ if (!function_exists('frontoffice_normalize_cf_key')) {
     function frontoffice_normalize_cf_key(string $cf): string
     {
         return strtoupper(preg_replace('/\s+/', '', trim($cf)) ?? '');
+    }
+}
+
+if (!function_exists('frontoffice_checkout_token_secret')) {
+    function frontoffice_checkout_token_secret(): string
+    {
+        $base = frontoffice_env_value('APP_ENCRYPTION_KEY', '');
+        if ($base === '') {
+            return '';
+        }
+        return hash('sha256', $base . '|checkout-link');
+    }
+}
+
+if (!function_exists('frontoffice_generate_checkout_token')) {
+    function frontoffice_generate_checkout_token(string $idPendenza): string
+    {
+        $secret = frontoffice_checkout_token_secret();
+        if ($secret === '') {
+            return '';
+        }
+        return hash_hmac('sha256', $idPendenza, $secret);
+    }
+}
+
+if (!function_exists('frontoffice_verify_checkout_token')) {
+    function frontoffice_verify_checkout_token(string $idPendenza, string $token): bool
+    {
+        if ($token === '') {
+            return false;
+        }
+        $expected = frontoffice_generate_checkout_token($idPendenza);
+        return $expected !== '' && hash_equals($expected, $token);
     }
 }
 
@@ -4212,7 +4246,7 @@ $routes = [
                                 'checkout_url'  => $toAbsolute((string)($pr['checkout_url'] ?? '')),
                             ]
                         );
-                        Logger::getInstance()->info('Email avviso bollo', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
+                        Logger::getInstance()->info('Email avviso bollo inviata', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
                     } catch (\Throwable $e) {
                         Logger::getInstance()->warning('Email avviso bollo non inviata', ['err' => $e->getMessage()]);
                     }
@@ -4808,6 +4842,11 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
         $key = 'frontoffice_spontaneo_pendenze';
         $list = isset($_SESSION[$key]) && is_array($_SESSION[$key]) ? $_SESSION[$key] : [];
         $allowed = in_array($idPendenza, array_map('strval', $list), true);
+        // Fallback: accetta token HMAC firmato dal server (usato nei link email)
+        if (!$allowed) {
+            $t = trim((string)($_GET['t'] ?? ''));
+            $allowed = frontoffice_verify_checkout_token($idPendenza, $t);
+        }
         if (!$allowed) {
             http_response_code(404);
             echo 'Not found';
