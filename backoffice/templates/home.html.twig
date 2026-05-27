@@ -357,11 +357,12 @@
             <div class="btn-group btn-group-sm" role="group" aria-label="Periodo tipologie" id="bo-tipologie-periodo">
               <button type="button" class="btn btn-outline-primary" data-periodo="30d">Ultimi 30 gg</button>
               <button type="button" class="btn btn-outline-primary" data-periodo="last_month">Mese scorso</button>
-              <button type="button" class="btn btn-outline-primary" data-periodo="6m">Ultimi 6 mesi</button>
-              <button type="button" class="btn btn-primary" data-periodo="1y">Ultimo anno</button>
+              <button type="button" class="btn btn-outline-primary" data-periodo="this_year">Anno corrente</button>
+              <button type="button" class="btn btn-outline-primary" data-periodo="last_year">Anno precedente</button>
+              <button type="button" class="btn btn-primary" data-periodo="12m">Ultimi 12 mesi</button>
             </div>
             <div class="small text-muted fw-semibold" style="font-size: 0.84rem;">
-              Totale periodo: <span id="bo-tipologie-total" class="text-primary fs-6 fw-bold">€ {{ totals.amount|number_format(2, ',', '.') }}</span>
+              Totale periodo: <span id="bo-tipologie-total" class="text-primary fs-6 fw-bold">€ {{ tipologie_total|number_format(2, ',', '.') }}</span>
             </div>
           </div>
         </div>
@@ -375,7 +376,7 @@
             {% else %}
               <div class="row g-3" id="bo-tipologie-grid">
                 {% for item in tipologie_stats %}
-                  {% set percent = totals.amount > 0 ? (item.importo_totale / totals.amount * 100) : 0 %}
+                  {% set percent = tipologie_total > 0 ? (item.importo_totale / tipologie_total * 100) : 0 %}
                   {% set is_extra = loop.index0 >= 6 %}
                   <div class="col-md-6 col-xl-4{{ is_extra ? ' d-none bo-extra-tipologia' : '' }}">
                     <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">

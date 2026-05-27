@@ -9,11 +9,17 @@
   {% if not from_flow and 'pagamenti/ricerca-flussi/dettaglio' in target_return %}
     {% set from_flow = true %}
   {% endif %}
+  {% set is_bollo = pendenza is defined and pendenza and (
+      (pendenza.tipoPendenza is defined and pendenza.tipoPendenza.idTipoPendenza is defined and pendenza.tipoPendenza.idTipoPendenza == 'BOLLOT')
+      or (pendenza.voci is defined and pendenza.voci|length > 0 and pendenza.voci[0].tipoBollo is defined and pendenza.voci[0].tipoBollo is not null and pendenza.voci[0].tipoBollo != '')
+  ) %}
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h2 class="h4 mb-0">Dettaglio pendenza <span class="text-muted">{{ idPendenza }}</span></h2>
     <div class="d-flex gap-2">
       {% if pendenza and pendenza.stato == 'NON_ESEGUITA' %}
-        <a class="btn btn-warning" href="/pendenze/modifica/{{ idPendenza }}?return={{ target_return|url_encode }}">Modifica</a>
+        {% if not is_bollo %}
+          <a class="btn btn-warning" href="/pendenze/modifica/{{ idPendenza }}?return={{ target_return|url_encode }}">Modifica</a>
+        {% endif %}
         <form method="post" action="/pendenze/annulla/{{ idPendenza }}" style="display:inline;">
           <button type="submit" class="btn btn-danger" onclick="return confirm('Sei sicuro di voler annullare questa pendenza?')">Annulla</button>
         </form>
@@ -21,6 +27,20 @@
         <form method="post" action="/pendenze/riattiva/{{ idPendenza }}" style="display:inline;">
           <button type="submit" class="btn btn-success" onclick="return confirm('Sei sicuro di voler riattivare questa pendenza?')">Riattiva</button>
         </form>
+      {% endif %}
+      {% if is_bollo and pendenza.numeroAvviso is defined and pendenza.numeroAvviso and id_dominio %}
+        {% set _burl = '/avviso-bollo?iuv=' ~ pendenza.numeroAvviso|url_encode
+            ~ '&ente=' ~ id_dominio|url_encode
+            ~ '&importo=' ~ (pendenza.importo * 100)|round
+            ~ '&causale=' ~ pendenza.causale|default('')|url_encode
+            ~ '&cf=' ~ (pendenza.soggettoPagatore is defined and pendenza.soggettoPagatore.identificativo is defined ? pendenza.soggettoPagatore.identificativo : '')|url_encode
+            ~ '&scadenza=' ~ pendenza.dataScadenza|default('')|url_encode %}
+        {% for v in (pendenza.voci is defined ? pendenza.voci : []) %}
+          {% set _burl = _burl ~ '&desc[]=' ~ v.descrizione|default('')|url_encode %}
+        {% endfor %}
+        <a class="btn btn-outline-info btn-sm" href="{{ _burl }}" target="_blank" rel="noopener">
+          <i class="fas fa-print me-1" aria-hidden="true"></i> Bollettino
+        </a>
       {% endif %}
       {% if came_from_insert %}
         <a class="btn btn-primary" href="/pendenze/inserimento">Inserisci nuova pendenza</a>

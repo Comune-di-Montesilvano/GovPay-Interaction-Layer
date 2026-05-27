@@ -182,9 +182,26 @@ class HomeController
             $recentFlussi = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
-        // 9. Ripartizione per tipologia di pendenza (Top 5 per importo)
+        // 9. Ripartizione per tipologia di pendenza (Top 5 per importo) per ultimi 12 mesi (default)
         $tipologieStats = [];
+        $tipologieTotal = 0.0;
         try {
+            $now = new \DateTimeImmutable('now');
+            $firstDay = $now->modify('-1 year')->setTime(0, 0, 0);
+            $dateFrom = $firstDay->format('Y-m-d');
+
+            // Totale periodo
+            $stmtTot = $pdo->prepare('
+                SELECT SUM(importo) AS a 
+                FROM flussi_rendicontazioni 
+                WHERE id_dominio = :dom 
+                  AND data_regolamento >= :date_from
+            ');
+            $stmtTot->execute([':dom' => $idDominio, ':date_from' => $dateFrom]);
+            $rowTot = $stmtTot->fetch();
+            $tipologieTotal = (float)($rowTot['a'] ?? 0.0);
+
+            // Ripartizione
             $stmt = $pdo->prepare('
                 SELECT 
                     COALESCE(e.descrizione_locale, e.descrizione, f.cod_entrata, "Altre pendenze / Esterni") AS tipologia_desc,
@@ -196,10 +213,11 @@ class HomeController
                     ON e.id_entrata = f.cod_entrata 
                    AND e.id_dominio = f.id_dominio
                 WHERE f.id_dominio = :dom
+                  AND f.data_regolamento >= :date_from
                 GROUP BY f.cod_entrata, e.descrizione_locale, e.descrizione
                 ORDER BY importo_totale DESC
             ');
-            $stmt->execute([':dom' => $idDominio]);
+            $stmt->execute([':dom' => $idDominio, ':date_from' => $dateFrom]);
             $tipologieStats = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
@@ -215,6 +233,7 @@ class HomeController
             'monthly_trend_json' => json_encode($monthlyTrend, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             'recent_flussi' => $recentFlussi,
             'tipologie_stats' => $tipologieStats,
+            'tipologie_total' => $tipologieTotal,
             'debug' => nl2br(htmlspecialchars($debug)),
         ]);
     }
@@ -224,29 +243,42 @@ class HomeController
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
         $pdo = Connection::getPDO();
 
-        $periodo = (string)($request->getQueryParams()['periodo'] ?? '1y');
+        $periodo = (string)($request->getQueryParams()['periodo'] ?? '12m');
 
         // Build date constraint based on selected period
         $now = new \DateTimeImmutable('now');
         switch ($periodo) {
+            case '30d':
+                $firstDay = $now->modify('-30 days')->setTime(0, 0, 0);
+                $dateCondition = "AND f.data_regolamento >= :date_from";
+                $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];
+                break;
             case 'last_month':
                 $firstDay = $now->modify('first day of last month')->setTime(0, 0, 0);
                 $lastDay  = $now->modify('last day of last month')->setTime(23, 59, 59);
                 $dateCondition = "AND f.data_regolamento BETWEEN :date_from AND :date_to";
                 $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d'), ':date_to' => $lastDay->format('Y-m-d')];
                 break;
-            case '6m':
-                $firstDay = $now->modify('-6 months')->setTime(0, 0, 0);
+            case 'this_year':
+                $firstDay = new \DateTimeImmutable($now->format('Y') . '-01-01 00:00:00');
                 $dateCondition = "AND f.data_regolamento >= :date_from";
                 $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];
                 break;
-            case '1y':
+            case 'last_year':
+                $lastYear = (int)$now->format('Y') - 1;
+                $firstDay = new \DateTimeImmutable($lastYear . '-01-01 00:00:00');
+                $lastDay  = new \DateTimeImmutable($lastYear . '-12-31 23:59:59');
+                $dateCondition = "AND f.data_regolamento BETWEEN :date_from AND :date_to";
+                $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d'), ':date_to' => $lastDay->format('Y-m-d')];
+                break;
+            case '12m':
+            case '1y': // Keep compatibility
                 $firstDay = $now->modify('-1 year')->setTime(0, 0, 0);
                 $dateCondition = "AND f.data_regolamento >= :date_from";
                 $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];
                 break;
-            default: // 1y
-                $periodo = '1y';
+            default:
+                $periodo = '12m';
                 $firstDay = $now->modify('-1 year')->setTime(0, 0, 0);
                 $dateCondition = "AND f.data_regolamento >= :date_from";
                 $bindings = [':dom' => $idDominio, ':date_from' => $firstDay->format('Y-m-d')];

@@ -1,0 +1,204 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Conferma Marca da Bollo{% endblock %}
+
+{% block content %}
+  <h1 class="it-title">Conferma marca da bollo</h1>
+
+  {% if errors is defined and errors %}
+    <div class="alert alert-danger">
+      <ul class="mb-0">
+        {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+    <i class="fas fa-stamp fa-lg flex-shrink-0" aria-hidden="true"></i>
+    <div>
+      <strong>Marca da Bollo Telematica</strong> —
+      {{ voci is defined ? voci|length : 0 }} voce/i da € 16,00 ciascuna.
+      Importo totale: <strong>{{ importo is defined ? importo|number_format(2, ',', '.') : '0,00' }} €</strong>.
+      Avviso PDF e rateizzazione non applicabili.
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-8">
+          <dl class="row small mb-0">
+            {% if params.causale is defined and params.causale != '' %}
+              <dt class="col-4">Causale</dt>
+              <dd class="col-8">{{ params.causale }}</dd>
+            {% endif %}
+
+            {% if importo is defined and importo is not null %}
+              <dt class="col-4">Importo</dt>
+              <dd class="col-8">{{ importo|number_format(2, ',', '.') }} €</dd>
+            {% endif %}
+
+            {% if params.annoRiferimento is defined and params.annoRiferimento != '' %}
+              <dt class="col-4">Anno di riferimento</dt>
+              <dd class="col-8">{{ params.annoRiferimento }}</dd>
+            {% endif %}
+
+            {% if params.provinciaResidenza is defined and params.provinciaResidenza != '' %}
+              <dt class="col-4">Provincia di residenza</dt>
+              <dd class="col-8"><strong>{{ params.provinciaResidenza|upper }}</strong></dd>
+            {% endif %}
+
+            {% if params.tipoBollo is defined and params.tipoBollo != '' %}
+              <dt class="col-4">Tipo bollo</dt>
+              <dd class="col-8">{{ params.tipoBollo }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+
+        {% if params.soggettoPagatore is defined %}
+          <div class="col-md-4">
+            <div class="border rounded p-2">
+              <h6 class="mb-2">Soggetto pagatore</h6>
+              {% set tipo = params.soggettoPagatore.tipo|default('F') %}
+              {% set idLabel = tipo == 'G' ? 'Partita IVA' : 'Codice fiscale' %}
+              {% set nameLabel = tipo == 'G' ? 'Ragione sociale' : 'Cognome' %}
+              <dl class="row small mb-0">
+                {% if params.soggettoPagatore.identificativo is defined and params.soggettoPagatore.identificativo != '' %}
+                  <dt class="col-5">{{ idLabel }}</dt>
+                  <dd class="col-7">{{ params.soggettoPagatore.identificativo }}</dd>
+                {% endif %}
+                {% if params.soggettoPagatore.anagrafica is defined and params.soggettoPagatore.anagrafica != '' %}
+                  <dt class="col-5">{{ nameLabel }}</dt>
+                  <dd class="col-7">{{ params.soggettoPagatore.anagrafica }}</dd>
+                {% endif %}
+                {% if params.soggettoPagatore.nome is defined and params.soggettoPagatore.nome != '' %}
+                  <dt class="col-5">Nome</dt>
+                  <dd class="col-7">{{ params.soggettoPagatore.nome }}</dd>
+                {% endif %}
+                {% if params.soggettoPagatore.email is defined and params.soggettoPagatore.email != '' %}
+                  <dt class="col-5">Email</dt>
+                  <dd class="col-7">{{ params.soggettoPagatore.email }}</dd>
+                {% endif %}
+              </dl>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+
+      <hr>
+
+      <h3>Documenti</h3>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Descrizione</th>
+              <th>Tipo bollo</th>
+              <th>Impronta documento</th>
+              <th class="text-end">Importo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for k, v in voci %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ v.descrizione|default('') }}</td>
+                <td>{{ v.tipoBollo|default('—') }}</td>
+                <td>
+                  {% if v.hashDocumento is defined and v.hashDocumento != '' %}
+                    <code class="small user-select-all" title="{{ v.hashDocumento }}">{{ v.hashDocumento|slice(0,24) }}&hellip;</code>
+                  {% else %}
+                    <span class="text-muted small">Auto-generata</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ (v.importo is defined and v.importo != '') ? (v.importo|number_format(2, ',', '.')) : '16,00' }} €</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if canali_notifica is defined and canali_notifica|length > 0 %}
+        <div class="alert alert-light border mt-3">
+          <h6 class="mb-2"><i class="fas fa-bell me-1"></i> Notifiche che verranno inviate alla conferma</h6>
+          <ul class="list-unstyled mb-0">
+            {% for canale in canali_notifica %}
+              <li class="d-flex align-items-start gap-2 mb-1">
+                {% if canale.attivo %}
+                  <span class="text-success"><i class="fas fa-check-circle"></i></span>
+                  <span>
+                    <strong>{{ canale.label }}</strong>
+                    {% if canale.canale == 'email' and params.soggettoPagatore.email is defined %}
+                      — <span class="text-muted">{{ params.soggettoPagatore.email }}</span>
+                    {% endif %}
+                  </span>
+                {% else %}
+                  <span class="text-secondary"><i class="fas fa-minus-circle"></i></span>
+                  <span class="text-muted">
+                    <strong>{{ canale.label }}</strong>
+                    {% if canale.motivo is not empty %}— {{ canale.motivo }}{% endif %}
+                  </span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <form method="post" action="/pendenze">
+        <input type="hidden" name="original_params" value="{{ params|json_encode|e }}">
+        {# Re-pass all top-level params #}
+        {% for k, v in params %}
+          {% if v is iterable %}
+            {% if k == 'voci' %}
+              {% for idx, vv in v %}
+                <input type="hidden" name="voci[{{ idx }}][idVocePendenza]" value="{{ vv.idVocePendenza|default('')|e }}">
+                <input type="hidden" name="voci[{{ idx }}][descrizione]" value="{{ vv.descrizione|default('')|e }}">
+                <input type="hidden" name="voci[{{ idx }}][importo]" value="{{ vv.importo|default('16.00')|e }}">
+                <input type="hidden" name="voci[{{ idx }}][tipoBollo]" value="{{ vv.tipoBollo|default('')|e }}">
+                <input type="hidden" name="voci[{{ idx }}][hashDocumento]" value="{{ vv.hashDocumento|default('')|e }}">
+              {% endfor %}
+            {% else %}
+              {% for sk, sv in v %}
+                {% if sv is iterable %}
+                  <input type="hidden" name="{{ k|e }}[{{ sk|e }}]" value="{{ sv|json_encode|e }}">
+                {% else %}
+                  <input type="hidden" name="{{ k|e }}[{{ sk|e }}]" value="{{ sv|e }}">
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          {% else %}
+            <input type="hidden" name="{{ k|e }}" value="{{ v|e }}">
+          {% endif %}
+        {% endfor %}
+
+        <div class="d-flex gap-2 mt-3">
+          <button type="submit" class="btn btn-primary" id="btnConfermaECrea">
+            <i class="fas fa-check me-1" aria-hidden="true"></i> Conferma e crea
+          </button>
+          <button type="submit" formaction="/pendenze/nuova-bollo" formmethod="post" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1" aria-hidden="true"></i> Modifica
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="overlayCaricamento" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:8px; padding:32px 40px; text-align:center; box-shadow:0 4px 24px rgba(0,0,0,0.18); min-width:220px;">
+      <div class="spinner-border text-primary" role="status" style="width:2.5rem; height:2.5rem;"></div>
+      <div style="margin-top:16px; font-weight:600; color:#333;">Invio in corso&hellip;</div>
+      <div style="font-size:13px; color:#888; margin-top:4px;">Attendere prego</div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var btn = document.getElementById('btnConfermaECrea');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+      document.getElementById('overlayCaricamento').style.display = 'flex';
+    });
+  })();
+  </script>
+{% endblock %}

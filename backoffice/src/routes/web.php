@@ -289,6 +289,32 @@ return function (App $app, Twig $twig): void {
         return $controller->showInsert($request, $response);
     });
 
+    $app->get('/avviso-bollo', function(Request $request, Response $response) use ($twig): Response {
+        $q = $request->getQueryParams();
+        $iuv      = preg_replace('/\D/', '', trim((string)($q['iuv'] ?? '')));
+        $ente     = preg_replace('/[^A-Za-z0-9]/', '', trim((string)($q['ente'] ?? '')));
+        $importo  = max(0, (int)($q['importo'] ?? 0));
+        $causale  = mb_substr(trim((string)($q['causale'] ?? '')), 0, 140);
+        $cfDeb    = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim((string)($q['cf'] ?? ''))));
+        $scadenza = trim((string)($q['scadenza'] ?? ''));
+        if ($scadenza !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $scadenza)) {
+            try { $scadenza = (new \DateTime($scadenza))->format('d/m/Y'); } catch (\Throwable $e) {}
+        }
+        $desc     = array_values(array_filter(array_map(
+            static fn($d) => mb_substr(trim((string)$d), 0, 200),
+            (array)($q['desc'] ?? [])
+        ), static fn($d) => $d !== ''));
+        if ($iuv === '' || $ente === '' || $importo <= 0) {
+            $response->getBody()->write('Parametri mancanti');
+            return $response->withStatus(400);
+        }
+        $qrString   = 'PAGOPA|002|' . $iuv . '|' . $ente . '|' . $importo;
+        $importoEur = number_format($importo / 100, 2, ',', '.');
+        return $twig->render($response, 'pagamenti/avviso-bollo.html.twig', compact(
+            'iuv', 'ente', 'importo', 'importoEur', 'causale', 'cfDeb', 'scadenza', 'qrString', 'desc'
+        ));
+    });
+
     $app->get('/pendenze/nuova-bollo', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);
         return $controller->showNuovaBollo($request, $response);

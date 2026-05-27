@@ -1172,6 +1172,25 @@ class PendenzeController
         $causale = trim((string)($params['causale'] ?? ''));
         $importo = $params['importo'] ?? '';
         $voci = $params['voci'] ?? [];
+
+        // BOLLOT: generate causale/importo server-side from voci (JS may not have run)
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $isBollo = ($idTipo !== '' && $idTipo === $bolloIdTipo);
+        if ($isBollo) {
+            $vociValidi = array_values(array_filter(is_array($voci) ? $voci : [], static fn($v) => trim((string)($v['descrizione'] ?? '')) !== ''));
+            $voceCount = max(1, count($vociValidi));
+            if ($causale === '') {
+                $anno = trim((string)($params['annoRiferimento'] ?? date('Y')));
+                $causale = 'Marca da bollo - Anno ' . $anno . ' - N.' . $voceCount . ' document' . ($voceCount === 1 ? 'o' : 'i');
+                $params['causale'] = $causale;
+            }
+            $importoNum = (float)str_replace(',', '.', (string)$importo);
+            if ($importo === '' || !is_numeric(str_replace(',', '.', (string)$importo)) || $importoNum <= 0) {
+                $importo = number_format($voceCount * 16.0, 2, '.', '');
+                $params['importo'] = $importo;
+            }
+        }
+
         if ($idTipo === '') $errors[] = 'Tipologia pendenza obbligatoria';
         if ($causale === '') $errors[] = 'Causale obbligatoria';
         if ($importo === '' || !is_numeric(str_replace(',', '.', (string)$importo))) $errors[] = 'Importo non valido';
@@ -1229,7 +1248,8 @@ class PendenzeController
             ];
         }
 
-        return $this->twig->render($response, 'pendenze/conferma.html.twig', [
+        $template = $isBollo ? 'pendenze/conferma_bollo.html.twig' : 'pendenze/conferma.html.twig';
+        return $this->twig->render($response, $template, [
             'errors' => $errors,
             'params' => $params,
             'tipologia' => $tipologia,

@@ -19,7 +19,7 @@
   </div>
 {% endif %}
 
-<form id="bolloForm" method="post" action="/pendenze" class="card border-0 shadow-sm mb-4" {% if not disponibile %}inert{% endif %}>
+<form id="bolloForm" method="post" action="/pendenze" class="card border-0 shadow-sm mb-4">
   <input type="hidden" name="return" value="/pendenze/ricerca">
   {% if id_dominio %}
     <input type="hidden" name="idDominio" value="{{ id_dominio }}">
@@ -66,12 +66,12 @@
         </label>
         <input id="anagrafica" name="soggettoPagatore[anagrafica]" type="text" class="form-control"
           placeholder="{{ tipoSog == 'G' ? 'Ragione sociale' : 'Cognome' }}" required
-          value="{{ old.soggettoPagatore.anagrafica|default('') }}">
+          value="{{ old.soggettoPagatore.anagrafica|default('') }}" style="text-transform:uppercase;">
       </div>
       <div class="col-md-4" id="colNome" style="{{ tipoSog == 'G' ? 'display:none;' : '' }}">
         <label for="nome" class="form-label small fw-semibold">Nome</label>
         <input id="nome" name="soggettoPagatore[nome]" type="text" class="form-control"
-          placeholder="Nome" autocomplete="off" value="{{ old.soggettoPagatore.nome|default('') }}">
+          placeholder="Nome" autocomplete="off" value="{{ old.soggettoPagatore.nome|default('') }}" style="text-transform:uppercase;">
       </div>
     </div>
     <div class="row g-3 mb-4">
@@ -152,7 +152,7 @@
     </div>
 
     <div class="d-flex gap-2 mt-4">
-      <button type="submit" formaction="/pendenze/preview" formmethod="post" class="btn btn-primary">
+      <button type="submit" formaction="/pendenze/preview" formmethod="post" class="btn btn-primary" {% if not disponibile %}disabled{% endif %}>
         <i class="fas fa-eye me-1" aria-hidden="true"></i> Anteprima
       </button>
       <a class="btn btn-outline-secondary" href="/pendenze/ricerca">Annulla</a>
@@ -169,7 +169,7 @@
 (function(){
   var MAX_DOCS = 5;
   var IMPORTO_UNIT = 16.00;
-  var tipoBollo = {{ tipo_bollo|json_encode }};
+  var tipoBollo = {{ tipo_bollo|json_encode|raw }};
   var count = 1;
 
   function updateCausaleImporto() {
@@ -298,8 +298,8 @@
     if (e.target.id === 'provinciaResidenza') {
       e.target.value = e.target.value.toUpperCase();
     }
-    // uppercase identificativo
-    if (e.target.id === 'identificativo') {
+    // uppercase identificativo, anagrafica, nome
+    if (e.target.id === 'identificativo' || e.target.id === 'anagrafica' || e.target.id === 'nome') {
       e.target.value = e.target.value.toUpperCase();
     }
   });
@@ -307,7 +307,9 @@
   document.addEventListener('input', function(e) {
     if (e.target.id === 'annoRiferimento') updateCausaleImporto();
     if (e.target.id === 'provinciaResidenza') e.target.value = e.target.value.toUpperCase();
-    if (e.target.id === 'identificativo') e.target.value = e.target.value.toUpperCase();
+    if (e.target.id === 'identificativo' || e.target.id === 'anagrafica' || e.target.id === 'nome') {
+      e.target.value = e.target.value.toUpperCase();
+    }
   });
 
   // PF/PG toggle
