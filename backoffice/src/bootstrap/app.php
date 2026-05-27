@@ -124,7 +124,7 @@ return (function (): array {
     if ($bollotIdDominio) {
         try {
             $det = (new \App\Database\EntrateRepository())->findDetails($bollotIdDominio, $bollotIdTipo);
-            $bollotAttivo = $det !== null;
+            $bollotAttivo = $det !== null && !empty($det['abilitato_backoffice']);
         } catch (\Throwable $_) {}
     }
     $twig->getEnvironment()->addGlobal('bollot_attivo', $bollotAttivo);
