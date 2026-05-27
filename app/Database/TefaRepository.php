@@ -344,8 +344,29 @@ class TefaRepository
                SUM(stato = \'PENDING\')   AS n_pending,
                SUM(stato = \'ERROR\')     AS n_error,
                SUM(stato = \'SKIPPED\')   AS n_skipped
-             FROM tefa_ricevute
-             WHERE id_dominio = :id_dominio
+             FROM (
+               SELECT anno, mese, stato, data_pagamento, id_dominio
+               FROM tefa_ricevute
+               WHERE id_dominio = :id_dominio
+
+               UNION ALL
+
+               SELECT 
+                 b.anno, 
+                 b.mese,
+                 CASE 
+                   WHEN b.stato = \'PENDING\' THEN \'PENDING\'
+                   WHEN b.stato = \'PROCESSED\' THEN \'PENDING\'
+                   WHEN b.stato = \'ERROR\' THEN \'ERROR\'
+                   ELSE \'SKIPPED\'
+                 END AS stato,
+                 b.data_pagamento,
+                 b.id_dominio
+               FROM biz_ricevute b
+               LEFT JOIN tefa_ricevute t ON t.id_dominio = b.id_dominio AND t.iur = b.iur
+               WHERE b.id_dominio = :id_dominio2 AND t.id IS NULL
+             ) AS combined
+             WHERE id_dominio = :id_dominio3
                AND (
                  (data_pagamento IS NOT NULL AND data_pagamento >= :da AND data_pagamento <= :a)
                  OR (data_pagamento IS NULL AND MAKEDATE(anno, 1) >= :da2 AND MAKEDATE(anno, 1) <= :a2)
@@ -354,11 +375,13 @@ class TefaRepository
              ORDER BY anno ASC, mese ASC'
         );
         $stmt->execute([
-            ':id_dominio' => $idDominio,
-            ':da'         => $dataDa,
-            ':a'          => $dataA,
-            ':da2'        => $dataDa,
-            ':a2'         => $dataA,
+            ':id_dominio'  => $idDominio,
+            ':id_dominio2' => $idDominio,
+            ':id_dominio3' => $idDominio,
+            ':da'          => $dataDa,
+            ':a'           => $dataA,
+            ':da2'         => $dataDa,
+            ':a2'          => $dataA,
         ]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }

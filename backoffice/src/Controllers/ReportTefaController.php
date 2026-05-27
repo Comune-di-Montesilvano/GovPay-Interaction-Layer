@@ -31,8 +31,17 @@ class ReportTefaController
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $today     = new \DateTimeImmutable('today');
 
-        $dataDa = (string)($params['dataDa'] ?? ($today->format('Y') - 1) . '-01-01');
-        $dataA  = (string)($params['dataA'] ?? $today->format('Y-m-d'));
+        $queryMade = array_key_exists('q', $params);
+        if (!$queryMade) {
+            $dataDa = ($today->format('Y') - 1) . '-01-01';
+            $dataA  = $today->format('Y-m-d');
+        } else {
+            $dataDa = trim((string)($params['dataDa'] ?? ''));
+            $dataA  = trim((string)($params['dataA'] ?? ''));
+        }
+
+        $queryDa = $dataDa !== '' ? $dataDa : '1970-01-01';
+        $queryA  = $dataA !== '' ? $dataA : '2099-12-31';
 
         $repo   = new TefaRepository();
         $counts = $repo->getCounts($idDominio);
@@ -40,35 +49,95 @@ class ReportTefaController
         $reportRows   = [];
         $totaliTefa   = 0.0;
         $totaliComune = 0.0;
-        $queryMade    = array_key_exists('q', $params);
 
         if (($params['export'] ?? '') === 'csv') {
-            return $this->exportCsv($response, $dataDa, $dataA, $idDominio);
+            return $this->exportCsv($response, $queryDa, $queryA, $idDominio);
         }
 
         $coverage = [];
+        $mancantiPeriodi = [];
         if ($queryMade) {
             $repo->fixNullDataPagamento($idDominio);
-            $reportRows = $repo->getReport($dataDa, $dataA, $idDominio);
+            $reportRows = $repo->getReport($queryDa, $queryA, $idDominio);
             foreach ($reportRows as $r) {
                 $totaliTefa   += (float)$r['totale_tefa'];
                 $totaliComune += (float)$r['totale_comune'];
             }
-            $coverage = $repo->getCoverage($dataDa, $dataA, $idDominio);
+            $coverage = $repo->getCoverage($queryDa, $queryA, $idDominio);
+
+            // Calcolo mesi mancanti come periodi per risparmio spazio
+            try {
+                $daDate = new \DateTime($dataDa !== '' ? $dataDa : ($today->format('Y') - 1) . '-01-01');
+                $aDate  = new \DateTime($dataA !== '' ? $dataA : $today->format('Y-m-d'));
+
+                $mesiConDati = [];
+                foreach ($coverage as $c) {
+                    $mesiConDati[$c['anno'] . '-' . $c['mese']] = true;
+                }
+
+                $current = clone $daDate;
+                $current->modify('first day of this month');
+                $end = clone $aDate;
+                $end->modify('first day of this month');
+
+                $missingMonths = [];
+                while ($current <= $end) {
+                    $key = $current->format('Y-n');
+                    if (!isset($mesiConDati[$key])) {
+                        $missingMonths[] = clone $current;
+                    }
+                    $current->modify('+1 month');
+                }
+
+                $ranges = [];
+                $tempRange = [];
+                foreach ($missingMonths as $m) {
+                    if ($tempRange === []) {
+                        $tempRange[] = $m;
+                    } else {
+                        $last = end($tempRange);
+                        $diff = $last->diff($m);
+                        $monthsDiff = ($diff->y * 12) + $diff->m;
+                        if ($monthsDiff === 1) {
+                            $tempRange[] = $m;
+                        } else {
+                            $ranges[] = $tempRange;
+                            $tempRange = [$m];
+                        }
+                    }
+                }
+                if ($tempRange !== []) {
+                    $ranges[] = $tempRange;
+                }
+
+                $mesiNomi = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+                foreach ($ranges as $r) {
+                    if (count($r) === 1) {
+                        $mancantiPeriodi[] = $mesiNomi[(int)$r[0]->format('n') - 1] . ' ' . $r[0]->format('Y');
+                    } else {
+                        $first = $r[0];
+                        $last  = end($r);
+                        $mancantiPeriodi[] = $mesiNomi[(int)$first->format('n') - 1] . ' ' . $first->format('Y') . ' – ' . $mesiNomi[(int)$last->format('n') - 1] . ' ' . $last->format('Y');
+                    }
+                }
+            } catch (\Throwable $_) {}
         }
 
         $errors = $repo->getErrors($idDominio);
+        $scannerRunning = $this->isScannerRunning();
 
         return $this->twig->render($response, 'report-tefa/index.html.twig', [
-            'filters'       => ['dataDa' => $dataDa, 'dataA' => $dataA],
-            'counts'        => $counts,
-            'report_rows'   => $reportRows,
-            'totali_tefa'   => $totaliTefa,
-            'totali_comune' => $totaliComune,
-            'error_rows'    => $errors,
-            'query_made'    => $queryMade,
-            'coverage'      => $coverage,
-            'id_dominio'    => $idDominio,
+            'filters'         => ['dataDa' => $dataDa, 'dataA' => $dataA],
+            'counts'          => $counts,
+            'report_rows'     => $reportRows,
+            'totali_tefa'     => $totaliTefa,
+            'totali_comune'   => $totaliComune,
+            'error_rows'      => $errors,
+            'query_made'      => $queryMade,
+            'coverage'        => $coverage,
+            'id_dominio'      => $idDominio,
+            'scanner_running' => $scannerRunning,
+            'mancanti_periodi'=> $mancantiPeriodi,
         ]);
     }
 
