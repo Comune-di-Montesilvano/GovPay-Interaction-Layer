@@ -641,6 +641,21 @@
             {% if r.datiAllegati is defined and r.datiAllegati.operatore is defined %}
                 <div><span class="text-muted">Operatore:</span> {{ r.datiAllegati.operatore }}</div>
             {% endif %}
+            {% if r.datiAllegati is defined and r.datiAllegati.utente_autenticato is defined and r.datiAllegati.utente_autenticato %}
+                <div class="mt-2 pt-2 border-top" style="border-top-style: dashed !important; border-top-color: var(--border-color) !important;">
+                    <strong class="text-secondary"><i class="fas fa-user-check me-1"></i> Utente Autenticato Frontoffice:</strong>
+                    <div class="ms-3 ps-1 mt-1">
+                        <div><span class="text-muted">Nome e Cognome:</span> {{ r.datiAllegati.utente_nome|default('—') }} {{ r.datiAllegati.utente_cognome|default('—') }}</div>
+                        <div><span class="text-muted">Codice Fiscale:</span> <span class="font-monospace small">{{ r.datiAllegati.utente_cf|default('—') }}</span></div>
+                        {% if r.datiAllegati.utente_email is defined and r.datiAllegati.utente_email %}
+                            <div><span class="text-muted">Email:</span> {{ r.datiAllegati.utente_email }}</div>
+                        {% endif %}
+                        {% if r.datiAllegati.utente_provider is defined and r.datiAllegati.utente_provider %}
+                            <div><span class="text-muted">Provider di accesso:</span> {{ r.datiAllegati.utente_provider }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
             {% if r.datiAllegati is defined and r.datiAllegati.storico is defined and r.datiAllegati.storico is iterable %}
                 <div class="mt-2">
                 <strong>Storico Modifiche:</strong>
