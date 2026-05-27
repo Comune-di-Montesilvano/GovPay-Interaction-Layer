@@ -217,6 +217,7 @@ class UsersController
         }
 
         $this->users->setDisabled($id, true);
+        $this->users->updateSessionToken($id, null);
         $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Utente disabilitato'];
         return $response->withHeader('Location', $this->usersHome())->withStatus(302);
     }

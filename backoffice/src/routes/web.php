@@ -603,6 +603,9 @@ return function (App $app, Twig $twig): void {
         }
 
         $userRepo->updatePasswordById($userId, $newPassword);
+        $newSessionToken = bin2hex(random_bytes(32));
+        $userRepo->updateSessionToken($userId, $newSessionToken);
+        $_SESSION['session_token'] = $newSessionToken;
         $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Password aggiornata con successo.'];
         return $response->withHeader('Location', '/profile?tab=password')->withStatus(302);
     });
@@ -980,6 +983,8 @@ return function (App $app, Twig $twig): void {
             }
             $repo->updateLastLoginAt((int)$user['id']);
             $user = $repo->findById((int)$user['id']) ?? $user;
+            $sessionToken = bin2hex(random_bytes(32));
+            $repo->updateSessionToken((int)$user['id'], $sessionToken);
             // Set session user (include name fields for templates)
             $_SESSION['user'] = [
                 'id' => $user['id'],
@@ -989,6 +994,7 @@ return function (App $app, Twig $twig): void {
                 'last_name' => $user['last_name'] ?? '',
                 'is_disabled' => !empty($user['is_disabled']),
             ];
+            $_SESSION['session_token'] = $sessionToken;
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Accesso effettuato'];
             return $response->withHeader('Location', '/')->withStatus(302);
         }
@@ -1001,7 +1007,12 @@ return function (App $app, Twig $twig): void {
     $app->get('/logout', function($request, $response) {
         // Mantieni la sessione per mostrare il flash dopo il redirect
         $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Sei stato disconnesso'];
+        if (isset($_SESSION['user']['id'])) {
+            $repo = new UserRepository();
+            $repo->updateSessionToken((int)$_SESSION['user']['id'], null);
+        }
         unset($_SESSION['user']);
+        unset($_SESSION['session_token']);
         // Rigenera l'ID di sessione per sicurezza
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_regenerate_id(true);

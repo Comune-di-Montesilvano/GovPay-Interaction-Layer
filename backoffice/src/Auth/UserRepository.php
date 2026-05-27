@@ -83,6 +83,20 @@ class UserRepository
         $stmt->execute([':id' => $id]);
     }
 
+    public function updateSessionToken(int $id, ?string $token): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET session_token = :token, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':token' => $token, ':id' => $id]);
+    }
+
+    public function getSessionToken(int $id): ?string
+    {
+        $stmt = $this->pdo->prepare('SELECT session_token FROM users WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return ($row !== false && isset($row['session_token'])) ? $row['session_token'] : null;
+    }
+
     public function updateUser(int $id, string $email, string $role, string $firstName = '', string $lastName = ''): void
     {
         $stmt = $this->pdo->prepare('UPDATE users SET email = :email, role = :role, first_name = :first_name, last_name = :last_name, updated_at = NOW() WHERE id = :id');

@@ -29,7 +29,8 @@ $statements = [
         updated_at DATETIME NOT NULL,
         disabled_at DATETIME NULL,
         last_login_at DATETIME NULL,
-        last_password_change_at DATETIME NULL
+        last_password_change_at DATETIME NULL,
+        session_token VARCHAR(64) NULL DEFAULT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
     // entrate_tipologie
@@ -275,6 +276,16 @@ try {
     if (!$has) {
         $pdo->exec("ALTER TABLE users ADD COLUMN last_password_change_at DATETIME NULL AFTER last_login_at");
         echo "Added column last_password_change_at to users\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'session_token'");
+    if (!$stmt || !$stmt->fetch()) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN session_token VARCHAR(64) NULL DEFAULT NULL AFTER last_password_change_at");
+        echo "Added column session_token to users\n";
     }
 } catch (Throwable $e) {
     // non fatale
