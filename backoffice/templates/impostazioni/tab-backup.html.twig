@@ -84,6 +84,18 @@
                 <label class="form-check-label" for="gp-gruppi-utenti">Gruppi utenti</label>
               </div>
             </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="mapping_tipologie_custom" id="gp-mapping-custom" checked>
+                <label class="form-check-label" for="gp-mapping-custom">Mapping tipologie custom</label>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="govpay_sections[]" value="mapping_pendenze" id="gp-mapping-pendenze" checked>
+                <label class="form-check-label" for="gp-mapping-pendenze">Regole mapping pendenze (L1/L2)</label>
+              </div>
+            </div>
           </div>
         </div>
       </form>
@@ -123,6 +135,64 @@
         <button class="btn btn-danger btn-sm" onclick="backupRipristina(this)">
           <i class="fas fa-upload me-1"></i>Ripristina
         </button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ─── Backup/Ripristino configurazione JSON ──────────────────────────────── #}
+  {% if is_superadmin %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-transparent border-bottom-0 pt-3 pb-0">
+      <h2 class="h6 mb-0"><i class="fas fa-file-code me-2 text-success"></i>Backup configurazione JSON</h2>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Esporta o importa le sole sezioni di configurazione applicativa in formato JSON,
+        senza dump database. Utile per copiare la configurazione tra istanze.
+      </p>
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <h3 class="h6 fw-semibold mb-2"><i class="fas fa-download me-1 text-success"></i>Esporta JSON</h3>
+          <form method="post" action="/configurazione/backup/export">
+            <div class="row g-2 mb-3">
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="tipologie" id="jex-tipologie" checked><label class="form-check-label small" for="jex-tipologie">Tipologie</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="tipologie_esterne" id="jex-tipologie-esterne" checked><label class="form-check-label small" for="jex-tipologie-esterne">Tipologie esterne</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="templates" id="jex-templates" checked><label class="form-check-label small" for="jex-templates">Template pendenze</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="io_services" id="jex-io" checked><label class="form-check-label small" for="jex-io">Servizi App IO</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="gruppi-utenti" id="jex-gruppi" checked><label class="form-check-label small" for="jex-gruppi">Gruppi utenti</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="mapping_tipologie_custom" id="jex-mapping" checked><label class="form-check-label small" for="jex-mapping">Mapping tipologie custom</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="mapping_pendenze" id="jex-mapping-pendenze" checked><label class="form-check-label small" for="jex-mapping-pendenze">Regole mapping (L1/L2)</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="utenti" id="jex-utenti"><label class="form-check-label small" for="jex-utenti">Utenti <span class="badge bg-warning text-dark ms-1 py-0">sensibile</span></label></div></div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-download me-1"></i>Scarica JSON</button>
+          </form>
+        </div>
+        <div class="col-lg-6">
+          <h3 class="h6 fw-semibold mb-2"><i class="fas fa-upload me-1 text-danger"></i>Importa JSON</h3>
+          <div class="alert alert-warning py-2 small mb-3">
+            <strong>Attenzione:</strong> i dati delle sezioni selezionate verranno <strong>sostituiti</strong>.
+          </div>
+          <form method="post" action="/configurazione/backup/import" enctype="multipart/form-data">
+            <div class="mb-3">
+              <input class="form-control form-control-sm" type="file" name="backup_file" accept=".json" required>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="tipologie" id="jim-tipologie" checked><label class="form-check-label small" for="jim-tipologie">Tipologie</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="tipologie_esterne" id="jim-tipologie-esterne" checked><label class="form-check-label small" for="jim-tipologie-esterne">Tipologie esterne</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="templates" id="jim-templates" checked><label class="form-check-label small" for="jim-templates">Template pendenze</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="io_services" id="jim-io" checked><label class="form-check-label small" for="jim-io">Servizi App IO</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="gruppi-utenti" id="jim-gruppi" checked><label class="form-check-label small" for="jim-gruppi">Gruppi utenti</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="mapping_tipologie_custom" id="jim-mapping" checked><label class="form-check-label small" for="jim-mapping">Mapping tipologie custom</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="mapping_pendenze" id="jim-mapping-pendenze" checked><label class="form-check-label small" for="jim-mapping-pendenze">Regole mapping (L1/L2)</label></div></div>
+              <div class="col-6"><div class="form-check"><input class="form-check-input" type="checkbox" name="sections[]" value="utenti" id="jim-utenti"><label class="form-check-label small" for="jim-utenti">Utenti <span class="badge bg-warning text-dark ms-1 py-0">sensibile</span></label></div></div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-danger"
+                    onclick="return confirm('Confermi l\'importazione? I dati delle sezioni selezionate verranno sostituiti.')">
+              <i class="fas fa-upload me-1"></i>Importa
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   </div>

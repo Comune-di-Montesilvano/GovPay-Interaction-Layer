@@ -187,7 +187,7 @@ class MappingPendenzeController
             // L1: patterns ordinati longest-first da getRules
             $rules = $repo->getRules($idDominio);
             $activeRules = array_filter($rules, fn(array $r): bool =>
-                (!empty($r['fornitore']) && (int)($r['transazioni_count'] ?? 0) >= 5) ||
+                (!empty($r['fornitore']) && ((bool)($r['is_custom'] ?? false) || (int)($r['transazioni_count'] ?? 0) >= 5)) ||
                 (!empty($r['accorpato_a']) && !empty($r['fornitore']))
             );
 
