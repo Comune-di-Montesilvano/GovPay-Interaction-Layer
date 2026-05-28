@@ -70,6 +70,102 @@
   {% endif %}
 </div>
 
+{# ── Anomalie ratio TEFA/Comune ───────────────────────────────────────────── #}
+{% if anomaly_rows is defined and anomaly_rows|length > 0 %}
+<div class="card shadow-sm mb-4" style="border: 1px solid #f0ad4e; border-left: 4px solid #f0ad4e;">
+  <div class="card-header d-flex align-items-center justify-content-between py-2"
+       style="background: linear-gradient(90deg, #fff8ec 0%, #fff 100%); border-bottom: 1px solid #f0e0b0;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="fas fa-triangle-exclamation text-warning fs-5"></i>
+      <span class="fw-semibold" style="color:#b45309;">Anomalie ratio TEFA/Comune</span>
+      <span class="badge rounded-pill text-bg-warning ms-1">{{ anomaly_rows|length }}</span>
+      <span class="text-muted small d-none d-md-inline ms-1">| Multibeneficiario con ratio fuori intervallo 1%–10%</span>
+    </div>
+    <button class="btn btn-sm btn-outline-warning" type="button"
+            data-bs-toggle="collapse" data-bs-target="#anomalyPanel" aria-expanded="false"
+            id="anomalyToggleBtn">
+      <i class="fas fa-chevron-down me-1" id="anomalyToggleIcon"></i><span id="anomalyToggleLabel">Mostra</span>
+    </button>
+  </div>
+  <div class="collapse" id="anomalyPanel">
+    <div class="px-3 py-2 border-bottom small text-muted" style="background:#fff8ec;">
+      Verificare caso per caso: <strong>Sì TEFA</strong> accetta il pagamento, <strong>Non TEFA</strong> conferma l'esclusione definitiva.
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.875rem;">
+        <thead style="background:#fef3c7; font-size:0.78rem; text-transform:uppercase; letter-spacing:.04em;">
+          <tr>
+            <th class="ps-3">Data</th>
+            <th>Comune</th>
+            <th>Causale</th>
+            <th class="text-end">Imp. TEFA (€)</th>
+            <th class="text-end">Imp. Comune (€)</th>
+            <th class="text-end">Ratio</th>
+            {% if is_admin %}<th class="text-center pe-3">Azione</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody id="anomalyTableBody">
+          {% for row in anomaly_rows %}
+          {% set ratio_val = (row.importo_comune is not null and row.importo_comune > 0 and row.importo_tefa is not null) ? (row.importo_tefa / row.importo_comune * 100) : null %}
+          <tr id="anomaly-row-{{ row.id }}">
+            <td class="ps-3 text-nowrap text-muted small">{{ row.data_pagamento|default('—') }}</td>
+            <td>
+              <div class="fw-semibold">{{ row.denominazione_comune|default(row.cf_comune|default('—')) }}</div>
+              {% if row.cf_comune %}<div class="text-muted" style="font-size:.75rem;">{{ row.cf_comune }}</div>{% endif %}
+              <div class="text-muted" style="font-size:.7rem;"><code>{{ row.iur|slice(0, 16) }}…</code></div>
+            </td>
+            <td class="text-muted" style="max-width:200px;white-space:normal;font-size:.8rem;">
+              {{ row.causale|default('—') }}
+            </td>
+            <td class="text-end fw-semibold">{{ row.importo_tefa is not null ? row.importo_tefa|number_format(2, ',', '.') : '—' }}</td>
+            <td class="text-end fw-semibold">{{ row.importo_comune is not null ? row.importo_comune|number_format(2, ',', '.') : '—' }}</td>
+            <td class="text-end">
+              {% if ratio_val is not null %}
+                {% if ratio_val < 2 or ratio_val > 8 %}
+                  <span class="badge text-bg-danger">{{ ratio_val|number_format(1, ',', '.') }}%</span>
+                {% else %}
+                  <span class="badge text-bg-warning text-dark">{{ ratio_val|number_format(1, ',', '.') }}%</span>
+                {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            {% if is_admin %}
+            <td class="text-center pe-3 text-nowrap">
+              <button class="btn btn-xs btn-outline-secondary me-1"
+                      onclick="anomalyAction({{ row.id }}, 'skip')"
+                      title="Conferma come non TEFA — esclusione definitiva">
+                <i class="fas fa-ban me-1"></i>Non TEFA
+              </button>
+              <button class="btn btn-xs btn-success"
+                      onclick="anomalyAction({{ row.id }}, 'accept')"
+                      title="Accetta come TEFA nonostante il ratio anomalo">
+                <i class="fas fa-check me-1"></i>Sì TEFA
+              </button>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var panel = document.getElementById('anomalyPanel');
+  if (panel) {
+    panel.addEventListener('show.bs.collapse', function(){
+      document.getElementById('anomalyToggleIcon').classList.replace('fa-chevron-down','fa-chevron-up');
+      document.getElementById('anomalyToggleLabel').textContent = 'Nascondi';
+    });
+    panel.addEventListener('hide.bs.collapse', function(){
+      document.getElementById('anomalyToggleIcon').classList.replace('fa-chevron-up','fa-chevron-down');
+      document.getElementById('anomalyToggleLabel').textContent = 'Mostra';
+    });
+  }
+})();
+</script>
+{% endif %}
+
 {# ── Tabella errori ───────────────────────────────────────────────────────── #}
 {% if error_rows|length > 0 %}
 <div class="card border-0 shadow-sm mb-4">
@@ -111,7 +207,7 @@
     <h5 class="mb-0"><i class="fas fa-chart-bar me-2 text-primary"></i>Report per Comune</h5>
   </div>
   <div class="card-body">
-    <form method="GET" action="/funzioni-avanzate/report-tefa" class="mb-3">
+    <form method="GET" action="/pagamenti/report-tefa" class="mb-3">
       <input type="hidden" name="q" value="1">
       <div class="row g-2 align-items-center">
         <!-- Date fields column -->
@@ -141,7 +237,7 @@
         <div class="col-12 col-md-auto align-self-end d-flex gap-2 mt-2 mt-md-0">
           <button type="submit" class="btn btn-primary btn-sm px-3"><i class="fas fa-search me-1"></i>Cerca</button>
           {% if query_made and report_rows|length > 0 %}
-          <a href="/funzioni-avanzate/report-tefa?q=1&dataDa={{ filters.dataDa }}&dataA={{ filters.dataA }}&export=csv"
+          <a href="/pagamenti/report-tefa?q=1&dataDa={{ filters.dataDa }}&dataA={{ filters.dataA }}&export=csv"
              class="btn btn-sm btn-outline-secondary px-3"><i class="fas fa-file-csv me-1"></i>CSV</a>
           {% endif %}
         </div>
@@ -295,7 +391,7 @@
   }
 
   function pollStatus() {
-    fetch('/funzioni-avanzate/report-tefa/status')
+    fetch('/pagamenti/report-tefa/status')
       .then(r => r.json())
       .then(d => { if (d.ok) updateCounts(d.counts, d.scanner_running); })
       .catch(() => {});
@@ -306,7 +402,7 @@
   }
 
   window.retryErrors = function () {
-    fetch('/funzioni-avanzate/report-tefa/retry-errors', { method: 'POST' })
+    fetch('/pagamenti/report-tefa/retry-errors', { method: 'POST' })
       .then(r => r.json())
       .then(d => { if (d.ok) { alert(d.reset + ' errori reimpostati come PENDING.'); pollStatus(); } })
       .catch(() => {});
@@ -314,10 +410,31 @@
 
   window.retrySkipped = function () {
     if (!confirm('Rimettere in coda tutti i record non-TEFA? Verranno ri-elaborati.')) return;
-    fetch('/funzioni-avanzate/report-tefa/retry-skipped', { method: 'POST' })
+    fetch('/pagamenti/report-tefa/retry-skipped', { method: 'POST' })
       .then(r => r.json())
       .then(d => { if (d.ok) { alert(d.reset + ' record rimessi in coda.'); location.reload(); } })
       .catch(() => {});
+  };
+
+  window.anomalyAction = function (id, action) {
+    var label = action === 'accept' ? 'Accettare questa pendenza come TEFA nonostante il ratio anomalo?' : 'Confermare questa pendenza come non TEFA?';
+    if (!confirm(label)) return;
+    fetch('/pagamenti/report-tefa/anomaly/' + id + '/' + action, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) {
+          var row = document.getElementById('anomaly-row-' + id);
+          if (row) row.remove();
+          var tbody = document.getElementById('anomalyTableBody');
+          if (tbody && tbody.rows.length === 0) {
+            var panel = document.getElementById('anomalyPanel');
+            if (panel) panel.closest('.card').remove();
+          }
+        } else {
+          alert('Errore: ' + (d.error || 'sconosciuto'));
+        }
+      })
+      .catch(function () { alert('Errore di rete.'); });
   };
 })();
 </script>
