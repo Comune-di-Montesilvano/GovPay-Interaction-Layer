@@ -314,8 +314,23 @@
                         </div>
                         <ul class="list-unstyled mb-0" style="padding-left: 0; line-height: 1.35;">
                           {% for ex in pat.examples %}
-                            <li class="text-dark border-bottom pb-1 mb-1 last-border-0" style="word-break: break-word;">
-                              <code class="text-secondary small" style="font-size: 0.75rem;">{{ ex.iuv }}</code> - <strong>€{{ ex.importo|number_format(2, ',', '.') }}</strong><br/>
+                            {% set desc_lower = ex.descrizione_entrata|default('')|lower %}
+                            {% set l2_matched = false %}
+                            {% if pat.vocab_rules is not empty %}
+                              {% for vk in pat.vocab_rules %}
+                                {% if vk.keyword|lower in desc_lower %}
+                                  {% set l2_matched = true %}
+                                {% endif %}
+                              {% endfor %}
+                            {% else %}
+                              {% set l2_matched = true %}{# nessuna regola L2: non segnalare #}
+                            {% endif %}
+                            <li class="border-bottom pb-1 mb-1 last-border-0 {{ l2_matched ? 'text-dark' : 'text-danger' }}" style="word-break: break-word;">
+                              <code class="text-secondary small" style="font-size: 0.75rem;">{{ ex.iuv }}</code> - <strong>€{{ ex.importo|number_format(2, ',', '.') }}</strong>
+                              {% if not l2_matched %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" style="font-size: 0.62rem;">Non coperta da L2</span>
+                              {% endif %}
+                              <br/>
                               <span class="text-muted italic" style="font-style: italic;">"{{ ex.descrizione_entrata|default('(in attesa di scansione Biz Events)') }}"</span><br/>
                               {% if ex.id_flusso is not empty %}
                                 <a href="/pagamenti/ricerca-flussi/dettaglio/{{ ex.id_flusso|url_encode }}" target="_blank" class="text-primary" style="font-size: 0.72rem; word-break: break-all;">
