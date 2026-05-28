@@ -9,6 +9,6 @@ ALTER TABLE mapping_pendenze_pattern
   ADD INDEX IF NOT EXISTS idx_accorpato (accorpato_a, id_dominio);
 
 ALTER TABLE mapping_pendenze_pattern
-  ADD CONSTRAINT IF NOT EXISTS fk_pattern_accorpato FOREIGN KEY (accorpato_a, id_dominio)
+  ADD CONSTRAINT fk_pattern_accorpato FOREIGN KEY IF NOT EXISTS (accorpato_a, id_dominio)
     REFERENCES mapping_pendenze_pattern (pattern_iuv, id_dominio)
     ON DELETE CASCADE;
