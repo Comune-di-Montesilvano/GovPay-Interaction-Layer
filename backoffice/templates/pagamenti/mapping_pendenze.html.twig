@@ -219,6 +219,43 @@
   </div>
   {% endif %}
 
+  {# ── Form accorpamento pattern L1 (mostrato on-demand) ── #}
+  {% if is_admin %}
+  <div class="card shadow-sm border-0 mb-4 bg-white" id="accorpaPatternCard" style="display:none; border-radius: var(--bo-radius, 10px); border-left: 4px solid var(--ms-gold-500, #ffc107) !important;">
+    <div class="card-header py-3 border-bottom d-flex align-items-center justify-content-between" style="background: #fffdf0;">
+      <h3 class="h6 mb-0 fw-bold"><i class="fas fa-compress-arrows-alt text-warning me-2"></i>Accorpa Pattern IUV</h3>
+      <button type="button" class="btn-close btn-sm" onclick="hideAccorpaForm()" aria-label="Chiudi"></button>
+    </div>
+    <div class="card-body">
+      <form method="post" action="/funzioni-avanzate/mapping-pendenze/accorpa" id="accorpaPatternForm">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label small fw-bold">Pattern da accorpare (Sorgente)</label>
+            <input type="text" class="form-control bg-light" id="accorpa_pattern_sorgente" name="pattern_iuv" readonly required>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label small fw-bold">Accorpa a (Pattern di destinazione / Target)<span class="text-danger">*</span></label>
+            <select class="form-select" id="accorpa_pattern_target" name="accorpato_a" required>
+              <option value="">-- Seleziona il pattern di destinazione --</option>
+              {% for other in patterns %}
+                {# Solo pattern battezzati e diversi da se stessi e non a loro volta accorpati #}
+                {% if other.fornitore is not empty and other.accorpato_a is empty %}
+                  <option value="{{ other.pattern_iuv }}">{{ other.pattern_iuv }} ({{ other.fornitore }})</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-warning w-100 fw-semibold text-dark shadow-sm">
+              <i class="fas fa-compress-arrows-alt me-2"></i>Accorpa ora
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Tabella Pattern L1 con Vocabolario L2 inline ── #}
   <div class="card shadow-sm border-0 bg-white mb-5" style="border-radius: var(--bo-radius, 10px);">
     <div class="card-header bg-light py-3 border-bottom">
@@ -294,7 +331,18 @@
 
                   {# 2. Fornitore #}
                   <td>
-                    {% if pat.fornitore is not empty %}
+                    {% if pat.accorpato_a is not empty %}
+                      <div class="d-flex flex-column">
+                        <span class="badge bg-success-subtle text-success border border-success-subtle mb-1" style="font-size: 0.7rem; width: max-content;">
+                          <i class="fas fa-compress-arrows-alt me-1"></i>Accorpato a <strong>{{ pat.accorpato_a }}</strong>
+                        </span>
+                        {% if pat.fornitore is not empty %}
+                          <span class="small text-muted">Eredita: <strong>{{ pat.fornitore }}</strong></span>
+                        {% else %}
+                          <span class="small text-danger italic" style="font-style: italic;"><i class="fas fa-triangle-exclamation me-1"></i>Nessun fornitore ereditato (target non battezzato)</span>
+                        {% endif %}
+                      </div>
+                    {% elseif pat.fornitore is not empty %}
                       <strong class="text-dark">{{ pat.fornitore }}</strong>
                       {% if is_covered %}
                         <div class="small text-info mt-1" style="font-size: 0.72rem;">
@@ -304,9 +352,14 @@
                     {% else %}
                       <span class="text-warning fw-semibold"><i class="fas fa-triangle-exclamation me-1"></i>Non battezzato</span>
                       {% if is_admin %}
-                      <button type="button" class="btn btn-link btn-sm p-0 d-block mt-1 text-decoration-none" onclick="setupBattezza('{{ pat.pattern_iuv }}')">
-                        Battezza ora <i class="fas fa-arrow-right ms-1"></i>
-                      </button>
+                      <div class="d-flex flex-column gap-1 mt-1">
+                        <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none" onclick="setupBattezza('{{ pat.pattern_iuv }}')">
+                          <i class="fas fa-arrow-right me-1"></i>Battezza ora
+                        </button>
+                        <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none text-success" onclick="setupAccorpa('{{ pat.pattern_iuv }}')">
+                          <i class="fas fa-compress-arrows-alt me-1"></i>Accorpa a...
+                        </button>
+                      </div>
                       {% endif %}
                     {% endif %}
                   </td>
@@ -329,6 +382,9 @@
 
                   {# 4. Vocabolario L2 #}
                   <td>
+                    {% if pat.accorpato_a is not empty %}
+                      <div class="text-muted small mb-2"><i class="fas fa-info-circle me-1"></i>Ereditato da <code>{{ pat.accorpato_a }}</code>:</div>
+                    {% endif %}
                     {% if pat.vocab_rules is not empty %}
                       <ul class="list-unstyled mb-1 d-flex flex-column gap-1">
                         {% for vk in pat.vocab_rules %}
@@ -338,14 +394,14 @@
                               {% set vk_desc = ent.descrizione %}
                             {% endif %}
                           {% endfor %}
-                          <li class="p-1 border rounded bg-light d-flex justify-content-between align-items-center">
+                          <li class="p-1 border rounded {% if pat.accorpato_a is not empty %}bg-light text-muted{% else %}bg-light{% endif %} d-flex justify-content-between align-items-center">
                             <span style="font-size: 0.79rem;">
-                              <code class="text-success">{{ vk.keyword }}</code>
+                              <code class="text-success {% if pat.accorpato_a is not empty %}text-opacity-50{% endif %}">{{ vk.keyword }}</code>
                               <span class="text-muted mx-1">→</span>
                               <strong>{{ vk_desc }}</strong>
                               <span class="badge bg-light text-muted border ms-1" style="font-size: 0.62rem;">p:{{ vk.priorita }}</span>
                             </span>
-                            {% if is_admin %}
+                            {% if is_admin and pat.accorpato_a is empty %}
                             <a href="/funzioni-avanzate/mapping-pendenze/delete?type=vocab&id={{ vk.id }}"
                                class="text-danger p-0 ms-2"
                                title="Elimina keyword"
@@ -358,7 +414,9 @@
                       </ul>
                     {% endif %}
                     {% if is_admin %}
-                      {% if pat.fornitore is not empty %}
+                      {% if pat.accorpato_a is not empty %}
+                        {# Nessuna azione, le keyword si gestiscono dal pattern di destinazione #}
+                      {% elseif pat.fornitore is not empty %}
                         <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-success" onclick="setupVocabKeyword('{{ pat.pattern_iuv }}')">
                           <i class="fas fa-plus me-1"></i>Aggiungi keyword
                         </button>
@@ -373,14 +431,24 @@
                   {# 5. Azioni #}
                   <td class="text-end">
                     {% if is_admin %}
-                      {% if pat.is_custom == 1 or pat.fornitore is not empty %}
-                        <a href="/funzioni-avanzate/mapping-pendenze/delete?type=pattern&pattern_iuv={{ pat.pattern_iuv|url_encode }}"
-                           class="btn btn-outline-danger btn-sm px-3"
-                           onclick="return confirm('Eliminare il pattern IUV \'{{ pat.pattern_iuv }}\' e tutto il suo vocabolario L2?');"
-                           title="Elimina pattern e vocab">
-                          <i class="fas fa-trash-can"></i>
-                        </a>
-                      {% else %}
+                      <div class="d-flex justify-content-end gap-1">
+                        {% if pat.accorpato_a is not empty %}
+                          <a href="/funzioni-avanzate/mapping-pendenze/disunisci?pattern_iuv={{ pat.pattern_iuv|url_encode }}"
+                             class="btn btn-outline-warning btn-sm px-3"
+                             title="Rimuovi accorpamento">
+                            <i class="fas fa-unlink"></i>
+                          </a>
+                        {% endif %}
+                        {% if pat.is_custom == 1 or pat.fornitore is not empty %}
+                          <a href="/funzioni-avanzate/mapping-pendenze/delete?type=pattern&pattern_iuv={{ pat.pattern_iuv|url_encode }}"
+                             class="btn btn-outline-danger btn-sm px-3"
+                             onclick="return confirm('Eliminare il pattern IUV \'{{ pat.pattern_iuv }}\' e tutto il suo vocabolario L2?');"
+                             title="Elimina pattern e vocab">
+                            <i class="fas fa-trash-can"></i>
+                          </a>
+                        {% endif %}
+                      </div>
+                      {% if pat.accorpato_a is empty and pat.is_custom == 0 and pat.fornitore is empty %}
                         <span class="text-muted small">—</span>
                       {% endif %}
                     {% else %}
@@ -430,6 +498,35 @@
         ? document.getElementById('cod_entrata_custom').value.trim()
         : sel.value;
     });
+
+    // ── L1 accorpa form helpers ──────────────────────────────────────────────
+    function setupAccorpa(patternIuv) {
+      document.getElementById('accorpa_pattern_sorgente').value = patternIuv;
+      
+      // Update options to exclude the pattern itself
+      const select = document.getElementById('accorpa_pattern_target');
+      for (let i = 0; i < select.options.length; i++) {
+        const option = select.options[i];
+        if (option.value === patternIuv) {
+          option.disabled = true;
+          option.style.display = 'none';
+        } else {
+          option.disabled = false;
+          option.style.display = '';
+        }
+      }
+      
+      select.value = '';
+      
+      const card = document.getElementById('accorpaPatternCard');
+      card.style.display = 'block';
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      select.focus();
+    }
+
+    function hideAccorpaForm() {
+      document.getElementById('accorpaPatternCard').style.display = 'none';
+    }
 
     // ── L2 vocab form helpers ────────────────────────────────────────────────
     function setupVocabKeyword(patternIuv) {

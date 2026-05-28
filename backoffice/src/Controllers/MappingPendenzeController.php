@@ -181,7 +181,8 @@ class MappingPendenzeController
             // L1: patterns ordinati longest-first da getRules
             $rules = $repo->getRules($idDominio);
             $activeRules = array_filter($rules, fn(array $r): bool =>
-                !empty($r['fornitore']) && (int)($r['transazioni_count'] ?? 0) >= 5
+                (!empty($r['fornitore']) && (int)($r['transazioni_count'] ?? 0) >= 5) ||
+                (!empty($r['accorpato_a']) && !empty($r['fornitore']))
             );
 
             $l1Assigned = 0;
@@ -230,6 +231,60 @@ class MappingPendenzeController
             $_SESSION['flash'][] = ['type' => 'success', 'text' => "Reset completato (L1 + L2). Messa in coda la rielaborazione di {$count} pendenze esterne."];
         } catch (\Throwable $e) {
             $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore durante il reset delle mappature: ' . $e->getMessage()];
+        }
+
+        return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+    }
+
+    public function accorpaRule(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrSuperadmin();
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+
+        $body       = (array)($request->getParsedBody() ?? []);
+        $patternIuv = strtoupper(trim((string)($body['pattern_iuv'] ?? '')));
+        $accorpatoA = strtoupper(trim((string)($body['accorpato_a'] ?? '')));
+
+        if ($patternIuv === '' || $accorpatoA === '') {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: specificare sia il pattern sorgente che quello di destinazione.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
+
+        if ($patternIuv === $accorpatoA) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: non puoi accorpare un pattern a se stesso.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
+
+        $repo = new MappingPendenzeRepository();
+        try {
+            $repo->accorpaPattern($idDominio, $patternIuv, $accorpatoA);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => "Pattern '{$patternIuv}' accorpato con successo a '{$accorpatoA}'."];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore durante l\'accorpamento: ' . $e->getMessage()];
+        }
+
+        return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+    }
+
+    public function disunisciRule(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrSuperadmin();
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+
+        $params     = $request->getQueryParams();
+        $patternIuv = strtoupper(trim((string)($params['pattern_iuv'] ?? '')));
+
+        if ($patternIuv === '') {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: specificare il pattern.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
+
+        $repo = new MappingPendenzeRepository();
+        try {
+            $repo->accorpaPattern($idDominio, $patternIuv, null);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => "Accorpamento rimosso per il pattern '{$patternIuv}'."];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore nella rimozione dell\'accorpamento: ' . $e->getMessage()];
         }
 
         return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
