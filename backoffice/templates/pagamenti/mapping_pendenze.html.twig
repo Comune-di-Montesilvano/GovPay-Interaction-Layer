@@ -337,7 +337,7 @@
                     {% elseif pat.fornitore is not empty %}
                       <strong class="text-dark">{{ pat.fornitore }}</strong>
                       {% if is_admin %}
-                      <button type="button" class="btn btn-link btn-sm p-0 d-block mt-1 text-decoration-none text-secondary" onclick="setupModificaFornitore('{{ pat.pattern_iuv }}', '{{ pat.fornitore|e('js') }}')">
+                      <button type="button" class="btn btn-link btn-sm p-0 d-block mt-1 text-decoration-none text-secondary" onclick="setupModificaFornitore('{{ pat.pattern_iuv }}', '{{ pat.fornitore|e('js') }}', '{{ pat.cod_entrata|default('')|e('js') }}')">
                         <i class="fas fa-pen me-1"></i>Modifica
                       </button>
                       {% endif %}
@@ -510,9 +510,27 @@
       document.getElementById('mappingRuleForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    function setupModificaFornitore(prefix, currentFornitore) {
+    function setupModificaFornitore(prefix, currentFornitore, currentCodEntrata) {
       document.getElementById('pattern_iuv').value = prefix;
       document.getElementById('fornitore').value = currentFornitore;
+
+      const sel    = document.getElementById('cod_entrata_select');
+      const custom = document.getElementById('cod_entrata_custom');
+      const hidden = document.getElementById('cod_entrata_hidden');
+      let found = false;
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === currentCodEntrata) { sel.value = currentCodEntrata; found = true; break; }
+      }
+      if (!found && currentCodEntrata !== '') {
+        sel.value = '__custom__';
+        custom.classList.remove('d-none');
+        custom.value = currentCodEntrata;
+      } else {
+        custom.classList.add('d-none');
+        custom.value = '';
+      }
+      hidden.value = currentCodEntrata;
+
       document.getElementById('mappingRuleForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
       document.getElementById('fornitore').focus();
       document.getElementById('fornitore').select();
