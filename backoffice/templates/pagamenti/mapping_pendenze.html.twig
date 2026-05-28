@@ -344,6 +344,11 @@
                       </div>
                     {% elseif pat.fornitore is not empty %}
                       <strong class="text-dark">{{ pat.fornitore }}</strong>
+                      {% if is_admin %}
+                      <button type="button" class="btn btn-link btn-sm p-0 d-block mt-1 text-decoration-none text-secondary" onclick="setupModificaFornitore('{{ pat.pattern_iuv }}', '{{ pat.fornitore|e('js') }}')">
+                        <i class="fas fa-pen me-1"></i>Modifica
+                      </button>
+                      {% endif %}
                       {% if is_covered %}
                         <div class="small text-info mt-1" style="font-size: 0.72rem;">
                           <i class="fas fa-info-circle me-1"></i>Accorpato sotto <code>{{ coverer }}</code>
@@ -475,6 +480,14 @@
       document.getElementById('fornitore').value = '';
       document.getElementById('fornitore').focus();
       document.getElementById('mappingRuleForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function setupModificaFornitore(prefix, currentFornitore) {
+      document.getElementById('pattern_iuv').value = prefix;
+      document.getElementById('fornitore').value = currentFornitore;
+      document.getElementById('mappingRuleForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('fornitore').focus();
+      document.getElementById('fornitore').select();
     }
 
     function onCodEntrataChange() {
