@@ -415,7 +415,10 @@ class TefaRepository
         $stmt = $this->pdo->prepare(
             "SELECT t.id, t.iur, t.iuv, t.data_pagamento, t.importo_tefa, t.importo_comune,
                     t.cf_comune, t.denominazione_comune, t.error_msg, t.is_multibeneficiario,
-                    b.descrizione AS causale
+                    b.descrizione AS causale,
+                    b.cf_debitore, b.nominativo_debitore,
+                    b.cf_pagante, b.nominativo_pagante,
+                    b.company_name AS biz_company
              FROM tefa_ricevute t
              LEFT JOIN biz_ricevute b ON b.iur = t.iur AND b.id_dominio = t.id_dominio AND b.stato = 'PROCESSED'
              WHERE t.id_dominio = :id_dominio

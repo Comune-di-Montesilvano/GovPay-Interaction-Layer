@@ -96,10 +96,10 @@
         <thead style="background:#fef3c7; font-size:0.78rem; text-transform:uppercase; letter-spacing:.04em;">
           <tr>
             <th class="ps-3">Data</th>
-            <th>Comune</th>
             <th>Causale</th>
             <th class="text-end">Imp. TEFA (€)</th>
             <th class="text-end">Imp. Comune (€)</th>
+            <th>Comune</th>
             <th class="text-end">Ratio</th>
             {% if is_admin %}<th class="text-center pe-3">Azione</th>{% endif %}
           </tr>
@@ -107,18 +107,38 @@
         <tbody id="anomalyTableBody">
           {% for row in anomaly_rows %}
           {% set ratio_val = (row.importo_comune is not null and row.importo_comune > 0 and row.importo_tefa is not null) ? (row.importo_tefa / row.importo_comune * 100) : null %}
+          {% set nome_comune = row.denominazione_comune|default(row.cf_comune|default('')) %}
+          {% set popover_lines = [] %}
+          {% set popover_lines = popover_lines|merge(['<strong>IUR:</strong> ' ~ row.iur]) %}
+          {% if row.nominativo_debitore %}{%  set popover_lines = popover_lines|merge(['<strong>Debitore:</strong> ' ~ row.nominativo_debitore ~ (row.cf_debitore ? ' (' ~ row.cf_debitore ~ ')' : '')]) %}{% endif %}
+          {% if row.biz_company and row.biz_company != row.nominativo_debitore %}{% set popover_lines = popover_lines|merge(['<strong>Azienda:</strong> ' ~ row.biz_company]) %}{% endif %}
+          {% if row.nominativo_pagante and row.nominativo_pagante != row.nominativo_debitore %}{% set popover_lines = popover_lines|merge(['<strong>Pagante:</strong> ' ~ row.nominativo_pagante]) %}{% endif %}
+          {% if row.causale %}{% set popover_lines = popover_lines|merge(['<strong>Causale:</strong> ' ~ row.causale]) %}{% endif %}
+          {% set popover_html = popover_lines|join('<br>') %}
           <tr id="anomaly-row-{{ row.id }}">
             <td class="ps-3 text-nowrap text-muted small">{{ row.data_pagamento|default('—') }}</td>
-            <td>
-              <div class="fw-semibold">{{ row.denominazione_comune|default(row.cf_comune|default('—')) }}</div>
-              {% if row.cf_comune %}<div class="text-muted" style="font-size:.75rem;">{{ row.cf_comune }}</div>{% endif %}
-              <div class="text-muted" style="font-size:.7rem;"><code>{{ row.iur|slice(0, 16) }}…</code></div>
-            </td>
-            <td class="text-muted" style="max-width:200px;white-space:normal;font-size:.8rem;">
-              {{ row.causale|default('—') }}
+            <td style="max-width:220px;white-space:normal;font-size:.82rem;">
+              <span class="text-muted">{{ row.causale|default('—') }}</span>
+              <a href="#" class="ms-1 text-primary"
+                 tabindex="0"
+                 data-bs-toggle="popover"
+                 data-bs-trigger="focus"
+                 data-bs-html="true"
+                 data-bs-placement="right"
+                 data-bs-content="{{ popover_html|e('html_attr') }}"
+                 title="Dati Biz Events"
+                 style="font-size:.75rem;"
+                 onclick="return false;">
+                <i class="fas fa-circle-info"></i>
+              </a>
+              <div class="text-muted" style="font-size:.7rem;margin-top:1px;"><code>{{ row.iur|slice(0, 18) }}…</code></div>
             </td>
             <td class="text-end fw-semibold">{{ row.importo_tefa is not null ? row.importo_tefa|number_format(2, ',', '.') : '—' }}</td>
             <td class="text-end fw-semibold">{{ row.importo_comune is not null ? row.importo_comune|number_format(2, ',', '.') : '—' }}</td>
+            <td style="font-size:.82rem;">
+              <div class="fw-semibold">{{ nome_comune != '' ? nome_comune : (row.cf_comune|default('—')) }}</div>
+              {% if row.cf_comune and nome_comune != row.cf_comune %}<div class="text-muted" style="font-size:.72rem;">{{ row.cf_comune }}</div>{% endif %}
+            </td>
             <td class="text-end">
               {% if ratio_val is not null %}
                 {% if ratio_val < 2 or ratio_val > 8 %}
@@ -156,10 +176,24 @@
     panel.addEventListener('show.bs.collapse', function(){
       document.getElementById('anomalyToggleIcon').classList.replace('fa-chevron-down','fa-chevron-up');
       document.getElementById('anomalyToggleLabel').textContent = 'Nascondi';
+      // Init popovers on first open
+      panel.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el){
+        if (!el._bsPopover) {
+          el._bsPopover = new bootstrap.Popover(el, { sanitize: false, container: 'body' });
+        }
+      });
     });
     panel.addEventListener('hide.bs.collapse', function(){
       document.getElementById('anomalyToggleIcon').classList.replace('fa-chevron-up','fa-chevron-down');
       document.getElementById('anomalyToggleLabel').textContent = 'Mostra';
+    });
+    // Close popover clicking elsewhere
+    document.addEventListener('click', function(e){
+      panel.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el){
+        if (el._bsPopover && !el.contains(e.target)) {
+          el._bsPopover.hide();
+        }
+      });
     });
   }
 })();
