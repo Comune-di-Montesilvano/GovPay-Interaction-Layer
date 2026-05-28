@@ -108,14 +108,28 @@
           {% for row in anomaly_rows %}
           {% set ratio_val = (row.importo_comune is not null and row.importo_comune > 0 and row.importo_tefa is not null) ? (row.importo_tefa / row.importo_comune * 100) : null %}
           {% set nome_comune = row.denominazione_comune|default(row.cf_comune|default('')) %}
+          {% set biz_data = {
+              iur: row.iur,
+              iuv: row.iuv|default(''),
+              data_pagamento: row.data_pagamento|default(''),
+              nominativo_debitore: row.nominativo_debitore|default(''),
+              cf_debitore: row.cf_debitore|default(''),
+              nominativo_pagante: row.nominativo_pagante|default(''),
+              cf_pagante: row.cf_pagante|default(''),
+              causale: row.causale|default(''),
+              biz_company: row.biz_company|default(''),
+              importo_tefa: row.importo_tefa,
+              importo_comune: row.importo_comune,
+              cf_comune: row.cf_comune|default(''),
+              denom_comune: row.denominazione_comune|default(''),
+              trasferimenti_json: row.trasferimenti_json|default('[]')
+          } %}
           <tr id="anomaly-row-{{ row.id }}">
             <td class="ps-3 text-nowrap text-muted small">{{ row.data_pagamento|default('—') }}</td>
             <td style="max-width:220px;white-space:normal;font-size:.82rem;">
               <span class="text-muted">{{ row.causale|default('—') }}</span>
               <button type="button" class="btn btn-link p-0 ms-1 text-info js-anomaly-biz"
-                      data-iur="{{ row.iur }}"
-                      data-iuv="{{ row.iuv|default('') }}"
-                      data-fc="{{ id_dominio }}"
+                      data-row="{{ biz_data|json_encode|e('html_attr') }}"
                       title="Visualizza dati Biz Events"
                       style="font-size:.75rem;vertical-align:baseline;line-height:1;">
                 <i class="fas fa-search"></i>
@@ -464,14 +478,8 @@
 </script>
 
 <script>
-// ── Biz Events modal per anomalie TEFA ────────────────────────────────────
+// ── Biz Events modal per anomalie TEFA (dati locali da biz_ricevute) ──────
 (function () {
-  var MAX_ATTEMPTS = 3;
-  var RETRY_DELAY  = 1800;
-
-  function isRetryable(s) { return s === 0 || s === 502 || s === 503 || s === 504; }
-  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
   function escHtml(str) {
     if (!str) return '';
     var d = document.createElement('div');
@@ -484,63 +492,52 @@
       + '<dd class="col-sm-7 text-break">' + (value ? escHtml(String(value)) : '—') + '</dd>';
   }
 
-  function buildHtml(d) {
-    var totalAmt = d.total_amount || d.amount;
-    var amount = totalAmt ? totalAmt.toLocaleString('it-IT', {minimumFractionDigits: 2}) + ' €' : '—';
-    var html = '<div class="row g-3">'
-      + '<div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Debitore</h6><dl class="row mb-0 small">'
-      + dlRow('Nome', d.debtor_name) + dlRow('Codice fiscale', d.debtor_fiscal_code)
-      + dlRow('Tipo', d.debtor_type === 'F' ? 'Persona fisica' : (d.debtor_type === 'G' ? 'Persona giuridica' : d.debtor_type))
-      + '</dl></div>'
-      + '<div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Pagatore</h6><dl class="row mb-0 small">'
-      + dlRow('Nome', d.payer_name) + dlRow('Codice fiscale', d.payer_fiscal_code)
-      + '</dl></div></div><hr>'
-      + '<div class="row g-3"><div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Intermediario (PSP)</h6><dl class="row mb-0 small">'
-      + dlRow('PSP', d.psp_name || d.psp_id) + dlRow('Canale', d.channel) + dlRow('Metodo', d.payment_method)
-      + '</dl></div>'
-      + '<div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Dettagli pagamento</h6><dl class="row mb-0 small">'
-      + dlRow('Descrizione', d.description)
-      + dlRow('Importo totale', amount)
-      + dlRow('Data', d.payment_date ? new Date(d.payment_date).toLocaleString('it-IT') : '')
-      + dlRow('Esito', d.outcome)
-      + dlRow('N. Avviso', d.notice_number)
-      + dlRow('ID Ricevuta', d.receipt_id)
-      + '</dl></div></div>';
-    if (d.transfers && d.transfers.length > 0) {
-      html += '<hr><h6 class="text-secondary text-uppercase mb-2">Trasferimenti (' + d.transfers.length + ')</h6>'
-        + '<div class="table-responsive"><table class="table table-sm table-bordered small mb-0">'
-        + '<thead class="table-light"><tr><th>#</th><th>Descrizione</th><th class="text-end">Importo</th><th>Beneficiario</th><th>IBAN</th></tr></thead><tbody>';
-      for (var i = 0; i < d.transfers.length; i++) {
-        var tr = d.transfers[i];
-        var trAmt = tr.amount ? tr.amount.toLocaleString('it-IT', {minimumFractionDigits: 2}) + ' €' : '—';
-        html += '<tr><td>' + (i + 1) + '</td>'
-          + '<td>' + escHtml(tr.description || '—') + '</td>'
-          + '<td class="text-end text-nowrap">' + trAmt + '</td>'
-          + '<td>' + escHtml(tr.company || tr.fiscal_code || '—') + '</td>'
-          + '<td class="text-break small">' + escHtml(tr.iban || '—') + '</td></tr>';
-      }
-      html += '</tbody></table></div>';
-    }
-    return html;
+  function fmtAmt(val) {
+    var n = parseFloat(val);
+    return isNaN(n) ? '—' : n.toLocaleString('it-IT', {minimumFractionDigits: 2}) + ' €';
   }
 
-  async function fetchBizAnomaly(fc, iur, iuv) {
-    var url = '/api/biz-event?fc=' + encodeURIComponent(fc)
-      + '&iur=' + encodeURIComponent(iur)
-      + '&iuv=' + encodeURIComponent(iuv);
-    for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        var res = await fetch(url);
-        if (res.ok) return await res.json();
-        if (!isRetryable(res.status) || attempt === MAX_ATTEMPTS) {
-          return { __error: res.status === 404 ? 'Ricevuta non trovata per questo IUV/IUR.' : 'Errore ' + res.status + '.' };
+  function buildHtml(d) {
+    var html = '<div class="row g-3">'
+      + '<div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Debitore</h6><dl class="row mb-0 small">'
+      + dlRow('Nome', d.nominativo_debitore) + dlRow('Codice fiscale', d.cf_debitore)
+      + '</dl></div>'
+      + '<div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Pagatore</h6><dl class="row mb-0 small">'
+      + dlRow('Nome', d.nominativo_pagante) + dlRow('Codice fiscale', d.cf_pagante)
+      + '</dl></div></div><hr>'
+      + '<div class="row g-3"><div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Dettagli pagamento</h6><dl class="row mb-0 small">'
+      + dlRow('IUR', d.iur)
+      + dlRow('IUV', d.iuv)
+      + dlRow('Data', d.data_pagamento)
+      + dlRow('Descrizione', d.causale)
+      + (d.biz_company ? dlRow('Ente', d.biz_company) : '')
+      + '</dl></div>'
+      + '<div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Trasferimenti</h6><dl class="row mb-0 small">'
+      + dlRow('Imp. Provincia (TEFA)', fmtAmt(d.importo_tefa))
+      + dlRow('Imp. Comune', fmtAmt(d.importo_comune))
+      + dlRow('CF Comune', d.cf_comune)
+      + dlRow('Comune', d.denom_comune)
+      + '</dl></div></div>';
+
+    try {
+      var trs = JSON.parse(d.trasferimenti_json || '[]');
+      if (trs.length > 0) {
+        html += '<hr><h6 class="text-secondary text-uppercase mb-2">Dettaglio trasferimenti (' + trs.length + ')</h6>'
+          + '<div class="table-responsive"><table class="table table-sm table-bordered small mb-0">'
+          + '<thead class="table-light"><tr><th>#</th><th>CF Beneficiario</th><th class="text-end">Importo</th><th>Causale</th><th>IBAN</th></tr></thead><tbody>';
+        for (var i = 0; i < trs.length; i++) {
+          var tr = trs[i];
+          html += '<tr><td>' + (i + 1) + '</td>'
+            + '<td class="font-monospace small">' + escHtml(tr.fiscal_code_pa || '—') + '</td>'
+            + '<td class="text-end text-nowrap">' + fmtAmt(tr.transfer_amount) + '</td>'
+            + '<td>' + escHtml(tr.remittance_information || '—') + '</td>'
+            + '<td class="text-break small">' + escHtml(tr.iban || '—') + '</td></tr>';
         }
-      } catch (e) {
-        if (attempt === MAX_ATTEMPTS) return { __error: 'Errore di rete.' };
+        html += '</tbody></table></div>';
       }
-      await sleep(RETRY_DELAY);
-    }
-    return { __error: 'Impossibile recuperare la ricevuta.' };
+    } catch (e) {}
+
+    return html;
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -552,18 +549,13 @@
     document.addEventListener('click', function (e) {
       var btn = e.target.closest('.js-anomaly-biz');
       if (!btn) return;
-      var fc  = btn.getAttribute('data-fc')  || '';
-      var iur = btn.getAttribute('data-iur') || '';
-      var iuv = btn.getAttribute('data-iuv') || '';
-      modalBody.innerHTML = '<p class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-2"></i>Caricamento...</p>';
+      try {
+        var data = JSON.parse(btn.getAttribute('data-row') || '{}');
+        modalBody.innerHTML = buildHtml(data);
+      } catch (ex) {
+        modalBody.innerHTML = '<div class="alert alert-warning">Dati non disponibili.</div>';
+      }
       bsModal.show();
-      fetchBizAnomaly(fc, iur, iuv).then(function (data) {
-        if (data.__error) {
-          modalBody.innerHTML = '<div class="alert alert-warning">' + escHtml(data.__error) + '</div>';
-        } else {
-          modalBody.innerHTML = buildHtml(data);
-        }
-      });
     });
   });
 })();
