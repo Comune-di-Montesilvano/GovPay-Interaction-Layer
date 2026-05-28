@@ -111,6 +111,7 @@
           {% set biz_data = {
               iur: row.iur,
               iuv: row.iuv|default(''),
+              id_flusso: row.id_flusso|default(''),
               data_pagamento: row.data_pagamento|default(''),
               nominativo_debitore: row.nominativo_debitore|default(''),
               cf_debitore: row.cf_debitore|default(''),
@@ -508,6 +509,7 @@
       + '<div class="row g-3"><div class="col-12 col-md-6"><h6 class="text-secondary text-uppercase mb-2">Dettagli pagamento</h6><dl class="row mb-0 small">'
       + dlRow('IUR', d.iur)
       + dlRow('IUV', d.iuv)
+      + dlRow('Flusso', d.id_flusso)
       + dlRow('Data', d.data_pagamento)
       + dlRow('Descrizione', d.causale)
       + (d.biz_company ? dlRow('Ente', d.biz_company) : '')
