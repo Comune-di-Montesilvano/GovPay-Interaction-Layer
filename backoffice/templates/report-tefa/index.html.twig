@@ -107,7 +107,7 @@
         <tbody id="anomalyTableBody">
           {% for row in anomaly_rows %}
           {% set ratio_val = (row.importo_comune is not null and row.importo_comune > 0 and row.importo_tefa is not null) ? (row.importo_tefa / row.importo_comune * 100) : null %}
-          {% set nome_comune = row.denominazione_comune|default(row.cf_comune|default('')) %}
+          {% set nome_comune = row.denominazione_comune|default(row.biz_company|default('')) %}
           {% set biz_data = {
               iur: row.iur,
               iuv: row.iuv|default(''),
