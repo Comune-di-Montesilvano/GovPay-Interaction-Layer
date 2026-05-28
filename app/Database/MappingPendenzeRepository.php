@@ -206,16 +206,19 @@ class MappingPendenzeRepository
      */
     public function accorpaPattern(string $idDominio, string $patternIuv, ?string $accorpatoA): void
     {
+        $isCustom = ($accorpatoA !== '' && $accorpatoA !== null) ? 1 : 0;
         $sql = "UPDATE mapping_pendenze_pattern
                 SET accorpato_a = :accorpato_a,
                     fornitore = IF(:accorpato_a2 IS NULL, fornitore, NULL),
-                    cod_entrata = IF(:accorpato_a3 IS NULL, cod_entrata, NULL)
+                    cod_entrata = IF(:accorpato_a3 IS NULL, cod_entrata, NULL),
+                    is_custom = :is_custom
                 WHERE pattern_iuv = :pattern_iuv AND id_dominio = :dom";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':accorpato_a'  => ($accorpatoA !== '' && $accorpatoA !== null) ? $accorpatoA : null,
             ':accorpato_a2' => ($accorpatoA !== '' && $accorpatoA !== null) ? $accorpatoA : null,
             ':accorpato_a3' => ($accorpatoA !== '' && $accorpatoA !== null) ? $accorpatoA : null,
+            ':is_custom'    => $isCustom,
             ':pattern_iuv'  => $patternIuv,
             ':dom'          => $idDominio,
         ]);
