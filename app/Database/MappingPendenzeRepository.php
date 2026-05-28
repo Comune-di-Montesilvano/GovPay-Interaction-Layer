@@ -29,6 +29,38 @@ class MappingPendenzeRepository
         $stmt->execute([':dom' => $idDominio]);
         $patterns = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+        // Costruisce mappa di tutti i pattern per risoluzione ereditarietà
+        $patternMap = [];
+        foreach ($patterns as $p) {
+            $patternMap[$p['pattern_iuv']] = $p;
+        }
+
+        // Risolve fornitore e cod_entrata ereditati per i pattern accorpati
+        foreach ($patterns as &$p) {
+            if (!empty($p['accorpato_a'])) {
+                $targetPat = $p['accorpato_a'];
+                $visited = [$p['pattern_iuv'] => true];
+                while (isset($patternMap[$targetPat]) && !isset($visited[$targetPat])) {
+                    $visited[$targetPat] = true;
+                    $target = $patternMap[$targetPat];
+                    if (!empty($target['fornitore'])) {
+                        $p['fornitore'] = $target['fornitore'];
+                    }
+                    if (!empty($target['cod_entrata'])) {
+                        $p['cod_entrata'] = $target['cod_entrata'];
+                    }
+                    $targetPat = $target['accorpato_a'] ?? null;
+                }
+            }
+        }
+        unset($p);
+
+        // Ricrea la mappa dei pattern ereditati per il vocabolario
+        $patternMap = [];
+        foreach ($patterns as $p) {
+            $patternMap[$p['pattern_iuv']] = $p;
+        }
+
         // Carica tutte le keyword vocabolario L2
         $sqlVocab = "SELECT * FROM mapping_pendenze_vocab
                      WHERE id_dominio = :dom
@@ -44,8 +76,24 @@ class MappingPendenzeRepository
 
         $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
         foreach ($patterns as &$p) {
-            $p['vocab_rules']  = $vocabMap[$p['pattern_iuv']] ?? [];
-            $p['insufficiente'] = (int)$p['transazioni_count'] < 5;
+            // Eredita i vocab_rules dal target se accorpato
+            $targetPat = $p['pattern_iuv'];
+            if (!empty($p['accorpato_a'])) {
+                $targetPat = $p['accorpato_a'];
+                $visited = [$p['pattern_iuv'] => true];
+                while (isset($patternMap[$targetPat]) && !isset($visited[$targetPat])) {
+                    $visited[$targetPat] = true;
+                    $target = $patternMap[$targetPat];
+                    if (!empty($target['accorpato_a'])) {
+                        $targetPat = $target['accorpato_a'];
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            $p['vocab_rules']  = $vocabMap[$targetPat] ?? [];
+            $p['insufficiente'] = empty($p['accorpato_a']) && (int)$p['transazioni_count'] < 5;
 
             if ($tefaEnabled) {
                 $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
@@ -102,6 +150,27 @@ class MappingPendenzeRepository
         $stmt->execute([':pattern_iuv' => $patternIuv, ':dom' => $idDominio]);
     }
 
+    /**
+     * Accorpa un pattern IUV a un altro esistente.
+     * Se accorpato, pulisce i campi locali per evitare conflitti, dato che verranno ereditati.
+     */
+    public function accorpaPattern(string $idDominio, string $patternIuv, ?string $accorpatoA): void
+    {
+        $sql = "UPDATE mapping_pendenze_pattern
+                SET accorpato_a = :accorpato_a,
+                    fornitore = IF(:accorpato_a2 IS NULL, fornitore, NULL),
+                    cod_entrata = IF(:accorpato_a3 IS NULL, cod_entrata, NULL)
+                WHERE pattern_iuv = :pattern_iuv AND id_dominio = :dom";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            ':accorpato_a'  => ($accorpatoA !== '' && $accorpatoA !== null) ? $accorpatoA : null,
+            ':accorpato_a2' => ($accorpatoA !== '' && $accorpatoA !== null) ? $accorpatoA : null,
+            ':accorpato_a3' => ($accorpatoA !== '' && $accorpatoA !== null) ? $accorpatoA : null,
+            ':pattern_iuv'  => $patternIuv,
+            ':dom'          => $idDominio,
+        ]);
+    }
+
     // ── Vocabolario L2 ──────────────────────────────────────────────────────
 
     /**
@@ -110,13 +179,21 @@ class MappingPendenzeRepository
      */
     public function getVocabRules(string $idDominio): array
     {
-        $sqlPatterns = "SELECT pattern_iuv, cod_entrata FROM mapping_pendenze_pattern
-                        WHERE id_dominio = :dom AND fornitore IS NOT NULL";
+        $sqlPatterns = "SELECT pattern_iuv, cod_entrata, accorpato_a, fornitore FROM mapping_pendenze_pattern
+                        WHERE id_dominio = :dom";
         $stmtPat = $this->pdo->prepare($sqlPatterns);
         $stmtPat->execute([':dom' => $idDominio]);
+        $patterns = $stmtPat->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
         $defaults = [];
-        foreach ($stmtPat->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $accorpati = [];
+        $fornitori = [];
+        foreach ($patterns as $row) {
             $defaults[$row['pattern_iuv']] = $row['cod_entrata'];
+            $fornitori[$row['pattern_iuv']] = $row['fornitore'];
+            if (!empty($row['accorpato_a'])) {
+                $accorpati[$row['pattern_iuv']] = $row['accorpato_a'];
+            }
         }
 
         $sqlVocab = "SELECT * FROM mapping_pendenze_vocab
@@ -124,24 +201,54 @@ class MappingPendenzeRepository
                      ORDER BY pattern_iuv ASC, priorita DESC, id ASC";
         $stmt = $this->pdo->prepare($sqlVocab);
         $stmt->execute([':dom' => $idDominio]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $vocabRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-        $result = [];
-        foreach ($rows as $row) {
-            $pat = $row['pattern_iuv'];
-            if (!isset($result[$pat])) {
-                $result[$pat] = [
-                    'keywords'           => [],
-                    'default_cod_entrata' => $defaults[$pat] ?? null,
-                ];
-            }
-            $result[$pat]['keywords'][] = $row;
+        $vocabMap = [];
+        foreach ($vocabRows as $row) {
+            $vocabMap[$row['pattern_iuv']][] = $row;
         }
 
-        // Aggiungi pattern senza vocab ma con default cod_entrata (solo fallback)
-        foreach ($defaults as $pat => $default) {
-            if (!isset($result[$pat]) && $default !== null) {
-                $result[$pat] = ['keywords' => [], 'default_cod_entrata' => $default];
+        $result = [];
+
+        foreach ($patterns as $patRow) {
+            $pat = $patRow['pattern_iuv'];
+
+            // Trova il target finale per questo pattern (può essere se stesso)
+            $targetPat = $pat;
+            $visited = [$pat => true];
+            while (isset($accorpati[$targetPat]) && !isset($visited[$accorpati[$targetPat]])) {
+                $targetPat = $accorpati[$targetPat];
+                $visited[$targetPat] = true;
+            }
+
+            // Se il target finale (o il pattern corrente) ha un fornitore impostato
+            $resolvedFornitore = $fornitori[$targetPat] ?? null;
+
+            if ($resolvedFornitore !== null && $resolvedFornitore !== '') {
+                // Eredita le keyword dal target
+                $keywords = $vocabMap[$targetPat] ?? [];
+
+                // Se ereditate da un altro pattern, riscriviamo il pattern_iuv per il matching
+                if ($targetPat !== $pat) {
+                    $adaptedKeywords = [];
+                    foreach ($keywords as $kw) {
+                        $adaptedKw = $kw;
+                        $adaptedKw['pattern_iuv'] = $pat;
+                        $adaptedKeywords[] = $adaptedKw;
+                    }
+                    $keywords = $adaptedKeywords;
+                }
+
+                // Fallback default cod_entrata
+                $defaultCod = $defaults[$targetPat] ?? null;
+                if (empty($defaultCod) && $targetPat !== $pat) {
+                    $defaultCod = $defaults[$pat] ?? null;
+                }
+
+                $result[$pat] = [
+                    'keywords'            => $keywords,
+                    'default_cod_entrata' => $defaultCod,
+                ];
             }
         }
 
