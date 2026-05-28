@@ -76,7 +76,7 @@ class FlussiRendicontazioniRepository
                 ':importo' => $this->normalizeDecimal($row['importo'] ?? null),
                 ':esito' => $this->normalizeInt($row['esito'] ?? null),
                 ':stato_rend' => $this->normalizeString($row['stato_rend'] ?? null),
-                ':indice' => $this->normalizeInt($row['indice'] ?? null),
+                ':indice' => $this->normalizeInt($row['indice'] ?? null) ?? 1,
                 ':data_pagamento' => $this->normalizeDate($row['data_pagamento'] ?? null),
                 ':cod_entrata' => $this->normalizeString($row['cod_entrata'] ?? null),
                 ':descrizione_entrata' => $this->normalizeString($row['descrizione_entrata'] ?? null),
@@ -267,7 +267,7 @@ class FlussiRendicontazioniRepository
                 f.iur,
                 f.iuv,
                 f.data_pagamento,
-                f.importo,
+                SUM(f.importo) AS importo,
                 f.is_govpay,
                 f.is_multibeneficiario
             FROM flussi_rendicontazioni f
@@ -282,7 +282,8 @@ class FlussiRendicontazioniRepository
         }
 
         $sql .= '
-                ORDER BY f.data_pagamento ASC, f.id ASC
+            GROUP BY f.iur, f.id_dominio, f.anno, f.mese, f.id_flusso, f.iuv, f.data_pagamento, f.is_govpay, f.is_multibeneficiario
+            ORDER BY f.data_pagamento ASC, f.iur ASC
             LIMIT :limit';
 
         $stmt = $this->pdo->prepare($sql);
@@ -311,7 +312,7 @@ class FlussiRendicontazioniRepository
 
     public function countUnprocessedForTefa(string $idDominio, ?string $minDate = null): int
     {
-        $sql = 'SELECT COUNT(*)
+        $sql = 'SELECT COUNT(DISTINCT f.iur)
             FROM flussi_rendicontazioni f
             LEFT JOIN tefa_ricevute t
               ON t.id_dominio = f.id_dominio
@@ -348,7 +349,7 @@ class FlussiRendicontazioniRepository
                 f.iur,
                 f.iuv,
                 f.data_pagamento,
-                f.importo
+                SUM(f.importo) AS importo
             FROM flussi_rendicontazioni f
             LEFT JOIN biz_ricevute b
               ON b.id_dominio = f.id_dominio
@@ -362,7 +363,8 @@ class FlussiRendicontazioniRepository
         }
 
         $sql .= '
-            ORDER BY f.data_pagamento ASC, f.id ASC
+            GROUP BY f.iur, f.id_dominio, f.anno, f.mese, f.id_flusso, f.iuv, f.data_pagamento
+            ORDER BY f.data_pagamento ASC, f.iur ASC
             LIMIT :limit';
 
         $stmt = $this->pdo->prepare($sql);
@@ -378,7 +380,7 @@ class FlussiRendicontazioniRepository
 
     public function countUnprocessedForBiz(string $idDominio, ?string $minDate = null): int
     {
-        $sql = 'SELECT COUNT(*)
+        $sql = 'SELECT COUNT(DISTINCT f.iur)
             FROM flussi_rendicontazioni f
             LEFT JOIN biz_ricevute b
               ON b.id_dominio = f.id_dominio
@@ -518,7 +520,7 @@ class FlussiRendicontazioniRepository
   importo             DECIMAL(10,2),
   esito               TINYINT,
   stato_rend          VARCHAR(20),
-  indice              SMALLINT,
+  indice              SMALLINT NOT NULL DEFAULT 1,
   data_pagamento      DATE,
   cod_entrata         VARCHAR(100),
   descrizione_entrata VARCHAR(500),
@@ -526,7 +528,7 @@ class FlussiRendicontazioniRepository
     is_govpay           TINYINT(1) NULL,
     is_multibeneficiario TINYINT(1) NULL,
   synced_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_iur_dominio (iur, id_dominio),
+  UNIQUE KEY uq_iur_dominio (iur, id_dominio, indice),
   INDEX idx_dominio_flusso (id_dominio, id_flusso),
   INDEX idx_dominio_data (id_dominio, data_pagamento),
   INDEX idx_dominio_anno_mese (id_dominio, anno, mese),

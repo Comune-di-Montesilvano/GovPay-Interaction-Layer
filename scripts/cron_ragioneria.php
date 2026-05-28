@@ -414,7 +414,7 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
             'importo' => (float)($rend['importo'] ?? 0),
             'esito' => isset($rend['esito']) ? (int)$rend['esito'] : null,
             'stato_rend' => (string)($rend['stato'] ?? $rend['statoRendicontazione'] ?? ''),
-            'indice' => isset($rend['indice']) ? (int)$rend['indice'] : null,
+            'indice' => isset($rend['indice']) ? (int)$rend['indice'] : 1,
             'data_pagamento' => $dataIncasso,
             'cod_entrata' => (string)($voce['codEntrata'] ?? ''),
             'descrizione_entrata' => (string)($voce['descrizione'] ?? ''),
