@@ -456,12 +456,21 @@
               },
               {
                 type: "bar",
-                label: "Importo Incassato (€)",
-                backgroundColor: "rgba(74, 42, 110, 0.75)", // purple from stemma
-                hoverBackgroundColor: "var(--ms-purple-600)",
+                label: "Pendenze Interne (€)",
+                backgroundColor: "#0066CC", // same blue as channel breakdown
+                hoverBackgroundColor: "#0052a3",
                 borderRadius: 4,
                 yAxisID: "y-amount",
-                data: monthlyData.map(item => item.amount)
+                data: monthlyData.map(item => item.amount_internal || 0)
+              },
+              {
+                type: "bar",
+                label: "Pendenze Esterne (€)",
+                backgroundColor: "#4A2A6E", // same purple as channel breakdown
+                hoverBackgroundColor: "#382054",
+                borderRadius: 4,
+                yAxisID: "y-amount",
+                data: monthlyData.map(item => item.amount_external || 0)
               }
             ]
           },
@@ -475,13 +484,19 @@
                   boxWidth: 12,
                   font: { family: 'Titillium Web', size: 12 }
                 }
+              },
+              tooltip: {
+                mode: 'index',
+                intersect: false
               }
             },
             scales: {
               x: {
+                stacked: true,
                 grid: { display: false }
               },
               "y-amount": {
+                stacked: true,
                 type: "linear",
                 position: "left",
                 ticks: {
@@ -490,6 +505,7 @@
                 grid: { color: "#f1f5f9" }
               },
               "y-count": {
+                stacked: false,
                 type: "linear",
                 position: "right",
                 grid: { drawOnChartArea: false },
@@ -570,10 +586,16 @@
 
       // Format number Italian-style with 2 decimals
       function fmtEur(val) {
-        return '€\u00a0' + Number(val).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        let num = parseFloat(val);
+        if (isNaN(num)) return '€\u00a00,00';
+        let parts = num.toFixed(2).split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return '€\u00a0' + parts.join(',');
       }
       function fmtNum(val) {
-        return Number(val).toLocaleString('it-IT');
+        let num = parseInt(val, 10);
+        if (isNaN(num)) return '0';
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
       }
 
       function buildGrid(tipologie, total) {

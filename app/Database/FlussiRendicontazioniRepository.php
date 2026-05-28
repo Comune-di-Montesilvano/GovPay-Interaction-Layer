@@ -188,15 +188,16 @@ class FlussiRendicontazioniRepository
     /**
      * Tutte le righe per il CSV, arricchite con dati Biz Events. Stessa logica di
      * getForReport ma senza paginazione e con LEFT JOIN su biz_ricevute.
+     * Usa generator per evitare di caricare l'intero risultato in memoria.
      * @param array<int,string> $codEntrate
-     * @return array<int,array<string,mixed>>
+     * @return \Generator<int,array<string,mixed>>
      */
     public function getForCsvWithBiz(
         string $idDominio,
         string $dataDa,
         string $dataA,
         array $codEntrate
-    ): array {
+    ): \Generator {
         [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
 
         $sql = "SELECT
@@ -249,7 +250,9 @@ class FlussiRendicontazioniRepository
         }
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            yield $row;
+        }
     }
 
     /**
@@ -493,6 +496,41 @@ class FlussiRendicontazioniRepository
             $result[(string)$row['iur']] = $row;
         }
         return $result;
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public function findByPendenza(string $idDominio, string $idPendenza, ?string $iuv = null): array
+    {
+        $rows = [];
+        if ($idPendenza !== '') {
+            $stmt = $this->pdo->prepare(
+                'SELECT id_flusso, data_flusso, data_regolamento, iur, iuv, importo,
+                        esito, stato_rend, data_pagamento, id_psp, ragione_psp, trn,
+                        cod_entrata, descrizione_entrata, is_govpay
+                 FROM flussi_rendicontazioni
+                 WHERE id_dominio = :dom AND id_pendenza = :id
+                 ORDER BY data_pagamento DESC, id DESC
+                 LIMIT 20'
+            );
+            $stmt->execute([':dom' => $idDominio, ':id' => $idPendenza]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
+        if ($rows === [] && $iuv !== null && $iuv !== '') {
+            $stmt = $this->pdo->prepare(
+                'SELECT id_flusso, data_flusso, data_regolamento, iur, iuv, importo,
+                        esito, stato_rend, data_pagamento, id_psp, ragione_psp, trn,
+                        cod_entrata, descrizione_entrata, is_govpay
+                 FROM flussi_rendicontazioni
+                 WHERE id_dominio = :dom AND iuv = :iuv
+                 ORDER BY data_pagamento DESC, id DESC
+                 LIMIT 20'
+            );
+            $stmt->execute([':dom' => $idDominio, ':iuv' => $iuv]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
+        return $rows;
     }
 
     public function ensureTable(): void

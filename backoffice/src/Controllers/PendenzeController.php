@@ -3088,6 +3088,17 @@ class PendenzeController
 
         $paymentAttempts = $this->normalizePaymentAttempts($pendenza, $idDominio);
 
+        $incassoRows = [];
+        try {
+            if ($idDominio !== '' && is_array($pendenza)) {
+                $iuvForLookup = $pendenza['identificativoUnivocoVersamento'] ?? $pendenza['iuv'] ?? null;
+                $repo = new \App\Database\FlussiRendicontazioniRepository();
+                $incassoRows = $repo->findByPendenza($idDominio, $idPendenza, $iuvForLookup ?: null);
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('Errore lettura incasso ragioneria: ' . $e->getMessage());
+        }
+
         return $this->twig->render($response, 'pendenze/dettaglio.html.twig', [
             'idPendenza' => $idPendenza,
             'return_url' => $returnUrl,
@@ -3102,6 +3113,7 @@ class PendenzeController
             'rate_info_source' => $rateInfoSource,
             'payment_attempts' => $paymentAttempts,
             'tipologie' => $tipologie,
+            'incasso_rows' => $incassoRows,
         ]);
     }
 

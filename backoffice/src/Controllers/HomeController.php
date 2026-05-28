@@ -130,9 +130,15 @@ class HomeController
         // 7. Andamento mensile ultimi 6 mesi (importi e transazioni) per combo chart
         $monthlyTrend = [];
         try {
-            // Seleziona gli ultimi 6 mesi distinti in cui ci sono stati incassi
+            // Seleziona gli ultimi 6 mesi distinti in cui ci sono stati incassi con ripartizione interna/esterna
             $stmt = $pdo->prepare('
-                SELECT anno, mese, COUNT(*) AS count, SUM(importo) AS amount
+                SELECT 
+                    anno, 
+                    mese, 
+                    COUNT(*) AS count, 
+                    SUM(importo) AS amount,
+                    SUM(CASE WHEN is_govpay = 1 THEN importo ELSE 0 END) AS amount_internal,
+                    SUM(CASE WHEN is_govpay = 0 THEN importo ELSE 0 END) AS amount_external
                 FROM flussi_rendicontazioni
                 WHERE id_dominio = :dom
                 GROUP BY anno, mese
@@ -155,7 +161,9 @@ class HomeController
                 $monthlyTrend[] = [
                     'label' => $meseNome . ' ' . $row['anno'],
                     'count' => (int)$row['count'],
-                    'amount' => round((float)$row['amount'], 2)
+                    'amount' => round((float)$row['amount'], 2),
+                    'amount_internal' => round((float)($row['amount_internal'] ?? 0.0), 2),
+                    'amount_external' => round((float)($row['amount_external'] ?? 0.0), 2),
                 ];
             }
         } catch (\Throwable $_) {}
@@ -163,7 +171,13 @@ class HomeController
         // Se vuoto, prepariamo dati vuoti per non rompere il grafico
         if ($monthlyTrend === []) {
             $monthlyTrend = [
-                ['label' => 'Nessun dato', 'count' => 0, 'amount' => 0.0]
+                [
+                    'label' => 'Nessun dato', 
+                    'count' => 0, 
+                    'amount' => 0.0,
+                    'amount_internal' => 0.0,
+                    'amount_external' => 0.0
+                ]
             ];
         }
 
