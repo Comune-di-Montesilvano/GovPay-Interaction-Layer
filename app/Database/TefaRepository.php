@@ -418,7 +418,8 @@ class TefaRepository
                     b.descrizione AS causale,
                     b.cf_debitore, b.nominativo_debitore,
                     b.cf_pagante, b.nominativo_pagante,
-                    b.company_name AS biz_company
+                    b.company_name AS biz_company,
+                    b.trasferimenti AS trasferimenti_json
              FROM tefa_ricevute t
              LEFT JOIN biz_ricevute b ON b.iur = t.iur AND b.id_dominio = t.id_dominio AND b.stato = 'PROCESSED'
              WHERE t.id_dominio = :id_dominio
@@ -432,7 +433,7 @@ class TefaRepository
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-        // Fallback: parse importo_tefa e importo_comune da error_msg per righe vecchie
+        // Fallback: parse importi e cf_comune da error_msg / trasferimenti per righe vecchie
         foreach ($rows as &$row) {
             if ($row['importo_comune'] === null && preg_match('/comune=([\d.]+)/', (string)$row['error_msg'], $m)) {
                 $row['importo_comune'] = (float)$m[1];
@@ -440,6 +441,20 @@ class TefaRepository
             if ($row['importo_tefa'] === null && preg_match('/TEFA=([\d.]+)/', (string)$row['error_msg'], $m)) {
                 $row['importo_tefa'] = (float)$m[1];
             }
+            // Parse cf_comune dal JSON trasferimenti se ancora null
+            if (empty($row['cf_comune']) && !empty($row['trasferimenti_json'])) {
+                $transfers = json_decode((string)$row['trasferimenti_json'], true);
+                if (is_array($transfers)) {
+                    foreach ($transfers as $tr) {
+                        $fc = (string)($tr['fiscal_code_pa'] ?? '');
+                        if ($fc !== '' && $fc !== $idDominio) {
+                            $row['cf_comune'] = $fc;
+                            break;
+                        }
+                    }
+                }
+            }
+            unset($row['trasferimenti_json']);
         }
         unset($row);
 
