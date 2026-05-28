@@ -95,6 +95,16 @@ class MappingPendenzeRepository
             $p['vocab_rules']  = $vocabMap[$targetPat] ?? [];
             $p['insufficiente'] = empty($p['accorpato_a']) && (int)$p['transazioni_count'] < 5;
 
+            $vocabRules = $p['vocab_rules'];
+            $kwClauses  = [];
+            $kwParams   = [':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%'];
+            foreach ($vocabRules as $i => $vk) {
+                $key = ':kw' . $i;
+                $kwClauses[] = "LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) NOT LIKE $key";
+                $kwParams[$key] = '%' . mb_strtolower((string)$vk['keyword']) . '%';
+            }
+            $kwWhere = $kwClauses !== [] ? ' AND ' . implode(' AND ', $kwClauses) : '';
+
             if ($tefaEnabled) {
                 $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
                           FROM flussi_rendicontazioni f
@@ -102,17 +112,19 @@ class MappingPendenzeRepository
                           INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
                           WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
                             AND b.stato = 'PROCESSED' AND t.stato = 'SKIPPED'
-                          ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 3";
+                            $kwWhere
+                          ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 5";
             } else {
                 $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
                           FROM flussi_rendicontazioni f
                           INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
                           WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
                             AND b.stato = 'PROCESSED'
-                          ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 3";
+                            $kwWhere
+                          ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 5";
             }
             $stmtEx = $this->pdo->prepare($sqlEx);
-            $stmtEx->execute([':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%']);
+            $stmtEx->execute($kwParams);
             $p['examples'] = $stmtEx->fetchAll(PDO::FETCH_ASSOC) ?: [];
         }
 
