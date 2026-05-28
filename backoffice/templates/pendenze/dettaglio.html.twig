@@ -609,6 +609,70 @@
       </div>
     </div>
 
+    {# Info incasso da tabella ragioneria (flussi_rendicontazioni) #}
+    {% if incasso_rows is defined and incasso_rows|length > 0 %}
+      <div class="card mt-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="fas fa-landmark text-success" aria-hidden="true"></i>
+          <h3 class="h6 mb-0">Info incasso <span class="badge bg-success ms-1">{{ incasso_rows|length }}</span></h3>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Data pagamento</th>
+                  <th>Data regolamento</th>
+                  <th class="text-end text-nowrap">Importo</th>
+                  <th>IUR</th>
+                  <th>PSP</th>
+                  <th>Flusso</th>
+                  <th>Stato rend.</th>
+                  <th>Esito</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in incasso_rows %}
+                  <tr>
+                    <td class="text-nowrap">{{ row.data_pagamento ? row.data_pagamento|date('d/m/Y') : '—' }}</td>
+                    <td class="text-nowrap">{{ row.data_regolamento ? row.data_regolamento|date('d/m/Y') : '—' }}</td>
+                    <td class="text-end text-nowrap">{{ row.importo is not null ? row.importo|number_format(2, ',', '.') ~ ' €' : '—' }}</td>
+                    <td><code class="small">{{ row.iur|default('—') }}</code></td>
+                    <td class="small">{{ row.ragione_psp|default(row.id_psp|default('—')) }}</td>
+                    <td class="small text-muted text-nowrap">{{ row.id_flusso|default('—') }}</td>
+                    <td>
+                      {% if row.stato_rend %}
+                        {% if row.stato_rend in ['INCASSATO','RENDICONTATO'] %}
+                          <span class="badge" style="background:#d1e7dd;color:#0a3622;border:1px solid #a3cfbb;">{{ row.stato_rend }}</span>
+                        {% elseif row.stato_rend in ['ANOMALO','ERRORE'] %}
+                          <span class="badge" style="background:#f8d7da;color:#58151c;border:1px solid #f1aeb5;">{{ row.stato_rend }}</span>
+                        {% else %}
+                          <span class="badge bg-secondary">{{ row.stato_rend }}</span>
+                        {% endif %}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if row.esito is not null %}
+                        {% if row.esito == 0 %}
+                          <span class="badge" style="background:#d1e7dd;color:#0a3622;border:1px solid #a3cfbb;">OK</span>
+                        {% else %}
+                          <span class="badge" style="background:#f8d7da;color:#58151c;border:1px solid #f1aeb5;">{{ row.esito }}</span>
+                        {% endif %}
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
     {# Collapse Ricevute Telematiche (RT) sotto ciascun tentativo RPP #}
     {% set attempt_list = payment_attempts|default([]) %}
     {% set rppCount = attempt_list|length %}

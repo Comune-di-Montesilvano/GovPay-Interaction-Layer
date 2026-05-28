@@ -320,6 +320,15 @@ class ReportRagioneriaController
 
         $taxonomyLabels = $this->loadTaxonomyLabels((string)($filters['idDominio'] ?? ''));
 
+        $normalizedLabels = [];
+        foreach ($taxonomyLabels as $code => $label) {
+            $code = trim((string)$code);
+            if ($code !== '') {
+                $normalizedLabels[$code] = (string)$label;
+                $normalizedLabels[strtoupper($code)] = (string)$label;
+            }
+        }
+
         $repo = new FlussiRendicontazioniRepository();
         $rows = $repo->getForCsvWithBiz(
             (string)($filters['idDominio'] ?? ''),
@@ -327,9 +336,8 @@ class ReportRagioneriaController
             (string)($filters['dataA'] ?? ''),
             (array)($filters['tassonomie'] ?? [])
         );
-        $rows = $this->applyTaxonomyLabels($rows, $taxonomyLabels);
 
-        $stream = fopen('php://temp', 'r+');
+        $stream = fopen('php://temp/maxmemory:2097152', 'r+');
         if ($stream === false) {
             return $response;
         }
@@ -341,9 +349,18 @@ class ReportRagioneriaController
             'importo', 'esito', 'stato_rend', 'data_pagamento', 'descrizione_voce', 'id_pendenza',
             'govpay',
             'biz_descrizione', 'cf_debitore', 'nominativo_debitore', 'cf_pagante', 'nominativo_pagante', 'biz_company_name',
-        ], ';');
+        ], ';', '"', '');
 
         foreach ($rows as $row) {
+            $tax = trim((string)($row['tassonomia'] ?? ''));
+            $existingLabel = trim((string)($row['tassonomia_label'] ?? ''));
+            if ($tax !== '' && !in_array($tax, ['TEFA', 'ESTERNA', 'N/D'], true)) {
+                $resolved = $normalizedLabels[$tax] ?? $normalizedLabels[strtoupper($tax)] ?? $tax;
+                $row['tassonomia_label'] = $resolved;
+            } elseif ($existingLabel === '') {
+                $row['tassonomia_label'] = $tax !== '' ? $tax : 'N/D';
+            }
+
             fputcsv($stream, [
                 (string)($row['data_flusso'] ?? ''),
                 (string)($row['data_regolamento'] ?? ''),
@@ -370,14 +387,18 @@ class ReportRagioneriaController
                 (string)($row['cf_pagante'] ?? ''),
                 (string)($row['nominativo_pagante'] ?? ''),
                 (string)($row['biz_company_name'] ?? ''),
-            ], ';');
+            ], ';', '"', '');
         }
 
         rewind($stream);
-        $csv = stream_get_contents($stream) ?: '';
+        $body = $response->getBody();
+        while (!feof($stream)) {
+            $chunk = fread($stream, 65536);
+            if ($chunk !== false && $chunk !== '') {
+                $body->write($chunk);
+            }
+        }
         fclose($stream);
-
-        $response->getBody()->write($csv);
 
         return $response
             ->withHeader('Content-Type', 'text/csv; charset=UTF-8')
