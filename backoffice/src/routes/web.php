@@ -296,6 +296,16 @@ return function (App $app, Twig $twig): void {
         return $controller->applyMappings($request, $response);
     });
 
+    $app->post('/funzioni-avanzate/mapping-pendenze/accorpa', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->accorpaRule($request, $response);
+    });
+
+    $app->get('/funzioni-avanzate/mapping-pendenze/disunisci', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->disunisciRule($request, $response);
+    });
+
     // Pendenze
     $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);
@@ -1301,6 +1311,12 @@ return function (App $app, Twig $twig): void {
     });
     $app->get('/pagamenti/report-tefa/biz-status', function($request, $response) use ($twig): Response {
         return (new ReportTefaController($twig))->bizStatus($request, $response);
+    });
+    $app->post('/pagamenti/report-tefa/anomaly/{id}/accept', function($request, $response, $args) use ($twig): Response {
+        return (new ReportTefaController($twig))->anomalyAccept($request, $response, $args);
+    });
+    $app->post('/pagamenti/report-tefa/anomaly/{id}/skip', function($request, $response, $args) use ($twig): Response {
+        return (new ReportTefaController($twig))->anomalySkip($request, $response, $args);
     });
 
     // AJAX: fetch single Biz Events receipt on-demand

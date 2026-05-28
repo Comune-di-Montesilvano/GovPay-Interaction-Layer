@@ -125,6 +125,11 @@ class TefaScannerService
         $importoTefa   = (float)($transferProvincia['transfer_amount'] ?? 0.0);
         $importoComune = (float)($transferComune['transfer_amount'] ?? 0.0);
 
+        $denomComune = (string)($bizRow['company_name'] ?? '');
+        if ($denomComune === '' || strtoupper($denomComune) === strtoupper($idDominioProvincia)) {
+            $denomComune = $cfComune;
+        }
+
         // Verifica rapporto TEFA/comune ≈ 5% (range accettabile 1%–10%)
         if ($importoComune > 0.0) {
             $ratio = $importoTefa / $importoComune;
@@ -135,14 +140,9 @@ class TefaScannerService
                     $importoTefa,
                     $importoComune
                 );
-                $this->repo->markSkipped($id, $msg);
+                $this->repo->markSkippedWithData($id, $msg, $cfComune, $denomComune, $importoTefa, $importoComune);
                 return ['status' => 'SKIPPED', 'is_tefa' => false, 'importo_tefa' => 0.0, 'cf_comune' => '', 'reason' => $msg];
             }
-        }
-
-        $denomComune = (string)($bizRow['company_name'] ?? '');
-        if ($denomComune === '' || strtoupper($denomComune) === strtoupper($idDominioProvincia)) {
-            $denomComune = $cfComune;
         }
 
         $this->repo->markProcessed($id, $cfComune, $denomComune, $importoTefa, $importoComune, 'biz_events');

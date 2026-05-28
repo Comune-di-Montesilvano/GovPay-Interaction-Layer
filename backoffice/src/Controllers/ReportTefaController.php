@@ -126,6 +126,9 @@ class ReportTefaController
         $errors = $repo->getErrors($idDominio);
         $scannerRunning = $this->isScannerRunning();
 
+        $anomalyRows = [];
+        try { $anomalyRows = $repo->getAnomalyRows($idDominio); } catch (\Throwable $_) {}
+
         return $this->twig->render($response, 'report-tefa/index.html.twig', [
             'filters'         => ['dataDa' => $dataDa, 'dataA' => $dataA],
             'counts'          => $counts,
@@ -133,6 +136,7 @@ class ReportTefaController
             'totali_tefa'     => $totaliTefa,
             'totali_comune'   => $totaliComune,
             'error_rows'      => $errors,
+            'anomaly_rows'    => $anomalyRows,
             'query_made'      => $queryMade,
             'coverage'        => $coverage,
             'id_dominio'      => $idDominio,
@@ -391,6 +395,46 @@ class ReportTefaController
 
         $response->getBody()->write((string)$csv);
         return $response;
+    }
+
+    // ── Anomaly overrides ─────────────────────────────────────────────────────
+
+    public function anomalyAccept(Request $request, Response $response, array $args): Response
+    {
+        $this->requireAuth();
+        if ($err = $this->requireAdminOrSuperadminJson($response)) {
+            return $err;
+        }
+        $id        = (int)($args['id'] ?? 0);
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        if ($id <= 0) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'ID non valido'], 400);
+        }
+        try {
+            (new TefaRepository())->overrideAnomalyRow($id, $idDominio, true);
+            return $this->jsonResponse($response, ['ok' => true]);
+        } catch (\Throwable $e) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function anomalySkip(Request $request, Response $response, array $args): Response
+    {
+        $this->requireAuth();
+        if ($err = $this->requireAdminOrSuperadminJson($response)) {
+            return $err;
+        }
+        $id        = (int)($args['id'] ?? 0);
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        if ($id <= 0) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'ID non valido'], 400);
+        }
+        try {
+            (new TefaRepository())->overrideAnomalyRow($id, $idDominio, false);
+            return $this->jsonResponse($response, ['ok' => true]);
+        } catch (\Throwable $e) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => $e->getMessage()], 500);
+        }
     }
 
     // ── Biz daemon controls ───────────────────────────────────────────────────

@@ -405,6 +405,103 @@ class TefaRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * Righe SKIPPED con ratio TEFA/Comune fuori range (anomalie multibeneficiario).
+     * JOIN biz_ricevute per descrizione (causale). Fallback parsing importo_comune da error_msg.
+     * @return array<int,array<string,mixed>>
+     */
+    public function getAnomalyRows(string $idDominio, int $limit = 200): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT t.id, t.iur, t.iuv, t.data_pagamento, t.importo_tefa, t.importo_comune,
+                    t.cf_comune, t.denominazione_comune, t.error_msg, t.is_multibeneficiario,
+                    b.descrizione AS causale
+             FROM tefa_ricevute t
+             LEFT JOIN biz_ricevute b ON b.iur = t.iur AND b.id_dominio = t.id_dominio AND b.stato = 'PROCESSED'
+             WHERE t.id_dominio = :id_dominio
+               AND t.stato = 'SKIPPED'
+               AND t.error_msg LIKE 'Rapporto importo TEFA/comune fuori range%'
+             ORDER BY t.data_pagamento DESC
+             LIMIT :limit"
+        );
+        $stmt->bindValue(':id_dominio', $idDominio);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        // Fallback: parse importo_tefa e importo_comune da error_msg per righe vecchie
+        foreach ($rows as &$row) {
+            if ($row['importo_comune'] === null && preg_match('/comune=([\d.]+)/', (string)$row['error_msg'], $m)) {
+                $row['importo_comune'] = (float)$m[1];
+            }
+            if ($row['importo_tefa'] === null && preg_match('/TEFA=([\d.]+)/', (string)$row['error_msg'], $m)) {
+                $row['importo_tefa'] = (float)$m[1];
+            }
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * Variante di markSkipped che salva anche i dati comune (per anomalie ratio).
+     */
+    public function markSkippedWithData(
+        int $id,
+        string $reason,
+        string $cfComune,
+        string $denominazioneComune,
+        float $importoTefa,
+        float $importoComune
+    ): void {
+        $stmt = $this->pdo->prepare(
+            "UPDATE tefa_ricevute SET
+                stato = 'SKIPPED',
+                error_msg = :msg,
+                cf_comune = :cf,
+                denominazione_comune = :denom,
+                importo_tefa = :imp_tefa,
+                importo_comune = :imp_comune,
+                is_multibeneficiario = 1,
+                updated_at = NOW()
+             WHERE id = :id"
+        );
+        $stmt->execute([
+            ':msg'       => mb_substr($reason, 0, 500),
+            ':id'        => $id,
+            ':cf'        => $cfComune,
+            ':denom'     => $denominazioneComune,
+            ':imp_tefa'  => $importoTefa,
+            ':imp_comune'=> $importoComune,
+        ]);
+    }
+
+    /**
+     * Override manuale di un'anomalia ratio.
+     * $acceptAsTefa=true → PROCESSED; false → SKIPPED con msg "confermato non TEFA".
+     * Cambiare error_msg esclude la riga da getAnomalyRows (LIKE non matcha più).
+     */
+    public function overrideAnomalyRow(int $id, string $idDominio, bool $acceptAsTefa): void
+    {
+        if ($acceptAsTefa) {
+            $stmt = $this->pdo->prepare(
+                "UPDATE tefa_ricevute
+                 SET stato = 'PROCESSED',
+                     error_msg = 'Override manuale: accettato come TEFA (ratio anomalo)',
+                     updated_at = NOW()
+                 WHERE id = :id AND id_dominio = :dom AND stato = 'SKIPPED'"
+            );
+        } else {
+            $stmt = $this->pdo->prepare(
+                "UPDATE tefa_ricevute
+                 SET error_msg = 'Confermato non TEFA (override manuale)',
+                     updated_at = NOW()
+                 WHERE id = :id AND id_dominio = :dom AND stato = 'SKIPPED'"
+            );
+        }
+        $stmt->execute([':id' => $id, ':dom' => $idDominio]);
+    }
+
     private function ensureTable(): void
     {
         try {
