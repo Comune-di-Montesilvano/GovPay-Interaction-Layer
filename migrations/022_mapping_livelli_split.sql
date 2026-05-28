@@ -5,8 +5,8 @@
 
 -- 1. Aggiunge colonna stato L2 a flussi_rendicontazioni
 ALTER TABLE flussi_rendicontazioni
-  ADD COLUMN vocab_stato ENUM('PENDING','PROCESSED','NO_MATCH') NOT NULL DEFAULT 'PENDING' AFTER mapping_stato,
-  ADD INDEX idx_dominio_vocab (id_dominio, vocab_stato);
+  ADD COLUMN IF NOT EXISTS vocab_stato ENUM('PENDING','PROCESSED','NO_MATCH') NOT NULL DEFAULT 'PENDING' AFTER mapping_stato,
+  ADD INDEX IF NOT EXISTS idx_dominio_vocab (id_dominio, vocab_stato);
 
 -- Righe già NO_MATCH da L1 → marcate NO_MATCH anche per L2 (non raggiungibili da L2)
 UPDATE flussi_rendicontazioni SET vocab_stato = 'NO_MATCH' WHERE mapping_stato = 'NO_MATCH';
