@@ -1139,7 +1139,8 @@ class PendenzeController
                 $det = (new EntrateRepository())->findDetails($idDominio, $bolloIdTipo);
                 if ($det && !empty($det['abilitato_backoffice'])) {
                     $available = true;
-                    $tipoBollo = $det['tipo_bollo'] ?: '01';
+                    $rawTipoBollo = (string)($det['tipo_bollo'] ?? '');
+                    $tipoBollo = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '01';
                 }
             } catch (\Throwable $e) {}
         }

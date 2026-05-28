@@ -128,6 +128,9 @@ class EntrateRepository
     $iban = $e['ibanAccredito'] ?? null;
     $codiceCont = $e['codiceContabilita'] ?? ($e['tipoEntrata']['codiceContabilita'] ?? null);
     $tipoBollo = $e['tipoBollo'] ?? ($e['tipoEntrata']['tipoBollo'] ?? null);
+    if ($tipoBollo !== null && !in_array((string)$tipoBollo, ['01'], true)) {
+        $tipoBollo = null;
+    }
     $tipoContabilita = $e['tipoContabilita'] ?? ($e['tipoEntrata']['tipoContabilita'] ?? null);
     $abilitatoBo = !empty($e['abilitato']);
     $now = date('Y-m-d H:i:s');
