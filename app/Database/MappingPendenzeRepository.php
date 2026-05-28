@@ -256,12 +256,24 @@ class MappingPendenzeRepository
     }
 
     /**
+     * Assicura che la riga pattern esista senza sovrascrivere fornitore/cod_entrata esistenti.
+     */
+    private function ensurePatternExists(string $idDominio, string $patternIuv): void
+    {
+        $stmt = $this->pdo->prepare(
+            "INSERT IGNORE INTO mapping_pendenze_pattern (pattern_iuv, id_dominio, is_custom)
+             VALUES (:pat, :dom, 1)"
+        );
+        $stmt->execute([':pat' => $patternIuv, ':dom' => $idDominio]);
+    }
+
+    /**
      * Aggiunge una keyword vocabolario L2 per un pattern IUV.
      */
     public function addVocabRule(string $idDominio, string $patternIuv, string $keyword, string $codEntrata, int $priorita = 10): void
     {
-        // Assicura che il pattern esista (per il vincolo FK)
-        $this->savePatternRule($idDominio, $patternIuv, null, null, 1);
+        // Assicura che il pattern esista senza toccare fornitore/cod_entrata esistenti
+        $this->ensurePatternExists($idDominio, $patternIuv);
 
         $sql = "INSERT INTO mapping_pendenze_vocab (pattern_iuv, id_dominio, keyword, cod_entrata, priorita)
                 VALUES (:pat, :dom, :kw, :cod, :prio)
