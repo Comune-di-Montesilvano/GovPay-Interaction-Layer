@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Database\MappingPendenzeRepository;
 use GuzzleHttp\Client;
 use GovPay\Pendenze\Api\PendenzeApi;
 use GovPay\Pendenze\Configuration as PendenzeConfiguration;
@@ -235,6 +236,21 @@ class HomeController
             $tipologieStats = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
+        // Sostituisce tipologia_desc con descrizione custom dove applicabile
+        try {
+            $customMap = [];
+            foreach ((new MappingPendenzeRepository())->getCustomTipologie($idDominio) as $tc) {
+                $customMap[(string)$tc['cod_entrata']] = (string)$tc['descrizione'];
+            }
+            foreach ($tipologieStats as &$ts) {
+                $cod = (string)($ts['cod_entrata'] ?? '');
+                if ($cod !== '' && isset($customMap[$cod])) {
+                    $ts['tipologia_desc'] = $customMap[$cod];
+                }
+            }
+            unset($ts);
+        } catch (\Throwable $_) {}
+
         $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
         $scanDaFormatted = '';
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa)) {
@@ -343,6 +359,21 @@ class HomeController
             ");
             $stmt->execute($bindings);
             $tipologieStats = $stmt->fetchAll() ?: [];
+        } catch (\Throwable $_) {}
+
+        // Sostituisce tipologia_desc con descrizione custom dove applicabile
+        try {
+            $customMap = [];
+            foreach ((new MappingPendenzeRepository())->getCustomTipologie($idDominio) as $tc) {
+                $customMap[(string)$tc['cod_entrata']] = (string)$tc['descrizione'];
+            }
+            foreach ($tipologieStats as &$ts) {
+                $cod = (string)($ts['cod_entrata'] ?? '');
+                if ($cod !== '' && isset($customMap[$cod])) {
+                    $ts['tipologia_desc'] = $customMap[$cod];
+                }
+            }
+            unset($ts);
         } catch (\Throwable $_) {}
 
         $payload = json_encode([

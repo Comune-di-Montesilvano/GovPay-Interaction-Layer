@@ -98,6 +98,7 @@ class FlussiRendicontazioniRepository
     /**
      * @param array<int,string> $codEntrate
      * @param array<string,string> $extra  Optional extra filters: cf, anagrafica, origine, iuv
+     * @param array<int,string> $codEntrateCustom
      * @return array<int,array<string,mixed>>
      */
     public function getForReport(
@@ -107,12 +108,14 @@ class FlussiRendicontazioniRepository
         array $codEntrate,
         int $offset,
         int $limit,
-        array $extra = []
+        array $extra = [],
+        array $codEntrateCustom = [],
+        bool $includeNd = false
     ): array {
         $limit = max(1, $limit);
         $offset = max(0, $offset);
 
-        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate, $codEntrateCustom, $includeNd);
         $extraF = $this->buildExtraFilters($extra);
 
         $sql = "SELECT
@@ -166,6 +169,7 @@ class FlussiRendicontazioniRepository
     /**
      * @param array<int,string> $codEntrate
      * @param array<string,string> $extra  Optional extra filters: cf, anagrafica, origine, iuv
+     * @param array<int,string> $codEntrateCustom
      * @return array{by_tipologia:array<int,array<string,mixed>>,flussi_processati:int}
      */
     public function getReportAggregations(
@@ -173,9 +177,11 @@ class FlussiRendicontazioniRepository
         string $dataDa,
         string $dataA,
         array $codEntrate,
-        array $extra = []
+        array $extra = [],
+        array $codEntrateCustom = [],
+        bool $includeNd = false
     ): array {
-        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate, $codEntrateCustom, $includeNd);
         $extraF = $this->buildExtraFilters($extra);
         $allParams = array_merge($params, $extraF['params']);
 
@@ -347,15 +353,18 @@ class FlussiRendicontazioniRepository
     /**
      * @param array<int,string> $codEntrate
      * @param array<string,string> $extra  Optional extra filters: cf, anagrafica, origine, iuv
+     * @param array<int,string> $codEntrateCustom
      */
     public function countForReport(
         string $idDominio,
         string $dataDa,
         string $dataA,
         array $codEntrate,
-        array $extra = []
+        array $extra = [],
+        array $codEntrateCustom = [],
+        bool $includeNd = false
     ): int {
-        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate, $codEntrateCustom, $includeNd);
         $extraF = $this->buildExtraFilters($extra);
 
         $stmt = $this->pdo->prepare(
@@ -839,13 +848,22 @@ class FlussiRendicontazioniRepository
     }
 
     /**
-     * WHERE builder con alias `f.` per query con JOIN. Se cod_entrata filter attivo,
-     * include sempre righe non-GovPay (is_govpay = 0) indipendentemente dalla tassonomia.
+     * WHERE builder con alias `f.` per query con JOIN.
+     * - Standard codes ($codEntrate): include sempre is_govpay=0 + matching GovPay (comportamento originale).
+     * - Custom codes only ($codEntrateCustom): filtra specificamente per f.cod_entrata.
+     * - $includeNd: aggiunge condizione per righe GovPay senza cod_entrata (tassonomia N/D).
      * @param array<int,string> $codEntrate
+     * @param array<int,string> $codEntrateCustom
      * @return array{0:string,1:array<string,mixed>}
      */
-    private function buildReportWhereF(string $idDominio, string $dataDa, string $dataA, array $codEntrate): array
-    {
+    private function buildReportWhereF(
+        string $idDominio,
+        string $dataDa,
+        string $dataA,
+        array $codEntrate,
+        array $codEntrateCustom = [],
+        bool $includeNd = false
+    ): array {
         $conditions = ['f.id_dominio = :id_dominio'];
         $params = [':id_dominio' => $idDominio];
 
@@ -858,15 +876,36 @@ class FlussiRendicontazioniRepository
             $params[':data_a'] = $dataA;
         }
 
-        $codEntrate = array_values(array_filter(array_map(static fn(mixed $v): string => trim((string)$v), $codEntrate)));
+        $codEntrate       = array_values(array_filter(array_map(static fn(mixed $v): string => trim((string)$v), $codEntrate)));
+        $codEntrateCustom = array_values(array_filter(array_map(static fn(mixed $v): string => trim((string)$v), $codEntrateCustom)));
+
+        $parts = [];
+
         if ($codEntrate !== []) {
+            $allCodes = array_merge($codEntrate, $codEntrateCustom);
             $placeholders = [];
-            foreach ($codEntrate as $idx => $code) {
+            foreach ($allCodes as $idx => $code) {
                 $key = ':cod_' . $idx;
                 $placeholders[] = $key;
                 $params[$key] = $code;
             }
-            $conditions[] = '(f.is_govpay = 0 OR f.cod_entrata IN (' . implode(', ', $placeholders) . '))';
+            $parts[] = '(f.is_govpay = 0 OR f.cod_entrata IN (' . implode(', ', $placeholders) . '))';
+        } elseif ($codEntrateCustom !== []) {
+            $placeholders = [];
+            foreach ($codEntrateCustom as $idx => $code) {
+                $key = ':ccod_' . $idx;
+                $placeholders[] = $key;
+                $params[$key] = $code;
+            }
+            $parts[] = 'f.cod_entrata IN (' . implode(', ', $placeholders) . ')';
+        }
+
+        if ($includeNd) {
+            $parts[] = '(f.is_govpay = 1 AND f.cod_entrata IS NULL)';
+        }
+
+        if ($parts !== []) {
+            $conditions[] = '(' . implode(' OR ', $parts) . ')';
         }
 
         return ['WHERE ' . implode(' AND ', $conditions), $params];

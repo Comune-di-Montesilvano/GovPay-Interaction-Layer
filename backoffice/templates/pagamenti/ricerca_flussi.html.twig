@@ -3,6 +3,13 @@
 {% block title %}Pagamenti - Ricerca Flussi{% endblock %}
 
 {% block content %}
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+    <div>
+      <h1 class="h4 mb-1"><i class="fas fa-exchange-alt me-2 text-primary"></i>Ricerca Flussi di Rendicontazione</h1>
+      <p class="text-muted mb-0">Visualizza e analizza i flussi pagoPA di rendicontazione e quietanze acquisiti dal sistema</p>
+    </div>
+  </div>
+
   {% if errors is defined and errors %}
     <div class="alert alert-danger" role="alert">
       <ul class="mb-0">

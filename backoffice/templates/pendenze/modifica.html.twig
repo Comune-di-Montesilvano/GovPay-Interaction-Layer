@@ -3,6 +3,18 @@
 {% block title %}Pendenze - Modifica{% endblock %}
 
 {% block content %}
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+    <div>
+      <h1 class="h4 mb-1"><i class="fas fa-edit me-2 text-primary"></i>Modifica Pendenza</h1>
+      <p class="text-muted mb-0">Aggiorna i dettagli della posizione debitoria <strong>{{ idPendenza }}</strong></p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ return_url }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>Torna indietro
+      </a>
+    </div>
+  </div>
+
   {% if errors is defined and errors %}
     <div class="alert alert-danger" role="alert">
       <ul class="mb-0">

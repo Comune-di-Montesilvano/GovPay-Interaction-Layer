@@ -305,6 +305,14 @@ return function (App $app, Twig $twig): void {
         $controller = new MappingPendenzeController($twig);
         return $controller->disunisciRule($request, $response);
     });
+    $app->post('/funzioni-avanzate/mapping-pendenze/tipologie-custom/add', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->addCustomTipologia($request, $response);
+    });
+    $app->get('/funzioni-avanzate/mapping-pendenze/tipologie-custom/delete', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->deleteCustomTipologia($request, $response);
+    });
 
     // Pendenze
     $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {
