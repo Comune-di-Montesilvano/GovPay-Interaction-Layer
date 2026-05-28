@@ -14,6 +14,7 @@ class MappingPendenzeRepository
     public function __construct(?PDO $pdo = null)
     {
         $this->pdo = $pdo ?? Connection::getPDO();
+        $this->ensureCustomTipologieTable();
     }
 
     /**
@@ -174,6 +175,19 @@ class MappingPendenzeRepository
             ':cod_entrata' => ($codEntrata !== '' && $codEntrata !== null) ? $codEntrata : null,
             ':is_custom'   => $isCustom,
         ]);
+
+        // Reset vocab_stato su righe già classificate: il cron L2 le riprocessa
+        // con il nuovo cod_entrata default e le keyword aggiornate.
+        $stmtReset = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni
+             SET vocab_stato = 'PENDING', cod_entrata = NULL
+             WHERE id_dominio = :dom
+               AND is_govpay = 0
+               AND mapping_stato = 'PROCESSED'
+               AND vocab_stato IN ('NO_MATCH', 'PROCESSED')
+               AND iuv LIKE :prefix"
+        );
+        $stmtReset->execute([':dom' => $idDominio, ':prefix' => $patternIuv . '%']);
     }
 
     /**
@@ -303,6 +317,82 @@ class MappingPendenzeRepository
         $stmt->execute([':pat' => $patternIuv, ':dom' => $idDominio]);
     }
 
+    // ── Tipologie Custom ─────────────────────────────────────────────────────
+
+    /** @return array<int,array<string,mixed>> */
+    public function getCustomTipologie(string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT id, cod_entrata, descrizione FROM mapping_tipologie_custom
+             WHERE id_dominio = :dom ORDER BY descrizione ASC"
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function addCustomTipologia(string $idDominio, string $codEntrata, string $descrizione): void
+    {
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO mapping_tipologie_custom (id_dominio, cod_entrata, descrizione)
+             VALUES (:dom, :cod, :desc)
+             ON DUPLICATE KEY UPDATE descrizione = VALUES(descrizione)"
+        );
+        $stmt->execute([':dom' => $idDominio, ':cod' => strtoupper(trim($codEntrata)), ':desc' => trim($descrizione)]);
+    }
+
+    public function deleteCustomTipologia(string $idDominio, int $id): void
+    {
+        $stmtGet = $this->pdo->prepare(
+            "SELECT cod_entrata FROM mapping_tipologie_custom WHERE id = :id AND id_dominio = :dom"
+        );
+        $stmtGet->execute([':id' => $id, ':dom' => $idDominio]);
+        $row = $stmtGet->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return;
+        }
+        $codEntrata = (string)$row['cod_entrata'];
+
+        $stmtL1 = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM mapping_pendenze_pattern WHERE id_dominio = :dom AND cod_entrata = :cod"
+        );
+        $stmtL1->execute([':dom' => $idDominio, ':cod' => $codEntrata]);
+        $countL1 = (int)$stmtL1->fetchColumn();
+
+        $stmtL2 = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM mapping_pendenze_desc_regole WHERE id_dominio = :dom AND cod_entrata = :cod"
+        );
+        $stmtL2->execute([':dom' => $idDominio, ':cod' => $codEntrata]);
+        $countL2 = (int)$stmtL2->fetchColumn();
+
+        if ($countL1 > 0 || $countL2 > 0) {
+            throw new \RuntimeException(
+                "Tipologia '{$codEntrata}' in uso: {$countL1} regole L1, {$countL2} L2. Rimuoverle prima."
+            );
+        }
+
+        $stmtDel = $this->pdo->prepare(
+            "DELETE FROM mapping_tipologie_custom WHERE id = :id AND id_dominio = :dom"
+        );
+        $stmtDel->execute([':id' => $id, ':dom' => $idDominio]);
+    }
+
+    private function ensureCustomTipologieTable(): void
+    {
+        try {
+            $this->pdo->exec(
+                "CREATE TABLE IF NOT EXISTS mapping_tipologie_custom (
+                    id          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    id_dominio  VARCHAR(20) NOT NULL,
+                    cod_entrata VARCHAR(100) NOT NULL,
+                    descrizione VARCHAR(255) NOT NULL,
+                    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_dom_cod (id_dominio, cod_entrata),
+                    INDEX idx_dominio (id_dominio)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            );
+        } catch (\Throwable $_) {}
+    }
+
     /**
      * Aggiunge una keyword vocabolario L2 per un pattern IUV.
      */
@@ -321,6 +411,25 @@ class MappingPendenzeRepository
             ':kw'   => $keyword,
             ':cod'  => $codEntrata,
             ':prio' => $priorita,
+        ]);
+
+        // Resetta vocab_stato su righe già classificate che matchano questa keyword,
+        // così il cron L2 le riprocessa con la nuova regola.
+        $stmtReset = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni f
+             LEFT JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+             SET f.vocab_stato = 'PENDING', f.cod_entrata = NULL
+             WHERE f.id_dominio = :dom
+               AND f.is_govpay = 0
+               AND f.mapping_stato = 'PROCESSED'
+               AND f.vocab_stato IN ('NO_MATCH', 'PROCESSED')
+               AND f.iuv LIKE :prefix
+               AND LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) LIKE :kw"
+        );
+        $stmtReset->execute([
+            ':dom'    => $idDominio,
+            ':prefix' => $patternIuv . '%',
+            ':kw'     => '%' . mb_strtolower($keyword) . '%',
         ]);
     }
 
@@ -383,13 +492,13 @@ class MappingPendenzeRepository
                   AND f.mapping_stato = 'PROCESSED'
                   AND f.vocab_stato = 'PENDING'
                   AND f.iuv LIKE :prefix
-                  AND COALESCE(b.descrizione, f.descrizione_entrata) LIKE :kw";
+                  AND LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) LIKE :kw";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':dom'    => $idDominio,
             ':cod'    => $codEntrata,
             ':prefix' => $prefix . '%',
-            ':kw'     => '%' . $keyword . '%',
+            ':kw'     => '%' . mb_strtolower($keyword) . '%',
         ]);
         return $stmt->rowCount();
     }

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\SettingsRepository;
+use App\Database\MappingPendenzeRepository;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -374,11 +375,22 @@ class FlussiController
             $return = '/pagamenti/ricerca-flussi';
         }
 
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $customTipologieMap = [];
+        if ($idDominio !== '') {
+            try {
+                foreach ((new MappingPendenzeRepository())->getCustomTipologie($idDominio) as $tc) {
+                    $customTipologieMap[(string)$tc['cod_entrata']] = (string)$tc['descrizione'];
+                }
+            } catch (\Throwable $_) {}
+        }
+
         return $this->twig->render($response, 'pagamenti/dettaglio_flusso.html.twig', [
             'errors' => $errors,
             'flusso' => $flow,
             'id_flusso' => $idFlusso,
             'return_url' => $return,
+            'custom_tipologie_map' => $customTipologieMap,
         ]);
     }
 

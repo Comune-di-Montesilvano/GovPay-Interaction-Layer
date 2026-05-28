@@ -60,6 +60,11 @@ class MappingPendenzeController
             $tipologieList = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
+        $tipologieCustom = [];
+        try {
+            $tipologieCustom = $repo->getCustomTipologie($idDominio);
+        } catch (\Throwable $_) {}
+
         $daemonRunning      = CronController::isDaemonRunning('mapping');
         $daemonVocabRunning = CronController::isDaemonRunning('vocab');
 
@@ -71,6 +76,7 @@ class MappingPendenzeController
             'patterns'            => $patterns,
             'stats'               => $stats,
             'tipologie_list'      => $tipologieList,
+            'tipologie_custom'    => $tipologieCustom,
             'daemon_running'      => $daemonRunning,
             'daemon_vocab_running'=> $daemonVocabRunning,
             'flash'               => $flash,
@@ -285,6 +291,53 @@ class MappingPendenzeController
             $_SESSION['flash'][] = ['type' => 'success', 'text' => "Accorpamento rimosso per il pattern '{$patternIuv}'."];
         } catch (\Throwable $e) {
             $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore nella rimozione dell\'accorpamento: ' . $e->getMessage()];
+        }
+
+        return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+    }
+
+    public function addCustomTipologia(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrSuperadmin();
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+
+        $body       = (array)($request->getParsedBody() ?? []);
+        $codEntrata = strtoupper(trim((string)($body['cod_entrata'] ?? '')));
+        $descrizione = trim((string)($body['descrizione'] ?? ''));
+
+        if ($codEntrata === '' || $descrizione === '') {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Codice e descrizione sono obbligatori.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
+
+        $repo = new MappingPendenzeRepository();
+        try {
+            $repo->addCustomTipologia($idDominio, $codEntrata, $descrizione);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => "Tipologia personalizzata '{$codEntrata}' aggiunta."];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+
+        return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+    }
+
+    public function deleteCustomTipologia(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrSuperadmin();
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $id = (int)(($request->getQueryParams())['id'] ?? 0);
+
+        if ($id <= 0) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'ID non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
+
+        $repo = new MappingPendenzeRepository();
+        try {
+            $repo->deleteCustomTipologia($idDominio, $id);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Tipologia personalizzata eliminata.'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: ' . $e->getMessage()];
         }
 
         return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);

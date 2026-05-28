@@ -183,7 +183,8 @@
                   {% set tipologia = 'TEFA' %}
                 {% elseif p.is_orphan|default(false) and p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.cod_entrata
                    and (p._rendicontazione.vocab_stato == 'PROCESSED' or p._rendicontazione.mapping_stato == 'PROCESSED') %}
-                  {% set tipologia = p._rendicontazione.cod_entrata %}
+                  {% set _cod = p._rendicontazione.cod_entrata %}
+                  {% set tipologia = (custom_tipologie_map|default({}))[_cod] ?? _cod %}
                 {% endif %}
                 {% set anno = p.annoRiferimento|default(pend.annoRiferimento|default('')) %}
                 {% set importo = p.importo|default(voce.importo|default(risc.importo|default(null))) %}

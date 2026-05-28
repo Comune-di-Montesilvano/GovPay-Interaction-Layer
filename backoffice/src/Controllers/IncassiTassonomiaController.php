@@ -10,6 +10,7 @@ namespace App\Controllers;
 
 use App\Config\SettingsRepository;
 use App\Database\EntrateRepository;
+use App\Database\MappingPendenzeRepository;
 use App\Services\GovPayTaxonomyCollectionsService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -49,6 +50,17 @@ class IncassiTassonomiaController
                 $tipologieCensite = $tipologieRepo->listAbilitateByDominioForUser($filters['idDominio'], $userId, $userRole);
             } else {
                 $tipologieCensite = $tipologieRepo->listAbilitateByDominio($filters['idDominio']);
+            }
+        }
+
+        // Appende tipologie custom (mapping_tipologie_custom)
+        if ($filters['idDominio'] !== '') {
+            $customRepo = new MappingPendenzeRepository();
+            foreach ($customRepo->getCustomTipologie($filters['idDominio']) as $tc) {
+                $tipologieCensite[] = [
+                    'id_entrata'  => $tc['cod_entrata'],
+                    'descrizione' => $tc['descrizione'],
+                ];
             }
         }
 

@@ -12,6 +12,7 @@ use App\Config\SettingsRepository;
 use App\Database\BizRepository;
 use App\Database\EntrateRepository;
 use App\Database\FlussiRendicontazioniRepository;
+use App\Database\MappingPendenzeRepository;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -78,6 +79,20 @@ class ReportRagioneriaController
             }
         }
 
+        // Appende tipologie custom (mapping_tipologie_custom) e N/D
+        $customCodes = [];
+        if ($filters['idDominio'] !== '') {
+            $customRepo = new MappingPendenzeRepository();
+            foreach ($customRepo->getCustomTipologie($filters['idDominio']) as $tc) {
+                $customCodes[] = $tc['cod_entrata'];
+                $tipologieCensite[] = [
+                    'id_entrata'  => $tc['cod_entrata'],
+                    'descrizione' => $tc['descrizione'],
+                ];
+            }
+            $tipologieCensite[] = ['id_entrata' => 'N/D', 'descrizione' => 'N/D (senza tipologia)'];
+        }
+
         // Interseca selezione con tipologie ammesse
         $allowedTipologie = array_values(array_filter(
             array_map(static fn(array $r): string => (string)($r['id_entrata'] ?? ''), $tipologieCensite),
@@ -86,6 +101,12 @@ class ReportRagioneriaController
         if ($filters['tassonomie'] !== []) {
             $filters['tassonomie'] = array_values(array_intersect($filters['tassonomie'], $allowedTipologie));
         }
+
+        // Separa standard, custom e N/D per WHERE builder
+        $ndSelected         = in_array('N/D', $filters['tassonomie'], true);
+        $tassonomieNoNd     = array_values(array_filter($filters['tassonomie'], static fn(string $v): bool => $v !== 'N/D'));
+        $standardTassonomie = array_values(array_diff($tassonomieNoNd, $customCodes));
+        $customTassonomie   = array_values(array_intersect($tassonomieNoNd, $customCodes));
 
         $taxonomyLabels = $this->loadTaxonomyLabels($filters['idDominio']);
 
@@ -129,8 +150,10 @@ class ReportRagioneriaController
                         $filters['idDominio'],
                         $filters['dataDa'],
                         $filters['dataA'],
-                        $filters['tassonomie'],
-                        $extra
+                        $standardTassonomie,
+                        $extra,
+                        $customTassonomie,
+                        $ndSelected
                     );
 
                     $numPagine = max(1, (int)ceil($totalRows / self::PAGE_SIZE));
@@ -142,10 +165,12 @@ class ReportRagioneriaController
                         $filters['idDominio'],
                         $filters['dataDa'],
                         $filters['dataA'],
-                        $filters['tassonomie'],
+                        $standardTassonomie,
                         $offset,
                         self::PAGE_SIZE,
-                        $extra
+                        $extra,
+                        $customTassonomie,
+                        $ndSelected
                     );
 
                     $rows = $this->applyTaxonomyLabels($rows, $taxonomyLabels);
@@ -154,8 +179,10 @@ class ReportRagioneriaController
                         $filters['idDominio'],
                         $filters['dataDa'],
                         $filters['dataA'],
-                        $filters['tassonomie'],
-                        $extra
+                        $standardTassonomie,
+                        $extra,
+                        $customTassonomie,
+                        $ndSelected
                     );
 
                     $byTipologia = $this->applyTaxonomyLabels($aggregations['by_tipologia'], $taxonomyLabels);
@@ -513,6 +540,17 @@ class ReportRagioneriaController
             $label = trim((string)($tipologia['descrizione_effettiva'] ?? $tipologia['descrizione'] ?? $idEntrata));
             $labels[$idEntrata] = $label !== '' ? $label : $idEntrata;
         }
+
+        // Aggiunge tipologie custom (mapping_tipologie_custom)
+        try {
+            foreach ((new MappingPendenzeRepository())->getCustomTipologie($idDominio) as $tc) {
+                $cod  = trim((string)$tc['cod_entrata']);
+                $desc = trim((string)$tc['descrizione']);
+                if ($cod !== '') {
+                    $labels[$cod] = $desc !== '' ? $desc : $cod;
+                }
+            }
+        } catch (\Throwable $_) {}
 
         return $labels;
     }
