@@ -292,6 +292,8 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
       ragioneria)       script="scripts/cron_ragioneria.php" ;;
       tefa)             script="scripts/cron_tefa_scanner.php" ;;
       pendenze-massive) script="scripts/cron_pendenze_massive.php" ;;
+      mapping)          script="scripts/cron_mapping_pendenze.php" ;;
+      vocab)            script="scripts/cron_vocab_mapping.php" ;;
       *) continue ;;
     esac
     echo "ℹ️  Auto-avvio daemon: ${job}"

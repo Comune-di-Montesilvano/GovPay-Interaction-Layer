@@ -1,0 +1,255 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Cron / Servizi - GovPay{% endblock %}
+
+{% block content %}
+  {# 1. Title Section #}
+  <div class="bo-home-welcome mb-4" style="background: linear-gradient(135deg, var(--bi-primary-a8) 0%, var(--ms-purple-600) 100%);">
+    <div class="d-flex align-items-center gap-3">
+      <div class="bo-brand-logo-mark" aria-hidden="true" style="font-size: 2.2rem; color: #fff; flex-shrink: 0;">
+        <i class="fas fa-clock" aria-hidden="true"></i>
+      </div>
+      <div>
+        <h1 style="font-size: 1.6rem; margin-bottom: 2px; color: #fff;">Gestione Servizi di Integrazione</h1>
+        <p class="mb-0 text-white-50" style="font-size: 0.92rem;">
+          Hub di monitoraggio e avvio dei demoni e delle procedure pianificate in background (GIL Services Hub)
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {% set is_admin = current_user.role in ['admin', 'superadmin'] %}
+
+  {# 2. Read-only Warning for Operator Roles #}
+  {% if not is_admin %}
+    <div class="alert alert-info shadow-sm d-flex align-items-center gap-2 mb-4" role="alert">
+      <i class="fas fa-info-circle fs-5" aria-hidden="true"></i>
+      <span>Sei connesso come <strong>{{ current_user.role|upper }}</strong> (Sola Lettura). Le funzioni avanzate di avvio, arresto e configurazione dei demoni sono riservate agli amministratori.</span>
+    </div>
+  {% endif %}
+
+  {# 3. Cron & Daemon management #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom-0 pb-0">
+      <h5 class="mb-1 fw-bold text-dark"><i class="fas fa-microchip me-2 text-primary"></i>Stato dei Servizi Locali</h5>
+      <p class="text-muted small mb-0">Monitoraggio dei cicli continui di allineamento e sincronizzazione dati.</p>
+    </div>
+    <div class="card-body">
+    
+      {# 3.1 Date Scan Form #}
+      <form method="POST" action="/funzioni-avanzate/cron/set-scan-date" class="mb-4 p-3 border rounded bg-light">
+        <label class="form-label small fw-semibold mb-1">
+          <i class="fas fa-calendar-day me-1 text-primary"></i>Data inizio sincronizzazione flussi
+        </label>
+        <div class="d-flex gap-2 align-items-center">
+          <input type="date" name="ragioneria_scan_da" class="form-control form-control-sm"
+                 style="max-width:180px" value="{{ ragioneria_scan_da|default('') }}" {% if not is_admin %}disabled{% endif %}>
+          <button type="submit" class="btn btn-primary btn-sm px-3" {% if not is_admin %}disabled{% endif %}>Salva</button>
+        </div>
+        <div class="text-muted small mt-1">Comune a ragioneria e TEFA. Il servizio di sincronizzazione scarica tutti i flussi da questa data in avanti.</div>
+      </form>
+
+      {# 3.2 Reset Range Form #}
+      {% if is_admin %}
+        <form method="POST" action="/funzioni-avanzate/cron/reset-range" class="mb-4 p-3 border rounded bg-light"
+              onsubmit="return confirm('Confermi azzeramento TEFA + Ragioneria nell\'intervallo selezionato?');">
+          <label class="form-label small fw-semibold mb-1 text-danger">
+            <i class="fas fa-trash-can me-1"></i>Azzeramento tabelle TEFA + Ragioneria per intervallo date
+          </label>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <input type="date" name="reset_data_da" class="form-control form-control-sm" style="max-width:180px" required>
+            <span class="small text-muted">a</span>
+            <input type="date" name="reset_data_a" class="form-control form-control-sm" style="max-width:180px" required>
+            <button type="submit" class="btn btn-danger btn-sm px-3">Azzera Dati</button>
+          </div>
+          <div class="text-muted small mt-1">Cancella i record con data_pagamento compresa tra le due date (incluse), limitato al dominio configurato.</div>
+        </form>
+      {% endif %}
+
+      {# 3.3 Daemon cards #}
+      <div class="row g-3 mb-4">
+        {% for jobKey, job in jobs %}
+        {% set running = daemon_status[jobKey] ?? false %}
+        <div class="col-md-6">
+          <div class="card h-100 border shadow-none" id="job-card-{{ jobKey }}">
+            <div class="card-body d-flex flex-column gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="text-primary fs-5"><i class="fas {{ job.icon }}"></i></span>
+                <strong class="text-dark">{{ job.label }}</strong>
+                <span class="badge ms-auto {{ running ? 'bg-success' : 'bg-secondary' }} px-2 py-1">
+                  {{ running ? 'ATTIVO' : 'ARRESTATO' }}
+                </span>
+              </div>
+              <p class="text-muted small mb-1">{{ job.description }}</p>
+
+              {% if job.params %}
+              <div class="row g-2 my-1" id="params-{{ jobKey }}">
+                {% for param in job.params %}
+                <div class="col-6">
+                  <label class="form-label small mb-1">{{ param.label }}</label>
+                  <input type="{{ param.type }}" class="form-control form-control-sm"
+                         id="param-{{ jobKey }}-{{ param.name }}"
+                         data-job="{{ jobKey }}" data-param="{{ param.name }}"
+                         value="{{ param.type == 'date' ? 'now'|date('Y') ~ '-01-01' : '' }}"
+                         {% if not is_admin %}disabled{% endif %}>
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+
+              <div class="d-flex gap-2 mt-auto flex-wrap pt-2 border-top">
+                {% if running %}
+                  <button class="btn btn-danger btn-sm" onclick="daemonStop('{{ jobKey }}')" {% if not is_admin %}disabled title="Richiesti permessi amministrativi"{% endif %}>
+                    <i class="fas fa-stop me-1" aria-hidden="true"></i>Ferma
+                  </button>
+                {% else %}
+                  <button class="btn btn-success btn-sm" onclick="daemonStart('{{ jobKey }}')" {% if not is_admin %}disabled title="Richiesti permessi amministrativi"{% endif %}>
+                    <i class="fas fa-play me-1" aria-hidden="true"></i>Avvia
+                  </button>
+                {% endif %}
+                
+                {% if jobKey == 'ragioneria' and running %}
+                  <button class="btn btn-outline-warning btn-sm" onclick="ragioneriaRescan()" title="Riscansiona tutti i flussi dalla data configurata" {% if not is_admin %}disabled{% endif %}>
+                    <i class="fas fa-rotate me-1" aria-hidden="true"></i>Rescan tutto
+                  </button>
+                {% endif %}
+                
+                <button class="btn btn-outline-secondary btn-sm" onclick="showLog('{{ jobKey }}')">
+                  <i class="fas fa-terminal me-1" aria-hidden="true"></i>Visualizza Log
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# 3.4 Log panel #}
+      <div id="daemon-log-panel" class="d-none mt-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="fw-bold text-dark small" id="daemon-log-label"><i class="fas fa-terminal text-primary me-2"></i>Console Log</span>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="refreshLog()">
+              <i class="fas fa-rotate-right me-1" aria-hidden="true"></i>Aggiorna
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="document.getElementById('daemon-log-panel').classList.add('d-none')">
+              <i class="fas fa-xmark" aria-hidden="true"></i> Chiudi
+            </button>
+          </div>
+        </div>
+        <pre id="daemon-log-output" class="bg-dark text-light rounded p-3 small mb-0"
+             style="max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;">(nessun log)</pre>
+      </div>
+
+    </div>
+  </div>
+
+  {# 4. Local JS alerts helper instead of impToast if not present #}
+  <div id="cron-alert-stack" style="position: fixed; bottom: 20px; right: 20px; z-index: 1050; max-width: 350px;"></div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    let currentLogJob = null;
+
+    function showNotification(message, isSuccess) {
+      const container = document.getElementById('cron-alert-stack');
+      if (!container) return;
+      
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${isSuccess ? 'success' : 'danger'} shadow-sm alert-dismissible fade show mb-2`;
+      alert.role = 'alert';
+      alert.innerHTML = `
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-${isSuccess ? 'check-circle' : 'exclamation-circle'}"></i>
+          <span>${message}</span>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Chiudi" style="padding: 0.5rem 0.5rem; top: 5px; right: 5px;"></button>
+      `;
+      
+      container.appendChild(alert);
+      setTimeout(() => {
+        alert.classList.remove('show');
+        setTimeout(() => alert.remove(), 150);
+      }, 3000);
+    }
+
+    window.daemonStart = async function (jobKey) {
+      const paramInputs = document.querySelectorAll('[data-job="' + jobKey + '"][data-param]');
+      const body = new URLSearchParams();
+      for (const inp of paramInputs) {
+        const val = inp.value.trim();
+        if (val) body.append(inp.dataset.param, val);
+      }
+      try {
+        const res  = await fetch('/funzioni-avanzate/cron/' + jobKey + '/run', { method: 'POST', body });
+        const json = await res.json();
+        if (json.ok) {
+          showNotification('Servizio avviato con successo.', true);
+          setTimeout(() => location.reload(), 1200);
+        } else {
+          showNotification(json.error || 'Errore avvio servizio.', false);
+        }
+      } catch (e) {
+        showNotification('Errore di rete: ' + e.message, false);
+      }
+    };
+
+    window.daemonStop = async function (jobKey) {
+      try {
+        const res  = await fetch('/funzioni-avanzate/cron/' + jobKey + '/stop', { method: 'POST' });
+        const json = await res.json();
+        if (json.ok) {
+          showNotification('Segnale di arresto inviato.', true);
+          setTimeout(() => location.reload(), 1200);
+        } else {
+          showNotification(json.error || 'Errore arresto servizio.', false);
+        }
+      } catch (e) {
+        showNotification('Errore di rete: ' + e.message, false);
+      }
+    };
+
+    window.ragioneriaRescan = async function () {
+      if (!confirm('Avviare una riscansione completa di tutti i flussi dalla data configurata?\nI dati esistenti non verranno cancellati.')) return;
+      try {
+        const res  = await fetch('/funzioni-avanzate/cron/ragioneria/rescan', { method: 'POST' });
+        const json = await res.json();
+        if (json.ok) {
+          showNotification('Segnale rescan inviato. Il prossimo ciclo riscansionerà tutto.', true);
+        } else {
+          showNotification(json.error || 'Errore invio segnale rescan.', false);
+        }
+      } catch (e) {
+        showNotification('Errore di rete: ' + e.message, false);
+      }
+    };
+
+    window.showLog = async function (jobKey) {
+      currentLogJob = jobKey;
+      document.getElementById('daemon-log-label').innerHTML = `<i class="fas fa-terminal text-primary me-2"></i>Log del Servizio — <strong>${jobKey}</strong>`;
+      document.getElementById('daemon-log-panel').classList.remove('d-none');
+      document.getElementById('daemon-log-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      await refreshLog();
+    };
+
+    window.refreshLog = async function () {
+      if (!currentLogJob) return;
+      try {
+        const res  = await fetch('/funzioni-avanzate/cron/' + currentLogJob + '/log');
+        const json = await res.json();
+        const out  = document.getElementById('daemon-log-output');
+        if (json.ok) {
+          out.textContent = json.content || '(nessun log)';
+          out.scrollTop   = out.scrollHeight;
+        } else {
+          out.textContent = json.error || 'Errore lettura log.';
+        }
+      } catch (e) {
+        document.getElementById('daemon-log-output').textContent = 'Errore di rete: ' + e.message;
+      }
+    };
+  })();
+  </script>
+{% endblock %}

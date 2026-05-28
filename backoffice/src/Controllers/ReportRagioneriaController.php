@@ -135,25 +135,27 @@ class ReportRagioneriaController
                         self::PAGE_SIZE
                     );
 
-                    $allRows = $totalRows > 0
-                        ? $repo->getForReport(
-                            $filters['idDominio'],
-                            $filters['dataDa'],
-                            $filters['dataA'],
-                            $filters['tassonomie'],
-                            0,
-                            $totalRows
-                        )
-                        : [];
-
-                    $allRows = $this->applyTaxonomyLabels($allRows, $taxonomyLabels);
                     $rows = $this->applyTaxonomyLabels($rows, $taxonomyLabels);
 
-                    [$totals, $byTipologia] = $this->buildAggregations($allRows);
+                    $aggregations = $repo->getReportAggregations(
+                        $filters['idDominio'],
+                        $filters['dataDa'],
+                        $filters['dataA'],
+                        $filters['tassonomie']
+                    );
+
+                    $byTipologia = $this->applyTaxonomyLabels($aggregations['by_tipologia'], $taxonomyLabels);
+
+                    $totals = ['amount' => 0.0, 'count' => 0];
+                    foreach ($byTipologia as $item) {
+                        $totals['amount'] += (float)$item['amount'];
+                        $totals['count']  += (int)$item['count'];
+                    }
+
                     $meta = [
                         'query_made' => true,
-                        'flussi_processati' => count(array_unique(array_filter(array_map(static fn(array $r): string => (string)($r['id_flusso'] ?? ''), $allRows)))),
-                        'rendicontazioni_totali' => count($allRows),
+                        'flussi_processati' => $aggregations['flussi_processati'],
+                        'rendicontazioni_totali' => $totalRows,
                         'tassonomie_filtrate' => $filters['tassonomie'],
                         'total_rows' => $totalRows,
                         'page_size' => self::PAGE_SIZE,
@@ -347,7 +349,7 @@ class ReportRagioneriaController
             'data_flusso', 'data_regolamento', 'id_flusso', 'trn', 'id_psp', 'ragione_psp',
             'id_dominio', 'tassonomia', 'tassonomia_label', 'iuv', 'iur', 'indice',
             'importo', 'esito', 'stato_rend', 'data_pagamento', 'descrizione_voce', 'id_pendenza',
-            'govpay',
+            'govpay', 'fornitore',
             'biz_descrizione', 'cf_debitore', 'nominativo_debitore', 'cf_pagante', 'nominativo_pagante', 'biz_company_name',
         ], ';', '"', '');
 
@@ -381,6 +383,7 @@ class ReportRagioneriaController
                 (string)($row['descrizione_voce'] ?? ''),
                 (string)($row['id_pendenza'] ?? ''),
                 $row['is_govpay'] === null ? '' : ((int)$row['is_govpay'] === 1 ? 'Si' : 'No'),
+                (string)($row['fornitore'] ?? ''),
                 (string)($row['biz_descrizione'] ?? ''),
                 (string)($row['cf_debitore'] ?? ''),
                 (string)($row['nominativo_debitore'] ?? ''),
