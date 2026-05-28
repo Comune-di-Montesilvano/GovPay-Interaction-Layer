@@ -307,16 +307,16 @@
                       <strong>€ {{ pat.importo_totale|number_format(2, ',', '.') }}</strong>
                     </div>
 
-                    {% if pat.examples is not empty %}
-                      {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
+                    {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
+                    {% if pat.vocab_rules is not empty and pat.stats_uncovered is not null %}
+                      <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none {{ pat.stats_uncovered > 0 ? 'text-danger' : 'text-success' }}"
+                              type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
+                        <i class="fas fa-eye me-1"></i>{{ pat.stats_uncovered }} non coperte da L2
+                      </button>
+                    {% elseif pat.examples is not empty %}
                       <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none text-secondary"
                               type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
-                        <i class="fas fa-eye me-1"></i>{{ pat.examples|length }}
-                        {% if pat.vocab_rules is not empty %}
-                          <span class="text-danger" style="font-size:0.78rem;">non coperte da L2</span>
-                        {% else %}
-                          esempi
-                        {% endif %}
+                        <i class="fas fa-eye me-1"></i>{{ pat.examples|length }} esempi
                       </button>
                     {% endif %}
                   </td>
@@ -397,6 +397,9 @@
                               <span class="text-muted mx-1">→</span>
                               <strong>{{ vk_desc }}</strong>
                               <span class="badge bg-light text-muted border ms-1" style="font-size: 0.62rem;">p:{{ vk.priorita }}</span>
+                              {% if pat.stats_by_keyword[vk.keyword] is defined %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 0.62rem;" title="Transazioni coperte da questa keyword">{{ pat.stats_by_keyword[vk.keyword] }} coperte</span>
+                              {% endif %}
                             </span>
                             {% if is_admin and pat.accorpato_a is empty %}
                             <a href="/funzioni-avanzate/mapping-pendenze/delete?type=vocab&id={{ vk.id }}"

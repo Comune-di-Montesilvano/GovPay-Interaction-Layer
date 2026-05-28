@@ -95,37 +95,61 @@ class MappingPendenzeRepository
             $p['vocab_rules']  = $vocabMap[$targetPat] ?? [];
             $p['insufficiente'] = empty($p['accorpato_a']) && (int)$p['transazioni_count'] < 5;
 
-            $vocabRules = $p['vocab_rules'];
-            $kwClauses  = [];
-            $kwParams   = [':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%'];
+            $vocabRules  = $p['vocab_rules'];
+            $col         = "LOWER(COALESCE(b.descrizione, f.descrizione_entrata))";
+            $notClauses  = [];
+            $exParams    = [':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%'];
             foreach ($vocabRules as $i => $vk) {
                 $key = ':kw' . $i;
-                $kwClauses[] = "LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) NOT LIKE $key";
-                $kwParams[$key] = '%' . mb_strtolower((string)$vk['keyword']) . '%';
+                $notClauses[] = "$col NOT LIKE $key";
+                $exParams[$key] = '%' . mb_strtolower((string)$vk['keyword']) . '%';
             }
-            $kwWhere = $kwClauses !== [] ? ' AND ' . implode(' AND ', $kwClauses) : '';
+            $kwWhere  = $notClauses !== [] ? ' AND ' . implode(' AND ', $notClauses) : '';
+            $tefaJoin = $tefaEnabled ? "INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio" : '';
+            $tefaCond = $tefaEnabled ? "AND t.stato = 'SKIPPED'" : '';
+            $baseFrom = "FROM flussi_rendicontazioni f
+                         INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
+                         $tefaJoin
+                         WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
+                           AND b.stato = 'PROCESSED' $tefaCond";
 
-            if ($tefaEnabled) {
-                $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
-                          FROM flussi_rendicontazioni f
-                          INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
-                          INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
-                          WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
-                            AND b.stato = 'PROCESSED' AND t.stato = 'SKIPPED'
-                            $kwWhere
-                          ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 5";
-            } else {
-                $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
-                          FROM flussi_rendicontazioni f
-                          INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
-                          WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
-                            AND b.stato = 'PROCESSED'
-                            $kwWhere
-                          ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 5";
-            }
+            $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
+                      $baseFrom $kwWhere
+                      ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 5";
             $stmtEx = $this->pdo->prepare($sqlEx);
-            $stmtEx->execute($kwParams);
+            $stmtEx->execute($exParams);
             $p['examples'] = $stmtEx->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            // Statistiche copertura L2 (una query aggregata per pattern)
+            $p['stats_uncovered']  = null;
+            $p['stats_by_keyword'] = [];
+            if ($vocabRules !== []) {
+                $statParams = [':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%'];
+                $sumCases   = [];
+                $notParts   = [];
+                foreach ($vocabRules as $i => $vk) {
+                    $lkw         = '%' . mb_strtolower((string)$vk['keyword']) . '%';
+                    $keyA        = ':kwa' . $i;
+                    $keyB        = ':kwb' . $i;
+                    $statParams[$keyA] = $lkw;
+                    $statParams[$keyB] = $lkw;
+                    $sumCases[]  = "SUM(CASE WHEN $col LIKE $keyA THEN 1 ELSE 0 END) AS kw$i";
+                    $notParts[]  = "$col NOT LIKE $keyB";
+                }
+                $notExpr    = implode(' AND ', $notParts);
+                $colList    = implode(', ', $sumCases) . ", SUM(CASE WHEN $notExpr THEN 1 ELSE 0 END) AS uncovered";
+                $sqlStats   = "SELECT $colList $baseFrom";
+                // baseFrom usa :dom e :pat già in $statParams
+                $statParams[':dom'] = $idDominio;
+                $statParams[':pat'] = $p['pattern_iuv'] . '%';
+                $stmtSt = $this->pdo->prepare($sqlStats);
+                $stmtSt->execute($statParams);
+                $sr = $stmtSt->fetch(PDO::FETCH_ASSOC) ?: [];
+                foreach ($vocabRules as $i => $vk) {
+                    $p['stats_by_keyword'][$vk['keyword']] = (int)($sr['kw' . $i] ?? 0);
+                }
+                $p['stats_uncovered'] = (int)($sr['uncovered'] ?? 0);
+            }
         }
 
         return $patterns;
