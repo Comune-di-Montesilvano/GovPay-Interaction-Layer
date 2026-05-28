@@ -50,6 +50,10 @@ class ReportRagioneriaController
             'idDominio'  => (string)($params['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')),
             'tassonomie' => $this->parseTaxonomySelection($params),
             'page'       => max(1, (int)($params['page'] ?? 1)),
+            'cf'         => trim((string)($params['cf'] ?? '')),
+            'anagrafica' => trim((string)($params['anagrafica'] ?? '')),
+            'origine'    => in_array($params['origine'] ?? '', ['interne', 'esterne'], true) ? $params['origine'] : '',
+            'iuv'        => trim((string)($params['iuv'] ?? '')),
         ];
 
         $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
@@ -96,9 +100,16 @@ class ReportRagioneriaController
             $errors[] = 'Nessuna tipologia censita disponibile per il dominio selezionato.';
         }
 
+        $extra = [
+            'cf'         => $filters['cf'],
+            'anagrafica' => $filters['anagrafica'],
+            'origine'    => $filters['origine'],
+            'iuv'        => $filters['iuv'],
+        ];
+
         $rows        = [];
         $allRows     = [];
-        $totals      = ['amount' => 0.0, 'count' => 0];
+        $totals      = ['amount' => 0.0, 'count' => 0, 'count_interne' => 0, 'count_esterne' => 0];
         $byTipologia = [];
         $meta        = null;
         $csvLink     = null;
@@ -118,7 +129,8 @@ class ReportRagioneriaController
                         $filters['idDominio'],
                         $filters['dataDa'],
                         $filters['dataA'],
-                        $filters['tassonomie']
+                        $filters['tassonomie'],
+                        $extra
                     );
 
                     $numPagine = max(1, (int)ceil($totalRows / self::PAGE_SIZE));
@@ -132,7 +144,8 @@ class ReportRagioneriaController
                         $filters['dataA'],
                         $filters['tassonomie'],
                         $offset,
-                        self::PAGE_SIZE
+                        self::PAGE_SIZE,
+                        $extra
                     );
 
                     $rows = $this->applyTaxonomyLabels($rows, $taxonomyLabels);
@@ -141,15 +154,18 @@ class ReportRagioneriaController
                         $filters['idDominio'],
                         $filters['dataDa'],
                         $filters['dataA'],
-                        $filters['tassonomie']
+                        $filters['tassonomie'],
+                        $extra
                     );
 
                     $byTipologia = $this->applyTaxonomyLabels($aggregations['by_tipologia'], $taxonomyLabels);
 
-                    $totals = ['amount' => 0.0, 'count' => 0];
+                    $totals = ['amount' => 0.0, 'count' => 0, 'count_interne' => 0, 'count_esterne' => 0];
                     foreach ($byTipologia as $item) {
-                        $totals['amount'] += (float)$item['amount'];
-                        $totals['count']  += (int)$item['count'];
+                        $totals['amount']        += (float)$item['amount'];
+                        $totals['count']         += (int)$item['count'];
+                        $totals['count_interne'] += (int)($item['count_interne'] ?? 0);
+                        $totals['count_esterne'] += (int)($item['count_esterne'] ?? 0);
                     }
 
                     $meta = [

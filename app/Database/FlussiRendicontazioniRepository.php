@@ -97,6 +97,7 @@ class FlussiRendicontazioniRepository
 
     /**
      * @param array<int,string> $codEntrate
+     * @param array<string,string> $extra  Optional extra filters: cf, anagrafica, origine, iuv
      * @return array<int,array<string,mixed>>
      */
     public function getForReport(
@@ -105,12 +106,14 @@ class FlussiRendicontazioniRepository
         string $dataA,
         array $codEntrate,
         int $offset,
-        int $limit
+        int $limit,
+        array $extra = []
     ): array {
         $limit = max(1, $limit);
         $offset = max(0, $offset);
 
         [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+        $extraF = $this->buildExtraFilters($extra);
 
         $sql = "SELECT
                 f.data_flusso,
@@ -144,12 +147,13 @@ class FlussiRendicontazioniRepository
               ON t.iur = f.iur
              AND t.id_dominio = f.id_dominio
              AND t.stato = 'PROCESSED'
-            $whereSql
+            {$extraF['joinSql']}
+            $whereSql{$extraF['whereSql']}
             ORDER BY f.data_pagamento DESC, f.id DESC
             LIMIT :limit OFFSET :offset";
 
         $stmt = $this->pdo->prepare($sql);
-        foreach ($params as $key => $val) {
+        foreach (array_merge($params, $extraF['params']) as $key => $val) {
             $stmt->bindValue($key, $val);
         }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
@@ -161,22 +165,27 @@ class FlussiRendicontazioniRepository
 
     /**
      * @param array<int,string> $codEntrate
+     * @param array<string,string> $extra  Optional extra filters: cf, anagrafica, origine, iuv
      * @return array{by_tipologia:array<int,array<string,mixed>>,flussi_processati:int}
      */
     public function getReportAggregations(
         string $idDominio,
         string $dataDa,
         string $dataA,
-        array $codEntrate
+        array $codEntrate,
+        array $extra = []
     ): array {
         [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+        $extraF = $this->buildExtraFilters($extra);
+        $allParams = array_merge($params, $extraF['params']);
 
         // 1. Calcola flussi_processati (distinct id_flusso count)
         $sqlFlussi = "SELECT COUNT(DISTINCT f.id_flusso)
                       FROM flussi_rendicontazioni f
-                      $whereSql";
+                      {$extraF['joinSql']}
+                      $whereSql{$extraF['whereSql']}";
         $stmtFlussi = $this->pdo->prepare($sqlFlussi);
-        foreach ($params as $key => $val) {
+        foreach ($allParams as $key => $val) {
             $stmtFlussi->bindValue($key, $val);
         }
         $stmtFlussi->execute();
@@ -195,17 +204,20 @@ class FlussiRendicontazioniRepository
                          ELSE COALESCE(f.cod_entrata, 'N/D')
                     END AS tassonomia_label,
                     COUNT(*) AS count,
+                    SUM(CASE WHEN f.is_govpay = 1 THEN 1 ELSE 0 END) AS count_interne,
+                    SUM(CASE WHEN f.is_govpay = 0 THEN 1 ELSE 0 END) AS count_esterne,
                     SUM(f.importo) AS amount
                   FROM flussi_rendicontazioni f
                   LEFT JOIN tefa_ricevute t
                     ON t.iur = f.iur
                    AND t.id_dominio = f.id_dominio
                    AND t.stato = 'PROCESSED'
-                  $whereSql
+                  {$extraF['joinSql']}
+                  $whereSql{$extraF['whereSql']}
                   GROUP BY tassonomia, tassonomia_label";
 
         $stmtAgg = $this->pdo->prepare($sqlAgg);
-        foreach ($params as $key => $val) {
+        foreach ($allParams as $key => $val) {
             $stmtAgg->bindValue($key, $val);
         }
         $stmtAgg->execute();
@@ -213,10 +225,12 @@ class FlussiRendicontazioniRepository
         $byTipologia = [];
         foreach ($stmtAgg->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
             $byTipologia[] = [
-                'tassonomia' => (string)$row['tassonomia'],
+                'tassonomia'      => (string)$row['tassonomia'],
                 'tassonomia_label' => (string)$row['tassonomia_label'],
-                'count' => (int)$row['count'],
-                'amount' => (float)$row['amount'],
+                'count'           => (int)$row['count'],
+                'count_interne'   => (int)$row['count_interne'],
+                'count_esterne'   => (int)$row['count_esterne'],
+                'amount'          => (float)$row['amount'],
             ];
         }
 
@@ -332,14 +346,17 @@ class FlussiRendicontazioniRepository
 
     /**
      * @param array<int,string> $codEntrate
+     * @param array<string,string> $extra  Optional extra filters: cf, anagrafica, origine, iuv
      */
     public function countForReport(
         string $idDominio,
         string $dataDa,
         string $dataA,
-        array $codEntrate
+        array $codEntrate,
+        array $extra = []
     ): int {
         [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+        $extraF = $this->buildExtraFilters($extra);
 
         $stmt = $this->pdo->prepare(
             "SELECT COUNT(*)
@@ -348,9 +365,10 @@ class FlussiRendicontazioniRepository
                ON t.iur = f.iur
               AND t.id_dominio = f.id_dominio
               AND t.stato = 'PROCESSED'
-             $whereSql"
+             {$extraF['joinSql']}
+             $whereSql{$extraF['whereSql']}"
         );
-        foreach ($params as $key => $val) {
+        foreach (array_merge($params, $extraF['params']) as $key => $val) {
             $stmt->bindValue($key, $val);
         }
         $stmt->execute();
@@ -766,6 +784,58 @@ class FlussiRendicontazioniRepository
             $this->pdo->exec('ALTER TABLE flussi_rendicontazioni ADD COLUMN is_govpay TINYINT(1) NULL AFTER id_pendenza');
         } catch (\Throwable $_ignore) {
         }
+    }
+
+    /**
+     * Builds JOIN + WHERE fragment for extra UI filters (cf, anagrafica, origine, iuv).
+     * Returns ['joinSql'=>string, 'whereSql'=>string, 'params'=>array].
+     * @param array<string,string> $extra
+     * @return array{joinSql:string,whereSql:string,params:array<string,mixed>}
+     */
+    private function buildExtraFilters(array $extra): array
+    {
+        $cf         = trim((string)($extra['cf'] ?? ''));
+        $anagrafica = trim((string)($extra['anagrafica'] ?? ''));
+        $origine    = trim((string)($extra['origine'] ?? ''));
+        $iuv        = trim((string)($extra['iuv'] ?? ''));
+
+        $joinSql    = '';
+        $whereParts = [];
+        $params     = [];
+
+        if ($cf !== '' || $anagrafica !== '') {
+            $joinSql = "LEFT JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'";
+        }
+
+        if ($cf !== '') {
+            $whereParts[]         = '(b.cf_debitore LIKE :xcf OR b.cf_pagante LIKE :xcf2)';
+            $cfLike               = '%' . $cf . '%';
+            $params[':xcf']       = $cfLike;
+            $params[':xcf2']      = $cfLike;
+        }
+
+        if ($anagrafica !== '') {
+            $whereParts[]          = '(b.nominativo_debitore LIKE :xana OR b.nominativo_pagante LIKE :xana2 OR b.company_name LIKE :xana3)';
+            $anaLike               = '%' . $anagrafica . '%';
+            $params[':xana']       = $anaLike;
+            $params[':xana2']      = $anaLike;
+            $params[':xana3']      = $anaLike;
+        }
+
+        if ($origine === 'interne') {
+            $whereParts[] = 'f.is_govpay = 1';
+        } elseif ($origine === 'esterne') {
+            $whereParts[] = 'f.is_govpay = 0';
+        }
+
+        if ($iuv !== '') {
+            $whereParts[]       = 'f.iuv LIKE :xiuv';
+            $params[':xiuv']    = '%' . $iuv . '%';
+        }
+
+        $whereSql = $whereParts !== [] ? ' AND ' . implode(' AND ', $whereParts) : '';
+
+        return ['joinSql' => $joinSql, 'whereSql' => $whereSql, 'params' => $params];
     }
 
     /**
