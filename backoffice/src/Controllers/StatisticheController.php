@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\SettingsRepository;
-use GovPay\Backoffice\Model\RaggruppamentoStatistica;
-use GuzzleHttp\Client;
+use App\Database\FlussiRendicontazioniRepository;
+use App\Database\EntrateRepository;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -30,12 +30,13 @@ class StatisticheController
         $filters = [
             'dataDa' => (string)($params['dataDa'] ?? $defaultStart->format('Y-m-d')),
             'dataA' => (string)($params['dataA'] ?? $today->format('Y-m-d')),
-            'raggruppamento' => strtoupper((string)($params['raggruppamento'] ?? RaggruppamentoStatistica::TIPO_PENDENZA)),
-            'idDominio' => (string)($params['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''))),
+            'raggruppamento' => strtoupper((string)($params['raggruppamento'] ?? 'TIPO_PENDENZA')),
+            'idDominio' => (string)($params['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')),
         ];
+
         $groupOptions = $this->getGroupOptions();
         if (!array_key_exists($filters['raggruppamento'], $groupOptions)) {
-            $filters['raggruppamento'] = RaggruppamentoStatistica::TIPO_PENDENZA;
+            $filters['raggruppamento'] = 'TIPO_PENDENZA';
         }
 
         $dateFrom = $this->parseDate($filters['dataDa']);
@@ -44,58 +45,64 @@ class StatisticheController
             $errors[] = 'Intervallo date non valido: la data iniziale supera la data finale.';
         }
 
+        if ($filters['idDominio'] === '') {
+            $errors[] = 'ID Dominio non configurato.';
+        }
+
         $stats = [];
-        $statisticsJson = null;
         $chartPayloadJson = null;
         $totals = ['amount' => 0.0, 'count' => 0];
 
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        if ($backofficeUrl === '') {
-            $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
-        }
-        if (!class_exists('GovPay\\Backoffice\\Api\\ReportisticaApi')) {
-            $errors[] = 'Client Backoffice Reportistica non disponibile';
-        }
-
         if (!$errors) {
             try {
-                [$httpClient, $config] = $this->buildBackofficeClient($backofficeUrl);
-                $api = new \GovPay\Backoffice\Api\ReportisticaApi($httpClient, $config);
-
-                $result = $api->findQuadratureRiscossioni(
-                    [$filters['raggruppamento']],
-                    1,
-                    200,
-                    $this->formatDateForQuery($dateFrom),
-                    $this->formatDateForQuery($dateTo),
-                    $filters['idDominio'] ?: null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
+                $repo = new FlussiRendicontazioniRepository();
+                $stats = $repo->getLocalStatistics(
+                    $filters['idDominio'],
+                    $filters['dataDa'],
+                    $filters['dataA'],
+                    $filters['raggruppamento']
                 );
 
-                $data = $this->convertToArray(\GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($result));
-                $statisticsJson = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-                $stats = $this->normalizeStats($data['risultati'] ?? [], $filters['raggruppamento']);
-                foreach ($stats as $row) {
-                    $totals['amount'] += $row['importo'];
-                    $totals['count'] += $row['numero_pagamenti'];
+                // Applica label della tassonomia locale se raggruppato per TIPO_PENDENZA
+                if ($filters['raggruppamento'] === 'TIPO_PENDENZA') {
+                    $taxonomyLabels = $this->loadTaxonomyLabels($filters['idDominio']);
+                    $normalizedLabels = [];
+                    foreach ($taxonomyLabels as $code => $label) {
+                        $normalizedCode = trim((string)$code);
+                        if ($normalizedCode !== '') {
+                            $normalizedLabels[$normalizedCode] = (string)$label;
+                            $normalizedLabels[strtoupper($normalizedCode)] = (string)$label;
+                        }
+                    }
+
+                    foreach ($stats as &$row) {
+                        $tax = trim((string)$row['label']);
+                        if ($tax === 'ESTERNA') {
+                            $row['label'] = 'Pendenze esterne';
+                        } elseif ($tax !== '' && $tax !== 'N/D' && $tax !== 'TEFA') {
+                            $row['label'] = $normalizedLabels[$tax] ?? $normalizedLabels[strtoupper($tax)] ?? $tax;
+                        }
+                    }
+                    unset($row);
                 }
-                if ($stats) {
+
+                // Calcola i totali complessivi
+                foreach ($stats as $row) {
+                    $totals['amount'] += (float)$row['importo'];
+                    $totals['count'] += (int)$row['numero_pagamenti'];
+                }
+
+                if ($stats !== []) {
                     $chartPayload = [
                         'group' => $filters['raggruppamento'],
                         'labels' => array_column($stats, 'label'),
-                        'amounts' => array_map(static fn(array $row): float => round($row['importo'], 2), $stats),
+                        'amounts' => array_map(static fn(array $row): float => round((float)$row['importo'], 2), $stats),
                         'counts' => array_column($stats, 'numero_pagamenti'),
                     ];
                     $chartPayloadJson = json_encode($chartPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 }
             } catch (\Throwable $e) {
-                $errors[] = 'Errore chiamata statistiche: ' . $e->getMessage();
+                $errors[] = 'Errore calcolo statistiche locali: ' . $e->getMessage();
             }
         }
 
@@ -105,87 +112,19 @@ class StatisticheController
             'errors' => $errors,
             'stats' => $stats,
             'totals' => $totals,
-            'statistics_json' => $statisticsJson,
             'chart_payload_json' => $chartPayloadJson,
+            'app_debug' => $this->isAppDebug(),
         ]);
     }
 
-    private function buildBackofficeClient(string $baseUrl): array
+    private function getGroupOptions(): array
     {
-        $config = new \GovPay\Backoffice\Configuration();
-        $config->setHost(rtrim($baseUrl, '/'));
-        $username = SettingsRepository::get('govpay', 'user', '');
-        $password = SettingsRepository::get('govpay', 'password', '');
-        if ($username !== '' && $password !== '') {
-            $config->setUsername($username);
-            $config->setPassword($password);
-        }
-
-        $guzzleOptions = [];
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
-            if (!empty($cert) && !empty($key)) {
-                $guzzleOptions['cert'] = $cert;
-                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-            }
-        }
-
-        return [new Client($guzzleOptions), $config];
-    }
-
-    private function normalizeStats($raw, string $group): array
-    {
-        if (!is_iterable($raw)) {
-            return [];
-        }
-        $rows = [];
-        foreach ($raw as $entry) {
-            if ($entry instanceof \GovPay\Backoffice\Model\StatisticaQuadratura) {
-                $entry = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($entry);
-            } elseif (!is_array($entry)) {
-                $entry = json_decode(json_encode($entry, JSON_UNESCAPED_SLASHES), true) ?: [];
-            }
-            $label = $this->resolveLabel(is_array($entry) ? $entry : [], $group);
-            $rows[] = [
-                'label' => $label,
-                'importo' => (float)($entry['importo'] ?? 0),
-                'numero_pagamenti' => (int)($entry['numeroPagamenti'] ?? ($entry['numero_pagamenti'] ?? 0)),
-            ];
-        }
-        return $rows;
-    }
-
-    private function resolveLabel(array $entry, string $group): string
-    {
-        return match ($group) {
-            'DOMINIO' => $this->labelFromInfo($entry['dominio'] ?? $entry['dominio_index'] ?? []),
-            'UNITA_OPERATIVA' => $this->labelFromInfo($entry['unitaOperativa'] ?? $entry['unita_operativa'] ?? []),
-            'TIPO_PENDENZA' => $this->labelFromInfo($entry['tipoPendenza'] ?? $entry['tipo_pendenza'] ?? []),
-            'APPLICAZIONE' => $this->labelFromInfo($entry['applicazione'] ?? []),
-            'DIREZIONE' => (string)($entry['direzione'] ?? 'Direzione N/D'),
-            'DIVISIONE' => (string)($entry['divisione'] ?? 'Divisione N/D'),
-            'TASSONOMIA' => (string)($entry['tassonomia'] ?? 'Tassonomia N/D'),
-            default => (string)($entry['dettaglio'] ?? 'Non disponibile'),
-        };
-    }
-
-    private function labelFromInfo($info): string
-    {
-        if (is_string($info) && $info !== '') {
-            return $info;
-        }
-        if (!is_array($info)) {
-            return 'Non disponibile';
-        }
-        foreach (['descrizione', 'ragioneSociale', 'denominazione', 'nome', 'id', 'idDominio', 'idUnitaOperativa', 'idTipoPendenza'] as $field) {
-            if (isset($info[$field]) && $info[$field] !== '') {
-                return (string)$info[$field];
-            }
-        }
-        return 'Non disponibile';
+        return [
+            'TIPO_PENDENZA' => 'Tipologia pendenza (Tassonomia)',
+            'FORNITORE'     => 'Partner / Fornitore Tecnologico',
+            'CANALE'        => 'Canale d\'Incasso',
+            'PSP'           => 'Prestatore Servizi (PSP)',
+        ];
     }
 
     private function parseDate(?string $value): ?\DateTimeImmutable
@@ -197,47 +136,39 @@ class StatisticheController
         return $dt ?: null;
     }
 
-    private function getGroupOptions(): array
+    private function loadTaxonomyLabels(string $idDominio): array
     {
-        $labels = [
-                RaggruppamentoStatistica::TIPO_PENDENZA => 'Tipologia pendenza',
-                RaggruppamentoStatistica::DOMINIO => 'Dominio',
-                RaggruppamentoStatistica::UNITA_OPERATIVA => 'Unità operativa',
-                RaggruppamentoStatistica::APPLICAZIONE => 'Applicazione',
-                RaggruppamentoStatistica::DIREZIONE => 'Direzione',
-                RaggruppamentoStatistica::DIVISIONE => 'Divisione',
-                RaggruppamentoStatistica::TASSONOMIA => 'Tassonomia',
-        ];
+        if ($idDominio === '') {
+            return [];
+        }
+
+        $labels = [];
+        $tipologieRepo = new EntrateRepository();
+        foreach ($tipologieRepo->listByDominio($idDominio) as $tipologia) {
+            $idEntrata = trim((string)($tipologia['id_entrata'] ?? ''));
+            if ($idEntrata === '') {
+                continue;
+            }
+
+            $label = trim((string)($tipologia['descrizione_effettiva'] ?? $tipologia['descrizione'] ?? $idEntrata));
+            $labels[$idEntrata] = $label !== '' ? $label : $idEntrata;
+        }
+
         return $labels;
     }
 
-    private function convertToArray(mixed $value): array
+    private function isAppDebug(): bool
     {
-        if (is_array($value)) {
-            return $value;
+        if (SettingsRepository::get('app', 'debug', 'false') === 'true') {
+            return true;
         }
-
-        if ($value instanceof \stdClass) {
-            return json_decode(json_encode($value, JSON_UNESCAPED_SLASHES), true) ?: [];
+        $raw = getenv('APP_DEBUG');
+        if ($raw === false) {
+            return false;
         }
-
-        if (is_object($value)) {
-            $sanitized = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($value);
-            return $this->convertToArray($sanitized);
-        }
-
-        return (array)$value;
+        return in_array(strtolower((string)$raw), ['1', 'true', 'yes', 'on'], true);
     }
 
-        private function formatDateForQuery(?\DateTimeImmutable $value): ?string
-        {
-            if ($value === null) {
-                return null;
-            }
-
-            // GovPay client expects ISO-8601 strings, not DateTime instances.
-            return $value->format(\DateTimeInterface::ATOM);
-        }
     private function exposeCurrentUser(): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {

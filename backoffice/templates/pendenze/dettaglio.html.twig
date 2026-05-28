@@ -639,7 +639,16 @@
                     <td class="text-end text-nowrap">{{ row.importo is not null ? row.importo|number_format(2, ',', '.') ~ ' €' : '—' }}</td>
                     <td><code class="small">{{ row.iur|default('—') }}</code></td>
                     <td class="small">{{ row.ragione_psp|default(row.id_psp|default('—')) }}</td>
-                    <td class="small text-muted text-nowrap">{{ row.id_flusso|default('—') }}</td>
+                    <td class="small text-nowrap">
+                      {% if row.id_flusso %}
+                        <a href="/pagamenti/ricerca-flussi/dettaglio/{{ row.id_flusso|url_encode }}?return={{ ('/pendenze/dettaglio/' ~ idPendenza)|url_encode }}"
+                           class="text-muted" title="Apri dettaglio flusso">
+                          <i class="fas fa-external-link-alt me-1" style="font-size:.65rem;"></i>{{ row.id_flusso }}
+                        </a>
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
                     <td>
                       {% if row.stato_rend %}
                         {% if row.stato_rend in ['INCASSATO','RENDICONTATO'] %}

@@ -84,10 +84,19 @@
           <span>Report TEFA</span>
         </a>
       {% endif %}
-
       <a class="bo-nav-item {{ cp starts with '/statistiche' ? 'is-active' : '' }}" href="/statistiche">
         <i class="fas fa-chart-pie" aria-hidden="true"></i>
         <span>Statistiche</span>
+      </a>
+
+      <div class="bo-nav-section-title">Funzioni avanzate</div>
+      <a class="bo-nav-item {{ cp starts with '/funzioni-avanzate/cron' ? 'is-active' : '' }}" href="/funzioni-avanzate/cron">
+        <i class="fas fa-clock" aria-hidden="true"></i>
+        <span>Cron / Servizi</span>
+      </a>
+      <a class="bo-nav-item {{ cp starts with '/funzioni-avanzate/mapping-pendenze' ? 'is-active' : '' }}" href="/funzioni-avanzate/mapping-pendenze">
+        <i class="fas fa-route" aria-hidden="true"></i>
+        <span>Mapping pendenze est.</span>
       </a>
 
       <div class="bo-nav-section-title">Sistema</div>

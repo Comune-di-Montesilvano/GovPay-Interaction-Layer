@@ -13,6 +13,7 @@ use App\Controllers\HomeController;
 use App\Controllers\IncassiTassonomiaController;
 use App\Controllers\FlussiController;
 use App\Controllers\ReportRagioneriaController;
+use App\Controllers\MappingPendenzeController;
 use App\Controllers\CronController;
 use App\Controllers\ReportTefaController;
 use App\Controllers\ImpostazioniController;
@@ -266,6 +267,33 @@ return function (App $app, Twig $twig): void {
     $app->post('/pagamenti/report-ragioneria/biz-reset-errors', function(Request $request, Response $response) use ($twig): Response {
         $controller = new ReportRagioneriaController($twig);
         return $controller->resetBizErrors($request, $response);
+    });
+
+    // Mapping pendenze esterne (Funzioni Avanzate)
+    $app->get('/funzioni-avanzate/mapping-pendenze', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->index($request, $response);
+    });
+    $app->post('/funzioni-avanzate/mapping-pendenze/add', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->addRule($request, $response);
+    });
+    $app->get('/funzioni-avanzate/mapping-pendenze/delete', function(Request $request, Response $response, array $args) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->deleteRule($request, $response, $args);
+    });
+    $app->post('/funzioni-avanzate/mapping-pendenze/vocab/add', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->addVocabRule($request, $response);
+    });
+    $app->post('/funzioni-avanzate/mapping-pendenze/reset', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->resetMappings($request, $response);
+    });
+
+    $app->post('/funzioni-avanzate/mapping-pendenze/applica', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new MappingPendenzeController($twig);
+        return $controller->applyMappings($request, $response);
     });
 
     // Pendenze
@@ -1220,27 +1248,30 @@ return function (App $app, Twig $twig): void {
         return $controller->detail($request, $response, $args);
     });
 
-    // Cron management (superadmin only)
-    $app->post('/impostazioni/cron/{job}/run', function (Request $request, Response $response, array $args) use ($twig): Response {
+    // Funzioni Avanzate: Cron / Servizi
+    $app->get('/funzioni-avanzate/cron', function (Request $request, Response $response) use ($twig): Response {
+        return (new CronController($twig))->index($request, $response);
+    });
+    $app->post('/funzioni-avanzate/cron/{job}/run', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->run($request, $response, $args);
     });
-    $app->post('/impostazioni/cron/set-scan-date', function (Request $request, Response $response, array $args) use ($twig): Response {
+    $app->post('/funzioni-avanzate/cron/set-scan-date', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->setScanDate($request, $response);
     });
-    $app->post('/impostazioni/cron/reset-range', function (Request $request, Response $response, array $args) use ($twig): Response {
+    $app->post('/funzioni-avanzate/cron/reset-range', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->resetDateRange($request, $response);
     });
-    $app->post('/impostazioni/cron/ragioneria/rescan', function (Request $request, Response $response) use ($twig): Response {
+    $app->post('/funzioni-avanzate/cron/ragioneria/rescan', function (Request $request, Response $response) use ($twig): Response {
         return (new CronController($twig))->forceRescan($request, $response);
     });
-    $app->post('/impostazioni/cron/{job}/stop', function (Request $request, Response $response, array $args) use ($twig): Response {
+    $app->post('/funzioni-avanzate/cron/{job}/stop', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->stop($request, $response, $args);
     });
-    $app->get('/impostazioni/cron/{job}/log', function (Request $request, Response $response, array $args) use ($twig): Response {
+    $app->get('/funzioni-avanzate/cron/{job}/log', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->log($request, $response, $args);
     });
 
-    // Report TEFA (solo province con tefa_enabled = true)
+    // Report TEFA (Ragioneria)
     $app->get('/pagamenti/report-tefa', function($request, $response) use ($twig): Response {
         return (new ReportTefaController($twig))->index($request, $response);
     });

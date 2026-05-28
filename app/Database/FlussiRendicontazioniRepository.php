@@ -120,10 +120,12 @@ class FlussiRendicontazioniRepository
                 f.id_psp,
                 f.id_dominio,
                 CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
                      WHEN f.is_govpay = 0 THEN 'ESTERNA'
                      ELSE COALESCE(f.cod_entrata, 'N/D')
                 END AS tassonomia,
                  CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
                      WHEN f.is_govpay = 0 THEN 'Pendenze esterne'
                      ELSE COALESCE(f.cod_entrata, 'N/D')
                  END AS tassonomia_label,
@@ -155,6 +157,177 @@ class FlussiRendicontazioniRepository
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @param array<int,string> $codEntrate
+     * @return array{by_tipologia:array<int,array<string,mixed>>,flussi_processati:int}
+     */
+    public function getReportAggregations(
+        string $idDominio,
+        string $dataDa,
+        string $dataA,
+        array $codEntrate
+    ): array {
+        [$whereSql, $params] = $this->buildReportWhereF($idDominio, $dataDa, $dataA, $codEntrate);
+
+        // 1. Calcola flussi_processati (distinct id_flusso count)
+        $sqlFlussi = "SELECT COUNT(DISTINCT f.id_flusso)
+                      FROM flussi_rendicontazioni f
+                      $whereSql";
+        $stmtFlussi = $this->pdo->prepare($sqlFlussi);
+        foreach ($params as $key => $val) {
+            $stmtFlussi->bindValue($key, $val);
+        }
+        $stmtFlussi->execute();
+        $flussiProcessati = (int)$stmtFlussi->fetchColumn();
+
+        // 2. Calcola aggregati per tipologia
+        $sqlAgg = "SELECT
+                    CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                         WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
+                         WHEN f.is_govpay = 0 THEN 'ESTERNA'
+                         ELSE COALESCE(f.cod_entrata, 'N/D')
+                    END AS tassonomia,
+                    CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                         WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
+                         WHEN f.is_govpay = 0 THEN 'Pendenze esterne'
+                         ELSE COALESCE(f.cod_entrata, 'N/D')
+                    END AS tassonomia_label,
+                    COUNT(*) AS count,
+                    SUM(f.importo) AS amount
+                  FROM flussi_rendicontazioni f
+                  LEFT JOIN tefa_ricevute t
+                    ON t.iur = f.iur
+                   AND t.id_dominio = f.id_dominio
+                   AND t.stato = 'PROCESSED'
+                  $whereSql
+                  GROUP BY tassonomia, tassonomia_label";
+
+        $stmtAgg = $this->pdo->prepare($sqlAgg);
+        foreach ($params as $key => $val) {
+            $stmtAgg->bindValue($key, $val);
+        }
+        $stmtAgg->execute();
+
+        $byTipologia = [];
+        foreach ($stmtAgg->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $byTipologia[] = [
+                'tassonomia' => (string)$row['tassonomia'],
+                'tassonomia_label' => (string)$row['tassonomia_label'],
+                'count' => (int)$row['count'],
+                'amount' => (float)$row['amount'],
+            ];
+        }
+
+        return [
+            'by_tipologia' => $byTipologia,
+            'flussi_processati' => $flussiProcessati,
+        ];
+    }
+
+    /**
+     * Calcola statistiche aggregate interamente a livello di database locale.
+     * Supporta raggruppamento per: TIPO_PENDENZA, FORNITORE, CANALE, PSP.
+     * @return array<int,array{label:string,importo:float,numero_pagamenti:int}>
+     */
+    public function getLocalStatistics(
+        string $idDominio,
+        string $dataDa,
+        string $dataA,
+        string $raggruppamento
+    ): array {
+        $conditions = ['f.id_dominio = :id_dominio'];
+        $params = [':id_dominio' => $idDominio];
+
+        if ($dataDa !== '') {
+            $conditions[] = 'f.data_pagamento >= :data_da';
+            $params[':data_da'] = $dataDa;
+        }
+        if ($dataA !== '') {
+            $conditions[] = 'f.data_pagamento <= :data_a';
+            $params[':data_a'] = $dataA;
+        }
+
+        $whereSql = 'WHERE ' . implode(' AND ', $conditions);
+
+        $sql = '';
+        switch (strtoupper($raggruppamento)) {
+            case 'FORNITORE':
+                $sql = "SELECT
+                            CASE WHEN f.is_govpay = 1 THEN 'GovPay (Interno)'
+                                 ELSE COALESCE(NULLIF(TRIM(f.fornitore), ''), 'Da definire (Non Mappato)')
+                            END AS label,
+                            COUNT(*) AS numero_pagamenti,
+                            SUM(f.importo) AS importo
+                        FROM flussi_rendicontazioni f
+                        $whereSql
+                        GROUP BY label
+                        ORDER BY importo DESC";
+                break;
+
+            case 'CANALE':
+                $sql = "SELECT
+                            CASE WHEN f.is_govpay = 1 THEN 'Canale Interno (GovPay)'
+                                 ELSE 'Canale Esterno (pagoPA)'
+                            END AS label,
+                            COUNT(*) AS numero_pagamenti,
+                            SUM(f.importo) AS importo
+                        FROM flussi_rendicontazioni f
+                        $whereSql
+                        GROUP BY label
+                        ORDER BY importo DESC";
+                break;
+
+            case 'PSP':
+                $sql = "SELECT
+                            COALESCE(NULLIF(TRIM(f.ragione_psp), ''), NULLIF(TRIM(f.id_psp), ''), 'PSP Sconosciuto') AS label,
+                            COUNT(*) AS numero_pagamenti,
+                            SUM(f.importo) AS importo
+                        FROM flussi_rendicontazioni f
+                        $whereSql
+                        GROUP BY label
+                        ORDER BY importo DESC
+                        LIMIT 50";
+                break;
+
+            case 'TIPO_PENDENZA':
+            default:
+                $sql = "SELECT
+                            CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                                 WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
+                                 WHEN f.is_govpay = 0 THEN 'ESTERNA'
+                                 ELSE COALESCE(f.cod_entrata, 'N/D')
+                            END AS label,
+                            COUNT(*) AS numero_pagamenti,
+                            SUM(f.importo) AS importo
+                        FROM flussi_rendicontazioni f
+                        LEFT JOIN tefa_ricevute t
+                          ON t.iur = f.iur
+                         AND t.id_dominio = f.id_dominio
+                         AND t.stato = 'PROCESSED'
+                        $whereSql
+                        GROUP BY label
+                        ORDER BY importo DESC";
+                break;
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->execute();
+
+        $rows = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $rows[] = [
+                'label' => (string)$row['label'],
+                'importo' => (float)($row['importo'] ?? 0),
+                'numero_pagamenti' => (int)($row['numero_pagamenti'] ?? 0),
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -209,10 +382,12 @@ class FlussiRendicontazioniRepository
                 f.ragione_psp,
                 f.id_dominio,
                 CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
                      WHEN f.is_govpay = 0 THEN 'ESTERNA'
                      ELSE COALESCE(f.cod_entrata, 'N/D')
                 END AS tassonomia,
                  CASE WHEN f.is_govpay = 0 AND t.id IS NOT NULL THEN 'TEFA'
+                     WHEN f.is_govpay = 0 AND f.vocab_stato = 'PROCESSED' AND f.cod_entrata IS NOT NULL THEN f.cod_entrata
                      WHEN f.is_govpay = 0 THEN 'Pendenze esterne'
                      ELSE COALESCE(f.cod_entrata, 'N/D')
                  END AS tassonomia_label,
@@ -226,6 +401,7 @@ class FlussiRendicontazioniRepository
                 f.descrizione_entrata AS descrizione_voce,
                 f.id_pendenza,
                 f.is_govpay,
+                f.fornitore,
                 b.descrizione AS biz_descrizione,
                 b.cf_debitore,
                 b.nominativo_debitore,

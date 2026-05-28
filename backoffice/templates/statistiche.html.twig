@@ -1,55 +1,68 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Statistiche{% endblock %}
+{% block title %}Statistiche - GovPay{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
-    <div>
-      <h1 class="h4 mb-1">Statistiche dei pagamenti</h1>
-      <p class="text-muted mb-0">Aggregazioni fornite dall'API Backoffice di reportistica</p>
+  {# 1. Title Section #}
+  <div class="bo-home-welcome mb-4" style="background: linear-gradient(135deg, var(--bi-primary-a8) 0%, var(--ms-gold-500) 100%);">
+    <div class="d-flex align-items-center gap-3">
+      <div class="bo-brand-logo-mark" aria-hidden="true" style="font-size: 2.2rem; color: #fff; flex-shrink: 0;">
+        <i class="fas fa-chart-pie" aria-hidden="true"></i>
+      </div>
+      <div>
+        <h1 style="font-size: 1.6rem; margin-bottom: 2px; color: #fff;">Statistiche dei pagamenti</h1>
+        <p class="mb-0 text-white-50" style="font-size: 0.92rem;">
+          Analisi delle entrate complessive dell'Ente basata sul database locale arricchito (FDR, Biz Events, TEFA, Mappings)
+        </p>
+      </div>
     </div>
   </div>
 
+  {# 2. Error Alerts #}
   {% if errors is defined and errors %}
-    <div class="alert alert-danger" role="alert">
+    <div class="alert alert-danger shadow-sm" role="alert">
       <ul class="mb-0">
         {% for e in errors %}<li>{{ e }}</li>{% endfor %}
       </ul>
     </div>
   {% endif %}
 
+  {# 3. Filters Form #}
   {% set f = filters ?? {} %}
   <form method="get" action="/statistiche" class="card shadow-sm mb-4">
     <div class="card-header bg-light border-bottom py-2">
       <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
         <div class="d-flex align-items-center gap-2">
-          <h2 class="h6 mb-0">Filtri</h2>
-          <span class="text-muted small d-none d-md-inline">| Scegli intervallo temporale e raggruppamento</span>
+          <i class="fas fa-filter text-primary" aria-hidden="true"></i>
+          <h2 class="h6 mb-0 fw-bold">Filtri di Analisi</h2>
+          <span class="text-muted small d-none d-md-inline">| Seleziona periodo temporale e tipo di aggregazione</span>
         </div>
-        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-sync me-1"></i> Aggiorna</button>
+        <button type="submit" class="btn btn-primary btn-sm px-3 shadow-sm">
+          <i class="fas fa-sync me-1" aria-hidden="true"></i> Aggiorna Dati
+        </button>
       </div>
     </div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="form-label">Intervallo date</label>
+          <label class="form-label fw-semibold text-muted small">Intervallo date</label>
           <div class="d-flex gap-1 align-items-center">
             <input type="text" id="statsDaVis" class="form-control bo-cursor-pointer" placeholder="Da" autocomplete="off">
             <span class="text-muted small">–</span>
             <input type="text" id="statsAVis" class="form-control bo-cursor-pointer" placeholder="A" autocomplete="off">
           </div>
-          <div class="bo-datepicker-quick-selects">
+          <div class="bo-datepicker-quick-selects mt-2">
             <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
             <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
             <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
             <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
+            <button type="button" class="bo-datepicker-quick-btn btn-clear text-danger" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
           </div>
           <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
           <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
         </div>
         <div class="col-md-3">
-          <label for="raggruppamento" class="form-label">Raggruppa per</label>
+          <label for="raggruppamento" class="form-label fw-semibold text-muted small">Raggruppa per</label>
           <select id="raggruppamento" name="raggruppamento" class="form-select">
             {% for value,label in group_options %}
               <option value="{{ value }}" {% if f.raggruppamento|default('TIPO_PENDENZA') == value %}selected{% endif %}>{{ label }}</option>
@@ -57,104 +70,153 @@
           </select>
         </div>
         <div class="col-md-3">
-          <label for="idDominio" class="form-label">ID Dominio</label>
+          <label for="idDominio" class="form-label fw-semibold text-muted small">ID Dominio (Ente)</label>
           <input type="text" class="form-control" id="idDominio" name="idDominio" value="{{ f.idDominio|default('') }}" placeholder="(opzionale)">
         </div>
       </div>
     </div>
   </form>
 
+  {# 4. Statistics Results #}
   {% set has_data = stats is defined and stats %}
   {% if has_data %}
+    {# 4.1 Hero Metrics Cards Grid (Aligned with Dashboard style) #}
     <div class="row g-3 mb-4">
+      {# Card 1: Importo complessivo #}
       <div class="col-md-6">
-        <div class="card shadow-sm h-100">
+        <div class="card bo-hero-card shadow-sm" style="--accent-color: var(--ms-gold-500);">
           <div class="card-body">
-            <div class="text-muted text-uppercase small">Importo complessivo</div>
-            <div class="display-6">€ {{ totals.amount|default(0)|number_format(2, ',', '.') }}</div>
+            <div class="bo-hero-card-icon" style="--bg-light: var(--ms-gold-100); --color: var(--ms-gold-700);">
+              <i class="fas fa-wallet" aria-hidden="true"></i>
+            </div>
+            <span class="bo-hero-card-label">Importo complessivo incassato</span>
+            <div class="bo-hero-card-value">€ {{ totals.amount|default(0)|number_format(2, ',', '.') }}</div>
+            <div class="bo-hero-card-meta">
+              <i class="fas fa-calendar-check text-success" aria-hidden="true"></i>
+              <span>Dati aggregati per il periodo selezionato</span>
+            </div>
           </div>
         </div>
       </div>
+
+      {# Card 2: Numero pagamenti #}
       <div class="col-md-6">
-        <div class="card shadow-sm h-100">
+        <div class="card bo-hero-card shadow-sm" style="--accent-color: var(--bi-primary);">
           <div class="card-body">
-            <div class="text-muted text-uppercase small">Numero pagamenti</div>
-            <div class="display-6">{{ totals.count|default(0)|number_format(0, ',', '.') }}</div>
+            <div class="bo-hero-card-icon" style="--bg-light: var(--bi-primary-a8); --color: var(--bi-primary);">
+              <i class="fas fa-receipt" aria-hidden="true"></i>
+            </div>
+            <span class="bo-hero-card-label">Numero transazioni totali</span>
+            <div class="bo-hero-card-value">{{ totals.count|default(0)|number_format(0, ',', '.') }}</div>
+            <div class="bo-hero-card-meta">
+              <i class="fas fa-circle-check text-success" aria-hidden="true"></i>
+              <span>Transazioni riconciliate con successo</span>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="card shadow-sm mb-4">
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center gap-2">
-        <h3 class="h6 mb-0">Distribuzione importi</h3>
-        <span class="text-muted small d-none d-md-inline">| Somma degli incassi per categoria</span>
-      </div>
-    </div>
-      <div class="card-body">
-        <canvas id="statsAmountChart" height="280"></canvas>
-      </div>
-    </div>
-
-    <div class="card shadow-sm mb-4">
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center gap-2">
-        <h3 class="h6 mb-0">Numero pagamenti</h3>
-        <span class="text-muted small d-none d-md-inline">| Conteggio transazioni per categoria</span>
-      </div>
-    </div>
-      <div class="card-body">
-        <canvas id="statsCountChart" height="280"></canvas>
-      </div>
-    </div>
-
+    {# 4.2 Main Distribution Charts #}
     <div class="row g-3 mb-4">
-      <div class="col-md-6">
+      <div class="col-lg-6">
         <div class="card shadow-sm h-100">
-          <div class="card-header bg-light border-bottom py-3">
-            <h3 class="h6 mb-0">Ripartizione importi (torta)</h3>
+          <div class="card-header bg-light border-bottom py-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="fas fa-chart-bar text-primary" aria-hidden="true"></i>
+              <h3 class="h6 mb-0 fw-bold">Distribuzione Importi (€)</h3>
+            </div>
           </div>
-          <div class="card-body" style="height:320px;">
-            <canvas id="statsAmountPie" class="w-100" style="height:100%;"></canvas>
+          <div class="card-body">
+            <div style="position: relative; height: 300px; width: 100%;">
+              <canvas id="statsAmountChart"></canvas>
+            </div>
           </div>
         </div>
       </div>
-      <div class="col-md-6">
+
+      <div class="col-lg-6">
         <div class="card shadow-sm h-100">
-          <div class="card-header bg-light border-bottom py-3">
-            <h3 class="h6 mb-0">Ripartizione pagamenti (torta)</h3>
+          <div class="card-header bg-light border-bottom py-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="fas fa-chart-bar text-primary" aria-hidden="true"></i>
+              <h3 class="h6 mb-0 fw-bold">Numero Pagamenti</h3>
+            </div>
           </div>
-          <div class="card-body" style="height:320px;">
-            <canvas id="statsCountPie" class="w-100" style="height:100%;"></canvas>
+          <div class="card-body">
+            <div style="position: relative; height: 300px; width: 100%;">
+              <canvas id="statsCountChart"></canvas>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
+    {# 4.3 Pie Breakdown Charts #}
+    <div class="row g-3 mb-4">
+      <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-header bg-light border-bottom py-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="fas fa-chart-pie text-primary" aria-hidden="true"></i>
+              <h3 class="h6 mb-0 fw-bold">Ripartizione Quote Incassi (Percentuale)</h3>
+            </div>
+          </div>
+          <div class="card-body d-flex flex-column align-items-center justify-content-center" style="height: 320px;">
+            <div style="position: relative; height: 260px; width: 100%;">
+              <canvas id="statsAmountPie"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-header bg-light border-bottom py-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="fas fa-chart-pie text-primary" aria-hidden="true"></i>
+              <h3 class="h6 mb-0 fw-bold">Ripartizione Volume Transazioni (Percentuale)</h3>
+            </div>
+          </div>
+          <div class="card-body d-flex flex-column align-items-center justify-content-center" style="height: 320px;">
+            <div style="position: relative; height: 260px; width: 100%;">
+              <canvas id="statsCountPie"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# 4.4 Data Detail Table #}
     <div class="card shadow-sm mb-4">
-      <div class="card-header bg-light border-bottom py-3 d-flex align-items-center justify-content-between gap-2">
-        <h3 class="h6 mb-0">Dettaglio dati</h3>
+      <div class="card-header bg-light border-bottom py-3 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-list text-primary" aria-hidden="true"></i>
+          <h3 class="h6 mb-0 fw-bold">Tabella di Riepilogo Analitico</h3>
+          <span class="text-muted small d-none d-md-inline">| Clicca sulle colonne per ordinare o sui grafici per filtrare</span>
+        </div>
         <div id="statsTableFilter" class="d-none">
-          <span class="badge bg-primary" id="statsFilterLabel"></span>
-          <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" id="statsFilterReset" title="Rimuovi filtro"><i class="fas fa-times"></i></button>
+          <span class="badge bg-primary px-2 py-1 fs-7" id="statsFilterLabel"></span>
+          <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" id="statsFilterReset" title="Rimuovi filtro">
+            <i class="fas fa-times-circle" aria-hidden="true"></i>
+          </button>
         </div>
       </div>
       <div class="table-responsive">
-        <table id="statsDetailTable" class="table table-striped align-middle mb-0">
+        <table id="statsDetailTable" class="table table-striped align-middle mb-0" style="font-size: 0.9rem;">
           <thead>
             <tr>
-              <th scope="col" class="stats-sort bo-cursor-pointer" data-col="0" title="Ordina">Categoria <i class="fas fa-sort text-muted ms-1 small"></i></th>
-              <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="1" title="Ordina">Numero pagamenti <i class="fas fa-sort text-muted ms-1 small"></i></th>
-              <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="2" title="Ordina">Importo <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort bo-cursor-pointer py-3" data-col="0" title="Ordina">Categoria / Raggruppamento <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort text-end bo-cursor-pointer py-3" data-col="1" title="Ordina">Numero pagamenti <i class="fas fa-sort text-muted ms-1 small"></i></th>
+              <th scope="col" class="stats-sort text-end bo-cursor-pointer py-3" data-col="2" title="Ordina">Importo complessivo <i class="fas fa-sort text-muted ms-1 small"></i></th>
             </tr>
           </thead>
           <tbody>
             {% for row in stats %}
               <tr data-label="{{ row.label|e('html_attr') }}">
-                <td>{{ row.label }}</td>
-                <td class="text-end">{{ row.numero_pagamenti|number_format(0, ',', '.') }}</td>
-                <td class="text-end">€ {{ row.importo|number_format(2, ',', '.') }}</td>
+                <td class="fw-semibold">{{ row.label }}</td>
+                <td class="text-end fw-semibold">{{ row.numero_pagamenti|number_format(0, ',', '.') }}</td>
+                <td class="text-end fw-bold text-dark">€ {{ row.importo|number_format(2, ',', '.') }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -162,30 +224,20 @@
       </div>
     </div>
   {% else %}
-    <div class="alert alert-info">Nessun dato disponibile per i filtri selezionati.</div>
-  {% endif %}
-
-  {% if app_debug and statistics_json %}
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-light border-bottom py-3 d-flex align-items-center gap-2">
-        <span class="badge bg-warning text-dark">Debug</span>
-        <span>Payload API /quadrature/riscossioni</span>
-        <button class="btn btn-sm btn-outline-secondary ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#statsRawJson" aria-expanded="false" aria-controls="statsRawJson">Mostra/Nascondi</button>
-      </div>
-      <div id="statsRawJson" class="collapse">
-        <div class="card-body">
-          <pre class="small text-break mb-0">{{ statistics_json }}</pre>
-        </div>
-      </div>
+    <div class="alert alert-info shadow-sm d-flex align-items-center gap-2" role="alert">
+      <i class="fas fa-info-circle fs-5" aria-hidden="true"></i>
+      <span>Nessun dato disponibile nel database locale per i filtri selezionati. Modifica l'intervallo temporale o controlla che i demoni di sincronizzazione flussi siano attivi.</span>
     </div>
   {% endif %}
 
+  {# 5. Chart.js Implementation scripts #}
   {% if chart_payload_json %}
     <script src="/assets/chartjs/chart.umd.min.js"></script>
     <script>
       (function(){
         const payload = {{ chart_payload_json|raw }};
-        const palette = ['#0a6dd4','#0f8bff','#33a1ff','#78b9ff','#a5cdfc','#cfe3ff','#4b8b3b','#65a060','#f1b244','#d05252','#7a5af8','#c41740'];
+        // Premium corporate dashboard color palette (harmonized with blue/purple/gold theme)
+        const palette = ['#0066CC', '#4A2A6E', '#C9A13B', '#107c41', '#d83b01', '#8a2be2', '#008080', '#ff4500'];
         const colors = payload.labels.map((_, idx) => palette[idx % palette.length]);
 
         function getCanvasContext(canvasId) {
@@ -196,7 +248,7 @@
           return canvas.getContext('2d');
         }
 
-        // ── Drill-down: filtra tabella per label cliccato ──────────────────────
+        // ── Drill-down functionality ──────────────────────────────────────────
         function filterTable(label) {
           const table = document.getElementById('statsDetailTable');
           const filterBar = document.getElementById('statsTableFilter');
@@ -207,7 +259,7 @@
           });
           if (filterBar && filterLabel) {
             if (label) {
-              filterLabel.textContent = label;
+              filterLabel.textContent = "Filtro: " + label;
               filterBar.classList.remove('d-none');
             } else {
               filterBar.classList.add('d-none');
@@ -225,6 +277,7 @@
           document.getElementById('statsDetailTable')?.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         };
 
+        // ── Build Bar Charts ──────────────────────────────────────────────────
         function buildChart(canvasId, dataset, label){
           const ctx = getCanvasContext(canvasId);
           if(!ctx){ return; }
@@ -238,6 +291,7 @@
                 backgroundColor: colors,
                 borderColor: '#ffffff',
                 borderWidth: 1,
+                borderRadius: 4
               }]
             },
             options: {
@@ -247,20 +301,26 @@
               plugins: {
                 legend: { display: false },
                 tooltip: {
+                  mode: 'index',
+                  intersect: false,
                   callbacks: {
                     label: (ctx) => {
                       const value = ctx.parsed.y;
                       if(canvasId === 'statsAmountChart') {
-                        return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value);
+                        return ' ' + new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value);
                       }
-                      return new Intl.NumberFormat('it-IT').format(value) + ' pagamenti';
+                      return ' ' + new Intl.NumberFormat('it-IT').format(value) + ' pagamenti';
                     }
                   }
                 }
               },
               scales: {
+                x: {
+                  grid: { display: false }
+                },
                 y: {
                   beginAtZero: true,
+                  grid: { color: "#f1f5f9" },
                   ticks: {
                     callback: function(value){
                       if(canvasId === 'statsAmountChart') {
@@ -275,14 +335,15 @@
           });
         }
 
-        buildChart('statsAmountChart', payload.amounts, 'Importi');
-        buildChart('statsCountChart', payload.counts, 'Numero pagamenti');
+        buildChart('statsAmountChart', payload.amounts, 'Importo complessivo (€)');
+        buildChart('statsCountChart', payload.counts, 'Transazioni');
 
-        function buildPieChart(canvasId, dataset, title, isAmount){
+        // ── Build Pie/Doughnut Charts ─────────────────────────────────────────
+        function buildPieChart(canvasId, dataset, isAmount){
           const ctx = getCanvasContext(canvasId);
           if(!ctx){ return; }
           new Chart(ctx, {
-            type: 'pie',
+            type: 'doughnut',
             data: {
               labels: payload.labels,
               datasets: [{
@@ -295,18 +356,18 @@
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              cutout: "60%",
               onClick: drillClick,
               plugins: {
                 legend: { display: false },
-                title: { display: true, text: title },
                 tooltip: {
                   callbacks: {
                     label: (ctx) => {
                       const value = ctx.parsed;
                       if (isAmount) {
-                        return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value);
+                        return ' ' + new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value);
                       }
-                      return new Intl.NumberFormat('it-IT').format(value) + ' pagamenti';
+                      return ' ' + new Intl.NumberFormat('it-IT').format(value) + ' pagamenti';
                     },
                   },
                 },
@@ -315,8 +376,8 @@
           });
         }
 
-        buildPieChart('statsAmountPie', payload.amounts, 'Totale incassato', true);
-        buildPieChart('statsCountPie', payload.counts, 'Totale pagamenti', false);
+        buildPieChart('statsAmountPie', payload.amounts, true);
+        buildPieChart('statsCountPie', payload.counts, false);
 
         // ── Sortable table ────────────────────────────────────────────────────
         const table = document.getElementById('statsDetailTable');

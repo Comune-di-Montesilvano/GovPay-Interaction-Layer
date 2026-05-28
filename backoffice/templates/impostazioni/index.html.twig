@@ -132,9 +132,6 @@
       <a class="nav-link {{ active_tab == 'tefa' ? 'active' : '' }}" href="/impostazioni?tab=tefa">
         <i class="fas fa-building-columns me-2"></i>TEFA
       </a>
-      <a class="nav-link {{ active_tab == 'cron' ? 'active' : '' }}" href="/impostazioni?tab=cron">
-        <i class="fas fa-clock me-2"></i>Cron
-      </a>
 
       <span class="imp-section-title">Backup e ripristino</span>
       <a class="nav-link {{ active_tab == 'backup' ? 'active' : '' }}" href="/impostazioni?tab=backup">
@@ -181,10 +178,9 @@
       {% include 'impostazioni/tab-login-proxy.html.twig' %}
     {% elseif active_tab == 'debug' %}
       {% include 'impostazioni/tab-debug.html.twig' %}
+
     {% elseif active_tab == 'tefa' %}
       {% include 'impostazioni/tab-tefa.html.twig' %}
-    {% elseif active_tab == 'cron' %}
-      {% include 'impostazioni/tab-cron.html.twig' %}
     {% elseif active_tab == 'backup' %}
       {% include 'impostazioni/tab-backup.html.twig' %}
     {% elseif active_tab == 'info-gil' %}

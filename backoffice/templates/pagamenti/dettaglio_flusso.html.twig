@@ -181,6 +181,8 @@
                 {% set tipologia = p.tipologia|default(pend.tipoPendenza.descrizione|default(pend.tipoPendenza.idTipoPendenza|default(''))) %}
                 {% if p._tefa is defined and p._tefa is not null and p._tefa.stato == 'PROCESSED' %}
                   {% set tipologia = 'TEFA' %}
+                {% elseif p.is_orphan|default(false) and p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.vocab_stato == 'PROCESSED' and p._rendicontazione.cod_entrata %}
+                  {% set tipologia = p._rendicontazione.cod_entrata %}
                 {% endif %}
                 {% set anno = p.annoRiferimento|default(pend.annoRiferimento|default('')) %}
                 {% set importo = p.importo|default(voce.importo|default(risc.importo|default(null))) %}
@@ -195,7 +197,13 @@
                   <td class="text-center small text-muted">
                     {{ idx }}
                     {% if isOrphan %}
-                      <div><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size:.6rem" title="Pagamento non presente in GovPay — dati da rendicontazione">Esterna</span></div>
+                      <div>
+                        {% if p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.mapping_stato == 'PROCESSED' and p._rendicontazione.fornitore %}
+                          <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:.6rem" title="Fornitore identificato via prefisso IUV (L1)">{{ p._rendicontazione.fornitore }}</span>
+                        {% else %}
+                          <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size:.6rem" title="Pagamento non presente in GovPay — dati da rendicontazione">Esterna</span>
+                        {% endif %}
+                      </div>
                     {% endif %}
                   </td>
                   <td class="align-middle">

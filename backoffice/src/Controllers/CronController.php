@@ -65,6 +65,28 @@ class CronController
             'stop_file'   => '/tmp/cron-stop-pendenze-massive',
             'pid_file'    => '/tmp/cron-pendenze-massive.pid',
         ],
+        'mapping' => [
+            'label'       => 'Ragioneria: Mapping L1 (fornitore)',
+            'description' => 'Loop continuo: scopre prefissi IUV e assegna il fornitore alle pendenze esterne (Livello 1). Solo pattern con ≥5 transazioni sono usati. Deve precedere il demone Vocab.',
+            'script'      => 'scripts/cron_mapping_pendenze.php',
+            'args_tpl'    => '',
+            'params'      => [],
+            'icon'        => 'fa-route',
+            'daemon'      => true,
+            'stop_file'   => '/tmp/cron-stop-mapping',
+            'pid_file'    => '/tmp/cron-mapping.pid',
+        ],
+        'vocab' => [
+            'label'       => 'Ragioneria: Vocab L2 (tipologia)',
+            'description' => 'Loop continuo: classifica le pendenze già identificate da L1 tramite vocabolario di keyword per assegnare la tipologia contabile (cod_entrata). Richiede il demone Mapping L1 attivo.',
+            'script'      => 'scripts/cron_vocab_mapping.php',
+            'args_tpl'    => '',
+            'params'      => [],
+            'icon'        => 'fa-book-open',
+            'daemon'      => true,
+            'stop_file'   => '/tmp/cron-stop-vocab',
+            'pid_file'    => '/tmp/cron-vocab.pid',
+        ],
     ];
 
     public function __construct(private readonly Twig $twig) {}
@@ -88,9 +110,38 @@ class CronController
         return $pid > 0 && file_exists('/proc/' . $pid);
     }
 
+    public function index(Request $request, Response $response): Response
+    {
+        $this->requireAuth();
+        $this->exposeCurrentUser();
+
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $jobs = self::JOBS;
+
+        $daemonStatus = [];
+        foreach ($jobs as $key => $job) {
+            if ($job['daemon'] ?? false) {
+                $daemonStatus[$key] = self::isDaemonRunning($key);
+            }
+        }
+
+        $ragioneriaScanDa = SettingsRepository::get(
+            'backoffice',
+            'ragioneria_scan_da',
+            date('Y-01-01', strtotime('-1 year'))
+        );
+
+        return $this->twig->render($response, 'funzioni-avanzate/cron.html.twig', [
+            'jobs' => $jobs,
+            'daemon_status' => $daemonStatus,
+            'ragioneria_scan_da' => $ragioneriaScanDa,
+            'id_dominio' => $idDominio,
+        ]);
+    }
+
     public function run(Request $request, Response $response, array $args): Response
     {
-        $this->requireSuperadmin();
+        $this->requireAdminOrSuperadmin();
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
@@ -127,7 +178,7 @@ class CronController
 
     public function stop(Request $request, Response $response, array $args): Response
     {
-        $this->requireSuperadmin();
+        $this->requireAdminOrSuperadmin();
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
@@ -148,7 +199,7 @@ class CronController
         if ($pidFile !== '' && file_exists($pidFile)) {
             $pid = (int)file_get_contents($pidFile);
             if ($pid > 0 && function_exists('posix_kill') && file_exists('/proc/' . $pid)) {
-                posix_kill($pid, 15); // 15 = SIGTERM (avoid relying on pcntl for the constant)
+                posix_kill($pid, 15); // 15 = SIGTERM (graceful stop)
             }
         }
 
@@ -159,7 +210,7 @@ class CronController
 
     public function setScanDate(Request $request, Response $response): Response
     {
-        $this->requireSuperadmin();
+        $this->requireAdminOrSuperadmin();
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -174,13 +225,13 @@ class CronController
         $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Data inizio scansione salvata.'];
 
         return $response
-            ->withHeader('Location', '/impostazioni?tab=cron')
+            ->withHeader('Location', '/funzioni-avanzate/cron')
             ->withStatus(302);
     }
 
     public function resetDateRange(Request $request, Response $response): Response
     {
-        $this->requireSuperadmin();
+        $this->requireAdminOrSuperadmin();
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -192,18 +243,18 @@ class CronController
 
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataDa) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataA)) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Date non valide. Usa formato YYYY-MM-DD.'];
-            return $response->withHeader('Location', '/impostazioni?tab=cron')->withStatus(302);
+            return $response->withHeader('Location', '/funzioni-avanzate/cron')->withStatus(302);
         }
 
         if ($dataDa > $dataA) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Intervallo non valido: la data Da deve essere <= data A.'];
-            return $response->withHeader('Location', '/impostazioni?tab=cron')->withStatus(302);
+            return $response->withHeader('Location', '/funzioni-avanzate/cron')->withStatus(302);
         }
 
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
         if ($idDominio === '') {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'id_dominio non configurato.'];
-            return $response->withHeader('Location', '/impostazioni?tab=cron')->withStatus(302);
+            return $response->withHeader('Location', '/funzioni-avanzate/cron')->withStatus(302);
         }
 
         $flussiRepo = new FlussiRendicontazioniRepository();
@@ -227,13 +278,13 @@ class CronController
         ];
 
         return $response
-            ->withHeader('Location', '/impostazioni?tab=cron')
+            ->withHeader('Location', '/funzioni-avanzate/cron')
             ->withStatus(302);
     }
 
     public function forceRescan(Request $request, Response $response): Response
     {
-        $this->requireSuperadmin();
+        $this->requireAdminOrSuperadmin();
 
         if (!self::isDaemonRunning('ragioneria')) {
             return $this->jsonResponse($response, ['ok' => false, 'error' => 'Daemon ragioneria non attivo.'], 400);
@@ -246,7 +297,7 @@ class CronController
 
     public function log(Request $request, Response $response, array $args): Response
     {
-        $this->requireSuperadmin();
+        $this->requireAuth();
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
@@ -281,7 +332,18 @@ class CronController
         return $this->jsonResponse($response, ['ok' => true, 'content' => implode("\n", $buffer)]);
     }
 
-    private function requireSuperadmin(): void
+    private function requireAuth(): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        if (empty($_SESSION['user'])) {
+            header('Location: /login');
+            exit;
+        }
+    }
+
+    private function requireAdminOrSuperadmin(): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -291,10 +353,20 @@ class CronController
             header('Location: /login');
             exit;
         }
-        if (($user['role'] ?? '') !== 'superadmin') {
+        if (!in_array($user['role'] ?? '', ['admin', 'superadmin'], true)) {
             http_response_code(403);
-            echo json_encode(['ok' => false, 'error' => 'Accesso negato — richiesto superadmin']);
+            echo json_encode(['ok' => false, 'error' => 'Accesso negato — richiesto ruolo amministrativo']);
             exit;
+        }
+    }
+
+    private function exposeCurrentUser(): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        if (isset($_SESSION['user'])) {
+            $this->twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
         }
     }
 

@@ -289,7 +289,7 @@ class FlussiController
                         $fiscalCode = $flow['idDominio']
                             ?? ($flow['dominio']['idDominio'] ?? null)
                             ?? ($flow['dominio']['id'] ?? null)
-                            ?? '';
+                            ?? (string)\App\Config\SettingsRepository::get('entity', 'id_dominio', '');
                         foreach ($flow[$paymentsKey] as $index => $payment) {
                             $risc = $payment['riscossione'] ?? null;
                             $hasVoce = !empty($payment['voce'])

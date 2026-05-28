@@ -151,6 +151,9 @@ class ReportTefaController
     {
         $this->requireAuth();
         $this->requireTefaEnabled($response);
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         $body   = (array)($request->getParsedBody() ?? []);
         $dataDa = trim((string)($body['dataDa'] ?? ''));
@@ -195,6 +198,9 @@ class ReportTefaController
     {
         $this->requireAuth();
         $this->requireTefaEnabled($response);
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         file_put_contents(self::SCANNER_STOP_FILE, '1');
         return $this->jsonResponse($response, ['ok' => true]);
@@ -229,6 +235,9 @@ class ReportTefaController
     {
         $this->requireAuth();
         $this->requireTefaEnabled($response);
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $repo      = new TefaRepository();
@@ -241,6 +250,9 @@ class ReportTefaController
     {
         $this->requireAuth();
         $this->requireTefaEnabled($response);
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $repo      = new TefaRepository();
@@ -253,6 +265,9 @@ class ReportTefaController
     {
         $this->requireAuth();
         $this->requireTefaEnabled($response);
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $repo      = new TefaRepository();
@@ -274,11 +289,24 @@ class ReportTefaController
         }
     }
 
+    private function requireAdminOrSuperadminJson(Response $response): ?Response
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        $user = $_SESSION['user'] ?? null;
+        if (!$user) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Richiesta autenticazione'], 401);
+        }
+        if (!in_array($user['role'] ?? '', ['admin', 'superadmin'], true)) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Accesso negato — richiesto ruolo amministrativo.'], 403);
+        }
+        return null;
+    }
+
     private function requireTefaEnabled(Response $response): void
     {
         if (SettingsRepository::get('backoffice', 'tefa_enabled', 'false') !== 'true') {
-            // Non interrompe con exit — lascia al controller chiamante gestire il redirect
-            // (qui usato solo prima di render, quindi header+exit è ok)
             $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Funzione TEFA non abilitata nelle impostazioni.'];
             header('Location: /');
             exit;
@@ -370,6 +398,9 @@ class ReportTefaController
     public function bizScan(Request $request, Response $response): Response
     {
         $this->requireAuth();
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         $script = '/var/www/html/scripts/cron_biz_scanner.php';
         $cmd    = sprintf('php %s < /dev/null > /dev/null 2>&1 &', escapeshellarg($script));
@@ -384,6 +415,9 @@ class ReportTefaController
     public function bizStop(Request $request, Response $response): Response
     {
         $this->requireAuth();
+        if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
+            return $errRes;
+        }
 
         file_put_contents(self::BIZ_SCANNER_STOP_FILE, '1');
         return $this->jsonResponse($response, ['ok' => true]);
