@@ -119,18 +119,16 @@
             <td class="ps-3 text-nowrap text-muted small">{{ row.data_pagamento|default('—') }}</td>
             <td style="max-width:220px;white-space:normal;font-size:.82rem;">
               <span class="text-muted">{{ row.causale|default('—') }}</span>
-              <a href="#" class="ms-1 text-primary"
-                 tabindex="0"
-                 data-bs-toggle="popover"
-                 data-bs-trigger="focus"
-                 data-bs-html="true"
-                 data-bs-placement="right"
-                 data-bs-content="{{ popover_html|e('html_attr') }}"
-                 title="Dati Biz Events"
-                 style="font-size:.75rem;"
-                 onclick="return false;">
+              <button type="button" class="btn btn-link p-0 ms-1 text-primary anomaly-popover"
+                      data-bs-toggle="popover"
+                      data-bs-trigger="focus"
+                      data-bs-html="true"
+                      data-bs-placement="right"
+                      data-bs-content="{{ popover_html|e('html_attr') }}"
+                      title="Dati Biz Events"
+                      style="font-size:.75rem;vertical-align:baseline;line-height:1;">
                 <i class="fas fa-circle-info"></i>
-              </a>
+              </button>
               <div class="text-muted" style="font-size:.7rem;margin-top:1px;"><code>{{ row.iur|slice(0, 18) }}…</code></div>
             </td>
             <td class="text-end fw-semibold">{{ row.importo_tefa is not null ? row.importo_tefa|number_format(2, ',', '.') : '—' }}</td>
@@ -176,26 +174,16 @@
     panel.addEventListener('show.bs.collapse', function(){
       document.getElementById('anomalyToggleIcon').classList.replace('fa-chevron-down','fa-chevron-up');
       document.getElementById('anomalyToggleLabel').textContent = 'Nascondi';
-      // Init popovers on first open
-      panel.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el){
-        if (!el._bsPopover) {
-          el._bsPopover = new bootstrap.Popover(el, { sanitize: false, container: 'body' });
-        }
-      });
     });
     panel.addEventListener('hide.bs.collapse', function(){
       document.getElementById('anomalyToggleIcon').classList.replace('fa-chevron-up','fa-chevron-down');
       document.getElementById('anomalyToggleLabel').textContent = 'Mostra';
     });
-    // Close popover clicking elsewhere
-    document.addEventListener('click', function(e){
-      panel.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el){
-        if (el._bsPopover && !el.contains(e.target)) {
-          el._bsPopover.hide();
-        }
-      });
-    });
   }
+  // Init popovers on page load (Bootstrap handles hidden elements fine)
+  document.querySelectorAll('.anomaly-popover').forEach(function(el){
+    new bootstrap.Popover(el, { sanitize: false, container: 'body' });
+  });
 })();
 </script>
 {% endif %}
