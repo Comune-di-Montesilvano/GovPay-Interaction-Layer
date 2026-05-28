@@ -115,7 +115,7 @@ class MappingPendenzeRepository
 
             $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
                       $baseFrom $kwWhere
-                      ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 5";
+                      ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 6";
             $stmtEx = $this->pdo->prepare($sqlEx);
             $stmtEx->execute($exParams);
             $p['examples'] = $stmtEx->fetchAll(PDO::FETCH_ASSOC) ?: [];

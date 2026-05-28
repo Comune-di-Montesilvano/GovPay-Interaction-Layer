@@ -80,6 +80,29 @@
         </div>
       </div>
 
+      <div class="row g-2 mt-2">
+        <div class="col-md-4">
+          <label for="rr_cf" class="form-label form-label-sm">Codice fiscale / P.IVA</label>
+          <input type="text" id="rr_cf" name="cf" class="form-control form-control-sm" value="{{ f.cf|default('') }}" placeholder="Cerca per CF...">
+        </div>
+        <div class="col-md-4">
+          <label for="rr_ana" class="form-label form-label-sm">Anagrafica</label>
+          <input type="text" id="rr_ana" name="anagrafica" class="form-control form-control-sm" value="{{ f.anagrafica|default('') }}" placeholder="Nome o ragione sociale...">
+        </div>
+        <div class="col-md-2">
+          <label for="rr_orig" class="form-label form-label-sm">Origine</label>
+          <select id="rr_orig" name="origine" class="form-select form-select-sm">
+            <option value="" {% if f.origine|default('') == '' %}selected{% endif %}>Tutte</option>
+            <option value="interne" {% if f.origine|default('') == 'interne' %}selected{% endif %}>Solo interne (GovPay)</option>
+            <option value="esterne" {% if f.origine|default('') == 'esterne' %}selected{% endif %}>Solo esterne</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label for="rr_iuv" class="form-label form-label-sm">IUV</label>
+          <input type="text" id="rr_iuv" name="iuv" class="form-control form-control-sm" value="{{ f.iuv|default('') }}" placeholder="IUV (parziale)...">
+        </div>
+      </div>
+
       <div class="row g-3 mt-2">
         <div class="col-12">
           <button class="btn btn-link px-0" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersRagioneria" aria-expanded="false" aria-controls="advancedFiltersRagioneria">
@@ -267,15 +290,17 @@
             <thead class="table-light">
               <tr>
                 <th scope="col" class="stats-sort bo-cursor-pointer" data-col="0" title="Ordina">Tipologia (cod. entrata) <i class="fas fa-sort text-muted ms-1 small"></i></th>
-                <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="1" title="Ordina">N. rendicontazioni <i class="fas fa-sort text-muted ms-1 small"></i></th>
-                <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="2" title="Ordina">Importo totale <i class="fas fa-sort text-muted ms-1 small"></i></th>
+                <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="1" title="Ordina">N. Interne <i class="fas fa-sort text-muted ms-1 small"></i></th>
+                <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="2" title="Ordina">N. Esterne <i class="fas fa-sort text-muted ms-1 small"></i></th>
+                <th scope="col" class="stats-sort text-end bo-cursor-pointer" data-col="3" title="Ordina">Importo totale <i class="fas fa-sort text-muted ms-1 small"></i></th>
               </tr>
             </thead>
             <tbody>
               {% for agg in by_tipologia %}
                 <tr>
                   <td><strong>{{ agg.tassonomia_label|default(agg.tassonomia) }}</strong></td>
-                  <td class="text-end">{{ agg.count|number_format(0, ',', '.') }}</td>
+                  <td class="text-end">{{ agg.count_interne|default(0)|number_format(0, ',', '.') }}</td>
+                  <td class="text-end">{{ agg.count_esterne|default(0)|number_format(0, ',', '.') }}</td>
                   <td class="text-end">€ {{ agg.amount|number_format(2, ',', '.') }}</td>
                 </tr>
               {% endfor %}
@@ -327,6 +352,10 @@
                 <td class="text-center">
                   {% if row.id_pendenza|default('') %}
                     <a href="/pendenze/dettaglio/{{ row.id_pendenza|url_encode }}" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Apri dettaglio pendenza" target="_blank">
+                      <i class="fas fa-external-link-alt fa-xs"></i>
+                    </a>
+                  {% elseif row.is_govpay == 0 and row.id_flusso|default('') %}
+                    <a href="/pagamenti/ricerca-flussi/dettaglio/{{ row.id_flusso|url_encode }}" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Apri dettaglio flusso" target="_blank">
                       <i class="fas fa-external-link-alt fa-xs"></i>
                     </a>
                   {% elseif row.iuv|default('') %}
