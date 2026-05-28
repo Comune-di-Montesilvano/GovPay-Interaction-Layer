@@ -413,7 +413,7 @@ class TefaRepository
     public function getAnomalyRows(string $idDominio, int $limit = 200): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT t.id, t.iur, t.iuv, t.data_pagamento, t.importo_tefa, t.importo_comune,
+            "SELECT t.id, t.iur, t.iuv, t.id_flusso, t.data_pagamento, t.importo_tefa, t.importo_comune,
                     t.cf_comune, t.denominazione_comune, t.error_msg, t.is_multibeneficiario,
                     b.descrizione AS causale,
                     b.cf_debitore, b.nominativo_debitore,
