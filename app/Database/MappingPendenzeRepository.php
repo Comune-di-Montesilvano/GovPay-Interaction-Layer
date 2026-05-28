@@ -41,7 +41,7 @@ class MappingPendenzeRepository
             if (!empty($p['accorpato_a'])) {
                 $targetPat = $p['accorpato_a'];
                 $visited = [$p['pattern_iuv'] => true];
-                while (isset($patternMap[$targetPat]) && !isset($visited[$targetPat])) {
+                while (!empty($targetPat) && isset($patternMap[$targetPat]) && !isset($visited[$targetPat])) {
                     $visited[$targetPat] = true;
                     $target = $patternMap[$targetPat];
                     if (!empty($target['fornitore'])) {
