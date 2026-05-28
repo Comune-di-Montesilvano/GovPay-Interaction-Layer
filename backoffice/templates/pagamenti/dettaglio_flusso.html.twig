@@ -181,7 +181,8 @@
                 {% set tipologia = p.tipologia|default(pend.tipoPendenza.descrizione|default(pend.tipoPendenza.idTipoPendenza|default(''))) %}
                 {% if p._tefa is defined and p._tefa is not null and p._tefa.stato == 'PROCESSED' %}
                   {% set tipologia = 'TEFA' %}
-                {% elseif p.is_orphan|default(false) and p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.vocab_stato == 'PROCESSED' and p._rendicontazione.cod_entrata %}
+                {% elseif p.is_orphan|default(false) and p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.cod_entrata
+                   and (p._rendicontazione.vocab_stato == 'PROCESSED' or p._rendicontazione.mapping_stato == 'PROCESSED') %}
                   {% set tipologia = p._rendicontazione.cod_entrata %}
                 {% endif %}
                 {% set anno = p.annoRiferimento|default(pend.annoRiferimento|default('')) %}
