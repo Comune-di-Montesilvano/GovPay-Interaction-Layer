@@ -1151,6 +1151,11 @@ class ConfigurazioneController
                             $domData     = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($domRes);
                             $dominioJson = json_encode($domData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
                             $dominioArr  = $domData;
+                            // Sincronizza aux_digit in settings per il fallback IUV frontoffice
+                            $auxDigitRead = (string)($domRes->getAuxDigit() ?? '');
+                            if ($auxDigitRead !== '') {
+                                SettingsRepository::set('entity', 'aux_digit', $auxDigitRead);
+                            }
                         }
                     }
                 } catch (\Throwable $e) {
@@ -1665,6 +1670,11 @@ class ConfigurazioneController
             $dominioPost = new \GovPay\Backoffice\Model\DominioPost($req);
 
             $entiApi->addDominio($idDom, $dominioPost);
+
+            // Persiste aux_digit in settings per il fallback IUV nel frontoffice
+            if (isset($payload['aux_digit']) && $payload['aux_digit'] !== '') {
+                SettingsRepository::set('entity', 'aux_digit', $payload['aux_digit']);
+            }
 
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Dati dominio aggiornati con successo'];
             Logger::getInstance()->info('Dominio aggiornato', ['id_dominio' => $idDom, 'user_id' => $_SESSION['user']['id'] ?? null]);

@@ -2601,6 +2601,21 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
 
         $normalizedAvviso = frontoffice_normalize_avviso_code($numeroAvviso);
 
+        // Numero avviso pagoPA corretto = auxDigit (1) + IUV (17) = 18 cifre.
+        // Se l'utente inserisce 17 cifre numeriche ha omesso l'auxDigit:
+        // recuperalo dal DB e prepend prima della ricerca.
+        if (strlen($normalizedAvviso) === 17 && ctype_digit($normalizedAvviso)) {
+            $auxDigit = \App\Config\SettingsRepository::get('entity', 'aux_digit', '');
+            if ($auxDigit !== '' && ctype_digit($auxDigit)) {
+                Logger::getInstance()->info('Numero avviso espanso con aux_digit', [
+                    'original'  => $normalizedAvviso,
+                    'expanded'  => $auxDigit . $normalizedAvviso,
+                    'auxDigit'  => $auxDigit,
+                ]);
+                $normalizedAvviso = $auxDigit . $normalizedAvviso;
+            }
+        }
+
         // Canale principale: GovPay Pendenze v2 (byAvviso) è il modo corretto per interrogare un numero avviso.
         $pendenza = frontoffice_fetch_pendenza_by_avviso($idDominio, $normalizedAvviso);
 
