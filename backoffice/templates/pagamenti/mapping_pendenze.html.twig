@@ -308,20 +308,15 @@
                     </div>
 
                     {% if pat.examples is not empty %}
-                      {% set has_uncovered = false %}
-                      {% if pat.vocab_rules is not empty %}
-                        {% for ex in pat.examples %}
-                          {% set _d = ex.descrizione_entrata|default('')|lower %}
-                          {% set _m = false %}
-                          {% for vk in pat.vocab_rules %}{% if vk.keyword|lower in _d %}{% set _m = true %}{% endif %}{% endfor %}
-                          {% if not _m %}{% set has_uncovered = true %}{% endif %}
-                        {% endfor %}
-                      {% endif %}
                       {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
                       <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none text-secondary"
                               type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
-                        <i class="fas fa-eye me-1"></i>{{ pat.examples|length }} esempi
-                        {% if has_uncovered %}<span class="badge bg-danger ms-1" style="font-size:0.6rem;">⚠ Non coperte</span>{% endif %}
+                        <i class="fas fa-eye me-1"></i>{{ pat.examples|length }}
+                        {% if pat.vocab_rules is not empty %}
+                          <span class="text-danger" style="font-size:0.78rem;">non coperte da L2</span>
+                        {% else %}
+                          esempi
+                        {% endif %}
                       </button>
                     {% endif %}
                   </td>
@@ -465,27 +460,16 @@
                     <div class="collapse" id="{{ ex_id }}">
                       <div class="px-3 py-2 bg-light border-top border-bottom">
                         <div class="text-muted fw-semibold mb-2" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px;">
-                          <i class="fas fa-eye me-1"></i>Esempi pendenze reali
+                          <i class="fas fa-eye me-1"></i>
+                          {% if pat.vocab_rules is not empty %}Pendenze non coperte da L2{% else %}Esempi pendenze reali{% endif %}
                         </div>
                         <div class="row g-2">
                           {% for ex in pat.examples %}
-                            {% set desc_lower = ex.descrizione_entrata|default('')|lower %}
-                            {% set l2_matched = false %}
-                            {% if pat.vocab_rules is not empty %}
-                              {% for vk in pat.vocab_rules %}
-                                {% if vk.keyword|lower in desc_lower %}{% set l2_matched = true %}{% endif %}
-                              {% endfor %}
-                            {% else %}
-                              {% set l2_matched = true %}
-                            {% endif %}
                             <div class="col-12 col-md-4">
-                              <div class="p-2 rounded border {{ l2_matched ? 'bg-white' : 'bg-danger-subtle border-danger' }}" style="font-size: 0.78rem;">
+                              <div class="p-2 rounded border {{ pat.vocab_rules is not empty ? 'bg-danger-subtle border-danger' : 'bg-white' }}" style="font-size: 0.78rem;">
                                 <div class="d-flex align-items-center gap-1 flex-wrap mb-1">
                                   <code class="text-secondary" style="font-size: 0.73rem;">{{ ex.iuv }}</code>
                                   <strong>€{{ ex.importo|number_format(2, ',', '.') }}</strong>
-                                  {% if not l2_matched %}
-                                    <span class="badge bg-danger" style="font-size: 0.6rem;">Non coperta da L2</span>
-                                  {% endif %}
                                 </div>
                                 <div class="text-muted" style="font-style: italic; font-size: 0.73rem;">"{{ ex.descrizione_entrata|default('(in attesa scansione)') }}"</div>
                                 {% if ex.id_flusso is not empty %}
