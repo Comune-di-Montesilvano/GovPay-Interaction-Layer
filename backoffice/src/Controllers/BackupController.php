@@ -39,6 +39,8 @@ class BackupController
         'io_services',
         'utenti',
         'gruppi-utenti',
+        'mapping_tipologie_custom',
+        'mapping_pendenze',
     ];
 
     public function __construct(private readonly Twig $twig)
@@ -462,6 +464,43 @@ class BackupController
                 }
                 $stats['govpay_sections']++;
             }
+            if (!empty($sections['mapping_tipologie_custom'])) {
+                $pdo->prepare('DELETE FROM mapping_tipologie_custom WHERE id_dominio = ?')->execute([$idDominio]);
+                $stmt = $pdo->prepare('INSERT INTO mapping_tipologie_custom (id_dominio, cod_entrata, descrizione) VALUES (?, ?, ?)');
+                foreach ($sections['mapping_tipologie_custom'] as $item) {
+                    if (!empty($item['cod_entrata']) && !empty($item['descrizione'])) {
+                        $stmt->execute([$idDominio, $item['cod_entrata'], $item['descrizione']]);
+                    }
+                }
+                $stats['govpay_sections']++;
+            }
+            if (isset($sections['mapping_pendenze'])) {
+                $patterns = $sections['mapping_pendenze']['patterns'] ?? [];
+                $vocab    = $sections['mapping_pendenze']['vocab'] ?? [];
+                // UPSERT pattern custom (preserva transazioni_count/importo_totale auto-generati)
+                $upsertP = $pdo->prepare(
+                    'INSERT INTO mapping_pendenze_pattern (pattern_iuv, id_dominio, fornitore, cod_entrata, accorpato_a, is_custom) VALUES (?,?,?,?,?,1)
+                     ON DUPLICATE KEY UPDATE fornitore=VALUES(fornitore), cod_entrata=VALUES(cod_entrata), accorpato_a=VALUES(accorpato_a), is_custom=1'
+                );
+                foreach ($patterns as $p) {
+                    if (empty($p['pattern_iuv'])) {
+                        continue;
+                    }
+                    $upsertP->execute([$p['pattern_iuv'], $idDominio, $p['fornitore'] ?? null, $p['cod_entrata'] ?? null, $p['accorpato_a'] ?? null]);
+                }
+                // Sostituisci tutto il vocab per questo dominio
+                $pdo->prepare('DELETE FROM mapping_pendenze_vocab WHERE id_dominio = ?')->execute([$idDominio]);
+                $insV = $pdo->prepare(
+                    'INSERT IGNORE INTO mapping_pendenze_vocab (pattern_iuv, id_dominio, keyword, cod_entrata, priorita) VALUES (?,?,?,?,?)'
+                );
+                foreach ($vocab as $v) {
+                    if (empty($v['pattern_iuv']) || empty($v['keyword']) || empty($v['cod_entrata'])) {
+                        continue;
+                    }
+                    $insV->execute([$v['pattern_iuv'], $idDominio, $v['keyword'], $v['cod_entrata'], (int)($v['priorita'] ?? 10)]);
+                }
+                $stats['govpay_sections']++;
+            }
         }
 
         // 3. DB restore
@@ -721,6 +760,27 @@ class BackupController
             }
             unset($g);
             $resultSections['gruppi-utenti'] = $groups;
+        }
+
+        if (in_array('mapping_tipologie_custom', $sections, true)) {
+            $stmt = $pdo->prepare('SELECT cod_entrata, descrizione FROM mapping_tipologie_custom WHERE id_dominio = ? ORDER BY cod_entrata ASC');
+            $stmt->execute([$idDominio]);
+            $resultSections['mapping_tipologie_custom'] = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        }
+
+        if (in_array('mapping_pendenze', $sections, true)) {
+            $pStmt = $pdo->prepare(
+                'SELECT pattern_iuv, fornitore, cod_entrata, accorpato_a FROM mapping_pendenze_pattern WHERE id_dominio = ? AND is_custom = 1 ORDER BY pattern_iuv ASC'
+            );
+            $pStmt->execute([$idDominio]);
+            $vStmt = $pdo->prepare(
+                'SELECT mpv.pattern_iuv, mpv.keyword, mpv.cod_entrata, mpv.priorita FROM mapping_pendenze_vocab mpv WHERE mpv.id_dominio = ? ORDER BY mpv.pattern_iuv ASC, mpv.priorita ASC, mpv.keyword ASC'
+            );
+            $vStmt->execute([$idDominio]);
+            $resultSections['mapping_pendenze'] = [
+                'patterns' => $pStmt->fetchAll(\PDO::FETCH_ASSOC),
+                'vocab'    => $vStmt->fetchAll(\PDO::FETCH_ASSOC),
+            ];
         }
 
         return [

@@ -202,7 +202,12 @@ class GovPayRendicontazioniService
                 $vocePendenza = ($risc !== null && is_array($risc['vocePendenza'] ?? null))
                     ? $risc['vocePendenza']
                     : null;
-                $codEntrata   = ($vocePendenza !== null) ? (string)($vocePendenza['codEntrata'] ?? '') : '';
+                $codEntrata = ($vocePendenza !== null) ? (string)($vocePendenza['codEntrata'] ?? '') : '';
+                if ($codEntrata === '' && $vocePendenza !== null) {
+                    $pendFallback = is_array($vocePendenza['pendenza'] ?? null) ? $vocePendenza['pendenza'] : [];
+                    $tipoFallback = is_array($pendFallback['tipoPendenza'] ?? null) ? $pendFallback['tipoPendenza'] : [];
+                    $codEntrata = (string)($tipoFallback['idTipoPendenza'] ?? '');
+                }
                 if ($excludeNd && $codEntrata === '') {
                     continue;
                 }

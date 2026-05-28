@@ -835,6 +835,16 @@ return function (App $app, Twig $twig): void {
         return $controller->bulkSetTipologieIoService($request, $response);
     });
 
+    // Backup configurazione JSON (export diretto / import da file)
+    $app->post('/configurazione/backup/export', function ($request, $response) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->exportBackup($request, $response);
+    });
+    $app->post('/configurazione/backup/import', function ($request, $response) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->importBackup($request, $response);
+    });
+
     // Backup di sistema (logica locale nel backoffice)
     $app->post('/backup/sistema/crea', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupCreate($request, $response);

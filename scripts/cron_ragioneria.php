@@ -416,7 +416,15 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
             'stato_rend' => (string)($rend['stato'] ?? $rend['statoRendicontazione'] ?? ''),
             'indice' => isset($rend['indice']) ? (int)$rend['indice'] : 1,
             'data_pagamento' => $dataIncasso,
-            'cod_entrata' => (string)($voce['codEntrata'] ?? ''),
+            'cod_entrata' => (function() use ($voce): string {
+                $cod = (string)($voce['codEntrata'] ?? '');
+                if ($cod === '') {
+                    $pend = is_array($voce['pendenza'] ?? null) ? $voce['pendenza'] : [];
+                    $tipo = is_array($pend['tipoPendenza'] ?? null) ? $pend['tipoPendenza'] : [];
+                    $cod = (string)($tipo['idTipoPendenza'] ?? '');
+                }
+                return $cod;
+            })(),
             'descrizione_entrata' => (string)($voce['descrizione'] ?? ''),
             'id_pendenza' => $idPendenza,
             'is_govpay' => $isGovPay,

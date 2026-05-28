@@ -50,7 +50,7 @@ class FlussiRendicontazioniRepository
              stato_rend = VALUES(stato_rend),
              indice = VALUES(indice),
              data_pagamento = VALUES(data_pagamento),
-             cod_entrata = VALUES(cod_entrata),
+             cod_entrata = IF(VALUES(is_govpay) = 0 AND VALUES(cod_entrata) IS NULL, cod_entrata, VALUES(cod_entrata)),
              descrizione_entrata = VALUES(descrizione_entrata),
              id_pendenza = VALUES(id_pendenza),
              is_govpay = VALUES(is_govpay),
@@ -881,7 +881,7 @@ class FlussiRendicontazioniRepository
 
         $parts = [];
 
-        if ($codEntrate !== []) {
+        if ($codEntrate !== [] || $codEntrateCustom !== []) {
             $allCodes = array_merge($codEntrate, $codEntrateCustom);
             $placeholders = [];
             foreach ($allCodes as $idx => $code) {
@@ -889,19 +889,11 @@ class FlussiRendicontazioniRepository
                 $placeholders[] = $key;
                 $params[$key] = $code;
             }
-            $parts[] = '(f.is_govpay = 0 OR f.cod_entrata IN (' . implode(', ', $placeholders) . '))';
-        } elseif ($codEntrateCustom !== []) {
-            $placeholders = [];
-            foreach ($codEntrateCustom as $idx => $code) {
-                $key = ':ccod_' . $idx;
-                $placeholders[] = $key;
-                $params[$key] = $code;
-            }
             $parts[] = 'f.cod_entrata IN (' . implode(', ', $placeholders) . ')';
         }
 
         if ($includeNd) {
-            $parts[] = '(f.is_govpay = 1 AND f.cod_entrata IS NULL)';
+            $parts[] = 'f.cod_entrata IS NULL';
         }
 
         if ($parts !== []) {

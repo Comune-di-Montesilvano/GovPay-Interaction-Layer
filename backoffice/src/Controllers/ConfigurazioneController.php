@@ -2970,4 +2970,308 @@ class ConfigurazioneController
         }
         return $this->redirectToTab($response, 'gruppi-utenti');
     }
+
+    public function exportBackup(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso riservato al superadmin.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $payload  = (array)($request->getParsedBody() ?? []);
+        $allowed  = ['tipologie', 'tipologie_esterne', 'templates', 'io_services', 'utenti', 'gruppi-utenti', 'mapping_tipologie_custom', 'mapping_pendenze'];
+        $sections = is_array($payload['sections'] ?? null)
+            ? array_values(array_intersect($payload['sections'], $allowed))
+            : $allowed;
+
+        if (empty($sections)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Seleziona almeno una sezione da esportare.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        try {
+            $export   = $this->buildConfigExport($sections);
+            $json     = json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $filename = 'gil-config-' . date('Ymd_His') . '.json';
+
+            $response->getBody()->write($json);
+            return $response
+                ->withStatus(200)
+                ->withHeader('Content-Type', 'application/json')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                ->withHeader('Content-Length', (string) strlen($json));
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore export backup config', ['error' => $e->getMessage()]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore esportazione: ' . $e->getMessage()];
+            return $this->redirectToTab($response, 'backup');
+        }
+    }
+
+    public function importBackup(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso riservato al superadmin.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $uploadedFiles = $request->getUploadedFiles();
+        $file          = $uploadedFiles['backup_file'] ?? null;
+        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Nessun file caricato o errore nel trasferimento.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $originalName = $file->getClientFilename() ?? '';
+        if (!str_ends_with(strtolower($originalName), '.json')) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Il file deve essere un .json.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $data = json_decode((string) $file->getStream(), true);
+        if (!is_array($data) || !isset($data['sections']) || !is_array($data['sections'])) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'File di backup non valido o corrotto.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        $payload           = (array)($request->getParsedBody() ?? []);
+        $allowed           = ['tipologie', 'tipologie_esterne', 'templates', 'io_services', 'utenti', 'gruppi-utenti', 'mapping_tipologie_custom'];
+        $requestedSections = is_array($payload['sections'] ?? null)
+            ? array_values(array_intersect($payload['sections'], $allowed))
+            : [];
+
+        if (empty($requestedSections)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Seleziona almeno una sezione da importare.'];
+            return $this->redirectToTab($response, 'backup');
+        }
+
+        try {
+            $stats = $this->restoreConfigSections($data['sections'], $requestedSections);
+            Logger::getInstance()->info('Importazione backup config completata', ['sections' => $requestedSections, 'stats' => $stats]);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Importazione completata: ' . implode(', ', $requestedSections) . '.'];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore import backup config', ['error' => $e->getMessage()]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore importazione: ' . $e->getMessage()];
+        }
+
+        return $this->redirectToTab($response, 'backup');
+    }
+
+    private function buildConfigExport(array $sections): array
+    {
+        $idDominio      = SettingsRepository::get('entity', 'id_dominio', '');
+        $pdo            = Connection::getPDO();
+        $resultSections = [];
+
+        if (in_array('tipologie', $sections, true)) {
+            $resultSections['tipologie'] = (new EntrateRepository())->listLocalOverrides($idDominio);
+        }
+        if (in_array('tipologie_esterne', $sections, true)) {
+            $resultSections['tipologie_esterne'] = (new ExternalPaymentTypeRepository())->listAll();
+        }
+        if (in_array('templates', $sections, true)) {
+            $resultSections['templates'] = (new \App\Database\PendenzaTemplateRepository())->findAllByDominioWithUsers($idDominio);
+        }
+        if (in_array('io_services', $sections, true)) {
+            $ioRepo   = new \App\Database\IoServiceRepository();
+            $services = $ioRepo->listAll();
+            $links    = $pdo->query('SELECT id_entrata, io_service_id FROM io_service_tipologie')->fetchAll();
+            $svcLinks = [];
+            foreach ($links as $l) {
+                $svcLinks[(int) $l['io_service_id']][] = $l['id_entrata'];
+            }
+            foreach ($services as &$s) {
+                $s['tipologie'] = $svcLinks[(int) $s['id']] ?? [];
+                unset($s['id'], $s['created_at'], $s['updated_at']);
+            }
+            unset($s);
+            $resultSections['io_services'] = $services;
+        }
+        if (in_array('utenti', $sections, true)) {
+            $resultSections['utenti'] = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash FROM users ORDER BY email ASC')->fetchAll();
+        }
+        if (in_array('gruppi-utenti', $sections, true)) {
+            $groupRepo  = new \App\Database\UserGroupRepository();
+            $groups     = $groupRepo->listAll();
+            $idToEmail  = [];
+            foreach ($pdo->query('SELECT id, email FROM users')->fetchAll() as $u) {
+                $idToEmail[(int) $u['id']] = $u['email'];
+            }
+            $idToTitle = [];
+            foreach ($pdo->query('SELECT id, titolo FROM pendenza_template')->fetchAll() as $t) {
+                $idToTitle[(int) $t['id']] = $t['titolo'];
+            }
+            foreach ($groups as &$g) {
+                $gid            = (int) $g['id'];
+                $g['members']   = array_values(array_filter(array_map(fn($uid) => $idToEmail[$uid] ?? null, $groupRepo->getMemberIds($gid))));
+                $g['tipologie'] = $idDominio ? $groupRepo->getTipologie($gid, $idDominio) : [];
+                $g['templates'] = array_values(array_filter(array_map(fn($tid) => $idToTitle[$tid] ?? null, $groupRepo->getTemplateIds($gid))));
+                unset($g['id'], $g['created_at'], $g['updated_at'], $g['member_count']);
+            }
+            unset($g);
+            $resultSections['gruppi-utenti'] = $groups;
+        }
+        if (in_array('mapping_tipologie_custom', $sections, true)) {
+            $stmt = $pdo->prepare('SELECT cod_entrata, descrizione FROM mapping_tipologie_custom WHERE id_dominio = ? ORDER BY cod_entrata ASC');
+            $stmt->execute([$idDominio]);
+            $resultSections['mapping_tipologie_custom'] = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        }
+        if (in_array('mapping_pendenze', $sections, true)) {
+            $pStmt = $pdo->prepare(
+                'SELECT pattern_iuv, fornitore, cod_entrata, accorpato_a FROM mapping_pendenze_pattern WHERE id_dominio = ? AND is_custom = 1 ORDER BY pattern_iuv ASC'
+            );
+            $pStmt->execute([$idDominio]);
+            $vStmt = $pdo->prepare(
+                'SELECT mpv.pattern_iuv, mpv.keyword, mpv.cod_entrata, mpv.priorita FROM mapping_pendenze_vocab mpv WHERE mpv.id_dominio = ? ORDER BY mpv.pattern_iuv ASC, mpv.priorita ASC, mpv.keyword ASC'
+            );
+            $vStmt->execute([$idDominio]);
+            $resultSections['mapping_pendenze'] = [
+                'patterns' => $pStmt->fetchAll(\PDO::FETCH_ASSOC),
+                'vocab'    => $vStmt->fetchAll(\PDO::FETCH_ASSOC),
+            ];
+        }
+
+        return [
+            'version'     => '1.0',
+            'exported_at' => (new \DateTimeImmutable())->format('c'),
+            'exported_by' => $_SESSION['user']['email'] ?? 'system',
+            'id_dominio'  => $idDominio,
+            'sections'    => $resultSections,
+        ];
+    }
+
+    private function restoreConfigSections(array $sections, array $requestedSections): array
+    {
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $pdo       = Connection::getPDO();
+        $stats     = [];
+
+        if (in_array('tipologie', $requestedSections, true) && !empty($sections['tipologie'])) {
+            (new EntrateRepository())->replaceLocalOverrides($idDominio, $sections['tipologie']);
+            $stats['tipologie'] = count($sections['tipologie']);
+        }
+        if (in_array('tipologie_esterne', $requestedSections, true) && isset($sections['tipologie_esterne'])) {
+            $pdo->exec('DELETE FROM tipologie_pagamento_esterne');
+            $extRepo = new ExternalPaymentTypeRepository();
+            foreach ($sections['tipologie_esterne'] as $t) {
+                if (!empty($t['descrizione']) && !empty($t['url'])) {
+                    $extRepo->create($t['descrizione'], $t['descrizione_estesa'] ?? null, $t['url']);
+                }
+            }
+            $stats['tipologie_esterne'] = count($sections['tipologie_esterne']);
+        }
+        if (in_array('io_services', $requestedSections, true) && isset($sections['io_services'])) {
+            $pdo->exec('DELETE FROM io_service_tipologie');
+            $pdo->exec('DELETE FROM io_services');
+            $ioRepo = new \App\Database\IoServiceRepository();
+            foreach ($sections['io_services'] as $s) {
+                if (empty($s['nome']) || empty($s['id_service']) || empty($s['api_key_primaria'])) {
+                    continue;
+                }
+                $newId = $ioRepo->create($s['nome'], $s['descrizione'] ?? null, $s['id_service'], $s['api_key_primaria'], $s['api_key_secondaria'] ?? null, $s['codice_catalogo'] ?? null, !empty($s['is_default']));
+                foreach ($s['tipologie'] ?? [] as $idEntrata) {
+                    $ioRepo->setTipologiaService((string) $idEntrata, $newId);
+                }
+            }
+            $stats['io_services'] = count($sections['io_services']);
+        }
+        if (in_array('templates', $requestedSections, true) && isset($sections['templates'])) {
+            $tplRepo   = new \App\Database\PendenzaTemplateRepository();
+            $tplRepo->deleteAllByDominio($idDominio);
+            $emailToId = [];
+            foreach ($pdo->query('SELECT id, email FROM users')->fetchAll() as $u) {
+                $emailToId[strtolower($u['email'])] = (int) $u['id'];
+            }
+            foreach ($sections['templates'] as $t) {
+                if (empty($t['titolo']) || empty($t['id_tipo_pendenza'])) {
+                    continue;
+                }
+                $newId   = $tplRepo->create(['id_dominio' => $idDominio, 'titolo' => $t['titolo'], 'id_tipo_pendenza' => $t['id_tipo_pendenza'], 'causale' => $t['causale'] ?? '', 'importo' => (float) ($t['importo'] ?? 0)]);
+                $userIds = array_filter(array_map(fn($e) => $emailToId[strtolower((string) $e)] ?? null, $t['assigned_users'] ?? []));
+                if ($userIds) {
+                    $tplRepo->assignUsers($newId, array_values($userIds));
+                }
+            }
+            $stats['templates'] = count($sections['templates']);
+        }
+        if (in_array('utenti', $requestedSections, true) && !empty($sections['utenti'])) {
+            $upsert = $pdo->prepare('INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, created_at, updated_at) VALUES (:email, :role, :fn, :ln, :disabled, :hash, NOW(), NOW()) ON DUPLICATE KEY UPDATE role=VALUES(role), first_name=VALUES(first_name), last_name=VALUES(last_name), is_disabled=VALUES(is_disabled), password_hash=COALESCE(VALUES(password_hash), password_hash), updated_at=NOW()');
+            foreach ($sections['utenti'] as $u) {
+                if (empty($u['email'])) {
+                    continue;
+                }
+                $upsert->execute([':email' => $u['email'], ':role' => $u['role'] ?? 'user', ':fn' => $u['first_name'] ?? '', ':ln' => $u['last_name'] ?? '', ':disabled' => empty($u['is_disabled']) ? 0 : 1, ':hash' => $u['password_hash'] ?? null]);
+            }
+            $stats['utenti'] = count($sections['utenti']);
+        }
+        if (in_array('gruppi-utenti', $requestedSections, true) && isset($sections['gruppi-utenti'])) {
+            $groupRepo = new \App\Database\UserGroupRepository();
+            $emailToId = [];
+            foreach ($pdo->query('SELECT id, email FROM users')->fetchAll() as $u) {
+                $emailToId[strtolower($u['email'])] = (int) $u['id'];
+            }
+            $titToId = [];
+            foreach ($pdo->query('SELECT id, titolo FROM pendenza_template')->fetchAll() as $t) {
+                $titToId[strtolower($t['titolo'])] = (int) $t['id'];
+            }
+            foreach ($sections['gruppi-utenti'] as $g) {
+                if (empty($g['nome'])) {
+                    continue;
+                }
+                $existingRow = $pdo->prepare('SELECT id FROM user_groups WHERE nome = ?');
+                $existingRow->execute([$g['nome']]);
+                $existing = $existingRow->fetchColumn();
+                if ($existing !== false) {
+                    $groupRepo->update((int) $existing, $g['nome'], $g['descrizione'] ?? null, $g['default_id_entrata'] ?? null);
+                    $gid = (int) $existing;
+                } else {
+                    $gid = $groupRepo->create($g['nome'], $g['descrizione'] ?? null, $g['default_id_entrata'] ?? null);
+                }
+                $memberIds = array_values(array_filter(array_map(fn($e) => $emailToId[strtolower((string) $e)] ?? null, $g['members'] ?? [])));
+                $groupRepo->setMembers($gid, $memberIds);
+                if ($idDominio) {
+                    $groupRepo->setTipologie($gid, $idDominio, array_values(array_filter($g['tipologie'] ?? [])));
+                }
+                $tplIds = array_values(array_filter(array_map(fn($title) => $titToId[strtolower((string) $title)] ?? null, $g['templates'] ?? [])));
+                $groupRepo->setTemplates($gid, $tplIds);
+            }
+            $stats['gruppi-utenti'] = count($sections['gruppi-utenti']);
+        }
+        if (in_array('mapping_tipologie_custom', $requestedSections, true) && isset($sections['mapping_tipologie_custom'])) {
+            $pdo->prepare('DELETE FROM mapping_tipologie_custom WHERE id_dominio = ?')->execute([$idDominio]);
+            $stmt = $pdo->prepare('INSERT INTO mapping_tipologie_custom (id_dominio, cod_entrata, descrizione) VALUES (?, ?, ?)');
+            foreach ($sections['mapping_tipologie_custom'] as $item) {
+                if (!empty($item['cod_entrata']) && !empty($item['descrizione'])) {
+                    $stmt->execute([$idDominio, $item['cod_entrata'], $item['descrizione']]);
+                }
+            }
+            $stats['mapping_tipologie_custom'] = count($sections['mapping_tipologie_custom']);
+        }
+        if (in_array('mapping_pendenze', $requestedSections, true) && isset($sections['mapping_pendenze'])) {
+            $patterns = $sections['mapping_pendenze']['patterns'] ?? [];
+            $vocab    = $sections['mapping_pendenze']['vocab'] ?? [];
+            $upsertP  = $pdo->prepare(
+                'INSERT INTO mapping_pendenze_pattern (pattern_iuv, id_dominio, fornitore, cod_entrata, accorpato_a, is_custom) VALUES (?,?,?,?,?,1)
+                 ON DUPLICATE KEY UPDATE fornitore=VALUES(fornitore), cod_entrata=VALUES(cod_entrata), accorpato_a=VALUES(accorpato_a), is_custom=1'
+            );
+            foreach ($patterns as $p) {
+                if (empty($p['pattern_iuv'])) {
+                    continue;
+                }
+                $upsertP->execute([$p['pattern_iuv'], $idDominio, $p['fornitore'] ?? null, $p['cod_entrata'] ?? null, $p['accorpato_a'] ?? null]);
+            }
+            $pdo->prepare('DELETE FROM mapping_pendenze_vocab WHERE id_dominio = ?')->execute([$idDominio]);
+            $insV = $pdo->prepare(
+                'INSERT IGNORE INTO mapping_pendenze_vocab (pattern_iuv, id_dominio, keyword, cod_entrata, priorita) VALUES (?,?,?,?,?)'
+            );
+            foreach ($vocab as $v) {
+                if (empty($v['pattern_iuv']) || empty($v['keyword']) || empty($v['cod_entrata'])) {
+                    continue;
+                }
+                $insV->execute([$v['pattern_iuv'], $idDominio, $v['keyword'], $v['cod_entrata'], (int) ($v['priorita'] ?? 10)]);
+            }
+            $stats['mapping_pendenze'] = count($patterns) . ' pattern, ' . count($vocab) . ' vocab';
+        }
+
+        return $stats;
+    }
 }
