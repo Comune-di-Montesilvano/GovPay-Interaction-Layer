@@ -1074,7 +1074,8 @@ if (!function_exists('frontoffice_build_voci')) {
                 if ($details) {
                     $iban = (string)($details['iban_accredito'] ?? '');
                     $codCont = (string)($details['codice_contabilita'] ?? '');
-                    $tipoBollo = (string)($details['tipo_bollo'] ?? '');
+                    $rawTipoBollo = (string)($details['tipo_bollo'] ?? '');
+                    $tipoBollo = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '';
                     $tipoCont = (string)($details['tipo_contabilita'] ?? '');
                 }
             }
@@ -1238,7 +1239,8 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             try {
                 $bolloDetails = (new \App\Database\EntrateRepository())->findDetails($idDominio, $idTipo);
                 if ($bolloDetails && !empty($bolloDetails['tipo_bollo'])) {
-                    $tipoBollo = (string) $bolloDetails['tipo_bollo'];
+                    $rawTipoBollo = (string) $bolloDetails['tipo_bollo'];
+                    $tipoBollo = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '01';
                 }
             } catch (\Throwable $_) {
             }
@@ -1560,8 +1562,42 @@ if (!function_exists('frontoffice_fetch_pagamenti_detail')) {
         try {
             $result = $api->getPendenza($idA2A, $idPendenza);
             return json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        } catch (\InvalidArgumentException $e) {
+            // Generated client rejected an unexpected enum value (e.g. tipoBollo stored with label instead of code).
+            // Fall back to raw HTTP to get the pendenza data without strict deserialization validation.
+            Logger::getInstance()->warning('Fallback raw fetch pendenza per errore deserializzazione', ['error' => $e->getMessage()]);
+            return frontoffice_fetch_pagamenti_detail_raw($idA2A, $idPendenza);
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('Impossibile recuperare il dettaglio della pendenza da GovPay Pagamenti', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+}
+
+if (!function_exists('frontoffice_fetch_pagamenti_detail_raw')) {
+    function frontoffice_fetch_pagamenti_detail_raw(string $idA2A, string $idPendenza): ?array
+    {
+        $baseUrl = frontoffice_govpay_pagamenti_base_url();
+        if ($baseUrl === '') {
+            return null;
+        }
+        try {
+            $guzzleOptions = frontoffice_govpay_client_options();
+            $guzzleOptions['headers'] = ['Accept' => 'application/json'];
+            $guzzleOptions['http_errors'] = false;
+            if ($auth = frontoffice_basic_auth()) {
+                $guzzleOptions['auth'] = [$auth[0], $auth[1]];
+            }
+            $client = new Client($guzzleOptions);
+            $url = $baseUrl . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+            $response = $client->get($url);
+            if ($response->getStatusCode() !== 200) {
+                return null;
+            }
+            $data = json_decode((string)$response->getBody(), true);
+            return is_array($data) ? $data : null;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('Impossibile recuperare il dettaglio della pendenza (raw fallback)', ['error' => $e->getMessage()]);
             return null;
         }
     }
