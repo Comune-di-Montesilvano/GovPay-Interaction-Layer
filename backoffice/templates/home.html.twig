@@ -8,28 +8,39 @@
   {% set last = current_user ? current_user.last_name|default('') : '' %}
   {% set display_name = (first != '' or last != '') ? (first ~ (last != '' ? ' ' ~ last|upper : '')) : (current_user ? current_user.email : 'Utente') %}
   <div class="bo-home-welcome">
-    <div class="d-flex align-items-center gap-3">
-      <div class="bo-brand-logo-mark" aria-hidden="true" style="font-size: 2.2rem; color: var(--ms-gold-500); flex-shrink: 0;">
-        {% if app_logo.type == 'img' %}
-          <img src="{{ app_logo.src }}" alt="" style="height: 54px; width: auto; object-fit: contain;">
-        {% else %}
-          <i class="fas fa-building" aria-hidden="true"></i>
-        {% endif %}
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <div class="bo-brand-logo-mark" aria-hidden="true" style="font-size: 2.2rem; color: var(--ms-gold-500); flex-shrink: 0;">
+          {% if app_logo.type == 'img' %}
+            <img src="{{ app_logo.src }}" alt="" style="height: 54px; width: auto; object-fit: contain;">
+          {% else %}
+            <i class="fas fa-building" aria-hidden="true"></i>
+          {% endif %}
+        </div>
+        <div>
+          <h1 style="font-size: 1.6rem; margin-bottom: 2px;">Ciao, {{ display_name }}! 👋</h1>
+          <p class="mb-0 text-muted" style="font-size: 0.92rem;">
+            Sei connesso come <strong class="text-primary">{{ current_user.role|upper }}</strong>. Questa è la dashboard operativa di <strong>{{ app_entity.name }}</strong> (ID Dominio: <code>{{ id_dominio }}</code>).
+            <br>
+            <span style="font-size: 0.86rem; display: inline-block; margin-top: 4px;">
+              <i class="fas fa-info-circle text-info me-1" aria-hidden="true"></i>
+              {% if current_user.role == 'superadmin' %}
+                <strong>Consiglio operativo</strong>: Puoi attivare o arrestare i servizi di background direttamente dal pannello <em>GIL Services Hub</em> a destra.
+              {% else %}
+                <strong>Stato sistema</strong>: Tutti i servizi di sincronizzazione e integrazione flussi sono monitorati in tempo reale nel pannello a destra.
+              {% endif %}
+            </span>
+          </p>
+        </div>
       </div>
-      <div>
-        <h1 style="font-size: 1.6rem; margin-bottom: 2px;">Ciao, {{ display_name }}! 👋</h1>
-        <p class="mb-0 text-muted" style="font-size: 0.92rem;">
-          Sei connesso come <strong class="text-primary">{{ current_user.role|upper }}</strong>. Questa è la dashboard operativa di <strong>{{ app_entity.name }}</strong> (ID Dominio: <code>{{ id_dominio }}</code>).
-          <br>
-          <span style="font-size: 0.86rem; display: inline-block; margin-top: 4px;">
-            <i class="fas fa-info-circle text-info me-1" aria-hidden="true"></i>
-            {% if current_user.role == 'superadmin' %}
-              <strong>Consiglio operativo</strong>: Puoi attivare o arrestare i servizi di background direttamente dal pannello <em>GIL Services Hub</em> a destra.
-            {% else %}
-              <strong>Stato sistema</strong>: Tutti i servizi di sincronizzazione e integrazione flussi sono monitorati in tempo reale nel pannello a destra.
-            {% endif %}
-          </span>
-        </p>
+      
+      {# Dedicated sync box badge in top-right, inline with heading #}
+      <div class="bo-sync-date-badge shadow-sm" style="background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 8px; padding: 0.55rem 0.9rem; color: #fff; flex-shrink: 0; min-width: 190px; backdrop-filter: blur(4px);">
+        <div class="small fw-semibold text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em; opacity: 0.8;">Sincronizzazione Flussi</div>
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <i class="fas fa-calendar-alt text-warning" aria-hidden="true" style="font-size: 0.95rem;"></i>
+          <span class="fw-bold" style="font-size: 1.0rem;">dal {{ ragioneria_scan_da_formatted }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -92,7 +103,7 @@
           <div class="bo-hero-card-value">{{ daemons.ragioneria.running ? 'Attivo' : 'Arrestato' }}</div>
           <div class="bo-hero-card-meta">
             <span class="status-dot {{ daemons.ragioneria.running ? 'active' : 'stopped' }}" aria-hidden="true"></span>
-            <span>Sincronizzazione Flussi Interni</span>
+            <span>Sincronizza dal: <strong>{{ ragioneria_scan_da_formatted }}</strong></span>
           </div>
         </div>
       </div>
@@ -172,14 +183,14 @@
             <canvas id="channelDistributionChart"></canvas>
           </div>
           <div class="mt-3 text-center w-100">
-            <div class="d-flex justify-content-around text-muted small">
+            <div class="d-flex justify-content-center gap-4 text-muted small">
               <div>
-                <span class="badge" style="background-color: var(--bi-primary); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 4px; vertical-align: middle;"></span>
-                Flussi Interni: <strong>{{ channels_data.govpay|number_format(0, ',', '.') }}</strong>
+                <span class="badge" style="background-color: var(--bi-primary); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 6px; vertical-align: middle;"></span>
+                Pendenze Interne: <strong>{{ channels_data.govpay|number_format(0, ',', '.') }}</strong>
               </div>
               <div>
-                <span class="badge" style="background-color: var(--ms-purple-600); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 4px; vertical-align: middle;"></span>
-                Flussi Esterni: <strong>{{ channels_data.external|number_format(0, ',', '.') }}</strong>
+                <span class="badge" style="background-color: var(--ms-purple-600); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 6px; vertical-align: middle;"></span>
+                Pendenze Esterne: <strong>{{ channels_data.external|number_format(0, ',', '.') }}</strong>
               </div>
             </div>
           </div>
@@ -500,7 +511,7 @@
         new Chart(ctxChannel.getContext("2d"), {
           type: "doughnut",
           data: {
-            labels: ["Flussi Interni", "Flussi Esterni"],
+            labels: ["Pendenze Interne", "Pendenze Esterne"],
             datasets: [{
               data: [govpayCount, externalCount],
               backgroundColor: ["#0066CC", "#4A2A6E"], // bi-primary blue vs stemma purple

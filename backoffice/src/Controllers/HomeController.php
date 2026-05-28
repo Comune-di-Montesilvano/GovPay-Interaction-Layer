@@ -221,6 +221,20 @@ class HomeController
             $tipologieStats = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        $scanDaFormatted = '';
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa)) {
+            try {
+                $scanDaFormatted = (new \DateTime($scanDa))->format('d/m/Y');
+            } catch (\Throwable $_) {}
+        }
+        if ($scanDaFormatted === '') {
+            $fallbackDate = date('Y-01-01', strtotime('-1 year'));
+            try {
+                $scanDaFormatted = (new \DateTime($fallbackDate))->format('d/m/Y') . ' (Default)';
+            } catch (\Throwable $_) {}
+        }
+
         return $this->twig->render($response, 'home.html.twig', [
             'id_dominio' => $idDominio,
             'totals' => $totals,
@@ -234,6 +248,7 @@ class HomeController
             'recent_flussi' => $recentFlussi,
             'tipologie_stats' => $tipologieStats,
             'tipologie_total' => $tipologieTotal,
+            'ragioneria_scan_da_formatted' => $scanDaFormatted,
             'debug' => nl2br(htmlspecialchars($debug)),
         ]);
     }
