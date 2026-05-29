@@ -51,6 +51,9 @@ docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
 docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
 
 # Daemon gestibili anche da Backoffice → Impostazioni → Cron (start/stop/log/autostart)
+
+# Accesso DB diretto — backoffice user NON funziona da localhost dentro il container
+docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
 ```
 
 ## Struttura directory
@@ -108,6 +111,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **PHP**: PSR-4 autoloading via Composer; namespace `App\` per librerie condivise
 - **Routing**: Slim 4 con middleware per autenticazione e CSRF
 - **Template**: Twig 3 con estensioni custom; i18n via file JSON in `locales/`
+- **Twig 3**: `{% for item in list if condition %}` rimosso — usare `list|filter(p => condition)` al posto
 - **SSL**: `SSL=on` attiva HTTPS diretto su Apache; `SSL=off` per deploy dietro reverse proxy (es. Portainer + Traefik). Usa `SSL_HEADER` per X-Forwarded-Proto in modalità proxy.
 - **Autenticazione operatori**: sessione PHP + token GovPay; `sslheader` come metodo auth alternativo
 - **Debug**: variabile `APP_DEBUG` nel `.env`; toggle disponibile nell'UI backoffice
