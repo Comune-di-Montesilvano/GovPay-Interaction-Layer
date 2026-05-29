@@ -35,6 +35,52 @@ class MappingPendenzeController
         $patterns = [];
         try {
             $patterns = $repo->getRules($idDominio);
+
+            // Ordina i pattern per accorpamento: prima il master (padre), poi immediatamente i figli
+            $patternMap = [];
+            foreach ($patterns as $p) {
+                $patternMap[$p['pattern_iuv']] = $p;
+            }
+
+            $roots = [];
+            $children = [];
+            foreach ($patterns as $p) {
+                $parent = $p['accorpato_a'] ?? '';
+                if (!empty($parent) && isset($patternMap[$parent])) {
+                    $children[$parent][] = $p;
+                } else {
+                    $roots[] = $p;
+                }
+            }
+
+            $sortedPatterns = [];
+            $visited = [];
+            $flatten = function($p) use (&$sortedPatterns, &$visited, $children, &$flatten) {
+                if (isset($visited[$p['pattern_iuv']])) {
+                    return;
+                }
+                $visited[$p['pattern_iuv']] = true;
+                $sortedPatterns[] = $p;
+
+                if (isset($children[$p['pattern_iuv']])) {
+                    foreach ($children[$p['pattern_iuv']] as $child) {
+                        $flatten($child);
+                    }
+                }
+            };
+
+            foreach ($roots as $root) {
+                $flatten($root);
+            }
+
+            // Fallback di sicurezza in caso di pattern saltati
+            foreach ($patterns as $p) {
+                if (!isset($visited[$p['pattern_iuv']])) {
+                    $sortedPatterns[] = $p;
+                }
+            }
+
+            $patterns = $sortedPatterns;
         } catch (\Throwable $_) {}
 
         $stats = [

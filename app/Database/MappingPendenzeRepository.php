@@ -25,7 +25,7 @@ class MappingPendenzeRepository
     {
         $sql = "SELECT * FROM mapping_pendenze_pattern
                 WHERE id_dominio = :dom
-                ORDER BY is_custom DESC, CHAR_LENGTH(pattern_iuv) DESC, pattern_iuv ASC";
+                ORDER BY is_custom DESC, transazioni_count DESC, CHAR_LENGTH(pattern_iuv) DESC, pattern_iuv ASC";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':dom' => $idDominio]);
         $patterns = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
