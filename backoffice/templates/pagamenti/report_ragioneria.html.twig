@@ -176,7 +176,7 @@
             </div>
             {% set biz_pending_total = biz.PENDING|default(0) + biz.not_queued|default(0) %}
             {% if biz_pending_total > 0 %}
-              {% set biz_eta_sec = biz_pending_total * 5 %}
+              {% set biz_eta_sec = biz_pending_total * 6 %}
               {% set biz_eta_d = (biz_eta_sec / 86400)|round(0, 'floor') %}
               {% set biz_eta_h = ((biz_eta_sec % 86400) / 3600)|round(0, 'floor') %}
               {% set biz_eta_m = ((biz_eta_sec % 3600) / 60)|round(0, 'floor') %}
@@ -185,7 +185,7 @@
                 <div class="fw-bold" style="font-size: 1.15rem;">
                   {% if biz_eta_d > 0 %}{{ biz_eta_d }}g {% endif %}{% if biz_eta_h > 0 or biz_eta_d > 0 %}{{ biz_eta_h }}h {% endif %}{{ biz_eta_m }}m
                 </div>
-                <div class="text-muted" style="font-size: 10px;">~5s/pendenza · {{ biz_pending_total|number_format(0, ',', '.') }} da elaborare</div>
+                <div class="text-muted" style="font-size: 10px;">~6s/pendenza · {{ biz_pending_total|number_format(0, ',', '.') }} da elaborare</div>
               </div>
             {% endif %}
           </div>
@@ -487,7 +487,7 @@
   if (tipologiaTable) {
     let sortCol = -1;
     let sortAsc = true;
-    const numericColumns = [1, 2];
+    const numericColumns = [1, 2, 3];
     tipologiaTable.querySelectorAll('th.stats-sort').forEach(function (th) {
       th.addEventListener('click', function () {
         const col = parseInt(th.dataset.col || '-1', 10);
