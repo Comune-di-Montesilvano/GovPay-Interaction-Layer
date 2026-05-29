@@ -238,10 +238,16 @@ class ReportRagioneriaController
                     // Calcolo scansione mensile
                     if ($filters['idDominio'] !== '') {
                         try {
-                            $tefaRepo = new \App\Database\TefaRepository();
+                            $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
                             $queryDa = $filters['dataDa'] !== '' ? $filters['dataDa'] : '1970-01-01';
                             $queryA  = $filters['dataA'] !== '' ? $filters['dataA'] : '2099-12-31';
-                            $coverage = $tefaRepo->getCoverage($queryDa, $queryA, $filters['idDominio']);
+                            if ($tefaEnabled) {
+                                $tefaRepo = new \App\Database\TefaRepository();
+                                $coverage = $tefaRepo->getCoverage($queryDa, $queryA, $filters['idDominio']);
+                            } else {
+                                $bizCoverageRepo = new \App\Database\BizRepository();
+                                $coverage = $bizCoverageRepo->getCoverage($queryDa, $queryA, $filters['idDominio']);
+                            }
 
                             $daDate = new \DateTime($filters['dataDa'] !== '' ? $filters['dataDa'] : ($today->format('Y') - 1) . '-01-01');
                             $aDate  = new \DateTime($filters['dataA'] !== '' ? $filters['dataA'] : $today->format('Y-m-d'));

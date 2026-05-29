@@ -289,6 +289,50 @@ class BizRepository
         return $stmt->rowCount();
     }
 
+    /**
+     * Copertura mensile da biz_ricevute (usato quando TEFA è disabilitato).
+     * @return array<int,array{anno:int,mese:int,n_total:int,n_processed:int,n_pending:int,n_error:int,n_skipped:int}>
+     */
+    public function getCoverage(string $dataDa, string $dataA, string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT
+               anno,
+               mese,
+               COUNT(*) AS n_total,
+               SUM(stato = \'PROCESSED\') AS n_processed,
+               SUM(stato = \'PENDING\')   AS n_pending,
+               SUM(stato = \'ERROR\')     AS n_error,
+               SUM(stato = \'SKIPPED\')   AS n_skipped
+             FROM biz_ricevute
+             WHERE id_dominio = :id_dominio
+               AND (
+                 (data_pagamento IS NOT NULL AND data_pagamento >= :da AND data_pagamento <= :a)
+                 OR (data_pagamento IS NULL AND MAKEDATE(anno, 1) >= :da2 AND MAKEDATE(anno, 1) <= :a2)
+               )
+             GROUP BY anno, mese
+             ORDER BY anno ASC, mese ASC'
+        );
+        $stmt->execute([
+            ':id_dominio' => $idDominio,
+            ':da'         => $dataDa,
+            ':a'          => $dataA,
+            ':da2'        => $dataDa,
+            ':a2'         => $dataA,
+        ]);
+        return array_map(static function (array $r): array {
+            return [
+                'anno'        => (int)$r['anno'],
+                'mese'        => (int)$r['mese'],
+                'n_total'     => (int)$r['n_total'],
+                'n_processed' => (int)$r['n_processed'],
+                'n_pending'   => (int)$r['n_pending'],
+                'n_error'     => (int)$r['n_error'],
+                'n_skipped'   => (int)$r['n_skipped'],
+            ];
+        }, $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: []);
+    }
+
     /** Righe ERROR per un dominio. */
     public function getErrors(string $idDominio, int $limit = 100): array
     {
