@@ -65,6 +65,11 @@ class MappingPendenzeController
             $tipologieCustom = $repo->getCustomTipologie($idDominio);
         } catch (\Throwable $_) {}
 
+        $noMatchExamples = [];
+        try {
+            $noMatchExamples = $repo->getNoMatchExamples($idDominio);
+        } catch (\Throwable $_) {}
+
         $daemonRunning      = CronController::isDaemonRunning('mapping');
         $daemonVocabRunning = CronController::isDaemonRunning('vocab');
 
@@ -77,10 +82,11 @@ class MappingPendenzeController
             'stats'               => $stats,
             'tipologie_list'      => $tipologieList,
             'tipologie_custom'    => $tipologieCustom,
-            'daemon_running'      => $daemonRunning,
-            'daemon_vocab_running'=> $daemonVocabRunning,
-            'flash'               => $flash,
-            'current_user'        => $user,
+            'daemon_running'       => $daemonRunning,
+            'daemon_vocab_running' => $daemonVocabRunning,
+            'flash'                => $flash,
+            'current_user'         => $user,
+            'no_match_examples'    => $noMatchExamples,
         ]);
     }
 
