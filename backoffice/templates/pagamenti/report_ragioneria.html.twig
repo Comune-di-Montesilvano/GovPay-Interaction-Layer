@@ -155,11 +155,11 @@
             <div class="row g-2 text-center">
               <div class="col-4 col-md">
                 <div class="small text-muted" style="font-size: 9px;">TOTALI</div>
-                <div class="h5 mb-0 fw-bold">{{ biz.total|default(0) }}</div>
+                <div class="h5 mb-0 fw-bold">{{ (biz.total|default(0) + biz.not_queued|default(0))|number_format(0, ',', '.') }}</div>
               </div>
               <div class="col-4 col-md">
                 <div class="small text-muted" style="font-size: 9px;">IN ATTESA</div>
-                <div class="h5 mb-0 fw-bold text-primary">{{ biz.PENDING|default(0) }}</div>
+                <div class="h5 mb-0 fw-bold text-primary">{{ (biz.PENDING|default(0) + biz.not_queued|default(0))|number_format(0, ',', '.') }}</div>
               </div>
               <div class="col-4 col-md">
                 <div class="small text-muted" style="font-size: 9px;">ELABORATE</div>
@@ -174,8 +174,21 @@
                 <div class="h5 mb-0 fw-bold text-secondary">{{ biz.SKIPPED|default(0) }}</div>
               </div>
             </div>
+            {% set biz_pending_total = biz.PENDING|default(0) + biz.not_queued|default(0) %}
+            {% if biz_pending_total > 0 %}
+              {% set biz_eta_sec = biz_pending_total * 5 %}
+              {% set biz_eta_h = (biz_eta_sec / 3600)|round(0, 'floor') %}
+              {% set biz_eta_m = ((biz_eta_sec % 3600) / 60)|round(0, 'floor') %}
+              <div class="mt-2 text-muted" style="font-size: 10px;">
+                <i class="fas fa-clock me-1"></i>
+                ETA completamento stimata: <strong>
+                  {% if biz_eta_h > 0 %}{{ biz_eta_h }}h {% endif %}{{ biz_eta_m }}m
+                </strong>
+                <span class="text-muted">(~5s/pendenza)</span>
+              </div>
+            {% endif %}
           </div>
-          
+
           <!-- Column 2: Scan coverage & Legend -->
           {% set mesi_nomi = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'] %}
           <div class="col-12 col-lg-7 bo-divider-lg-start pt-3 pt-lg-0">
