@@ -57,13 +57,18 @@ class ReportRagioneriaController
             'iuv'        => trim((string)($params['iuv'] ?? '')),
         ];
 
-        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
+        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0];
         if ($filters['idDominio'] !== '') {
             try {
                 $bizCounts = (new BizRepository())->getCounts($filters['idDominio']);
-            } catch (\Throwable $_) {
-                // Keep report available even if Biz table is temporarily unavailable.
-            }
+                $bizCounts['not_queued'] = 0;
+            } catch (\Throwable $_) {}
+            try {
+                $flussiRepo = new FlussiRendicontazioniRepository();
+                $scanDa = trim((string)\App\Config\SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+                $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+                $bizCounts['not_queued'] = $flussiRepo->countUnprocessedForBiz($filters['idDominio'], $minDate);
+            } catch (\Throwable $_) {}
         }
 
         // Carica tipologie censite dal DB per il filtro
