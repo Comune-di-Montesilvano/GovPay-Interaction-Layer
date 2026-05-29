@@ -369,9 +369,16 @@
                   {% set coverer = other.pattern_iuv %}
                 {% endif %}
               {% endfor %}
-              <tr style="border-left: 4px solid {% if pat.insufficiente %}#adb5bd{% else %}var(--bi-primary, #0d6efd){% endif %};">
-                <td>
-                  <span class="fw-bold mono fs-6 text-dark">{{ pat.pattern_iuv }}</span>
+              <tr style="{% if pat.accorpato_a is not empty %}border-left: 4px dashed #94a3b8; background-color: #f8fafc;{% else %}border-left: 4px solid {% if pat.insufficiente %}#adb5bd{% else %}var(--bi-primary, #0d6efd){% endif %};{% endif %}">
+                <td {% if pat.accorpato_a is not empty %}class="ps-4"{% endif %}>
+                  {% if pat.accorpato_a is not empty %}
+                    <div class="d-flex align-items-center mb-1">
+                      <i class="fas fa-level-up-alt fa-rotate-90 text-muted me-2" style="font-size: 0.95rem;"></i>
+                      <span class="fw-bold mono fs-6 text-dark">{{ pat.pattern_iuv }}</span>
+                    </div>
+                  {% else %}
+                    <span class="fw-bold mono fs-6 text-dark">{{ pat.pattern_iuv }}</span>
+                  {% endif %}
                   {% if pat.is_custom == 1 %}
                     <span class="badge bg-primary d-block mt-1" style="font-size: 0.65rem; width: max-content;">CUSTOM</span>
                   {% else %}
@@ -458,7 +465,7 @@
                           <a href="/funzioni-avanzate/mapping-pendenze/delete?type=vocab&id={{ vk.id }}"
                              class="text-danger p-0 ms-2" title="Elimina keyword"
                              onclick="return confirm('Eliminare la keyword \'{{ vk.keyword|e('js') }}\'?');">
-                            <i class="fas fa-times-circle"></i>
+                             <i class="fas fa-times-circle"></i>
                           </a>
                           {% endif %}
                         </li>
@@ -496,10 +503,10 @@
               </tr>
               {% if pat.examples is not empty %}
               {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
-              <tr class="border-0">
+              <tr class="border-0" {% if pat.accorpato_a is not empty %}style="background-color: #f8fafc;"{% endif %}>
                 <td colspan="5" class="p-0 border-0">
                   <div class="collapse" id="{{ ex_id }}">
-                    <div class="px-3 py-2 bg-light border-top border-bottom">
+                    <div class="px-3 py-2 border-top border-bottom {% if pat.accorpato_a is not empty %}ps-5 bg-transparent{% else %}bg-light{% endif %}">
                       <div class="text-muted fw-semibold mb-2" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px;">
                         <i class="fas fa-eye me-1"></i>
                         {% if pat.vocab_rules is not empty %}Pendenze non coperte da L2{% else %}Esempi pendenze reali{% endif %}
