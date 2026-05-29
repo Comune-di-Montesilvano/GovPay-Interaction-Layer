@@ -177,14 +177,15 @@
             {% set biz_pending_total = biz.PENDING|default(0) + biz.not_queued|default(0) %}
             {% if biz_pending_total > 0 %}
               {% set biz_eta_sec = biz_pending_total * 5 %}
-              {% set biz_eta_h = (biz_eta_sec / 3600)|round(0, 'floor') %}
+              {% set biz_eta_d = (biz_eta_sec / 86400)|round(0, 'floor') %}
+              {% set biz_eta_h = ((biz_eta_sec % 86400) / 3600)|round(0, 'floor') %}
               {% set biz_eta_m = ((biz_eta_sec % 3600) / 60)|round(0, 'floor') %}
-              <div class="mt-2 text-muted" style="font-size: 10px;">
-                <i class="fas fa-clock me-1"></i>
-                ETA completamento stimata: <strong>
-                  {% if biz_eta_h > 0 %}{{ biz_eta_h }}h {% endif %}{{ biz_eta_m }}m
-                </strong>
-                <span class="text-muted">(~5s/pendenza)</span>
+              <div class="mt-3 p-2 rounded bg-warning bg-opacity-10 border border-warning border-opacity-25">
+                <div class="small text-muted text-uppercase fw-semibold mb-1" style="font-size: 9px; letter-spacing: 0.05em;"><i class="fas fa-clock me-1"></i>ETA completamento stimata</div>
+                <div class="fw-bold" style="font-size: 1.15rem;">
+                  {% if biz_eta_d > 0 %}{{ biz_eta_d }}g {% endif %}{% if biz_eta_h > 0 or biz_eta_d > 0 %}{{ biz_eta_h }}h {% endif %}{{ biz_eta_m }}m
+                </div>
+                <div class="text-muted" style="font-size: 10px;">~5s/pendenza · {{ biz_pending_total|number_format(0, ',', '.') }} da elaborare</div>
               </div>
             {% endif %}
           </div>
