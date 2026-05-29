@@ -94,7 +94,7 @@ class MappingPendenzeRepository
             }
 
             $p['vocab_rules']  = $vocabMap[$targetPat] ?? [];
-            $p['insufficiente'] = empty($p['accorpato_a']) && (int)$p['transazioni_count'] < 5;
+            $p['insufficiente'] = empty($p['accorpato_a']) && !(bool)($p['is_custom'] ?? false) && (int)$p['transazioni_count'] < 5;
 
             $vocabRules  = $p['vocab_rules'];
             $col         = "LOWER(COALESCE(b.descrizione, f.descrizione_entrata))";
@@ -176,8 +176,7 @@ class MappingPendenzeRepository
             ':is_custom'   => $isCustom,
         ]);
 
-        // Reset vocab_stato su righe già classificate: il cron L2 le riprocessa
-        // con il nuovo cod_entrata default e le keyword aggiornate.
+        // Reset vocab_stato su righe già classificate L1: il cron L2 le riprocessa.
         $stmtReset = $this->pdo->prepare(
             "UPDATE flussi_rendicontazioni
              SET vocab_stato = 'PENDING', cod_entrata = NULL
@@ -188,6 +187,18 @@ class MappingPendenzeRepository
                AND iuv LIKE :prefix"
         );
         $stmtReset->execute([':dom' => $idDominio, ':prefix' => $patternIuv . '%']);
+
+        // Reset righe in NO_MATCH che ora sarebbero coperte dal nuovo pattern:
+        // il cron L1 le riprocesserà al prossimo ciclo.
+        $stmtResetNoMatch = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni
+             SET mapping_stato = 'PENDING', vocab_stato = 'PENDING', fornitore = NULL, cod_entrata = NULL
+             WHERE id_dominio = :dom
+               AND is_govpay = 0
+               AND mapping_stato = 'NO_MATCH'
+               AND iuv LIKE :prefix"
+        );
+        $stmtResetNoMatch->execute([':dom' => $idDominio, ':prefix' => $patternIuv . '%']);
     }
 
     /**
@@ -450,15 +461,20 @@ class MappingPendenzeRepository
 
     /**
      * Assegna in blocco il fornitore L1 a tutte le righe con IUV che inizia per $prefix.
-     * Solo righe con mapping_stato='PENDING'. Restituisce righe aggiornate.
+     * Processa sia righe PENDING che NO_MATCH: se un pattern attivo le copre, vengono
+     * promosse a PROCESSED e rimesse in coda a L2 (vocab_stato = PENDING).
+     * Restituisce righe aggiornate.
      */
     public function bulkAssignL1(string $idDominio, string $prefix, string $fornitore): int
     {
         $sql = "UPDATE flussi_rendicontazioni
-                SET mapping_stato = 'PROCESSED', fornitore = :fornitore
+                SET mapping_stato = 'PROCESSED',
+                    fornitore     = :fornitore,
+                    vocab_stato   = IF(mapping_stato = 'NO_MATCH', 'PENDING', vocab_stato),
+                    cod_entrata   = IF(mapping_stato = 'NO_MATCH', NULL, cod_entrata)
                 WHERE id_dominio = :dom
                   AND is_govpay = 0
-                  AND mapping_stato = 'PENDING'
+                  AND mapping_stato IN ('PENDING', 'NO_MATCH')
                   AND iuv LIKE :prefix";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':dom' => $idDominio, ':fornitore' => $fornitore, ':prefix' => $prefix . '%']);
@@ -541,30 +557,79 @@ class MappingPendenzeRepository
 
     /**
      * Esegue la scoperta automatica dei pattern analizzando le pendenze esterne.
+     * Discovery a cascata: 5-char prima, poi 4-char escludendo IUV già coperti da 5-char,
+     * poi 3-char escludendo IUV già coperti da 5 o 4-char.
+     * Così transazioni_count riflette solo le righe non ancora coperte da un prefisso più lungo.
      */
     public function discoverPatterns(string $idDominio): int
     {
         $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+        $tefaJoin    = $tefaEnabled ? "INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio" : '';
+        $tefaCond    = $tefaEnabled ? "AND t.stato = 'SKIPPED'" : '';
 
-        if ($tefaEnabled) {
-            $sql = "SELECT LEFT(f.iuv, 5) AS pattern_extracted, COUNT(*) AS cnt, SUM(f.importo) AS tot
-                    FROM flussi_rendicontazioni f
-                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
-                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
-                    WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv IS NOT NULL
-                      AND CHAR_LENGTH(f.iuv) >= 5 AND b.stato = 'PROCESSED' AND t.stato = 'SKIPPED'
-                    GROUP BY pattern_extracted";
-        } else {
-            $sql = "SELECT LEFT(f.iuv, 5) AS pattern_extracted, COUNT(*) AS cnt, SUM(f.importo) AS tot
-                    FROM flussi_rendicontazioni f
-                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
-                    WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv IS NOT NULL
-                      AND CHAR_LENGTH(f.iuv) >= 5 AND b.stato = 'PROCESSED'
-                    GROUP BY pattern_extracted";
-        }
-        $stmt = $this->pdo->prepare($sql);
+        $baseJoin = "FROM flussi_rendicontazioni f
+                     INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
+                     $tefaJoin
+                     WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv IS NOT NULL
+                       AND b.stato = 'PROCESSED' $tefaCond";
+
+        // helper: build NOT IN clause + bind params for a given prefix length and exclusion list
+        $buildExclusion = static function (array $prefixes, int $len, string $paramPrefix): array {
+            if ($prefixes === []) {
+                return ['clause' => '', 'params' => []];
+            }
+            $keys   = [];
+            $params = [];
+            foreach (array_values($prefixes) as $i => $p) {
+                $k          = ":{$paramPrefix}{$i}";
+                $keys[]     = $k;
+                $params[$k] = $p;
+            }
+            return [
+                'clause' => "AND LEFT(f.iuv, $len) NOT IN (" . implode(',', $keys) . ")",
+                'params' => $params,
+            ];
+        };
+
+        $discovered = [];
+
+        // ── 5-char ──────────────────────────────────────────────────────────
+        $sql5 = "SELECT LEFT(f.iuv, 5) AS p, COUNT(*) AS cnt, SUM(f.importo) AS tot
+                 $baseJoin AND CHAR_LENGTH(f.iuv) >= 5
+                 GROUP BY p";
+        $stmt = $this->pdo->prepare($sql5);
         $stmt->execute([':dom' => $idDominio]);
-        $discovered = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rows5     = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $prefixes5 = array_column($rows5, 'p');
+        foreach ($rows5 as $r) {
+            $discovered[$r['p']] = $r;
+        }
+
+        // ── 4-char (escludi IUV con prefisso 5-char già scoperto) ───────────
+        $excl5 = $buildExclusion($prefixes5, 5, 'e5_');
+        $sql4  = "SELECT LEFT(f.iuv, 4) AS p, COUNT(*) AS cnt, SUM(f.importo) AS tot
+                  $baseJoin AND CHAR_LENGTH(f.iuv) >= 4 {$excl5['clause']}
+                  GROUP BY p";
+        $stmt  = $this->pdo->prepare($sql4);
+        $stmt->execute(array_merge([':dom' => $idDominio], $excl5['params']));
+        $rows4     = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $prefixes4 = array_column($rows4, 'p');
+        foreach ($rows4 as $r) {
+            $discovered[$r['p']] = $r;
+        }
+
+        // ── 3-char (escludi IUV con prefisso 5 o 4-char già scoperto) ───────
+        $excl5b = $buildExclusion($prefixes5, 5, 'e5b_');
+        $excl4  = $buildExclusion($prefixes4, 4, 'e4_');
+        $sql3   = "SELECT LEFT(f.iuv, 3) AS p, COUNT(*) AS cnt, SUM(f.importo) AS tot
+                   $baseJoin AND CHAR_LENGTH(f.iuv) >= 3 {$excl5b['clause']} {$excl4['clause']}
+                   GROUP BY p";
+        $stmt   = $this->pdo->prepare($sql3);
+        $stmt->execute(array_merge([':dom' => $idDominio], $excl5b['params'], $excl4['params']));
+        $rows3  = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rows3 as $r) {
+            $discovered[$r['p']] = $r;
+        }
 
         if ($discovered === []) {
             $this->pdo->prepare("DELETE FROM mapping_pendenze_pattern WHERE id_dominio = :dom AND is_custom = 0")
@@ -576,7 +641,7 @@ class MappingPendenzeRepository
         try {
             $activePatterns = [];
             foreach ($discovered as $d) {
-                $prefix = $d['pattern_extracted'];
+                $prefix = $d['p'];
                 $activePatterns[] = $prefix;
                 $sqlUpsert = "INSERT INTO mapping_pendenze_pattern
                                 (pattern_iuv, id_dominio, is_custom, transazioni_count, importo_totale)
@@ -585,8 +650,8 @@ class MappingPendenzeRepository
                 $stmtUpsert = $this->pdo->prepare($sqlUpsert);
                 $stmtUpsert->execute([
                     ':pattern' => $prefix, ':dom' => $idDominio,
-                    ':cnt' => (int)$d['cnt'], ':tot' => (float)$d['tot'],
-                    ':cnt2' => (int)$d['cnt'], ':tot2' => (float)$d['tot'],
+                    ':cnt'  => (int)$d['cnt'],   ':tot'  => (float)$d['tot'],
+                    ':cnt2' => (int)$d['cnt'],   ':tot2' => (float)$d['tot'],
                 ]);
             }
 
@@ -602,6 +667,47 @@ class MappingPendenzeRepository
             $this->pdo->rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * Ritorna un campione di pendenze in stato NO_MATCH che hanno completato l'intero
+     * pipeline (biz PROCESSED + eventuale TEFA SKIPPED). Stesse JOIN di getMappingStats().
+     */
+    public function getNoMatchExamples(string $idDominio, int $limit = 6): array
+    {
+        $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+        if ($tefaEnabled) {
+            $sql = "SELECT f.iuv, f.importo, f.id_flusso,
+                           COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
+                    FROM flussi_rendicontazioni f
+                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
+                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
+                    WHERE f.id_dominio = :dom
+                      AND f.is_govpay = 0
+                      AND f.mapping_stato = 'NO_MATCH'
+                      AND b.stato = 'PROCESSED'
+                      AND t.stato = 'SKIPPED'
+                    ORDER BY f.data_pagamento DESC, f.id DESC
+                    LIMIT :limit";
+        } else {
+            $sql = "SELECT f.iuv, f.importo, f.id_flusso,
+                           COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
+                    FROM flussi_rendicontazioni f
+                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
+                    WHERE f.id_dominio = :dom
+                      AND f.is_govpay = 0
+                      AND f.mapping_stato = 'NO_MATCH'
+                      AND b.stato = 'PROCESSED'
+                    ORDER BY f.data_pagamento DESC, f.id DESC
+                    LIMIT :limit";
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':dom', $idDominio, PDO::PARAM_STR);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     /**

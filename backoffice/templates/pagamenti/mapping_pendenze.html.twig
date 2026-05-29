@@ -336,13 +336,230 @@
   </div>
   {% endif %}
 
-  {# ── Tabella Pattern L1 con Vocabolario L2 inline ── #}
-  <div class="card shadow-sm border-0 bg-white mb-5" style="border-radius: var(--bo-radius, 10px);">
-    <div class="card-header bg-light py-3 border-bottom">
-      <h3 class="h6 mb-0 fw-bold"><i class="fas fa-list text-primary me-2"></i>Pattern IUV (L1) e Vocabolario Keyword (L2)</h3>
+  {# ── Macro helper: riga pattern (riusata in entrambe le tabelle) ── #}
+  {# Nota: Twig non ha macro inline; il blocco row è duplicato. #}
+
+  {# ── Tabella 1: Regole L1 Attive (battezzate) ── #}
+  {% if patterns|filter(p => p.fornitore is not empty)|length > 0 %}
+  <div class="card shadow-sm border-0 bg-white mb-4" style="border-radius: var(--bo-radius, 10px);">
+    <div class="card-header py-3 border-bottom d-flex align-items-center gap-2" style="background: linear-gradient(90deg,#f0fff4 0%,#f8fafc 100%); border-left: 4px solid #198754;">
+      <i class="fas fa-circle-check text-success fs-5"></i>
+      <h3 class="h6 mb-0 fw-bold">Regole L1 Attive</h3>
+      <span class="badge bg-success rounded-pill ms-1" style="font-size: 0.72rem;">{{ patterns|filter(p => p.fornitore is not empty)|length }}</span>
     </div>
     <div class="card-body p-0">
-      {% if patterns is empty %}
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle mb-0" style="font-size: 0.88rem;">
+          <thead>
+            <tr class="table-dark">
+              <th scope="col" style="width: 18%;">Prefisso IUV</th>
+              <th scope="col" style="width: 22%;">Fornitore</th>
+              <th scope="col" style="width: 20%;">Tipologia Fallback L2</th>
+              <th scope="col" style="width: 30%;">Vocabolario L2 (keyword → tipologia)</th>
+              <th scope="col" class="text-end" style="width: 10%;">Azioni</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pat in patterns|filter(p => p.fornitore is not empty) %}
+              {% set is_covered = false %}
+              {% set coverer = '' %}
+              {% for other in patterns %}
+                {% if other.pattern_iuv != pat.pattern_iuv and other.fornitore is not empty and pat.pattern_iuv starts with other.pattern_iuv %}
+                  {% set is_covered = true %}
+                  {% set coverer = other.pattern_iuv %}
+                {% endif %}
+              {% endfor %}
+              <tr style="border-left: 4px solid {% if pat.insufficiente %}#adb5bd{% else %}var(--bi-primary, #0d6efd){% endif %};">
+                <td>
+                  <span class="fw-bold mono fs-6 text-dark">{{ pat.pattern_iuv }}</span>
+                  {% if pat.is_custom == 1 %}
+                    <span class="badge bg-primary d-block mt-1" style="font-size: 0.65rem; width: max-content;">CUSTOM</span>
+                  {% else %}
+                    <span class="badge bg-secondary d-block mt-1" style="font-size: 0.65rem; width: max-content;">SCOPERTO</span>
+                  {% endif %}
+                  {% if pat.insufficiente %}
+                    <span class="badge d-block mt-1" style="font-size: 0.63rem; width: max-content; background: #adb5bd; color: #fff;">⚠ &lt;5 trans. — inattivo</span>
+                  {% endif %}
+                  <div class="small text-muted mt-2 mb-2" style="font-size: 0.75rem;">
+                    {{ pat.transazioni_count }} trans.<br/>
+                    <strong>€ {{ pat.importo_totale|number_format(2, ',', '.') }}</strong>
+                  </div>
+                  {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
+                  {% if pat.vocab_rules is not empty and pat.stats_uncovered is not null %}
+                    <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none {{ pat.stats_uncovered > 0 ? 'text-danger' : 'text-success' }}"
+                            type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
+                      <i class="fas fa-eye me-1"></i>{{ pat.stats_uncovered }} non coperte da L2
+                    </button>
+                  {% elseif pat.examples is not empty %}
+                    <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none text-secondary"
+                            type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
+                      <i class="fas fa-eye me-1"></i>{{ pat.examples|length }} esempi
+                    </button>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pat.accorpato_a is not empty %}
+                    <div class="d-flex flex-column">
+                      <span class="badge bg-success-subtle text-success border border-success-subtle mb-1" style="font-size: 0.7rem; width: max-content;">
+                        <i class="fas fa-compress-arrows-alt me-1"></i>Accorpato a <strong>{{ pat.accorpato_a }}</strong>
+                      </span>
+                      {% if pat.fornitore is not empty %}
+                        <span class="small text-muted">Eredita: <strong>{{ pat.fornitore }}</strong></span>
+                      {% endif %}
+                    </div>
+                  {% else %}
+                    <strong class="text-dark">{{ pat.fornitore }}</strong>
+                    {% if is_admin %}
+                    <button type="button" class="btn btn-link btn-sm p-0 d-block mt-1 text-decoration-none text-secondary" onclick="setupModificaFornitore('{{ pat.pattern_iuv }}', '{{ pat.fornitore|e('js') }}', '{{ pat.cod_entrata|default('')|e('js') }}')">
+                      <i class="fas fa-pen me-1"></i>Modifica
+                    </button>
+                    {% endif %}
+                    {% if is_covered %}
+                      <div class="small text-info mt-1" style="font-size: 0.72rem;">
+                        <i class="fas fa-info-circle me-1"></i>Accorpato sotto <code>{{ coverer }}</code>
+                      </div>
+                    {% endif %}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pat.cod_entrata is not empty %}
+                    {% set found_desc = pat.cod_entrata %}
+                    {% for ent in tipologie_list %}
+                      {% if ent.id_entrata == pat.cod_entrata %}{% set found_desc = ent.descrizione %}{% endif %}
+                    {% endfor %}
+                    <span class="badge bg-info text-dark" style="font-size: 0.8rem; font-weight: 500;">{{ found_desc }}</span>
+                    <div class="small text-muted mt-1" style="font-size: 0.7rem;">usata se nessun vocab match</div>
+                  {% else %}
+                    <span class="text-muted small">Nessun fallback</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if pat.accorpato_a is not empty %}
+                    <div class="text-muted small mb-2"><i class="fas fa-info-circle me-1"></i>Ereditato da <code>{{ pat.accorpato_a }}</code>:</div>
+                  {% endif %}
+                  {% if pat.vocab_rules is not empty %}
+                    <ul class="list-unstyled mb-1 d-flex flex-column gap-1">
+                      {% for vk in pat.vocab_rules %}
+                        {% set vk_desc = vk.cod_entrata %}
+                        {% for ent in tipologie_list %}
+                          {% if ent.id_entrata == vk.cod_entrata %}{% set vk_desc = ent.descrizione %}{% endif %}
+                        {% endfor %}
+                        <li class="p-1 border rounded {% if pat.accorpato_a is not empty %}bg-light text-muted{% else %}bg-light{% endif %} d-flex justify-content-between align-items-center">
+                          <span style="font-size: 0.79rem;">
+                            <code class="text-success {% if pat.accorpato_a is not empty %}text-opacity-50{% endif %}">{{ vk.keyword }}</code>
+                            <span class="text-muted mx-1">→</span>
+                            <strong>{{ vk_desc }}</strong>
+                            <span class="badge bg-light text-muted border ms-1" style="font-size: 0.62rem;">p:{{ vk.priorita }}</span>
+                            {% if pat.stats_by_keyword[vk.keyword] is defined %}
+                              <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 0.62rem;">{{ pat.stats_by_keyword[vk.keyword] }} coperte</span>
+                            {% endif %}
+                          </span>
+                          {% if is_admin and pat.accorpato_a is empty %}
+                          <a href="/funzioni-avanzate/mapping-pendenze/delete?type=vocab&id={{ vk.id }}"
+                             class="text-danger p-0 ms-2" title="Elimina keyword"
+                             onclick="return confirm('Eliminare la keyword \'{{ vk.keyword|e('js') }}\'?');">
+                            <i class="fas fa-times-circle"></i>
+                          </a>
+                          {% endif %}
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% endif %}
+                  {% if is_admin and pat.accorpato_a is empty %}
+                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-success" onclick="setupVocabKeyword('{{ pat.pattern_iuv }}')">
+                      <i class="fas fa-plus me-1"></i>Aggiungi keyword
+                    </button>
+                  {% elseif not is_admin %}
+                    <span class="text-muted small">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if is_admin %}
+                    <div class="d-flex justify-content-end gap-1">
+                      {% if pat.accorpato_a is not empty %}
+                        <a href="/funzioni-avanzate/mapping-pendenze/disunisci?pattern_iuv={{ pat.pattern_iuv|url_encode }}"
+                           class="btn btn-outline-warning btn-sm px-3" title="Rimuovi accorpamento">
+                          <i class="fas fa-unlink"></i>
+                        </a>
+                      {% endif %}
+                      <a href="/funzioni-avanzate/mapping-pendenze/delete?type=pattern&pattern_iuv={{ pat.pattern_iuv|url_encode }}"
+                         class="btn btn-outline-danger btn-sm px-3"
+                         onclick="return confirm('Eliminare il pattern IUV \'{{ pat.pattern_iuv }}\' e tutto il suo vocabolario L2?');"
+                         title="Elimina pattern e vocab">
+                        <i class="fas fa-trash-can"></i>
+                      </a>
+                    </div>
+                  {% else %}
+                    <span class="text-muted small">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% if pat.examples is not empty %}
+              {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
+              <tr class="border-0">
+                <td colspan="5" class="p-0 border-0">
+                  <div class="collapse" id="{{ ex_id }}">
+                    <div class="px-3 py-2 bg-light border-top border-bottom">
+                      <div class="text-muted fw-semibold mb-2" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px;">
+                        <i class="fas fa-eye me-1"></i>
+                        {% if pat.vocab_rules is not empty %}Pendenze non coperte da L2{% else %}Esempi pendenze reali{% endif %}
+                      </div>
+                      <div class="row g-2">
+                        {% for ex in pat.examples %}
+                          <div class="col-12 col-md-4">
+                            <div class="p-2 rounded border {{ pat.vocab_rules is not empty ? 'bg-danger-subtle border-danger' : 'bg-white' }}" style="font-size: 0.78rem;">
+                              <div class="d-flex align-items-center gap-1 flex-wrap mb-1">
+                                <code class="text-secondary" style="font-size: 0.73rem;">{{ ex.iuv }}</code>
+                                <strong>€{{ ex.importo|number_format(2, ',', '.') }}</strong>
+                              </div>
+                              <div class="text-muted" style="font-style: italic; font-size: 0.73rem;">"{{ ex.descrizione_entrata|default('(in attesa scansione)') }}"</div>
+                              {% if ex.id_flusso is not empty %}
+                                <a href="/pagamenti/ricerca-flussi/dettaglio/{{ ex.id_flusso|url_encode }}" target="_blank" class="d-block mt-1 text-primary" style="font-size: 0.7rem; word-break: break-all;">
+                                  <i class="fas fa-file-invoice me-1"></i>{{ ex.id_flusso }}
+                                </a>
+                              {% endif %}
+                            </div>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Tabella 2: Pattern Scoperti (da battezzare) — con filtro char ── #}
+  <div class="card shadow-sm border-0 bg-white mb-5" style="border-radius: var(--bo-radius, 10px);">
+    <div class="card-header bg-light py-3 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <i class="fas fa-magnifying-glass text-warning fs-5"></i>
+        <h3 class="h6 mb-0 fw-bold">Pattern Scoperti — da battezzare</h3>
+        {% set unmapped_count = patterns|filter(p => p.fornitore is empty)|length %}
+        {% if unmapped_count > 0 %}
+          <span class="badge bg-warning text-dark rounded-pill ms-1" style="font-size: 0.72rem;">{{ unmapped_count }}</span>
+        {% endif %}
+      </div>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Filtra per lunghezza prefisso">
+        <button type="button" class="btn btn-dark pattern-filter-btn" data-filter="all" onclick="filterPatterns('all')">Tutti</button>
+        <button type="button" class="btn btn-outline-dark pattern-filter-btn" data-filter="5" onclick="filterPatterns('5')">5 char</button>
+        <button type="button" class="btn btn-outline-dark pattern-filter-btn" data-filter="4" onclick="filterPatterns('4')">4 char</button>
+        <button type="button" class="btn btn-outline-dark pattern-filter-btn" data-filter="3" onclick="filterPatterns('3')">3 char</button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      {% if patterns|filter(p => p.fornitore is empty)|length == 0 %}
+        <div class="p-5 text-center text-muted">
+          <i class="fas fa-circle-check mb-3 fs-3 text-success" aria-hidden="true"></i>
+          <p class="mb-0 fs-6">Tutti i pattern scoperti sono stati battezzati.</p>
+        </div>
+      {% elseif patterns is empty %}
         <div class="p-5 text-center text-muted">
           <i class="fas fa-info-circle mb-3 fs-3" aria-hidden="true"></i>
           <p class="mb-0 fs-6">Nessun pattern IUV rilevato. Avvia il demone Mapping L1 per scansionare la cache.</p>
@@ -360,18 +577,8 @@
               </tr>
             </thead>
             <tbody>
-              {% for pat in patterns %}
-                {% set is_covered = false %}
-                {% set coverer = '' %}
-                {% for other in patterns %}
-                  {% if other.pattern_iuv != pat.pattern_iuv and other.fornitore is not empty and pat.pattern_iuv starts with other.pattern_iuv %}
-                    {% set is_covered = true %}
-                    {% set coverer = other.pattern_iuv %}
-                  {% endif %}
-                {% endfor %}
-
-                <tr style="border-left: 4px solid {% if pat.insufficiente %}#adb5bd{% elseif pat.fornitore is empty %}var(--ms-gold-500, #ffc107){% else %}var(--bi-primary, #0d6efd){% endif %};">
-                  {# 1. Prefisso IUV #}
+              {% for pat in patterns|filter(p => p.fornitore is empty) %}
+                <tr data-len="{{ pat.pattern_iuv|length }}" style="border-left: 4px solid {% if pat.insufficiente %}#adb5bd{% else %}var(--ms-gold-500, #ffc107){% endif %};">
                   <td>
                     <span class="fw-bold mono fs-6 text-dark">{{ pat.pattern_iuv }}</span>
                     {% if pat.is_custom == 1 %}
@@ -386,151 +593,32 @@
                       {{ pat.transazioni_count }} trans.<br/>
                       <strong>€ {{ pat.importo_totale|number_format(2, ',', '.') }}</strong>
                     </div>
-
                     {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
-                    {% if pat.vocab_rules is not empty and pat.stats_uncovered is not null %}
-                      <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none {{ pat.stats_uncovered > 0 ? 'text-danger' : 'text-success' }}"
-                              type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
-                        <i class="fas fa-eye me-1"></i>{{ pat.stats_uncovered }} non coperte da L2
-                      </button>
-                    {% elseif pat.examples is not empty %}
+                    {% if pat.examples is not empty %}
                       <button class="btn btn-link btn-sm p-0 mt-2 text-decoration-none text-secondary"
                               type="button" data-bs-toggle="collapse" data-bs-target="#{{ ex_id }}" aria-expanded="false">
                         <i class="fas fa-eye me-1"></i>{{ pat.examples|length }} esempi
                       </button>
                     {% endif %}
                   </td>
-
-                  {# 2. Fornitore #}
                   <td>
-                    {% if pat.accorpato_a is not empty %}
-                      <div class="d-flex flex-column">
-                        <span class="badge bg-success-subtle text-success border border-success-subtle mb-1" style="font-size: 0.7rem; width: max-content;">
-                          <i class="fas fa-compress-arrows-alt me-1"></i>Accorpato a <strong>{{ pat.accorpato_a }}</strong>
-                        </span>
-                        {% if pat.fornitore is not empty %}
-                          <span class="small text-muted">Eredita: <strong>{{ pat.fornitore }}</strong></span>
-                        {% else %}
-                          <span class="small text-danger italic" style="font-style: italic;"><i class="fas fa-triangle-exclamation me-1"></i>Nessun fornitore ereditato (target non battezzato)</span>
-                        {% endif %}
-                      </div>
-                    {% elseif pat.fornitore is not empty %}
-                      <strong class="text-dark">{{ pat.fornitore }}</strong>
-                      {% if is_admin %}
-                      <button type="button" class="btn btn-link btn-sm p-0 d-block mt-1 text-decoration-none text-secondary" onclick="setupModificaFornitore('{{ pat.pattern_iuv }}', '{{ pat.fornitore|e('js') }}', '{{ pat.cod_entrata|default('')|e('js') }}')">
-                        <i class="fas fa-pen me-1"></i>Modifica
-                      </button>
-                      {% endif %}
-                      {% if is_covered %}
-                        <div class="small text-info mt-1" style="font-size: 0.72rem;">
-                          <i class="fas fa-info-circle me-1"></i>Accorpato sotto <code>{{ coverer }}</code>
-                        </div>
-                      {% endif %}
-                    {% else %}
-                      <span class="text-warning fw-semibold"><i class="fas fa-triangle-exclamation me-1"></i>Non battezzato</span>
-                      {% if is_admin %}
-                      <div class="d-flex flex-column gap-1 mt-1">
-                        <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none" onclick="setupBattezza('{{ pat.pattern_iuv }}')">
-                          <i class="fas fa-arrow-right me-1"></i>Battezza ora
-                        </button>
-                        <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none text-success" onclick="setupAccorpa('{{ pat.pattern_iuv }}')">
-                          <i class="fas fa-compress-arrows-alt me-1"></i>Accorpa a...
-                        </button>
-                      </div>
-                      {% endif %}
-                    {% endif %}
-                  </td>
-
-                  {# 3. Tipologia Fallback L2 #}
-                  <td>
-                    {% if pat.cod_entrata is not empty %}
-                      {% set found_desc = pat.cod_entrata %}
-                      {% for ent in tipologie_list %}
-                        {% if ent.id_entrata == pat.cod_entrata %}
-                          {% set found_desc = ent.descrizione %}
-                        {% endif %}
-                      {% endfor %}
-                      <span class="badge bg-info text-dark" style="font-size: 0.8rem; font-weight: 500;">{{ found_desc }}</span>
-                      <div class="small text-muted mt-1" style="font-size: 0.7rem;">usata se nessun vocab match</div>
-                    {% else %}
-                      <span class="text-muted small">Nessun fallback</span>
-                    {% endif %}
-                  </td>
-
-                  {# 4. Vocabolario L2 #}
-                  <td>
-                    {% if pat.accorpato_a is not empty %}
-                      <div class="text-muted small mb-2"><i class="fas fa-info-circle me-1"></i>Ereditato da <code>{{ pat.accorpato_a }}</code>:</div>
-                    {% endif %}
-                    {% if pat.vocab_rules is not empty %}
-                      <ul class="list-unstyled mb-1 d-flex flex-column gap-1">
-                        {% for vk in pat.vocab_rules %}
-                          {% set vk_desc = vk.cod_entrata %}
-                          {% for ent in tipologie_list %}
-                            {% if ent.id_entrata == vk.cod_entrata %}
-                              {% set vk_desc = ent.descrizione %}
-                            {% endif %}
-                          {% endfor %}
-                          <li class="p-1 border rounded {% if pat.accorpato_a is not empty %}bg-light text-muted{% else %}bg-light{% endif %} d-flex justify-content-between align-items-center">
-                            <span style="font-size: 0.79rem;">
-                              <code class="text-success {% if pat.accorpato_a is not empty %}text-opacity-50{% endif %}">{{ vk.keyword }}</code>
-                              <span class="text-muted mx-1">→</span>
-                              <strong>{{ vk_desc }}</strong>
-                              <span class="badge bg-light text-muted border ms-1" style="font-size: 0.62rem;">p:{{ vk.priorita }}</span>
-                              {% if pat.stats_by_keyword[vk.keyword] is defined %}
-                                <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 0.62rem;" title="Transazioni coperte da questa keyword">{{ pat.stats_by_keyword[vk.keyword] }} coperte</span>
-                              {% endif %}
-                            </span>
-                            {% if is_admin and pat.accorpato_a is empty %}
-                            <a href="/funzioni-avanzate/mapping-pendenze/delete?type=vocab&id={{ vk.id }}"
-                               class="text-danger p-0 ms-2"
-                               title="Elimina keyword"
-                               onclick="return confirm('Eliminare la keyword \'{{ vk.keyword|e('js') }}\'?');">
-                              <i class="fas fa-times-circle"></i>
-                            </a>
-                            {% endif %}
-                          </li>
-                        {% endfor %}
-                      </ul>
-                    {% endif %}
+                    <span class="text-warning fw-semibold"><i class="fas fa-triangle-exclamation me-1"></i>Non battezzato</span>
                     {% if is_admin %}
-                      {% if pat.accorpato_a is not empty %}
-                        {# Nessuna azione, le keyword si gestiscono dal pattern di destinazione #}
-                      {% elseif pat.fornitore is not empty %}
-                        <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-success" onclick="setupVocabKeyword('{{ pat.pattern_iuv }}')">
-                          <i class="fas fa-plus me-1"></i>Aggiungi keyword
-                        </button>
-                      {% else %}
-                        <span class="text-muted small">Battezza prima il fornitore.</span>
-                      {% endif %}
-                    {% else %}
-                      <span class="text-muted small">—</span>
+                    <div class="d-flex flex-column gap-1 mt-1">
+                      <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none" onclick="setupBattezza('{{ pat.pattern_iuv }}')">
+                        <i class="fas fa-arrow-right me-1"></i>Battezza ora
+                      </button>
+                      <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none text-success" onclick="setupAccorpa('{{ pat.pattern_iuv }}')">
+                        <i class="fas fa-compress-arrows-alt me-1"></i>Accorpa a...
+                      </button>
+                    </div>
                     {% endif %}
                   </td>
-
-                  {# 5. Azioni #}
+                  <td><span class="text-muted small">Nessun fallback</span></td>
+                  <td><span class="text-muted small">Battezza prima il fornitore.</span></td>
                   <td class="text-end">
                     {% if is_admin %}
-                      <div class="d-flex justify-content-end gap-1">
-                        {% if pat.accorpato_a is not empty %}
-                          <a href="/funzioni-avanzate/mapping-pendenze/disunisci?pattern_iuv={{ pat.pattern_iuv|url_encode }}"
-                             class="btn btn-outline-warning btn-sm px-3"
-                             title="Rimuovi accorpamento">
-                            <i class="fas fa-unlink"></i>
-                          </a>
-                        {% endif %}
-                        {% if pat.is_custom == 1 or pat.fornitore is not empty %}
-                          <a href="/funzioni-avanzate/mapping-pendenze/delete?type=pattern&pattern_iuv={{ pat.pattern_iuv|url_encode }}"
-                             class="btn btn-outline-danger btn-sm px-3"
-                             onclick="return confirm('Eliminare il pattern IUV \'{{ pat.pattern_iuv }}\' e tutto il suo vocabolario L2?');"
-                             title="Elimina pattern e vocab">
-                            <i class="fas fa-trash-can"></i>
-                          </a>
-                        {% endif %}
-                      </div>
-                      {% if pat.accorpato_a is empty and pat.is_custom == 0 and pat.fornitore is empty %}
-                        <span class="text-muted small">—</span>
-                      {% endif %}
+                      <span class="text-muted small">—</span>
                     {% else %}
                       <span class="text-muted small">—</span>
                     {% endif %}
@@ -538,18 +626,17 @@
                 </tr>
                 {% if pat.examples is not empty %}
                 {% set ex_id = 'ex-' ~ pat.pattern_iuv|replace({'%': '', ' ': '', '.': ''}) %}
-                <tr class="border-0">
+                <tr class="border-0 pattern-discovery-row">
                   <td colspan="5" class="p-0 border-0">
                     <div class="collapse" id="{{ ex_id }}">
                       <div class="px-3 py-2 bg-light border-top border-bottom">
                         <div class="text-muted fw-semibold mb-2" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px;">
-                          <i class="fas fa-eye me-1"></i>
-                          {% if pat.vocab_rules is not empty %}Pendenze non coperte da L2{% else %}Esempi pendenze reali{% endif %}
+                          <i class="fas fa-eye me-1"></i>Esempi pendenze reali
                         </div>
                         <div class="row g-2">
                           {% for ex in pat.examples %}
                             <div class="col-12 col-md-4">
-                              <div class="p-2 rounded border {{ pat.vocab_rules is not empty ? 'bg-danger-subtle border-danger' : 'bg-white' }}" style="font-size: 0.78rem;">
+                              <div class="p-2 rounded border bg-white" style="font-size: 0.78rem;">
                                 <div class="d-flex align-items-center gap-1 flex-wrap mb-1">
                                   <code class="text-secondary" style="font-size: 0.73rem;">{{ ex.iuv }}</code>
                                   <strong>€{{ ex.importo|number_format(2, ',', '.') }}</strong>
@@ -569,6 +656,8 @@
                   </td>
                 </tr>
                 {% endif %}
+              {% else %}
+                <tr><td colspan="5" class="text-center text-muted p-4">Tutti i pattern scoperti sono stati battezzati.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -576,6 +665,39 @@
       {% endif %}
     </div>
   </div>
+
+  {# ── Riquadro esempi NO_MATCH (dopo discovery) ── #}
+  {% if no_match_examples is defined and no_match_examples is not empty %}
+  <div class="card shadow-sm mb-5" style="border-radius: var(--bo-radius, 10px); border: 1px solid #f5c6cb;">
+    <div class="card-header py-2 px-3 d-flex align-items-center gap-2" style="background: #fff5f5; border-bottom: 1px solid #f5c6cb;">
+      <i class="fas fa-triangle-exclamation text-danger"></i>
+      <span class="fw-semibold" style="font-size: 0.85rem;">Esempi di pendenze senza match L1 (NO_MATCH)</span>
+      {% if stats.NO_MATCH.count > 0 %}
+        <span class="badge bg-danger rounded-pill ms-auto" style="font-size: 0.72rem;">{{ stats.NO_MATCH.count|number_format(0, ',', '.') }} totali</span>
+      {% endif %}
+    </div>
+    <div class="card-body p-3">
+      <div class="row g-2">
+        {% for ex in no_match_examples %}
+          <div class="col-12 col-md-4">
+            <div class="p-2 rounded border bg-danger-subtle border-danger" style="font-size: 0.78rem;">
+              <div class="d-flex align-items-center gap-1 flex-wrap mb-1">
+                <code class="text-secondary" style="font-size: 0.73rem;">{{ ex.iuv }}</code>
+                <strong>€{{ ex.importo|number_format(2, ',', '.') }}</strong>
+              </div>
+              <div class="text-muted" style="font-style: italic; font-size: 0.73rem;">"{{ ex.descrizione_entrata|default('(descrizione non disponibile)') }}"</div>
+              {% if ex.id_flusso is not empty %}
+                <a href="/pagamenti/ricerca-flussi/dettaglio/{{ ex.id_flusso|url_encode }}" target="_blank" class="d-block mt-1 text-primary" style="font-size: 0.7rem; word-break: break-all;">
+                  <i class="fas fa-file-invoice me-1"></i>{{ ex.id_flusso }}
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
 {% endblock %}
 
@@ -652,6 +774,23 @@
 
     function hideVocabForm() {
       document.getElementById('vocabKeywordCard').style.display = 'none';
+    }
+
+    // ── Filtro lunghezza prefisso ────────────────────────────────────────────
+    function filterPatterns(len) {
+      document.querySelectorAll('.pattern-filter-btn').forEach(function(b) {
+        var isActive = b.dataset.filter === String(len);
+        b.classList.toggle('btn-dark', isActive);
+        b.classList.toggle('btn-outline-dark', !isActive);
+      });
+      document.querySelectorAll('tr[data-len]').forEach(function(tr) {
+        var show = (len === 'all' || tr.dataset.len === String(len));
+        tr.style.display = show ? '' : 'none';
+        var next = tr.nextElementSibling;
+        if (next && !next.dataset.len && next.querySelector && next.querySelector('.collapse')) {
+          next.style.display = show ? '' : 'none';
+        }
+      });
     }
   </script>
 {% endblock %}

@@ -186,6 +186,59 @@ Nessun `phpunit.xml` nella root — test esistenti nei client generati (`govpay-
 cd govpay-clients/generated-clients/pendenze-v2/pendenze-client && vendor/bin/phpunit
 ```
 
+## Demoni Cron
+
+Tutti i demoni sono loop infiniti con single-instance guard (PID file) e segnale di stop via file `/tmp/`. Gestibili da UI: **Backoffice → Impostazioni → Cron** (start/stop/log/autostart).
+
+Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
+
+| Demone | Script | PID file | Stop file | Dipende da |
+|---|---|---|---|---|
+| Ragioneria | `cron_ragioneria.php` | `/tmp/cron-ragioneria.pid` | `/tmp/cron-stop-ragioneria` | GovPay API |
+| Biz scanner | `cron_biz_scanner.php` | `/tmp/cron-biz-scanner.pid` | `/tmp/cron-stop-biz` | Biz Events API |
+| TEFA scanner | `cron_tefa_scanner.php` | `/tmp/cron-tefa-scanner.pid` | `/tmp/cron-stop-tefa` | biz_ricevute |
+| Mapping L1 | `cron_mapping_pendenze.php` | `/tmp/cron-mapping.pid` | `/tmp/cron-stop-mapping` | biz + (tefa) |
+| Mapping L2 | `cron_vocab_mapping.php` | `/tmp/cron-vocab.pid` | `/tmp/cron-stop-vocab` | L1 |
+| Pendenze massive | `cron_pendenze_massive.php` | `/tmp/cron-pendenze-massive.pid` | `/tmp/cron-stop-pendenze-massive` | — |
+
+### Dettaglio demoni
+
+**`cron_ragioneria.php`** — Sincronizza flussi rendicontazione da GovPay API → `flussi_rendicontazioni`. Prima iterazione: scan completo dalla data configurata (`backoffice.ragioneria_scan_da`); iterazioni successive: finestra scorrevole (ultimo sync − 3 giorni) per evitare scan completo ogni volta. Rescan forzato: creare `/tmp/cron-rescan-ragioneria`.
+
+**`cron_biz_scanner.php`** — Per ogni IUR non-GovPay in `flussi_rendicontazioni` con `biz_stato = 'PENDING'`: chiama pagoPA Biz Events API e salva i dati ricevuta in `biz_ricevute` (`stato = 'PROCESSED'`). Primo motore della pipeline pendenze esterne.
+
+**`cron_tefa_scanner.php`** — Legge `biz_ricevute` (PROCESSED, non ancora in `tefa_ricevute`) e classifica ogni IUR come TEFA (`stato = 'PROCESSED'`) o non-TEFA (`stato = 'SKIPPED'`). Non chiama Biz Events — usa i dati già salvati dal demone Biz. Attivo solo se `tefa_enabled = true`.
+
+**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV a cascata 5→4→3 char ogni 60s, (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15s se nessuna assegnazione, 1s altrimenti.
+
+**`cron_vocab_mapping.php`** — Demone L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`. Per ogni pendenza: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
+
+**`cron_pendenze_massive.php`** — Processa batch di 50 pendenze massive in stato `PENDING` (inserimento massivo da CSV/API). Pausa 30s quando coda vuota.
+
+## Mapping Pendenze Esterne (L1 + L2)
+
+Pipeline obbligatoria per ogni pendenza esterna (`is_govpay = 0`) prima che possa essere analizzata nel mapping:
+
+1. **Motore Biz** (`cron_biz_scanner.php`): `biz_ricevute.stato = 'PROCESSED'`
+2. **Motore TEFA** (`cron_tefa_scanner.php`, solo se `tefa_enabled = true`): `tefa_ricevute.stato = 'SKIPPED'`
+3. **Demone L1** (`cron_mapping_pendenze.php`): assegna `fornitore` via prefisso IUV → `mapping_stato = 'PROCESSED'` oppure `'NO_MATCH'`
+4. **Demone L2** (`cron_vocab_mapping.php`): assegna `cod_entrata` via keyword → `vocab_stato = 'PROCESSED'` oppure `'NO_MATCH'`
+
+Una pendenza è `NO_MATCH` solo se ha completato l'intero giro (1 → 2 → 3). Tutte le query di analisi/statistiche usano INNER JOIN con `biz_ricevute` (e `tefa_ricevute` se abilitato) per escludere pendenze non ancora processate dai motori upstream.
+
+### Discovery pattern L1 — logica a cascata
+
+`MappingPendenzeRepository::discoverPatterns()` genera auto-pattern (`is_custom = 0`) a **3 lunghezze**: 5, 4, 3 char.
+
+**Regola di esclusione a cascata:**
+- Pattern 5-char: conta tutti gli IUV con quel prefisso
+- Pattern 4-char: conta solo IUV dove `LEFT(iuv, 5)` NON è già un pattern 5-char scoperto
+- Pattern 3-char: conta solo IUV dove `LEFT(iuv, 5)` e `LEFT(iuv, 4)` NON sono pattern scoperti
+
+Così `transazioni_count` riflette le righe **non coperte da prefissi più lunghi**. La soglia attiva è ≥ 5 transazioni (o `is_custom = 1` per bypass). Il matching nel demone L1 è longest-prefix-first (regole ordinate per `CHAR_LENGTH DESC`): i pattern da 5 char vengono applicati prima, poi i 4-char sui PENDING rimanenti, poi i 3-char.
+
+Non modificare questa logica senza aggiornare anche la soglia e il rendering UI (filtri "5 char / 4 char / 3 char" in `mapping_pendenze.html.twig`).
+
 ## Generazione API client
 
 Client PHP in `govpay-clients/` e `pagopa-clients/` sono **generati** (OpenAPI Generator). Non modificare a mano — rigenera dalla spec OpenAPI se necessario. Referenziati come `path` repository in `composer.json`.
