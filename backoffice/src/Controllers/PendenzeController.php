@@ -1411,9 +1411,21 @@ class PendenzeController
     $allErrors = [];
     $baseId = $merged['idPendenza'] ?? '';
     $totalParts = count($parts); // Numero totale delle rate
+    $rateIdTipo = trim((string)($merged['idTipoPendenza'] ?? ($orig['idTipoPendenza'] ?? '')));
+    if ($rateIdTipo === '') {
+        return $this->twig->render($response, 'pendenze/rateizzazione.html.twig', [
+            'params' => $orig,
+            'importo' => $originalTotal,
+            'parts' => $parts,
+            'errors' => ['Tipologia pendenza mancante: impossibile creare le rate.'],
+        ]);
+    }
+
     foreach ($parts as $idx => $p) {
         $rIndex = isset($p['indice']) ? (int)$p['indice'] : ($idx + 1);
         $single = $merged;
+        // Ogni rata deve riportare esplicitamente la tipologia.
+        $single['idTipoPendenza'] = $rateIdTipo;
         // imposta importo e date specifiche della rata
         $single['importo'] = is_numeric(str_replace(',', '.', (string)($p['importo'] ?? ''))) ? (float)str_replace(',', '.', (string)$p['importo']) : 0.0;
         if (!empty($p['dataValidita'])) $single['dataValidita'] = $p['dataValidita'];
@@ -3664,6 +3676,7 @@ class PendenzeController
             'idPendenza' => $idPendenza,
             'return_url' => $returnUrl,
             'default_anno' => $defaultAnno,
+            'can_change_tipologia' => $this->canChangeTipologiaInEdit(),
         ]);
     }
 
@@ -3983,12 +3996,22 @@ class PendenzeController
         ], true);
     }
 
+    private function canChangeTipologiaInEdit(): bool
+    {
+        $role = (string)($_SESSION['user']['role'] ?? '');
+        return in_array($role, ['admin', 'superadmin'], true);
+    }
+
     public function aggiornaPendenza(Request $request, Response $response, array $args): Response
     {
         $this->exposeCurrentUser();
 
         $idPendenza = $args['idPendenza'] ?? '';
         $params = (array)($request->getParsedBody() ?? []);
+        $canChangeTipologia = $this->canChangeTipologiaInEdit();
+        if (!$canChangeTipologia) {
+            unset($params['idTipoPendenza']);
+        }
 
         if ($idPendenza === '') {
             return $this->twig->render($response, 'pendenze/modifica.html.twig', [
@@ -3996,6 +4019,7 @@ class PendenzeController
                 'old' => $params,
                 'idPendenza' => $idPendenza,
                 'return_url' => $params['return_url'] ?? '/pendenze/ricerca',
+                'can_change_tipologia' => $canChangeTipologia,
             ]);
         }
 
@@ -4039,6 +4063,7 @@ class PendenzeController
                 'idPendenza' => $idPendenza,
                 'return_url' => $params['return_url'] ?? '/pendenze/ricerca',
                 'default_anno' => $defaultAnno,
+                'can_change_tipologia' => $canChangeTipologia,
             ]);
         }
 
@@ -4082,6 +4107,7 @@ class PendenzeController
             'idPendenza' => $idPendenza,
             'return_url' => $params['return_url'] ?? '/pendenze/ricerca',
             'default_anno' => $defaultAnno,
+            'can_change_tipologia' => $canChangeTipologia,
         ]);
     }
 
