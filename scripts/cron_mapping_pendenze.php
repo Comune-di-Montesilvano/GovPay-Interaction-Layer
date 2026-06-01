@@ -110,6 +110,13 @@ while (true) {
         } catch (\Throwable $e) {
             $log("ERRORE Discovery: " . $e->getMessage());
         }
+
+        try {
+            $repo->refreshPatternDiagnostics((string)$idDominio);
+            $log('Diagnostics cache pattern aggiornata.');
+        } catch (\Throwable $e) {
+            $log("ERRORE refresh diagnostics: " . $e->getMessage());
+        }
     }
 
     $checkStop();

@@ -28,13 +28,9 @@ class MappingPendenzeController
 
         $repo = new MappingPendenzeRepository();
 
-        try {
-            $repo->discoverPatterns($idDominio);
-        } catch (\Throwable $_) {}
-
         $patterns = [];
         try {
-            $patterns = $repo->getRules($idDominio);
+            $patterns = $repo->getRules($idDominio, true);
 
             // Ordina i pattern per accorpamento: prima il master (padre), poi immediatamente i figli
             $patternMap = [];
