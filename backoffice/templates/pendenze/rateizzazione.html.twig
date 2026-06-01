@@ -50,58 +50,6 @@
             <select id="validitaFrequency" class="form-select form-select-sm" style="width:140px">
               <option value="1">Mensile</option>
               <option value="2">Bimestrale</option>
-{% extends 'base.html.twig' %}
-
-{% block title %}Rateizzazione pendenza{% endblock %}
-
-{% block content %}
-  <h1 class="it-title">Rateizzazione</h1>
-
-  <form method="post" action="/pendenze/preview">
-    <input type="hidden" name="original_params" value="{{ params|json_encode|e }}">
-    {# Reincludi i principali campi originali come hidden per sicurezza (soggettoPagatore, idTipoPendenza, ecc.) #}
-    {% for k,v in params %}
-      {% if v is iterable and k == 'voci' %}
-        {# Include anche le voci originali come hidden così il Preview le può mostrare se torni indietro #}
-        {% for idx, vv in v %}
-          <input type="hidden" name="voci[{{ idx }}][idVocePendenza]" value="{{ vv.idVocePendenza|e }}">
-          <input type="hidden" name="voci[{{ idx }}][descrizione]" value="{{ vv.descrizione|e }}">
-          <input type="hidden" name="voci[{{ idx }}][importo]" value="{{ vv.importo|e }}">
-        {% endfor %}
-      {% elseif v is iterable %}
-        {% for sk, sv in v %}
-          {% if sv is iterable %}
-            <input type="hidden" name="{{ k|e }}[{{ sk|e }}]" value="{{ sv|json_encode|e }}">
-          {% else %}
-            <input type="hidden" name="{{ k|e }}[{{ sk|e }}]" value="{{ sv|e }}">
-          {% endif %}
-        {% endfor %}
-      {% else %}
-        <input type="hidden" name="{{ k|e }}" value="{{ v|e }}">
-      {% endif %}
-    {% endfor %}
-    {% if errors is defined and errors %}
-    <div class="alert alert-danger">
-      <ul class="mb-0">
-        {% for e in errors %}
-          <li>{{ e }}</li>
-        {% endfor %}
-      </ul>
-      {# Show only sanitized errors in UI. For full HTTP exchange, enable APP_DEBUG and check logs. #}
-    </div>
-  {% endif %}
-    <div class="card mb-3">
-      <div class="card-body">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <div class="d-flex gap-2 align-items-center">
-            <label for="rateCount" class="mb-0 small text-muted">Numero rate</label>
-            <input id="rateCount" name="rate" type="number" min="1" value="{{ parts|length }}" class="form-control form-control-sm" style="width:80px">
-          </div>
-          <div class="d-flex gap-2 align-items-center">
-            <label for="validitaFrequency" class="mb-0 small text-muted">Intervallo validità</label>
-            <select id="validitaFrequency" class="form-select form-select-sm" style="width:140px">
-              <option value="1">Mensile</option>
-              <option value="2">Bimestrale</option>
               <option value="6">Semestrale</option>
               <option value="12">Annuale</option>
             </select>
