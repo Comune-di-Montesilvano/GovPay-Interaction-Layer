@@ -15,13 +15,14 @@ class MappingPendenzeRepository
     {
         $this->pdo = $pdo ?? Connection::getPDO();
         $this->ensureCustomTipologieTable();
+        $this->ensurePatternDiagnosticsTable();
     }
 
     /**
      * Ritorna tutti i pattern (scoperti e custom) con le keyword vocabolario L2 associate.
      * Il campo `insufficiente` è true quando transazioni_count < 5 (pattern non usato per il matching).
      */
-    public function getRules(string $idDominio): array
+    public function getRules(string $idDominio, bool $includeDiagnostics = true): array
     {
         $sql = "SELECT * FROM mapping_pendenze_pattern
                 WHERE id_dominio = :dom
@@ -75,7 +76,7 @@ class MappingPendenzeRepository
             $vocabMap[$vk['pattern_iuv']][] = $vk;
         }
 
-        $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+        $diagnosticsMap = $includeDiagnostics ? $this->getPatternDiagnosticsMap($idDominio) : [];
         foreach ($patterns as &$p) {
             // Eredita i vocab_rules dal target se accorpato
             $targetPat = $p['pattern_iuv'];
@@ -96,61 +97,10 @@ class MappingPendenzeRepository
             $p['vocab_rules']  = $vocabMap[$targetPat] ?? [];
             $p['insufficiente'] = empty($p['accorpato_a']) && !(bool)($p['is_custom'] ?? false) && (int)$p['transazioni_count'] < 5;
 
-            $vocabRules  = $p['vocab_rules'];
-            $col         = "LOWER(COALESCE(b.descrizione, f.descrizione_entrata))";
-            $notClauses  = [];
-            $exParams    = [':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%'];
-            foreach ($vocabRules as $i => $vk) {
-                $key = ':kw' . $i;
-                $notClauses[] = "$col NOT LIKE $key";
-                $exParams[$key] = '%' . mb_strtolower((string)$vk['keyword']) . '%';
-            }
-            $kwWhere  = $notClauses !== [] ? ' AND ' . implode(' AND ', $notClauses) : '';
-            $tefaJoin = $tefaEnabled ? "INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio" : '';
-            $tefaCond = $tefaEnabled ? "AND t.stato = 'SKIPPED'" : '';
-            $baseFrom = "FROM flussi_rendicontazioni f
-                         INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
-                         $tefaJoin
-                         WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
-                           AND b.stato = 'PROCESSED' $tefaCond";
-
-            $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
-                      $baseFrom $kwWhere
-                      ORDER BY f.data_pagamento DESC, f.id DESC LIMIT 6";
-            $stmtEx = $this->pdo->prepare($sqlEx);
-            $stmtEx->execute($exParams);
-            $p['examples'] = $stmtEx->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-            // Statistiche copertura L2 (una query aggregata per pattern)
-            $p['stats_uncovered']  = null;
-            $p['stats_by_keyword'] = [];
-            if ($vocabRules !== []) {
-                $statParams = [':dom' => $idDominio, ':pat' => $p['pattern_iuv'] . '%'];
-                $sumCases   = [];
-                $notParts   = [];
-                foreach ($vocabRules as $i => $vk) {
-                    $lkw         = '%' . mb_strtolower((string)$vk['keyword']) . '%';
-                    $keyA        = ':kwa' . $i;
-                    $keyB        = ':kwb' . $i;
-                    $statParams[$keyA] = $lkw;
-                    $statParams[$keyB] = $lkw;
-                    $sumCases[]  = "SUM(CASE WHEN $col LIKE $keyA THEN 1 ELSE 0 END) AS kw$i";
-                    $notParts[]  = "$col NOT LIKE $keyB";
-                }
-                $notExpr    = implode(' AND ', $notParts);
-                $colList    = implode(', ', $sumCases) . ", SUM(CASE WHEN $notExpr THEN 1 ELSE 0 END) AS uncovered";
-                $sqlStats   = "SELECT $colList $baseFrom";
-                // baseFrom usa :dom e :pat già in $statParams
-                $statParams[':dom'] = $idDominio;
-                $statParams[':pat'] = $p['pattern_iuv'] . '%';
-                $stmtSt = $this->pdo->prepare($sqlStats);
-                $stmtSt->execute($statParams);
-                $sr = $stmtSt->fetch(PDO::FETCH_ASSOC) ?: [];
-                foreach ($vocabRules as $i => $vk) {
-                    $p['stats_by_keyword'][$vk['keyword']] = (int)($sr['kw' . $i] ?? 0);
-                }
-                $p['stats_uncovered'] = (int)($sr['uncovered'] ?? 0);
-            }
+            $diag = $diagnosticsMap[$p['pattern_iuv']] ?? null;
+            $p['examples'] = $diag['examples'] ?? [];
+            $p['stats_uncovered'] = $diag['stats_uncovered'] ?? null;
+            $p['stats_by_keyword'] = $diag['stats_by_keyword'] ?? [];
         }
 
         return $patterns;
@@ -405,6 +355,181 @@ class MappingPendenzeRepository
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         } catch (\Throwable $_) {}
+    }
+
+    private function ensurePatternDiagnosticsTable(): void
+    {
+        try {
+            $this->pdo->exec(
+                "CREATE TABLE IF NOT EXISTS mapping_pendenze_pattern_diagnostics (
+                    pattern_iuv         VARCHAR(32) NOT NULL,
+                    id_dominio          VARCHAR(20) NOT NULL,
+                    stats_uncovered     INT NULL,
+                    stats_by_keyword    LONGTEXT NULL,
+                    examples_json       LONGTEXT NULL,
+                    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (pattern_iuv, id_dominio),
+                    INDEX idx_dom_updated (id_dominio, updated_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            );
+        } catch (\Throwable $_) {}
+    }
+
+    /**
+     * Aggiorna in background la cache diagnostica per pattern (examples e copertura keyword L2).
+     * Da usare nei demoni, non nella request web.
+     */
+    public function refreshPatternDiagnostics(string $idDominio): void
+    {
+        $sqlPatterns = "SELECT pattern_iuv, accorpato_a
+                        FROM mapping_pendenze_pattern
+                        WHERE id_dominio = :dom";
+        $stmtPat = $this->pdo->prepare($sqlPatterns);
+        $stmtPat->execute([':dom' => $idDominio]);
+        $patterns = $stmtPat->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        if ($patterns === []) {
+            $stmtCleanAll = $this->pdo->prepare("DELETE FROM mapping_pendenze_pattern_diagnostics WHERE id_dominio = :dom");
+            $stmtCleanAll->execute([':dom' => $idDominio]);
+            return;
+        }
+
+        $patternRows = [];
+        foreach ($patterns as $row) {
+            $patternRows[(string)$row['pattern_iuv']] = $row;
+        }
+
+        $vocabIndex = $this->getVocabRules($idDominio);
+        $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+        $tefaJoin = $tefaEnabled ? "INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio" : '';
+        $tefaCond = $tefaEnabled ? "AND t.stato = 'SKIPPED'" : '';
+
+        $upsertSql = "INSERT INTO mapping_pendenze_pattern_diagnostics
+                        (pattern_iuv, id_dominio, stats_uncovered, stats_by_keyword, examples_json, updated_at)
+                      VALUES
+                        (:pat, :dom, :uncovered, :stats_json, :examples_json, NOW())
+                      ON DUPLICATE KEY UPDATE
+                        stats_uncovered = VALUES(stats_uncovered),
+                        stats_by_keyword = VALUES(stats_by_keyword),
+                        examples_json = VALUES(examples_json),
+                        updated_at = NOW()";
+        $stmtUpsert = $this->pdo->prepare($upsertSql);
+
+        foreach (array_keys($patternRows) as $patternIuv) {
+            $vocabRules = $vocabIndex[$patternIuv]['keywords'] ?? [];
+            $col = "LOWER(COALESCE(b.descrizione, f.descrizione_entrata))";
+
+            $notClauses = [];
+            $exParams = [':dom' => $idDominio, ':pat' => $patternIuv . '%'];
+            foreach ($vocabRules as $i => $vk) {
+                $key = ':kw' . $i;
+                $notClauses[] = "$col NOT LIKE $key";
+                $exParams[$key] = '%' . mb_strtolower((string)$vk['keyword']) . '%';
+            }
+            $kwWhere = $notClauses !== [] ? ' AND ' . implode(' AND ', $notClauses) : '';
+            $baseFrom = "FROM flussi_rendicontazioni f
+                         INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio
+                         $tefaJoin
+                         WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.iuv LIKE :pat
+                           AND b.stato = 'PROCESSED' $tefaCond";
+
+            $sqlEx = "SELECT f.iuv, f.importo, f.id_flusso, COALESCE(b.descrizione, f.descrizione_entrata) AS descrizione_entrata
+                      $baseFrom $kwWhere
+                      ORDER BY f.data_pagamento DESC, f.id DESC
+                      LIMIT 6";
+            $stmtEx = $this->pdo->prepare($sqlEx);
+            $stmtEx->execute($exParams);
+            $examples = $stmtEx->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            $statsByKeyword = [];
+            $statsUncovered = null;
+            if ($vocabRules !== []) {
+                $statParams = [':dom' => $idDominio, ':pat' => $patternIuv . '%'];
+                $sumCases = [];
+                $notParts = [];
+                foreach ($vocabRules as $i => $vk) {
+                    $lkw = '%' . mb_strtolower((string)$vk['keyword']) . '%';
+                    $keyA = ':kwa' . $i;
+                    $keyB = ':kwb' . $i;
+                    $statParams[$keyA] = $lkw;
+                    $statParams[$keyB] = $lkw;
+                    $sumCases[] = "SUM(CASE WHEN $col LIKE $keyA THEN 1 ELSE 0 END) AS kw$i";
+                    $notParts[] = "$col NOT LIKE $keyB";
+                }
+                $notExpr = implode(' AND ', $notParts);
+                $colList = implode(', ', $sumCases) . ", SUM(CASE WHEN $notExpr THEN 1 ELSE 0 END) AS uncovered";
+                $sqlStats = "SELECT $colList $baseFrom";
+                $stmtSt = $this->pdo->prepare($sqlStats);
+                $stmtSt->execute($statParams);
+                $sr = $stmtSt->fetch(PDO::FETCH_ASSOC) ?: [];
+                foreach ($vocabRules as $i => $vk) {
+                    $statsByKeyword[(string)$vk['keyword']] = (int)($sr['kw' . $i] ?? 0);
+                }
+                $statsUncovered = (int)($sr['uncovered'] ?? 0);
+            }
+
+            $stmtUpsert->execute([
+                ':pat' => $patternIuv,
+                ':dom' => $idDominio,
+                ':uncovered' => $statsUncovered,
+                ':stats_json' => json_encode($statsByKeyword, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ':examples_json' => json_encode($examples, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ]);
+        }
+
+        $stmtClean = $this->pdo->prepare(
+            "DELETE d
+             FROM mapping_pendenze_pattern_diagnostics d
+             LEFT JOIN mapping_pendenze_pattern p
+               ON p.pattern_iuv = d.pattern_iuv
+              AND p.id_dominio = d.id_dominio
+             WHERE d.id_dominio = :dom
+               AND p.pattern_iuv IS NULL"
+        );
+        $stmtClean->execute([':dom' => $idDominio]);
+    }
+
+    /** @return array<string,array{examples:array<int,array<string,mixed>>,stats_uncovered:int|null,stats_by_keyword:array<string,int>}> */
+    private function getPatternDiagnosticsMap(string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT pattern_iuv, stats_uncovered, stats_by_keyword, examples_json
+             FROM mapping_pendenze_pattern_diagnostics
+             WHERE id_dominio = :dom"
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $map = [];
+        foreach ($rows as $row) {
+            $statsByKeyword = [];
+            $examples = [];
+
+            if (!empty($row['stats_by_keyword'])) {
+                $decoded = json_decode((string)$row['stats_by_keyword'], true);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $k => $v) {
+                        $statsByKeyword[(string)$k] = (int)$v;
+                    }
+                }
+            }
+
+            if (!empty($row['examples_json'])) {
+                $decodedEx = json_decode((string)$row['examples_json'], true);
+                if (is_array($decodedEx)) {
+                    $examples = $decodedEx;
+                }
+            }
+
+            $map[(string)$row['pattern_iuv']] = [
+                'examples' => $examples,
+                'stats_uncovered' => $row['stats_uncovered'] !== null ? (int)$row['stats_uncovered'] : null,
+                'stats_by_keyword' => $statsByKeyword,
+            ];
+        }
+
+        return $map;
     }
 
     /**

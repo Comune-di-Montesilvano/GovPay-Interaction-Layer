@@ -166,6 +166,12 @@ while (true) {
         $log("ERRORE bulk vocab NO_MATCH: " . $e->getMessage());
     }
 
+    try {
+        $repo->refreshPatternDiagnostics((string)$idDominio);
+    } catch (\Throwable $e) {
+        $log("ERRORE refresh diagnostics: " . $e->getMessage());
+    }
+
     if ($totalAssigned === 0) {
         $log('Nessuna nuova pendenza vocab da classificare. Pausa 15s...');
         for ($s = 0; $s < 15; $s++) {
