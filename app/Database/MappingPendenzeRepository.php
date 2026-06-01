@@ -467,15 +467,32 @@ class MappingPendenzeRepository
      */
     public function bulkAssignL1(string $idDominio, string $prefix, string $fornitore): int
     {
-        $sql = "UPDATE flussi_rendicontazioni
-                SET mapping_stato = 'PROCESSED',
-                    fornitore     = :fornitore,
-                    vocab_stato   = IF(mapping_stato = 'NO_MATCH', 'PENDING', vocab_stato),
-                    cod_entrata   = IF(mapping_stato = 'NO_MATCH', NULL, cod_entrata)
-                WHERE id_dominio = :dom
-                  AND is_govpay = 0
-                  AND mapping_stato IN ('PENDING', 'NO_MATCH')
-                  AND iuv LIKE :prefix";
+        $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+        if ($tefaEnabled) {
+            $sql = "UPDATE flussi_rendicontazioni f
+                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+                    SET f.mapping_stato = 'PROCESSED',
+                        f.fornitore     = :fornitore,
+                        f.vocab_stato   = IF(f.mapping_stato = 'NO_MATCH', 'PENDING', f.vocab_stato),
+                        f.cod_entrata   = IF(f.mapping_stato = 'NO_MATCH', NULL, f.cod_entrata)
+                    WHERE f.id_dominio = :dom
+                      AND f.is_govpay = 0
+                      AND f.mapping_stato IN ('PENDING', 'NO_MATCH')
+                      AND f.iuv LIKE :prefix";
+        } else {
+            $sql = "UPDATE flussi_rendicontazioni f
+                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                    SET f.mapping_stato = 'PROCESSED',
+                        f.fornitore     = :fornitore,
+                        f.vocab_stato   = IF(f.mapping_stato = 'NO_MATCH', 'PENDING', f.vocab_stato),
+                        f.cod_entrata   = IF(f.mapping_stato = 'NO_MATCH', NULL, f.cod_entrata)
+                    WHERE f.id_dominio = :dom
+                      AND f.is_govpay = 0
+                      AND f.mapping_stato IN ('PENDING', 'NO_MATCH')
+                      AND f.iuv LIKE :prefix";
+        }
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':dom' => $idDominio, ':fornitore' => $fornitore, ':prefix' => $prefix . '%']);
         return $stmt->rowCount();
@@ -486,9 +503,20 @@ class MappingPendenzeRepository
      */
     public function bulkSetL1NoMatch(string $idDominio): int
     {
-        $sql = "UPDATE flussi_rendicontazioni
-                SET mapping_stato = 'NO_MATCH', vocab_stato = 'NO_MATCH'
-                WHERE id_dominio = :dom AND is_govpay = 0 AND mapping_stato = 'PENDING'";
+        $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+        if ($tefaEnabled) {
+            $sql = "UPDATE flussi_rendicontazioni f
+                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+                    SET f.mapping_stato = 'NO_MATCH', f.vocab_stato = 'NO_MATCH'
+                    WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.mapping_stato = 'PENDING'";
+        } else {
+            $sql = "UPDATE flussi_rendicontazioni f
+                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                    SET f.mapping_stato = 'NO_MATCH', f.vocab_stato = 'NO_MATCH'
+                    WHERE f.id_dominio = :dom AND f.is_govpay = 0 AND f.mapping_stato = 'PENDING'";
+        }
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':dom' => $idDominio]);
         return $stmt->rowCount();
@@ -502,16 +530,30 @@ class MappingPendenzeRepository
      */
     public function bulkAssignVocabKeyword(string $idDominio, string $prefix, string $keyword, string $codEntrata): int
     {
-        // LEFT JOIN + COALESCE: usa b.descrizione se disponibile, fallback su f.descrizione_entrata
-        $sql = "UPDATE flussi_rendicontazioni f
-                LEFT JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
-                SET f.vocab_stato = 'PROCESSED', f.cod_entrata = :cod
-                WHERE f.id_dominio = :dom
-                  AND f.is_govpay = 0
-                  AND f.mapping_stato = 'PROCESSED'
-                  AND f.vocab_stato = 'PENDING'
-                  AND f.iuv LIKE :prefix
-                  AND LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) LIKE :kw";
+                $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+                if ($tefaEnabled) {
+                        $sql = "UPDATE flussi_rendicontazioni f
+                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                                        INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+                                        SET f.vocab_stato = 'PROCESSED', f.cod_entrata = :cod
+                                        WHERE f.id_dominio = :dom
+                                            AND f.is_govpay = 0
+                                            AND f.mapping_stato = 'PROCESSED'
+                                            AND f.vocab_stato IN ('PENDING', 'NO_MATCH')
+                                            AND f.iuv LIKE :prefix
+                                            AND LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) LIKE :kw";
+                } else {
+                        $sql = "UPDATE flussi_rendicontazioni f
+                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                                        SET f.vocab_stato = 'PROCESSED', f.cod_entrata = :cod
+                                        WHERE f.id_dominio = :dom
+                                            AND f.is_govpay = 0
+                                            AND f.mapping_stato = 'PROCESSED'
+                                            AND f.vocab_stato IN ('PENDING', 'NO_MATCH')
+                                            AND f.iuv LIKE :prefix
+                                            AND LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) LIKE :kw";
+                }
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':dom'    => $idDominio,
@@ -527,13 +569,28 @@ class MappingPendenzeRepository
      */
     public function bulkAssignVocabDefault(string $idDominio, string $prefix, string $codEntrata): int
     {
-        $sql = "UPDATE flussi_rendicontazioni
-                SET vocab_stato = 'PROCESSED', cod_entrata = :cod
-                WHERE id_dominio = :dom
-                  AND is_govpay = 0
-                  AND mapping_stato = 'PROCESSED'
-                  AND vocab_stato = 'PENDING'
-                  AND iuv LIKE :prefix";
+                $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+                if ($tefaEnabled) {
+                        $sql = "UPDATE flussi_rendicontazioni f
+                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                                        INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+                                        SET f.vocab_stato = 'PROCESSED', f.cod_entrata = :cod
+                                        WHERE f.id_dominio = :dom
+                                            AND f.is_govpay = 0
+                                            AND f.mapping_stato = 'PROCESSED'
+                                            AND f.vocab_stato IN ('PENDING', 'NO_MATCH')
+                                            AND f.iuv LIKE :prefix";
+                } else {
+                        $sql = "UPDATE flussi_rendicontazioni f
+                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                                        SET f.vocab_stato = 'PROCESSED', f.cod_entrata = :cod
+                                        WHERE f.id_dominio = :dom
+                                            AND f.is_govpay = 0
+                                            AND f.mapping_stato = 'PROCESSED'
+                                            AND f.vocab_stato IN ('PENDING', 'NO_MATCH')
+                                            AND f.iuv LIKE :prefix";
+                }
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':dom' => $idDominio, ':cod' => $codEntrata, ':prefix' => $prefix . '%']);
         return $stmt->rowCount();
@@ -544,10 +601,22 @@ class MappingPendenzeRepository
      */
     public function bulkSetVocabNoMatch(string $idDominio): int
     {
-        $sql = "UPDATE flussi_rendicontazioni
-                SET vocab_stato = 'NO_MATCH'
-                WHERE id_dominio = :dom AND is_govpay = 0
-                  AND mapping_stato = 'PROCESSED' AND vocab_stato = 'PENDING'";
+                $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+
+                if ($tefaEnabled) {
+                        $sql = "UPDATE flussi_rendicontazioni f
+                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                                        INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+                                        SET f.vocab_stato = 'NO_MATCH'
+                                        WHERE f.id_dominio = :dom AND f.is_govpay = 0
+                                            AND f.mapping_stato = 'PROCESSED' AND f.vocab_stato = 'PENDING'";
+                } else {
+                        $sql = "UPDATE flussi_rendicontazioni f
+                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                                        SET f.vocab_stato = 'NO_MATCH'
+                                        WHERE f.id_dominio = :dom AND f.is_govpay = 0
+                                            AND f.mapping_stato = 'PROCESSED' AND f.vocab_stato = 'PENDING'";
+                }
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':dom' => $idDominio]);
         return $stmt->rowCount();
