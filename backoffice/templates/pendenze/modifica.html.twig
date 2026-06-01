@@ -48,7 +48,7 @@
           <div class="alert alert-warning small mb-0">Variabile di ambiente <code>ID_A2A</code> non impostata.</div>
         {% endif %}
       </div>
-      {% include 'pendenze/_form_pendenza.html.twig' with { old: old, tipologie_pendenze: tipologie_pendenze, default_anno: default_anno, is_edit: true } %}
+      {% include 'pendenze/_form_pendenza.html.twig' with { old: old, tipologie_pendenze: tipologie_pendenze, default_anno: default_anno, is_edit: true, can_change_tipologia: can_change_tipologia|default(false) } %}
       <div class="d-flex gap-2 mt-4">
         <button type="submit" class="btn btn-primary">Aggiorna pendenza</button>
         <a class="btn btn-outline-secondary" href="{{ return_url }}">Annulla</a>

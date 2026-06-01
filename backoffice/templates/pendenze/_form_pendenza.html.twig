@@ -7,6 +7,7 @@
  #}
 {% set is_edit_mode = is_edit|default(false) %}
 {% set can_remove_voci = not is_edit_mode %}
+{% set can_change_tipologia = can_change_tipologia|default(true) %}
 
 {# ── Sezione 1: Dati Principali ────────────────────────────── #}
 <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fas fa-file-invoice me-1"></i> Dati Principali</h6>
@@ -14,7 +15,7 @@
   <div class="form-group col-md-6">
     <div class="select-wrapper">
       <label for="idTipoPendenza" class="active">Tipologia pendenza</label>
-      <select id="idTipoPendenza" name="idTipoPendenza" required aria-label="Tipologia pendenza" {{ is_edit_mode ? 'disabled' : '' }}>
+      <select id="idTipoPendenza" name="idTipoPendenza" required aria-label="Tipologia pendenza" {{ (is_edit_mode and not can_change_tipologia) ? 'disabled' : '' }}>
         <option value="">-- seleziona --</option>
         {% for t in tipologie_pendenze|default([]) %}
           <option value="{{ t.id_entrata }}" 
@@ -24,8 +25,12 @@
         {% endfor %}
       </select>
       {% if is_edit_mode %}
-        <input type="hidden" name="idTipoPendenza" value="{{ old.idTipoPendenza|default('') }}">
-        <p class="form-text small text-muted mt-1">La tipologia non è modificabile su pendenze esistenti.</p>
+        {% if not can_change_tipologia %}
+          <input type="hidden" name="idTipoPendenza" value="{{ old.idTipoPendenza|default('') }}">
+          <p class="form-text small text-muted mt-1">La tipologia non è modificabile per il tuo ruolo.</p>
+        {% else %}
+          <p class="form-text small text-muted mt-1">Cambio tipologia consentito solo su pendenze in stato NON_ESEGUITA.</p>
+        {% endif %}
       {% endif %}
     </div>
   </div>
