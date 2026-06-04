@@ -91,6 +91,8 @@ if ($idDominio === '') {
     exit(1);
 }
 
+$idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
+
 $backofficeUrl = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
 if ($backofficeUrl === '') {
     $log('ERRORE: govpay.backoffice_url non configurato.');
@@ -233,7 +235,7 @@ while (true) {
             continue;
         }
 
-        $rows = mapFlussoRows($detail, $dominioFlusso, $idFlusso);
+        $rows = mapFlussoRows($detail, $dominioFlusso, $idFlusso, $idA2A);
         if ($rows === []) {
             if ($scanIndex === 1 || $scanIndex % 25 === 0) {
                 $log('  [scan] flusso ' . $idFlusso . ': nessuna rendicontazione utile');
@@ -363,7 +365,7 @@ function extractNextPage(string $prossimiRisultati): ?int
 /**
  * @return array<int,array<string,mixed>>
  */
-function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): array
+function mapFlussoRows(array $detail, string $idDominio, string $idFlusso, string $idA2A = ''): array
 {
     $dataFlussoRaw = (string)($detail['dataFlusso'] ?? '');
     $dataRegolamentoRaw = (string)($detail['dataRegolamento'] ?? '');
@@ -396,8 +398,10 @@ function mapFlussoRows(array $detail, string $idDominio, string $idFlusso): arra
         $voce = is_array($risc['vocePendenza'] ?? null) ? $risc['vocePendenza'] : [];
         $isMultiBeneficiario = deriveIsMultiBeneficiario($detail, $rend, $risc);
         $idPendenza = extractIdPendenza($rend, $risc, $voce);
-        // GovPay only when a concrete idPendenza is present in the flow payload.
-        $isGovPay = $idPendenza !== '';
+        // GovPay only for pendenze registered by THIS application (matching id_a2a).
+        // If idA2A not present in payload (older GovPay), fall back to idPendenza presence.
+        $payloadA2A = extractIdA2A($rend, $risc, $voce);
+        $isGovPay   = $idPendenza !== '' && ($payloadA2A === '' || $idA2A === '' || $payloadA2A === $idA2A);
 
         $rows[] = [
             'id_dominio' => $idDominio,
@@ -501,6 +505,24 @@ function extractIdPendenza(array $rend, array $risc, array $voce): string
         $risc['idPendenza'] ?? null,
         is_array($risc['pendenza'] ?? null) ? ($risc['pendenza']['idPendenza'] ?? null) : null,
         is_array($rend['pendenza'] ?? null) ? ($rend['pendenza']['idPendenza'] ?? null) : null,
+    ];
+
+    foreach ($candidates as $value) {
+        $id = trim((string)$value);
+        if ($id !== '') {
+            return $id;
+        }
+    }
+
+    return '';
+}
+
+function extractIdA2A(array $rend, array $risc, array $voce): string
+{
+    $candidates = [
+        is_array($voce['pendenza'] ?? null) ? ($voce['pendenza']['idA2A'] ?? null) : null,
+        is_array($risc['pendenza'] ?? null) ? ($risc['pendenza']['idA2A'] ?? null) : null,
+        is_array($rend['pendenza'] ?? null) ? ($rend['pendenza']['idA2A'] ?? null) : null,
     ];
 
     foreach ($candidates as $value) {

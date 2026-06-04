@@ -255,6 +255,48 @@
         </div>
       </div>
     </div>
+
+    {# ── Stato Scanner Debitore GovPay ────────────────────────── #}
+    {% set gpd = govpay_debitore|default({'total': 0, 'scansionate': 0, 'da_scansionare': 0}) %}
+    {% if gpd.total > 0 %}
+    <div class="card shadow-sm mb-4 border-primary-subtle">
+      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2">
+        <h2 class="h6 mb-0 text-primary-emphasis"><i class="fas fa-user-check me-1"></i> Stato debitore pendenze interne (GovPay)</h2>
+      </div>
+      <div class="card-body py-3">
+        <div class="row g-3 text-center align-items-center">
+          <div class="col-4">
+            <div class="small text-muted text-uppercase fw-semibold mb-1" style="font-size: 9px; letter-spacing: 0.05em;">TOTALI</div>
+            <div class="h4 mb-0 fw-bold">{{ gpd.total|number_format(0, ',', '.') }}</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-muted text-uppercase fw-semibold mb-1" style="font-size: 9px; letter-spacing: 0.05em;">SCANSIONATE</div>
+            <div class="h4 mb-0 fw-bold text-success">{{ gpd.scansionate|number_format(0, ',', '.') }}</div>
+          </div>
+          <div class="col-4">
+            <div class="small text-muted text-uppercase fw-semibold mb-1" style="font-size: 9px; letter-spacing: 0.05em;">DA SCANSIONARE</div>
+            <div class="h4 mb-0 fw-bold {% if gpd.da_scansionare > 0 %}text-warning{% else %}text-success{% endif %}">{{ gpd.da_scansionare|number_format(0, ',', '.') }}</div>
+          </div>
+        </div>
+        {% if gpd.total > 0 %}
+          {% set pct = (gpd.scansionate / gpd.total * 100)|round(1) %}
+          <div class="mt-3">
+            <div class="d-flex justify-content-between small text-muted mb-1">
+              <span>Copertura debitore</span>
+              <span>{{ pct }}%</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar {% if pct >= 100 %}bg-success{% elseif pct >= 50 %}bg-primary{% else %}bg-warning{% endif %}" style="width: {{ pct }}%;"></div>
+            </div>
+          </div>
+        {% endif %}
+        {% if gpd.da_scansionare > 0 %}
+          <div class="mt-2 text-muted small"><i class="fas fa-info-circle me-1"></i>Attiva il demone <strong>GovPay: Scanner debitore</strong> da Impostazioni → Cron per completare la scansione.</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
   {% endif %}
 
   {% if query_made and cache_info %}

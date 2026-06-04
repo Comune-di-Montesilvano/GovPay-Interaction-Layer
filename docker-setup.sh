@@ -294,6 +294,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
       pendenze-massive) script="scripts/cron_pendenze_massive.php" ;;
       mapping)          script="scripts/cron_mapping_pendenze.php" ;;
       vocab)            script="scripts/cron_vocab_mapping.php" ;;
+      govpay-debitore)  script="scripts/cron_govpay_debitore_scanner.php" ;;
       *) continue ;;
     esac
     echo "ℹ️  Auto-avvio daemon: ${job}"

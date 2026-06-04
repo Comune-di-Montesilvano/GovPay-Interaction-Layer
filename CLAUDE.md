@@ -204,6 +204,7 @@ Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
 | Mapping L1 | `cron_mapping_pendenze.php` | `/tmp/cron-mapping.pid` | `/tmp/cron-stop-mapping` | biz + (tefa) |
 | Mapping L2 | `cron_vocab_mapping.php` | `/tmp/cron-vocab.pid` | `/tmp/cron-stop-vocab` | L1 |
 | Pendenze massive | `cron_pendenze_massive.php` | `/tmp/cron-pendenze-massive.pid` | `/tmp/cron-stop-pendenze-massive` | — |
+| GovPay debitore | `cron_govpay_debitore_scanner.php` | `/tmp/cron-govpay-debitore.pid` | `/tmp/cron-stop-govpay-debitore` | GovPay API |
 
 ### Dettaglio demoni
 
@@ -218,6 +219,8 @@ Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
 **`cron_vocab_mapping.php`** — Demone L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`. Per ogni pendenza: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
 
 **`cron_pendenze_massive.php`** — Processa batch di 50 pendenze massive in stato `PENDING` (inserimento massivo da CSV/API). Pausa 30s quando coda vuota.
+
+**`cron_govpay_debitore_scanner.php`** — Per ogni IUR GovPay (`is_govpay=1`) in `flussi_rendicontazioni` senza entry in `biz_ricevute`: chiama GovPay Backoffice API `GET /pendenze/{id_a2a}/{id_pendenza}` e salva `soggettoPagatore.identificativo/anagrafica` + `causale` in `biz_ricevute` come `PROCESSED`. Consente al CSV ragioneria di includere CF/nominativo debitore anche per pendenze interne. Batch da 20 con 1s tra chiamate; 15 min di sleep quando coda vuota. Usa stessa autenticazione GovPay (Basic Auth + mTLS opzionale).
 
 ## Mapping Pendenze Esterne (L1 + L2)
 
