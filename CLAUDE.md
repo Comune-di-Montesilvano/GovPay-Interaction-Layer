@@ -116,7 +116,8 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **Autenticazione operatori**: sessione PHP + token GovPay; `sslheader` come metodo auth alternativo
 - **Debug**: variabile `APP_DEBUG` nel `.env`; toggle disponibile nell'UI backoffice
 - **cURL PHP 8.5**: `curl_close()` deprecated — scrive notice su stdout e rompe `header()`. Usare `unset($ch)` invece.
-- **GovPay `tipo_bollo`**: API pagamenti ritorna `'Imposta di bollo'` (stringa), non `'01'` — client generato fallisce deserializzazione e fa raw fallback. Atteso, non bug GIL.
+- **GovPay `tipo_bollo`**: API pagamenti ritorna `'Imposta di bollo'` (stringa), non `'01'` — client generato fallisce deserializzazione e fa raw fallback. Atteso, non bug GIL. `normalizeTipoBolloForBackoffice()` in `PendenzeController` converte; frontoffice usa sempre `'01'` hardcoded.
+- **MBT allegato XML**: pendenza pagata con `voci[].riscossioni[tipo='MBT']` contiene `allegato.testo` (base64 XML marca da bollo) — già nei dati della pagina, servire client-side via Blob API senza extra chiamata GovPay.
 
 ## Integrazioni esterne
 
@@ -148,6 +149,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 
 3. **Marca da Bollo Telematica (@e.bollo)**:
    - Integrazione completa del flusso di inserimento e pagamento del bollo telematico, sia in backoffice che in frontoffice (`bollo.html.twig`, `avviso-bollo.html.twig`).
+   - Checkout frontoffice priority: @e.bollo v2 (`PAGOPA_EBOLLO_MODE=v2`) → GovPay checkout (`GOVPAY_CHECKOUT_URL` set) → pagoPA standard. Helper: `frontoffice_resolve_bollo_checkout_url()` in `frontoffice/public/index.php`.
 
 ## Configurazione: DB vs .env
 
