@@ -1552,24 +1552,25 @@ class PendenzeController
             'dataCaricamento','datiAllegati','tassonomiaAvviso','dataNotificaAvviso',
             'nome'
         ];
-    // Normalizza il soggettoPagatore: unisci nome+anagrafica e rimuovi 'nome'
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $isBollo = strcasecmp((string)($single['idTipoPendenza'] ?? ''), $bolloIdTipo) === 0;
+        if ($isBollo) {
+            $single['tassonomiaAvviso'] = 'Imposte e tasse';
+            if (empty($single['dataValidita'])) {
+                $single['dataValidita'] = date('Y-m-d');
+            }
+            if (empty($single['dataScadenza'])) {
+                $single['dataScadenza'] = (new \DateTimeImmutable('today'))->modify('+15 days')->format('Y-m-d');
+            }
+        }
+
+        // Normalizza il soggettoPagatore: unisci nome+anagrafica e rimuovi 'nome'
         if (isset($single['soggettoPagatore']) && is_array($single['soggettoPagatore'])) {
             $s = $single['soggettoPagatore'];
             $tipo = strtoupper((string)($s['tipo'] ?? 'F'));
             $anag = trim((string)($s['anagrafica'] ?? ''));
             $nome = trim((string)($s['nome'] ?? ''));
 
-        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
-        $isBollo = ($idTipo !== '' && strcasecmp($idTipo, $bolloIdTipo) === 0);
-        if ($isBollo) {
-            $payload['tassonomiaAvviso'] = 'Imposte e tasse';
-            if (empty($payload['dataValidita'])) {
-                $payload['dataValidita'] = date('Y-m-d');
-            }
-            if (empty($payload['dataScadenza'])) {
-                $payload['dataScadenza'] = (new \DateTimeImmutable('today'))->modify('+15 days')->format('Y-m-d');
-            }
-        }
             if ($tipo === 'F') {
                 $full = trim(($nome !== '' ? $nome . ' ' : '') . $anag);
                 $s['anagrafica'] = $full !== '' ? $full : $anag;
@@ -2264,15 +2265,7 @@ class PendenzeController
     private function normalizeTipoBolloForBackoffice(?string $tipoBollo): string
     {
         $value = trim((string)$tipoBollo);
-        if ($value === '') {
-            return '';
-        }
-
-        if ($value === '01' || strcasecmp($value, 'Imposta di bollo') === 0) {
-            return '01';
-        }
-
-        return $value;
+        return ($value === '01' || strcasecmp($value, 'Imposta di bollo') === 0) ? '01' : $value;
     }
 
     /**

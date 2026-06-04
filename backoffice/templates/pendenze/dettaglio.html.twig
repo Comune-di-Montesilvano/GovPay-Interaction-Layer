@@ -261,6 +261,26 @@
           {% endfor %}
         {% endif %}
 
+        {# Cerca allegato XML bollo MBT (tipo riscossione 'MBT') #}
+        {% set bolloXmlTesto = '' %}
+        {% set bolloXmlIuv   = '' %}
+        {% if r.voci is defined and r.voci is iterable %}
+          {% for voce in r.voci %}
+            {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+              {% for risc in voce.riscossioni %}
+                {% if bolloXmlTesto == ''
+                    and risc.tipo is defined and risc.tipo == 'MBT'
+                    and risc.allegato is defined
+                    and risc.allegato.testo is defined
+                    and risc.allegato.testo %}
+                  {% set bolloXmlTesto = risc.allegato.testo %}
+                  {% set bolloXmlIuv   = risc.iuv|default('bollo') %}
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+
         <div class="d-flex flex-wrap align-items-center gap-3">
           <div>
             <div class="text-muted small">Stato</div>
@@ -291,7 +311,7 @@
             <div class="mb-0">{{ dp ? (dp|date('d/m/Y')) : '—' }}</div>
           </div>
           {# Bottoni in alto, accanto alla zona pagamento #}
-          {% if idDom and (r.numeroAvviso or topRppPath or (displayed_rates|length > 0)) %}
+          {% if idDom and (r.numeroAvviso or topRppPath or bolloXmlTesto or (displayed_rates|length > 0)) %}
           <div class="d-flex align-items-center gap-2 ms-auto">
             {% if idDom and r.numeroAvviso and not is_bollo %}
               <a class="btn btn-primary btn-sm" href="/avvisi/{{ idDom|url_encode }}/{{ r.numeroAvviso|url_encode }}" target="_blank" rel="noopener" title="Scarica avviso (PDF)">
@@ -302,6 +322,41 @@
               <a class="btn btn-outline-success btn-sm" href="/pendenze{{ topRppPath }}/rt" target="_blank" rel="noopener" title="Scarica ricevuta">
                 <i class="fas fa-file-invoice-dollar me-1"></i> Ricevuta
               </a>
+            {% endif %}
+            {% if bolloXmlTesto %}
+              <button type="button"
+                class="btn btn-outline-secondary btn-sm"
+                id="download-bollo-xml-btn"
+                data-testo="{{ bolloXmlTesto }}"
+                data-iuv="{{ bolloXmlIuv }}"
+                title="Scarica XML Marca da Bollo Telematica">
+                <i class="fas fa-stamp me-1"></i> Marca da Bollo
+              </button>
+              <script>
+              (function(){
+                const btn = document.getElementById('download-bollo-xml-btn');
+                if (!btn) return;
+                btn.addEventListener('click', function() {
+                  const b64      = this.dataset.testo;
+                  const iuv      = this.dataset.iuv || 'bollo';
+                  const filename = 'marca-da-bollo-' + iuv + '.xml';
+                  try {
+                    const binary = atob(b64);
+                    const bytes  = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    const blob = new Blob([bytes], { type: 'application/xml' });
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href = url; a.download = filename;
+                    document.body.appendChild(a); a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch(e) {
+                    alert('Errore download marca da bollo: ' + e.message);
+                  }
+                });
+              })();
+              </script>
             {% endif %}
             {# Bottone Rate: solo se abbiamo rate con numeriAvviso #}
             {% set numeri = [] %}
