@@ -1116,6 +1116,7 @@ if (!function_exists('frontoffice_build_bollo_voci')) {
      */
     function frontoffice_build_bollo_voci(array $documenti, string $cf, string $provincia, string $tipoBollo): array
     {
+        $normalizedTipoBollo = frontoffice_normalize_backoffice_tipo_bollo($tipoBollo);
         $voci = [];
         foreach ($documenti as $i => $doc) {
             $titolo = trim((string)($doc['titolo'] ?? ''));
@@ -1129,12 +1130,32 @@ if (!function_exists('frontoffice_build_bollo_voci')) {
                 'idVocePendenza'     => (string)($i + 1),
                 'descrizione'        => $titolo,
                 'importo'            => 16.00,
-                'tipoBollo'          => $tipoBollo,
+                'tipoBollo'          => $normalizedTipoBollo,
                 'hashDocumento'      => base64_encode(hash('sha256', $hashSource, true)),
                 'provinciaResidenza' => strtoupper($provincia),
             ];
         }
         return $voci;
+    }
+}
+
+if (!function_exists('frontoffice_normalize_backoffice_tipo_bollo')) {
+    function frontoffice_normalize_backoffice_tipo_bollo(string $rawTipoBollo): string
+    {
+        $value = trim($rawTipoBollo);
+        if ($value === '') {
+            return '01';
+        }
+
+        if ($value === '01') {
+            return '01';
+        }
+
+        if (mb_strtolower($value) === 'imposta di bollo') {
+            return '01';
+        }
+
+        return '01';
     }
 }
 
@@ -1269,6 +1290,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             'idDominio'        => $idDominio,
             'causale'          => $causale,
             'importo'          => $importoTotale,
+            'tassonomiaAvviso' => 'Imposte e tasse',
             'annoRiferimento'  => $anno,
             'soggettoPagatore' => frontoffice_prepare_payer($payerRaw),
             'voci'             => $voci,
@@ -2569,6 +2591,14 @@ if (!function_exists('frontoffice_is_bollo_detail')) {
     }
 }
 
+if (!function_exists('frontoffice_is_ebollo_v2_enabled')) {
+    function frontoffice_is_ebollo_v2_enabled(): bool
+    {
+        $mode = strtolower(trim(frontoffice_env_value('PAGOPA_EBOLLO_MODE', 'legacy')));
+        return $mode === 'v2' || $mode === '2.0' || $mode === 'v2.0';
+    }
+}
+
 if (!function_exists('frontoffice_start_ebollo_checkout')) {
     /**
      * Avvia il checkout @e.bollo per una singola pendenza BOLLOT.
@@ -2585,21 +2615,23 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
         string $flow
     ): array {
         $baseUrl = rtrim(frontoffice_env_value('PAGOPA_EBOLLO_BASE_URL', ''), '/');
-        $idCiService = trim(frontoffice_env_value('PAGOPA_EBOLLO_ID_CI_SERVICE', ''));
+        // SANP 3.12.0 @e.bollo 2.0 (Pagamento dovuto): idCIService da valorizzare con 00005.
+        $idCiService = trim(frontoffice_env_value('PAGOPA_EBOLLO_ID_CI_SERVICE', '00005'));
         if ($idCiService === '') {
-            $idCiService = trim(frontoffice_env_value('APP_ENTITY_IPA_CODE', ''));
+            $idCiService = '00005';
         }
-        if ($idCiService === '') {
-            $idCiService = $idDominio;
-        }
-        $subscriptionKey = trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY', frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')));
+        $candidateKeys = array_values(array_filter(array_unique([
+            trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY', '')),
+            trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY_SECONDARY', '')),
+            trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')),
+        ]), static fn (string $k): bool => $k !== ''));
 
-        if ($baseUrl === '' || $subscriptionKey === '') {
+        if ($baseUrl === '' || count($candidateKeys) === 0) {
             Logger::getInstance()->warning('Configurazione @e.bollo incompleta', [
                 'flow' => $flow,
                 'has_base_url' => $baseUrl !== '',
                 'has_id_ci_service' => $idCiService !== '',
-                'has_key' => $subscriptionKey !== '',
+                'has_key' => count($candidateKeys) > 0,
             ]);
             return [
                 'success' => false,
@@ -2723,19 +2755,34 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
                 'allow_redirects' => false,
                 'http_errors' => false,
             ]);
-            $response = $client->request('POST', $baseUrl . '/organizations/' . rawurlencode($idDominio) . '/mbd', [
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                    'Ocp-Apim-Subscription-Key' => $subscriptionKey,
-                    'X-Request-Id' => $requestId,
-                ],
-                'json' => $requestBody,
-            ]);
 
-            $status = $response->getStatusCode();
-            $bodyRaw = (string)$response->getBody();
-            $body = json_decode($bodyRaw, true);
+            $response = null;
+            $status = 0;
+            $bodyRaw = '';
+            $body = null;
+            $usedKeyIndex = 0;
+            foreach ($candidateKeys as $idx => $subscriptionKey) {
+                $response = $client->request('POST', $baseUrl . '/organizations/' . rawurlencode($idDominio) . '/mbd', [
+                    'headers' => [
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                        'Ocp-Apim-Subscription-Key' => $subscriptionKey,
+                        'X-Request-Id' => $requestId,
+                    ],
+                    'query' => [
+                        'subscription-key' => $subscriptionKey,
+                    ],
+                    'json' => $requestBody,
+                ]);
+                $status = $response->getStatusCode();
+                $bodyRaw = (string)$response->getBody();
+                $body = json_decode($bodyRaw, true);
+                $usedKeyIndex = $idx + 1;
+                if ($status !== 401 && $status !== 403) {
+                    break;
+                }
+            }
+
             $redirectUrl = is_array($body) ? trim((string)($body['checkoutRedirectUrl'] ?? '')) : '';
 
             if ($status >= 200 && $status < 300 && $redirectUrl !== '') {
@@ -2743,6 +2790,7 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
                     'flow' => $flow,
                     'idPendenza' => $idPendenza,
                     'requestId' => $requestId,
+                    'key_index' => $usedKeyIndex,
                 ]);
                 return [
                     'success' => true,
@@ -2762,6 +2810,7 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
                 'idPendenza' => $idPendenza,
                 'status' => $status,
                 'requestId' => $requestId,
+                'key_index' => $usedKeyIndex,
                 'title' => $titleMsg,
                 'detail' => $detailMsg,
                 'problem_status' => $statusMsg,
@@ -2793,6 +2842,89 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
                     : 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.',
             ];
         }
+    }
+}
+
+if (!function_exists('frontoffice_is_govpay_checkout_enabled')) {
+    function frontoffice_is_govpay_checkout_enabled(): bool
+    {
+        return trim(frontoffice_env_value('GOVPAY_CHECKOUT_URL', '')) !== '';
+    }
+}
+
+if (!function_exists('frontoffice_start_govpay_checkout')) {
+    /**
+     * Avvia il checkout GovPay (API pagamento v2) per una singola pendenza bollo.
+     * Ritorna ['success'=>bool,'location'=>string,'status'=>int,'message'=>string].
+     */
+    function frontoffice_start_govpay_checkout(
+        array $detail,
+        string $idPendenza,
+        string $returnUrl,
+        string $flow = 'spontaneo'
+    ): array {
+        $checkoutUrl = rtrim(frontoffice_env_value('GOVPAY_CHECKOUT_URL', ''), '/');
+        $idA2A       = frontoffice_env_value('ID_A2A', '');
+        $user        = frontoffice_env_value('GOVPAY_USER', '');
+        $pass        = frontoffice_env_value('GOVPAY_PASSWORD', '');
+
+        if ($checkoutUrl === '' || $idA2A === '') {
+            return ['success' => false, 'status' => 503, 'message' => 'GovPay checkout non configurato.'];
+        }
+
+        $body = json_encode([
+            'pendenze'   => [['idA2A' => $idA2A, 'idPendenza' => $idPendenza]],
+            'urlRitorno' => $returnUrl,
+        ]);
+
+        $authMethod = strtolower(trim(frontoffice_env_value('AUTHENTICATION_GOVPAY', 'basic')));
+        $certPath   = frontoffice_env_value('GOVPAY_TLS_CERT', '');
+        $keyPath    = frontoffice_env_value('GOVPAY_TLS_KEY', '');
+
+        $ch = curl_init($checkoutUrl . '/pagamenti');
+        $curlOpts = [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+        ];
+        if (in_array($authMethod, ['ssl', 'sslheader'], true) && $certPath !== '' && $keyPath !== '') {
+            $curlOpts[CURLOPT_SSLCERT] = $certPath;
+            $curlOpts[CURLOPT_SSLKEY]  = $keyPath;
+        } elseif ($user !== '' || $pass !== '') {
+            $curlOpts[CURLOPT_USERPWD] = $user . ':' . $pass;
+        }
+        curl_setopt_array($ch, $curlOpts);
+        $raw    = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        unset($ch);
+
+        if ($status !== 201 || !is_string($raw)) {
+            Logger::getInstance()->warning('Errore GovPay checkout API', [
+                'flow'       => $flow,
+                'idPendenza' => $idPendenza,
+                'status'     => $status,
+                'url'        => $checkoutUrl . '/pagamenti',
+                'response'   => is_string($raw) ? substr($raw, 0, 500) : null,
+            ]);
+            return ['success' => false, 'status' => 503, 'message' => 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
+        }
+
+        $data     = json_decode($raw, true);
+        $redirect = trim((string)($data['redirect'] ?? ''));
+        if ($redirect === '') {
+            Logger::getInstance()->warning('GovPay checkout: campo redirect mancante nella risposta', [
+                'flow' => $flow, 'idPendenza' => $idPendenza,
+            ]);
+            return ['success' => false, 'status' => 503, 'message' => 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
+        }
+
+        Logger::getInstance()->info('Checkout GovPay avviato', [
+            'flow' => $flow, 'idPendenza' => $idPendenza, 'id' => $data['id'] ?? '',
+        ]);
+        return ['success' => true, 'location' => $redirect];
     }
 }
 
@@ -3669,6 +3801,18 @@ $routes = [
                 'detail_path'   => $detailPath,
                 'login_path'    => '/login?return_to=' . rawurlencode($detailPath),
                 'is_logged_in'  => frontoffice_get_logged_user() !== null,
+            ],
+        ];
+    },
+    '/checkout/govpay-return' => static function (): array {
+        $idPendenza = trim((string)($_GET['idPendenza'] ?? ''));
+        $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
+        return [
+            'template' => 'checkout/govpay-return.html.twig',
+            'context' => [
+                'detail_path'  => $detailPath,
+                'login_path'   => '/login?return_to=' . rawurlencode($detailPath),
+                'is_logged_in' => frontoffice_get_logged_user() !== null,
             ],
         ];
     },
@@ -5228,7 +5372,7 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
         $emailNotice = trim((string)($loggedUser['email'] ?? ''));
     }
 
-    if (frontoffice_is_bollo_detail($detail)) {
+    if (frontoffice_is_ebollo_v2_enabled() && frontoffice_is_bollo_detail($detail)) {
         $ebollo = frontoffice_start_ebollo_checkout(
             $detail,
             $idPendenza,
@@ -5245,6 +5389,16 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
             return;
         }
         header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    } elseif (frontoffice_is_govpay_checkout_enabled() && frontoffice_is_bollo_detail($detail)) {
+        $govpayReturnUrl = $frontofficeBaseUrl . '/checkout/govpay-return?idPendenza=' . rawurlencode($idPendenza);
+        $gp = frontoffice_start_govpay_checkout($detail, $idPendenza, $govpayReturnUrl, 'spontaneo');
+        if (!($gp['success'] ?? false)) {
+            http_response_code((int)($gp['status'] ?? 503));
+            echo (string)($gp['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+        header('Location: ' . (string)$gp['location'], true, 302);
         exit;
     }
 
@@ -5448,7 +5602,7 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
         $emailNotice = trim((string)($loggedUser['email'] ?? ''));
     }
 
-    if (frontoffice_is_bollo_detail($detail)) {
+    if (frontoffice_is_ebollo_v2_enabled() && frontoffice_is_bollo_detail($detail)) {
         $ebollo = frontoffice_start_ebollo_checkout(
             $detail,
             $idPendenza,
@@ -5465,6 +5619,16 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
             return;
         }
         header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    } elseif (frontoffice_is_govpay_checkout_enabled() && frontoffice_is_bollo_detail($detail)) {
+        $govpayReturnUrl = $frontofficeBaseUrl . '/checkout/govpay-return?idPendenza=' . rawurlencode($idPendenza);
+        $gp = frontoffice_start_govpay_checkout($detail, $idPendenza, $govpayReturnUrl, 'avviso');
+        if (!($gp['success'] ?? false)) {
+            http_response_code((int)($gp['status'] ?? 503));
+            echo (string)($gp['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+        header('Location: ' . (string)$gp['location'], true, 302);
         exit;
     }
 
@@ -5641,7 +5805,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
     }
 
     $emailNotice = trim((string)($user['email'] ?? ''));
-    if (frontoffice_is_bollo_detail($detail)) {
+    if (frontoffice_is_ebollo_v2_enabled() && frontoffice_is_bollo_detail($detail)) {
         $ebollo = frontoffice_start_ebollo_checkout(
             $detail,
             $idPendenza,
@@ -5658,6 +5822,16 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
             return;
         }
         header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    } elseif (frontoffice_is_govpay_checkout_enabled() && frontoffice_is_bollo_detail($detail)) {
+        $govpayReturnUrl = $frontofficeBaseUrl . '/checkout/govpay-return?idPendenza=' . rawurlencode($idPendenza);
+        $gp = frontoffice_start_govpay_checkout($detail, $idPendenza, $govpayReturnUrl, 'profilo');
+        if (!($gp['success'] ?? false)) {
+            http_response_code((int)($gp['status'] ?? 503));
+            echo (string)($gp['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+        header('Location: ' . (string)$gp['location'], true, 302);
         exit;
     }
 
@@ -5873,7 +6047,7 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     }
 
     $bolloDetails = array_values(array_filter($pendenzaDetails, static fn (array $d): bool => frontoffice_is_bollo_detail($d)));
-    if (count($bolloDetails) > 0) {
+    if (frontoffice_is_ebollo_v2_enabled() && count($bolloDetails) > 0) {
         if (count($pendenzaDetails) !== 1) {
             http_response_code(422);
             echo 'Le pendenze Marca da Bollo devono essere pagate singolarmente.';
@@ -5901,6 +6075,24 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
         }
 
         header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    } elseif (frontoffice_is_govpay_checkout_enabled() && count($bolloDetails) > 0) {
+        if (count($pendenzaDetails) !== 1) {
+            http_response_code(422);
+            echo 'Le pendenze Marca da Bollo devono essere pagate singolarmente.';
+            return;
+        }
+
+        $bolloPendenzaId = (string)($bolloDetails[0]['idPendenza'] ?? $rawIds[0] ?? '');
+        $govpayReturnUrl = $frontofficeBaseUrl . '/checkout/govpay-return?idPendenza=' . rawurlencode($bolloPendenzaId);
+        $gp = frontoffice_start_govpay_checkout($bolloDetails[0], $bolloPendenzaId, $govpayReturnUrl, 'carrello');
+        if (!($gp['success'] ?? false)) {
+            http_response_code((int)($gp['status'] ?? 503));
+            echo (string)($gp['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+
+        header('Location: ' . (string)$gp['location'], true, 302);
         exit;
     }
 

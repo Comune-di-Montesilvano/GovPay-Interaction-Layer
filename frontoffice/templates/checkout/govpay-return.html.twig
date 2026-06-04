@@ -1,0 +1,35 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'Sessione di pagamento completata'|trans }} – {{ app_entity.name }}{% endblock %}
+
+{% block content %}
+<section class="block">
+  <div class="container">
+    <div style="max-width:640px;margin:0 auto;">
+
+      <div class="alert alert-info" role="alert" style="margin-bottom:var(--sp-4);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong style="font-size:16px;">{{ 'Sessione di pagamento completata'|trans }}</strong>
+          <p style="margin:4px 0 0;">{{ 'La sessione di pagamento si è conclusa. Lo stato della pendenza potrebbe aggiornarsi entro qualche minuto.'|trans }}</p>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:var(--sp-3);margin-bottom:var(--sp-5);">
+        {% if is_logged_in %}
+          <a class="btn btn-primary" href="{{ detail_path }}" style="color: #ffffff !important;">{{ 'Controlla lo stato'|trans }}</a>
+          <a class="btn btn-ghost" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
+        {% else %}
+          <a class="btn btn-primary" href="{{ login_path }}" style="color: #ffffff !important;">{{ 'Accedi per vedere lo stato'|trans }}</a>
+        {% endif %}
+        <a class="btn btn-ghost" href="/">{{ 'Torna alla home'|trans }}</a>
+      </div>
+
+      <div style="font-size:13px;color:var(--fg-3);">
+        <p style="margin:0;">{{ 'Se riscontri anomalie puoi contattarci a'|trans }} <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -175,6 +175,7 @@ class ImpostazioniController
             'ragioneria_url'        => $body['ragioneria_url'] ?? '',
             'backoffice_url'        => $body['backoffice_url'] ?? '',
             'pendenze_patch_url'    => $body['pendenze_patch_url'] ?? '',
+            'checkout_url'          => $body['checkout_url'] ?? '',
             'authentication_method' => $body['authentication_method'] ?? 'basic',
             'user'                  => ['value' => $body['user'] ?? '', 'encrypted' => true],
             'password'              => ['value' => $body['password'] ?? '', 'encrypted' => true],
@@ -201,10 +202,10 @@ class ImpostazioniController
         $plainKeys = [
             'checkout_ec_base_url', 'checkout_company_name',
             'checkout_return_ok_url', 'checkout_return_cancel_url', 'checkout_return_error_url',
-            'ebollo_base_url', 'ebollo_id_ci_service',
+            'ebollo_base_url', 'ebollo_mode', 'ebollo_id_ci_service',
             'payment_options_url', 'biz_events_host', 'tassonomie_url',
         ];
-        $encryptedKeys = ['checkout_subscription_key', 'ebollo_subscription_key', 'payment_options_key', 'biz_events_api_key'];
+        $encryptedKeys = ['checkout_subscription_key', 'ebollo_subscription_key', 'ebollo_subscription_key_secondary', 'payment_options_key', 'biz_events_api_key'];
 
         $merged = $existing;
         foreach ($plainKeys as $key) {
@@ -1303,32 +1304,31 @@ class ImpostazioniController
         $this->requireAdminOrAbove();
 
         $url = SettingsRepository::get('pagopa', 'ebollo_base_url', '');
-        $key = SettingsRepository::get('pagopa', 'ebollo_subscription_key', '');
-        if (empty($key)) {
-            $key = SettingsRepository::get('pagopa', 'checkout_subscription_key', '');
-        }
+        $candidateKeys = array_values(array_filter(array_unique([
+            (string)SettingsRepository::get('pagopa', 'ebollo_subscription_key', ''),
+            (string)SettingsRepository::get('pagopa', 'ebollo_subscription_key_secondary', ''),
+            (string)SettingsRepository::get('pagopa', 'checkout_subscription_key', ''),
+        ]), static fn (string $k): bool => trim($k) !== ''));
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
-        $idCiService = SettingsRepository::get('pagopa', 'ebollo_id_ci_service', '');
+        // SANP 3.12.0 @e.bollo 2.0 (Pagamento dovuto): idCIService da valorizzare con 00005.
+        $idCiService = SettingsRepository::get('pagopa', 'ebollo_id_ci_service', '00005');
         if (empty($idCiService)) {
-            $idCiService = SettingsRepository::get('entity', 'ipa_code', '');
-        }
-        if (empty($idCiService)) {
-            $idCiService = (string)$idDominio;
+            $idCiService = '00005';
         }
 
         if (empty($url)) {
             return $this->jsonError('URL @e.bollo non configurato.');
         }
-        if (empty($key)) {
+        if (count($candidateKeys) === 0) {
             return $this->jsonError('Subscription Key @e.bollo non configurata (né fallback Checkout).');
         }
         if (empty($idDominio)) {
             return $this->jsonError('ID Dominio non configurato.');
         }
 
-        $endpoint = rtrim((string)$url, '/') . '/organizations/' . rawurlencode((string)$idDominio) . '/mbd';
-        $ch = curl_init($endpoint);
+        $endpointBase = rtrim((string)$url, '/') . '/organizations/' . rawurlencode((string)$idDominio) . '/mbd';
+        $ch = curl_init($endpointBase);
         if ($ch === false) {
             return $this->jsonError('URL @e.bollo non valido.');
         }
@@ -1356,23 +1356,38 @@ class ImpostazioniController
             ],
         ];
 
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 8,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'Accept: application/json',
-                'Ocp-Apim-Subscription-Key: ' . $key,
-                'X-Request-Id: ' . $requestId,
-            ],
-        ]);
+        $result = false;
+        $httpCode = 0;
+        $curlErr = '';
+        $usedKeyIndex = 0;
+        foreach ($candidateKeys as $idx => $key) {
+            $endpoint = $endpointBase . '?subscription-key=' . rawurlencode($key);
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $endpoint,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                    'Ocp-Apim-Subscription-Key: ' . $key,
+                    'X-Request-Id: ' . $requestId,
+                ],
+            ]);
 
-        $result = curl_exec($ch);
-        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
+            $result = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErr = curl_error($ch);
+            $usedKeyIndex = $idx + 1;
+            if ($result === false || $curlErr) {
+                break;
+            }
+            if ($httpCode !== 401 && $httpCode !== 403) {
+                break;
+            }
+        }
         if ($result === false || $curlErr) {
             return $this->jsonError("@e.bollo: connessione fallita — {$curlErr}");
         }
@@ -1388,17 +1403,17 @@ class ImpostazioniController
         }
         if ($httpCode === 400 || $httpCode === 422) {
             $suffix = $detail !== '' ? " — {$detail}" : '';
-            return $this->jsonOk("@e.bollo: API raggiungibile — HTTP {$httpCode}{$suffix}");
+            return $this->jsonOk("@e.bollo: API raggiungibile — HTTP {$httpCode}{$suffix} (chiave #{$usedKeyIndex})");
         }
         if ($httpCode === 404) {
             $suffix = $detail !== '' ? " — {$detail}" : '';
-            return $this->jsonOk("@e.bollo: endpoint raggiungibile ma organizzazione/servizio non abilitata (HTTP 404){$suffix}");
+            return $this->jsonOk("@e.bollo: endpoint raggiungibile ma organizzazione/servizio non abilitata (HTTP 404){$suffix} (chiave #{$usedKeyIndex})");
         }
         if ($httpCode >= 200 && $httpCode < 300) {
-            return $this->jsonOk("@e.bollo: HTTP {$httpCode} — OK.");
+            return $this->jsonOk("@e.bollo: HTTP {$httpCode} — OK (chiave #{$usedKeyIndex}).");
         }
 
-        return $this->jsonOk("@e.bollo: HTTP {$httpCode} — server raggiungibile.");
+        return $this->jsonOk("@e.bollo: HTTP {$httpCode} — server raggiungibile (chiave #{$usedKeyIndex}).");
     }
 
     public function testPaymentOptions(Request $request, Response $response): Response

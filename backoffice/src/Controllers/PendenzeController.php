@@ -1139,8 +1139,7 @@ class PendenzeController
                 $det = (new EntrateRepository())->findDetails($idDominio, $bolloIdTipo);
                 if ($det && !empty($det['abilitato_backoffice'])) {
                     $available = true;
-                    $rawTipoBollo = (string)($det['tipo_bollo'] ?? '');
-                    $tipoBollo = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '01';
+                    $tipoBollo = $this->normalizeTipoBolloForBackoffice((string)($det['tipo_bollo'] ?? ''));
                 }
             } catch (\Throwable $e) {}
         }
@@ -1559,6 +1558,18 @@ class PendenzeController
             $tipo = strtoupper((string)($s['tipo'] ?? 'F'));
             $anag = trim((string)($s['anagrafica'] ?? ''));
             $nome = trim((string)($s['nome'] ?? ''));
+
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $isBollo = ($idTipo !== '' && strcasecmp($idTipo, $bolloIdTipo) === 0);
+        if ($isBollo) {
+            $payload['tassonomiaAvviso'] = 'Imposte e tasse';
+            if (empty($payload['dataValidita'])) {
+                $payload['dataValidita'] = date('Y-m-d');
+            }
+            if (empty($payload['dataScadenza'])) {
+                $payload['dataScadenza'] = (new \DateTimeImmutable('today'))->modify('+15 days')->format('Y-m-d');
+            }
+        }
             if ($tipo === 'F') {
                 $full = trim(($nome !== '' ? $nome . ' ' : '') . $anag);
                 $s['anagrafica'] = $full !== '' ? $full : $anag;
@@ -2074,6 +2085,8 @@ class PendenzeController
         if ($idTipo === '' && is_array($currentPendenza)) {
             $idTipo = $this->extractIdTipoFromPendenza($currentPendenza);
         }
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $isBolloTipo = ($idTipo !== '' && strcasecmp($idTipo, $bolloIdTipo) === 0);
 
         $details = null;
         if ($idDominioUsed !== '' && $idTipo !== '') {
@@ -2128,6 +2141,23 @@ class PendenzeController
         if (array_key_exists('tipoContabilita', $params)) {
             $finalTipoContabilita = trim((string)$params['tipoContabilita']);
         }
+        $finalTipoBollo = $this->normalizeTipoBolloForBackoffice($finalTipoBollo);
+
+        $hasBolloSignals = $isBolloTipo;
+        if (!$hasBolloSignals) {
+            foreach ($baseVoci as $voce) {
+                if (!is_array($voce)) {
+                    continue;
+                }
+                if (!empty($voce['tipoBollo']) || !empty($voce['hashDocumento']) || !empty($voce['provinciaResidenza'])) {
+                    $hasBolloSignals = true;
+                    break;
+                }
+            }
+        }
+        if ($hasBolloSignals && $finalTipoBollo === '') {
+            $finalTipoBollo = '01';
+        }
 
         $hasUserOverrideCodEntrata = array_key_exists('codiceContabilita', $params) || array_key_exists('codEntrata', $params);
         if (!$hasUserOverrideCodEntrata && $idTipo !== '') {
@@ -2171,6 +2201,23 @@ class PendenzeController
             return [];
         }
 
+        if ($voiceMode === 'bollo') {
+            $defaultProvincia = strtoupper(trim((string)($params['provinciaResidenza'] ?? '')));
+            if ($defaultProvincia === '') {
+                $hasProvincia = false;
+                foreach ($baseVoci as $voce) {
+                    if (is_array($voce) && trim((string)($voce['provinciaResidenza'] ?? '')) !== '') {
+                        $hasProvincia = true;
+                        break;
+                    }
+                }
+                if (!$hasProvincia) {
+                    $errors[] = 'Per la marca da bollo è obbligatoria la provincia di residenza (2 lettere, es. PE, RM).';
+                    return [];
+                }
+            }
+        }
+
         $builtVoci = [];
         foreach (array_values($baseVoci) as $idx => $voceBase) {
             if (!is_array($voceBase)) {
@@ -2195,9 +2242,12 @@ class PendenzeController
                     ? (string)$voceBase['hashDocumento']
                     : base64_encode(hash('sha256', $descrizione . '|' . $idVoce . '|' . uniqid('', true), true));
                 $prov = !empty($voceBase['provinciaResidenza']) ? $voceBase['provinciaResidenza'] : ($params['provinciaResidenza'] ?? '');
-                if ($prov !== '') {
-                    $nv['provinciaResidenza'] = strtoupper(trim((string)$prov));
+                $prov = strtoupper(trim((string)$prov));
+                if ($prov === '') {
+                    $errors[] = "Voce '{$idVoce}' priva di provinciaResidenza: obbligatoria per la marca da bollo.";
+                    continue;
                 }
+                $nv['provinciaResidenza'] = $prov;
             } elseif ($voiceMode === 'entrata') {
                 $nv['ibanAccredito'] = $finalIban;
                 $nv['tipoContabilita'] = $finalTipoContabilita;
@@ -2209,6 +2259,20 @@ class PendenzeController
         }
 
         return $builtVoci;
+    }
+
+    private function normalizeTipoBolloForBackoffice(?string $tipoBollo): string
+    {
+        $value = trim((string)$tipoBollo);
+        if ($value === '') {
+            return '';
+        }
+
+        if ($value === '01' || strcasecmp($value, 'Imposta di bollo') === 0) {
+            return '01';
+        }
+
+        return $value;
     }
 
     /**
@@ -2655,6 +2719,7 @@ class PendenzeController
             }
             if (empty($finalTipoBollo) && !empty($merged['tipoBollo'])) $finalTipoBollo = $merged['tipoBollo'];
             if (empty($finalTipoContabilita) && !empty($merged['tipoContabilita'])) $finalTipoContabilita = $merged['tipoContabilita'];
+            $finalTipoBollo = $this->normalizeTipoBolloForBackoffice($finalTipoBollo);
 
             $voiceMode = null;
             if ($finalTipoBollo !== '') {
@@ -4838,6 +4903,48 @@ class PendenzeController
                 'proprieta','direzione','idTipoPendenza','voci'
             ];
             $put = array_intersect_key($pendenza, array_flip($allowedKeys));
+
+            if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
+                $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
+            }
+
+            $hasBolloVoce = false;
+            if (!empty($put['voci']) && is_array($put['voci'])) {
+                foreach ($put['voci'] as &$voce) {
+                    if (!is_array($voce)) {
+                        continue;
+                    }
+
+                    unset($voce['indice'], $voce['stato']);
+
+                    if (
+                        !empty($voce['tipoBollo']) ||
+                        !empty($voce['hashDocumento']) ||
+                        !empty($voce['provinciaResidenza'])
+                    ) {
+                        $hasBolloVoce = true;
+                        $voce['tipoBollo'] = $this->normalizeTipoBolloForBackoffice((string)($voce['tipoBollo'] ?? ''));
+                        if ($voce['tipoBollo'] === '') {
+                            $voce['tipoBollo'] = '01';
+                        }
+
+                        if (empty($voce['hashDocumento'])) {
+                            $seed = (string)($voce['descrizione'] ?? '') . '|' . (string)($voce['idVocePendenza'] ?? uniqid('', true));
+                            $voce['hashDocumento'] = base64_encode(hash('sha256', $seed, true));
+                        }
+
+                        $prov = strtoupper(trim((string)($voce['provinciaResidenza'] ?? '')));
+                        if ($prov !== '') {
+                            $voce['provinciaResidenza'] = $prov;
+                        }
+                    }
+                }
+                unset($voce);
+            }
+
+            if ($hasBolloVoce && empty($put['tassonomiaAvviso'])) {
+                $put['tassonomiaAvviso'] = 'Imposte e tasse';
+            }
             
             // 3) Aggiorna datiAllegati con le informazioni della notifica
             $put['datiAllegati'] = $put['datiAllegati'] ?? [];
