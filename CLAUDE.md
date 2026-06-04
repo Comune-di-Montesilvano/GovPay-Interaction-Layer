@@ -115,6 +115,8 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **SSL**: `SSL=on` attiva HTTPS diretto su Apache; `SSL=off` per deploy dietro reverse proxy (es. Portainer + Traefik). Usa `SSL_HEADER` per X-Forwarded-Proto in modalità proxy.
 - **Autenticazione operatori**: sessione PHP + token GovPay; `sslheader` come metodo auth alternativo
 - **Debug**: variabile `APP_DEBUG` nel `.env`; toggle disponibile nell'UI backoffice
+- **cURL PHP 8.5**: `curl_close()` deprecated — scrive notice su stdout e rompe `header()`. Usare `unset($ch)` invece.
+- **GovPay `tipo_bollo`**: API pagamenti ritorna `'Imposta di bollo'` (stringa), non `'01'` — client generato fallisce deserializzazione e fa raw fallback. Atteso, non bug GIL.
 
 ## Integrazioni esterne
 
