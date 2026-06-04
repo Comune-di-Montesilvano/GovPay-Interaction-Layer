@@ -5,6 +5,10 @@
 {% set avviso = avviso_preview|default({}) %}
 {% set pagatore = avviso.soggetto_pagatore|default({}) %}
 {% set voci = avviso.voci|default([]) %}
+{% set is_bollo = voci|length > 0
+    and voci[0].tipoBollo is defined
+    and voci[0].tipoBollo is not null
+    and voci[0].tipoBollo != '' %}
 {% set status_cls = avviso.is_paid
     ? 'status-paid'
     : (avviso.is_payable
@@ -110,25 +114,37 @@
           </div>
 
           <div class="avviso-actions">
+            {% if is_bollo %}
+              {% set _burl = '/avviso-bollo?iuv=' ~ (avviso.numero_avviso ?? '')|url_encode
+                  ~ '&ente=' ~ (avviso.id_dominio ?? id_dominio ?? '')|url_encode
+                  ~ '&importo=' ~ ((avviso.importo ?? 0) * 100)|round
+                  ~ '&causale=' ~ (avviso.causale ?? '')|url_encode
+                  ~ '&cf=' ~ (pagatore.identificativo ?? pagatore.codice_fiscale ?? '')|url_encode
+                  ~ '&scadenza=' ~ (avviso.data_scadenza ?? '')|url_encode %}
+              {% for v in voci %}
+                {% set _burl = _burl ~ '&desc[]=' ~ (v.descrizione ?? '')|url_encode %}
+              {% endfor %}
+            {% endif %}
+
             {# — Aggiungi al carrello — #}
-            {% if avviso.is_payable and avviso.id_pendenza %}
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="btn-cart-add"
-                data-id="{{ avviso.id_pendenza }}"
-                data-added="{{ (cart_items_ids is defined and avviso.id_pendenza in cart_items_ids) ? '1' : '0' }}"
-                aria-label="{{ 'Aggiungi al carrello'|trans }}"
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
-                <span id="btn-cart-label">
-                  {% if cart_items_ids is defined and avviso.id_pendenza in cart_items_ids %}
-                    {{ 'Nel carrello ✓'|trans }}
-                  {% else %}
-                    {{ 'Aggiungi al carrello'|trans }}
-                  {% endif %}
-                </span>
-              </button>
+            {% if avviso.is_payable and avviso.id_pendenza and not is_bollo %}
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  id="btn-cart-add"
+                  data-id="{{ avviso.id_pendenza }}"
+                  data-added="{{ (cart_items_ids is defined and avviso.id_pendenza in cart_items_ids) ? '1' : '0' }}"
+                  aria-label="{{ 'Aggiungi al carrello'|trans }}"
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+                  <span id="btn-cart-label">
+                    {% if cart_items_ids is defined and avviso.id_pendenza in cart_items_ids %}
+                      {{ 'Nel carrello ✓'|trans }}
+                    {% else %}
+                      {{ 'Aggiungi al carrello'|trans }}
+                    {% endif %}
+                  </span>
+                </button>
             {% endif %}
 
             {# — Paga subito — #}
@@ -140,7 +156,12 @@
             {% endif %}
 
             {# — Stampa / Scarica PDF — #}
-            {% if avviso.download_url %}
+            {% if is_bollo %}
+              <a class="btn btn-outline" href="{{ _burl }}" target="_blank" rel="noopener">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                {{ 'Bollettino MBT'|trans }}
+              </a>
+            {% elseif avviso.download_url %}
               <a class="btn btn-outline" href="{{ avviso.download_url }}" target="_blank" rel="noopener">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                 {{ 'Stampa / Scarica PDF'|trans }}
@@ -150,7 +171,7 @@
             {% endif %}
 
             {# — Scarica ricevuta — #}
-            {% if avviso.is_paid and avviso.receipt_download_url %}
+            {% if avviso.is_paid and avviso.receipt_download_url and not is_bollo %}
               <a class="btn btn-primary" href="{{ avviso.receipt_download_url }}" rel="noopener">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 {{ 'Scarica la ricevuta'|trans }}
@@ -230,24 +251,24 @@
         </div>
 
         {% if support_email or support_phone %}
-          <div class="card card-pad" style="background:var(--bi-navy);color:#e2ecff;">
-            <h3 style="color:#fff;margin-bottom:var(--sp-2);">{{ 'Serve assistenza?'|trans }}</h3>
-            <p style="margin:0 0 var(--sp-3);font-size:13px;opacity:.75;">{{ 'Contatta'|trans }} {{ app_entity.name }}</p>
-            <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--sp-2);font-size:13px;">
+          <div class="card card-pad" style="background:var(--bi-navy);color:#e2ecff !important;">
+            <h3 style="color:#fff !important;margin-bottom:var(--sp-2);">{{ 'Serve assistenza?'|trans }}</h3>
+            <p style="margin:0 0 var(--sp-3);font-size:13px;opacity:.75;color:#e2ecff !important;">{{ 'Contatta'|trans }} {{ app_entity.name }}</p>
+            <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--sp-2);font-size:13px;color:#e2ecff !important;">
               {% if support_email %}
-                <li style="display:flex;gap:8px;align-items:center;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.7;" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/></svg>
-                  <a href="mailto:{{ support_email }}" style="color:#7bdcff;">{{ support_email }}</a>
+                <li style="display:flex;gap:8px;align-items:center;color:#e2ecff !important;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.7;color:#7bdcff !important;" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 7 9-7"/></svg>
+                  <a href="mailto:{{ support_email }}" style="color:#7bdcff !important;">{{ support_email }}</a>
                 </li>
               {% endif %}
               {% if support_phone %}
-                <li style="display:flex;gap:8px;align-items:center;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.7;" aria-hidden="true"><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
-                  <span>{{ support_phone }}{% if support_hours %} <span style="opacity:.65;">({{ support_hours }})</span>{% endif %}</span>
+                <li style="display:flex;gap:8px;align-items:center;color:#e2ecff !important;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.7;color:#7bdcff !important;" aria-hidden="true"><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+                  <span style="color:#e2ecff !important;">{{ support_phone }}{% if support_hours %} <span style="opacity:.65;color:#e2ecff !important;">({{ support_hours }})</span>{% endif %}</span>
                 </li>
               {% endif %}
               {% if support_location %}
-                <li style="opacity:.55;font-size:12px;">{{ support_location|raw }}</li>
+                <li style="opacity:.55;font-size:12px;color:#e2ecff !important;">{{ support_location|raw }}</li>
               {% endif %}
             </ul>
           </div>

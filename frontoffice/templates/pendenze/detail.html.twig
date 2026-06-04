@@ -111,30 +111,30 @@
                 {{ 'Scarica PDF avviso'|trans }}
               </a>
             {% endif %}
-            {% if p.receipt_url %}
+            {% if p.receipt_url and not is_bollo %}
               <a class="btn btn-outline" href="{{ p.receipt_url }}">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
                 {{ 'Scarica ricevuta'|trans }}
               </a>
             {% endif %}
-            {% if p.is_payable and p.id_pendenza %}
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="btn-cart-add"
-                data-id="{{ p.id_pendenza }}"
-                data-added="{{ p.id_pendenza in cart_items_ids|default([]) ? '1' : '0' }}"
-                aria-label="{{ 'Aggiungi al carrello'|trans }}"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
-                <span id="btn-cart-label">
-                  {% if p.id_pendenza in cart_items_ids|default([]) %}
-                    {{ 'Nel carrello ✓'|trans }}
-                  {% else %}
-                    {{ 'Aggiungi al carrello'|trans }}
-                  {% endif %}
-                </span>
-              </button>
+            {% if p.is_payable and p.id_pendenza and not is_bollo %}
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  id="btn-cart-add"
+                  data-id="{{ p.id_pendenza }}"
+                  data-added="{{ p.id_pendenza in cart_items_ids|default([]) ? '1' : '0' }}"
+                  aria-label="{{ 'Aggiungi al carrello'|trans }}"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+                  <span id="btn-cart-label">
+                    {% if p.id_pendenza in cart_items_ids|default([]) %}
+                      {{ 'Nel carrello ✓'|trans }}
+                    {% else %}
+                      {{ 'Aggiungi al carrello'|trans }}
+                    {% endif %}
+                  </span>
+                </button>
             {% endif %}
             {% if p.is_payable and p.checkout_url %}
               <a class="btn btn-ghost" href="{{ p.checkout_url }}" target="_blank" rel="noopener">{{ 'Paga su pagoPA'|trans }}</a>

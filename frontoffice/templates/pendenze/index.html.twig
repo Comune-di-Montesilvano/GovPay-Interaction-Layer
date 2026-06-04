@@ -115,7 +115,7 @@
                     : (p.stato.code in ['SCADUTA','ANOMALA'] ? 'status-due' : 'status-cancel')) %}
               <tr class="{{ is_payable ? 'fo-row-payable' : '' }}">
                 <td class="col-sel" style="text-align:center;">
-                  {% if is_payable and p.id_pendenza %}
+                  {% if is_payable and p.id_pendenza and not p.is_bollo|default(false) %}
                     <input
                       class="pendenza-checkbox"
                       type="checkbox"
@@ -153,18 +153,18 @@
                 </td>
                 <td style="text-align:right;">
                   <div style="display:flex;gap:4px;justify-content:flex-end;">
-                    {% if is_payable and p.id_pendenza %}
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-primary btn-cart-row"
-                        data-id="{{ p.id_pendenza }}"
-                        title="{{ 'Aggiungi al carrello'|trans }}"
-                        aria-label="{{ 'Aggiungi al carrello'|trans }}"
-                        {{ p.id_pendenza in cart_items_ids|default([]) ? 'disabled' : '' }}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
-                        <span class="sr-only">{{ 'Aggiungi al carrello'|trans }}</span>
-                      </button>
+                    {% if is_payable and p.id_pendenza and not p.is_bollo|default(false) %}
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-primary btn-cart-row"
+                          data-id="{{ p.id_pendenza }}"
+                          title="{{ 'Aggiungi al carrello'|trans }}"
+                          aria-label="{{ 'Aggiungi al carrello'|trans }}"
+                          {{ p.id_pendenza in cart_items_ids|default([]) ? 'disabled' : '' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
+                          <span class="sr-only">{{ 'Aggiungi al carrello'|trans }}</span>
+                        </button>
                     {% endif %}
                     {% if p.detail_url %}
                       <a class="btn btn-sm btn-outline" href="{{ p.detail_url }}" title="{{ 'Dettaglio'|trans }}">
@@ -178,7 +178,7 @@
                         <span class="sr-only">{{ 'Scarica PDF avviso'|trans }}</span>
                       </a>
                     {% endif %}
-                    {% if p.receipt_url %}
+                    {% if p.receipt_url and not p.is_bollo|default(false) %}
                       <a class="btn btn-sm btn-outline" href="{{ p.receipt_url }}" title="{{ 'Scarica ricevuta'|trans }}">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
                         <span class="sr-only">{{ 'Scarica ricevuta'|trans }}</span>
