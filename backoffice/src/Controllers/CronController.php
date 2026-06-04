@@ -87,6 +87,17 @@ class CronController
             'stop_file'   => '/tmp/cron-stop-vocab',
             'pid_file'    => '/tmp/cron-vocab.pid',
         ],
+        'govpay-debitore' => [
+            'label'       => 'GovPay: Scanner debitore',
+            'description' => 'Loop continuo: recupera dati debitore (CF/nominativo, causale) da GovPay Backoffice API per le pendenze interne (is_govpay=1) e li salva in biz_ricevute. Arricchisce il CSV ragioneria con i dati debitore per le pendenze GovPay.',
+            'script'      => 'scripts/cron_govpay_debitore_scanner.php',
+            'args_tpl'    => '',
+            'params'      => [],
+            'icon'        => 'fa-user-check',
+            'daemon'      => true,
+            'stop_file'   => '/tmp/cron-stop-govpay-debitore',
+            'pid_file'    => '/tmp/cron-govpay-debitore.pid',
+        ],
     ];
 
     public function __construct(private readonly Twig $twig) {}

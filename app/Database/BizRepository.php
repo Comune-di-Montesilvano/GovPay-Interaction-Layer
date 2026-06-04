@@ -217,6 +217,8 @@ class BizRepository
 
     /**
      * Restituisce record PROCESSED in biz_ricevute non ancora presenti in tefa_ricevute.
+     * Esclude IUR GovPay (is_govpay=1): il demone GovPay debitore salva in biz_ricevute
+     * senza trasferimenti, che andrebbero a produrre falsi SKIPPED nel TEFA scanner.
      * Usato da TefaScannerService per accodare il lavoro del demone TEFA.
      * @return array<int,array<string,mixed>>
      */
@@ -226,6 +228,10 @@ class BizRepository
 
         $sql = 'SELECT b.*
             FROM biz_ricevute b
+            INNER JOIN flussi_rendicontazioni f
+              ON f.id_dominio = b.id_dominio
+             AND f.iur = b.iur
+             AND f.is_govpay = 0
             LEFT JOIN tefa_ricevute t
               ON t.id_dominio = b.id_dominio
              AND t.iur = b.iur
@@ -253,6 +259,10 @@ class BizRepository
     {
         $sql = 'SELECT COUNT(*)
             FROM biz_ricevute b
+            INNER JOIN flussi_rendicontazioni f
+              ON f.id_dominio = b.id_dominio
+             AND f.iur = b.iur
+             AND f.is_govpay = 0
             LEFT JOIN tefa_ricevute t
               ON t.id_dominio = b.id_dominio
              AND t.iur = b.iur
@@ -271,6 +281,42 @@ class BizRepository
         }
         $stmt->execute($params);
         return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Inserisce dati debitore GovPay direttamente come PROCESSED (senza passare per la coda PENDING).
+     * Usato dal demone cron_govpay_debitore_scanner.php.
+     * @param array{id_dominio:string,anno:int,mese:int,id_flusso:?string,iur:string,iuv:?string,data_pagamento:?string,importo:?float,descrizione:?string,cf_debitore:?string,nominativo_debitore:?string} $data
+     */
+    public function insertGovPayProcessed(array $data): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO biz_ricevute
+                (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, importo,
+                 stato, descrizione, cf_debitore, nominativo_debitore, created_at, updated_at)
+             VALUES
+                (:id_dominio, :anno, :mese, :id_flusso, :iur, :iuv, :data_pagamento, :importo,
+                 \'PROCESSED\', :descrizione, :cf_debitore, :nominativo_debitore, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE
+                stato               = \'PROCESSED\',
+                descrizione         = VALUES(descrizione),
+                cf_debitore         = VALUES(cf_debitore),
+                nominativo_debitore = VALUES(nominativo_debitore),
+                updated_at          = NOW()'
+        );
+        $stmt->execute([
+            ':id_dominio'          => $data['id_dominio'],
+            ':anno'                => $data['anno'],
+            ':mese'                => $data['mese'],
+            ':id_flusso'           => $data['id_flusso'] ?? null,
+            ':iur'                 => $data['iur'],
+            ':iuv'                 => $data['iuv'] ?? null,
+            ':data_pagamento'      => ($data['data_pagamento'] ?? '') !== '' ? $data['data_pagamento'] : null,
+            ':importo'             => $data['importo'] ?? null,
+            ':descrizione'         => $data['descrizione'] ?? null,
+            ':cf_debitore'         => $data['cf_debitore'] ?? null,
+            ':nominativo_debitore' => $data['nominativo_debitore'] ?? null,
+        ]);
     }
 
     public function deleteByDateRange(string $idDominio, string $dataDa, string $dataA): int

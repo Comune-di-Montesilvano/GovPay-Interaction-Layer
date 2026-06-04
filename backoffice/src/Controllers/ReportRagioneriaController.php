@@ -58,6 +58,7 @@ class ReportRagioneriaController
         ];
 
         $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0];
+        $govpayDebitore = ['total' => 0, 'scansionate' => 0, 'da_scansionare' => 0];
         if ($filters['idDominio'] !== '') {
             try {
                 $bizCounts = (new BizRepository())->getCounts($filters['idDominio']);
@@ -68,6 +69,9 @@ class ReportRagioneriaController
                 $scanDa = trim((string)\App\Config\SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
                 $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
                 $bizCounts['not_queued'] = $flussiRepo->countUnprocessedForBiz($filters['idDominio'], $minDate);
+                $govpayDebitore['da_scansionare'] = $flussiRepo->countUnprocessedGovPayForDebitore($filters['idDominio'], $minDate);
+                $govpayDebitore['total'] = $flussiRepo->countTotalGovPayWithPendenza($filters['idDominio'], $minDate);
+                $govpayDebitore['scansionate'] = max(0, $govpayDebitore['total'] - $govpayDebitore['da_scansionare']);
             } catch (\Throwable $_) {}
         }
 
@@ -327,6 +331,7 @@ class ReportRagioneriaController
             'page_size'        => self::PAGE_SIZE,
             'tipologie_censite' => $tipologieCensite,
             'biz_counts'       => $bizCounts,
+            'govpay_debitore'  => $govpayDebitore,
             'raw_payload_json' => null,
             'csv_link'         => $csvLink,
             'app_debug'        => $this->isAppDebug(),
