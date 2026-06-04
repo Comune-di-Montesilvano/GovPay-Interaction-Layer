@@ -1323,17 +1323,8 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             }
         }
 
-        // Auto-aggiunta al carrello
+        // Auto-aggiunta al carrello disabilitata per la marca da bollo
         $cartError = null;
-        if ($idPendenza !== '') {
-            $cartError = frontoffice_cart_add($idPendenza, [
-                'causale'      => $causale,
-                'importo'      => $importoTotale,
-                'numeroAvviso' => (string)($numeroAvviso ?? ''),
-                'dataScadenza' => $detail['dataScadenza'] ?? $dataScadenza,
-                'email'        => $email,
-            ]);
-        }
 
         $checkoutToken = $idPendenza !== '' ? frontoffice_generate_checkout_token($idPendenza) : '';
         $context['pendenza_result'] = [
@@ -1346,8 +1337,8 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             'checkout_url'      => $idPendenza !== ''
                 ? ('/pagamento-spontaneo/checkout?idPendenza=' . rawurlencode($idPendenza) . ($checkoutToken !== '' ? '&t=' . rawurlencode($checkoutToken) : ''))
                 : null,
-            'cart_url'          => '/carrello',
-            'cart_error'        => $cartError,
+            'cart_url'          => null,
+            'cart_error'        => null,
             'data_scadenza'     => $detail['dataScadenza'] ?? $dataScadenza,
             'soggetto_pagatore' => $payload['soggettoPagatore'],
         ];
@@ -4938,6 +4929,7 @@ $routes = [
             $risultati = [];
         }
 
+        $bollotTipo = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
         $rows = [];
         foreach ($risultati as $pendenza) {
             if (!is_array($pendenza)) {
@@ -4945,6 +4937,7 @@ $routes = [
             }
             $state = strtoupper((string)($pendenza['stato'] ?? ''));
             $numeroAvviso = trim((string)($pendenza['numeroAvviso'] ?? ''));
+            $rowIsBollo = strcasecmp((string)($pendenza['tipoPendenza']['idTipoPendenza'] ?? ''), $bollotTipo) === 0;
             $rows[] = [
                 'id_pendenza' => (string)($pendenza['idPendenza'] ?? ''),
                 'id_a2a' => (string)($pendenza['idA2A'] ?? ''),
@@ -4968,6 +4961,7 @@ $routes = [
                 'detail_url' => (string)($pendenza['idPendenza'] ?? '') !== ''
                     ? '/pendenze/' . rawurlencode((string)$pendenza['idPendenza'])
                     : null,
+                'is_bollo' => $rowIsBollo,
             ];
         }
 
@@ -6011,6 +6005,11 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     }
 
     $bolloDetails = array_values(array_filter($pendenzaDetails, static fn (array $d): bool => frontoffice_is_bollo_detail($d)));
+    if (count($bolloDetails) > 0 && !frontoffice_is_ebollo_v2_enabled() && !frontoffice_is_govpay_checkout_enabled()) {
+        http_response_code(422);
+        echo 'Il pagamento della Marca da Bollo Telematica tramite carrello non è disponibile. Utilizza il pagamento diretto dalla pendenza.';
+        return;
+    }
     if (count($bolloDetails) > 0 && (frontoffice_is_ebollo_v2_enabled() || frontoffice_is_govpay_checkout_enabled())) {
         if (count($pendenzaDetails) !== 1) {
             http_response_code(422);
@@ -6420,6 +6419,9 @@ if ($method === 'POST' && $normalizedPath === '/carrello/aggiungi-multiplo') {
         if (!frontoffice_is_pendenza_payable($state)) {
             continue;
         }
+        if (frontoffice_is_bollo_detail($detail)) {
+            continue;
+        }
         frontoffice_cart_add($pid, $detail);
     }
 
@@ -6462,6 +6464,12 @@ if ($method === 'POST' && $normalizedPath === '/carrello/aggiungi') {
     if (!$detail) {
         http_response_code(404);
         echo json_encode(['error' => 'Pendenza non trovata.'], JSON_UNESCAPED_UNICODE);
+        return;
+    }
+
+    if (frontoffice_is_bollo_detail($detail)) {
+        http_response_code(422);
+        echo json_encode(['error' => 'Il carrello non è disponibile per la Marca da Bollo.'], JSON_UNESCAPED_UNICODE);
         return;
     }
 
@@ -6685,6 +6693,7 @@ $baseContext = [
     'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Roma (RM)'),
     'cart_count' => frontoffice_cart_count(),
     'cart_items_ids' => array_keys(frontoffice_cart_items()),
+    'bollo_cart_enabled' => frontoffice_is_ebollo_v2_enabled() || frontoffice_is_govpay_checkout_enabled(),
     'current_locale' => $currentLocale,
     'app_version' => $versionInfo['version'],
     'app_commit' => $versionInfo['commit'],
