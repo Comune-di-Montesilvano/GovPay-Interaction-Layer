@@ -1,0 +1,77 @@
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+    <h2 class="h5 mb-0"><i class="fas fa-stamp me-2 text-primary"></i>@e.bollo</h2>
+    <button class="btn btn-sm btn-outline-secondary" onclick="impTestApiEBollo(this)">
+      <i class="fas fa-wifi me-1"></i>Test connessione
+    </button>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-4">Configurazione API dedicata @e.bollo per l'avvio dei pagamenti con marca da bollo digitale.</p>
+    <form id="form-api-ebollo" onsubmit="return false;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">@e.bollo Base URL</label>
+          <input type="url" class="form-control" name="ebollo_base_url"
+            value="{{ pagopa.ebollo_base_url|default('') }}"
+            placeholder="https://api.platform.pagopa.it/pagopa-mbd-service/v1"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="form-text">Endpoint base del servizio MBD (@e.bollo).</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">@e.bollo Subscription Key</label>
+          <div class="input-group">
+            <input type="password" class="form-control font-monospace" name="ebollo_subscription_key" id="ebollo-key"
+              value="{{ pagopa.ebollo_subscription_key|default('') }}" autocomplete="off"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePwdApiEBollo('ebollo-key', this)"><i class="fas fa-eye"></i></button>
+          </div>
+          <div class="form-text">Se vuota, verrà usata la Subscription Key del tab pagoPA Checkout.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">ID CI Service</label>
+          <input type="text" class="form-control font-monospace" name="ebollo_id_ci_service"
+            value="{{ pagopa.ebollo_id_ci_service|default('') }}"
+            placeholder="service-id"
+            {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="form-text">Opzionale: se non disponibile nel portale, GIL usa automaticamente IPA Code o ID Dominio.</div>
+        </div>
+      </div>
+
+      {% if is_superadmin %}
+      <div class="d-flex justify-content-end border-top pt-3 mt-4">
+        <button type="button" class="btn btn-primary"
+          onclick="impSaveForm('form-api-ebollo', '/impostazioni/api-esterne/save', this)">
+          <i class="fas fa-save me-1"></i>Salva
+        </button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<script>
+function togglePwdApiEBollo(id, btn) {
+  const el = document.getElementById(id);
+  const show = el.type === 'password';
+  el.type = show ? 'text' : 'password';
+  btn.innerHTML = show ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+}
+
+async function impTestApiEBollo(btn) {
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Test…';
+  try {
+    const res = await fetch('/impostazioni/api-esterne/test-ebollo');
+    const json = await res.json();
+    impToast(json.message || (json.success ? 'OK.' : 'Fallito.'), !!json.success);
+  } catch (e) {
+    impToast('Errore: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+</script>

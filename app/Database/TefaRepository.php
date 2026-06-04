@@ -279,7 +279,7 @@ class TefaRepository
      * Righe dettagliate per-IUR (per export CSV), JOIN con flussi_rendicontazioni.
      * @return array<int,array<string,mixed>>
      */
-    public function getDetailedRows(string $dataDa, string $dataA, string $idDominio): array
+    public function getDetailedRows(string $dataDa, string $dataA, string $idDominio): \Generator
     {
         $stmt = $this->pdo->prepare(
             "SELECT
@@ -301,7 +301,9 @@ class TefaRepository
              ORDER BY t.data_pagamento DESC, t.id ASC"
         );
         $stmt->execute([':id_dominio' => $idDominio, ':da' => $dataDa, ':a' => $dataA]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            yield $row;
+        }
     }
 
     /**

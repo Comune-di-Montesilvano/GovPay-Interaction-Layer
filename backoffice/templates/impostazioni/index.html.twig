@@ -117,6 +117,9 @@
       <a class="nav-link {{ active_tab == 'api-checkout' ? 'active' : '' }}" href="/impostazioni?tab=api-checkout">
         <i class="fas fa-credit-card me-2"></i>pagoPA Checkout
       </a>
+      <a class="nav-link {{ active_tab == 'api-ebollo' ? 'active' : '' }}" href="/impostazioni?tab=api-ebollo">
+        <i class="fas fa-stamp me-2"></i>@e.bollo
+      </a>
       <a class="nav-link {{ active_tab == 'api-payment-options' ? 'active' : '' }}" href="/impostazioni?tab=api-payment-options">
         <i class="fas fa-list-alt me-2"></i>Payment Options
       </a>
@@ -166,6 +169,8 @@
       {% include 'impostazioni/tab-govpay.html.twig' %}
     {% elseif active_tab == 'api-checkout' %}
       {% include 'impostazioni/tab-api-checkout.html.twig' %}
+    {% elseif active_tab == 'api-ebollo' %}
+      {% include 'impostazioni/tab-api-ebollo.html.twig' %}
     {% elseif active_tab == 'api-payment-options' %}
       {% include 'impostazioni/tab-api-payment-options.html.twig' %}
     {% elseif active_tab == 'api-bizevents' %}
@@ -360,6 +365,10 @@
       { tab: 'api-checkout', section: 'pagoPA Checkout', label: 'Return URL — Pagamento completato' },
       { tab: 'api-checkout', section: 'pagoPA Checkout', label: 'Return URL — Pagamento annullato' },
       { tab: 'api-checkout', section: 'pagoPA Checkout', label: 'Return URL — Errore' },
+      // API E-BOLLO
+      { tab: 'api-ebollo', section: '@e.bollo', label: '@e.bollo Base URL' },
+      { tab: 'api-ebollo', section: '@e.bollo', label: '@e.bollo Subscription Key' },
+      { tab: 'api-ebollo', section: '@e.bollo', label: 'ID CI Service' },
       // API PAYMENT OPTIONS
       { tab: 'api-payment-options', section: 'Payment Options API', label: 'URL' },
       { tab: 'api-payment-options', section: 'Payment Options API', label: 'API Key' },
@@ -414,6 +423,7 @@
       { tab: 'gruppi-utenti', section: 'Tab', label: 'Gruppi Utenti' },
       { tab: 'operatori', section: 'Tab', label: 'Operatori GovPay' },
       { tab: 'api-checkout', section: 'Tab', label: 'pagoPA Checkout' },
+      { tab: 'api-ebollo', section: 'Tab', label: '@e.bollo' },
       { tab: 'api-payment-options', section: 'Tab', label: 'Payment Options' },
       { tab: 'api-bizevents', section: 'Tab', label: 'BizEvents' },
       { tab: 'api-tassonomie', section: 'Tab', label: 'Tassonomie API' },

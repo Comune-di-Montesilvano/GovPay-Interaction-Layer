@@ -140,6 +140,9 @@ return function (App $app, Twig $twig): void {
     $app->get('/impostazioni/api-esterne/test-checkout', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testCheckout($request, $response);
     });
+    $app->get('/impostazioni/api-esterne/test-ebollo', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->testEBollo($request, $response);
+    });
     $app->get('/impostazioni/api-esterne/test-payment-options', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testPaymentOptions($request, $response);
     });
