@@ -54,6 +54,12 @@
             <button class="btn btn-outline-secondary" type="button" onclick="impTestGovpayEndpoint('pendenze-patch', this)" title="Test connessione"><i class="fas fa-wifi"></i></button>
           </div>
         </div>
+        <div class="col-md-6">
+          <label class="form-label">Checkout URL <small class="text-muted">(API pagamento v2 — bollo)</small></label>
+          <input type="url" class="form-control" name="checkout_url"
+            value="{{ govpay.checkout_url|default('') }}" placeholder="https://…/govpay/frontend/api/pagamento/rs/basic/v2/" {{ not is_superadmin ? 'readonly' : '' }}>
+          <div class="form-text">Abilita il checkout GovPay per le marche da bollo. Lasciare vuoto per usare pagoPA Checkout.</div>
+        </div>
       </div>
 
       <h6 class="text-muted text-uppercase small fw-semibold mb-3">Autenticazione</h6>
