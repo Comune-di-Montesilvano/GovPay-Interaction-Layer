@@ -342,7 +342,7 @@ class ReportTefaController
         $repo = new TefaRepository();
         $rows = $repo->getDetailedRows($dataDa, $dataA, $idDominio);
 
-        $out = fopen('php://temp', 'r+');
+        $out = fopen('php://temp/maxmemory:2097152', 'r+');
         if ($out === false) {
             return $response;
         }
@@ -390,10 +390,15 @@ class ReportTefaController
         }
 
         rewind($out);
-        $csv = stream_get_contents($out);
+        $body = $response->getBody();
+        while (!feof($out)) {
+            $chunk = fread($out, 65536);
+            if ($chunk !== false && $chunk !== '') {
+                $body->write($chunk);
+            }
+        }
         fclose($out);
 
-        $response->getBody()->write((string)$csv);
         return $response;
     }
 

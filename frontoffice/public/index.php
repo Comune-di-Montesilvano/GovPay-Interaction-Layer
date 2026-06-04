@@ -2545,6 +2545,257 @@ if (!function_exists('frontoffice_build_cart_request')) {
     }
 }
 
+if (!function_exists('frontoffice_is_bollo_detail')) {
+    function frontoffice_is_bollo_detail(array $detail): bool
+    {
+        $tipo = strtoupper(trim((string)($detail['tipoPendenza']['idTipoPendenza'] ?? '')));
+        if ($tipo === 'BOLLOT') {
+            return true;
+        }
+        $voci = $detail['voci'] ?? null;
+        if (!is_array($voci)) {
+            return false;
+        }
+        foreach ($voci as $voce) {
+            if (!is_array($voce)) {
+                continue;
+            }
+            $tipoBollo = trim((string)($voce['tipoBollo'] ?? $voce['tipo_bollo'] ?? ''));
+            if ($tipoBollo !== '') {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('frontoffice_start_ebollo_checkout')) {
+    /**
+     * Avvia il checkout @e.bollo per una singola pendenza BOLLOT.
+     * Ritorna ['success'=>bool,'location'=>string,'status'=>int,'message'=>string].
+     */
+    function frontoffice_start_ebollo_checkout(
+        array $detail,
+        string $idPendenza,
+        string $idDominio,
+        string $okUrl,
+        string $cancelUrl,
+        string $errorUrl,
+        string $fallbackEmail,
+        string $flow
+    ): array {
+        $baseUrl = rtrim(frontoffice_env_value('PAGOPA_EBOLLO_BASE_URL', ''), '/');
+        $idCiService = trim(frontoffice_env_value('PAGOPA_EBOLLO_ID_CI_SERVICE', ''));
+        if ($idCiService === '') {
+            $idCiService = trim(frontoffice_env_value('APP_ENTITY_IPA_CODE', ''));
+        }
+        if ($idCiService === '') {
+            $idCiService = $idDominio;
+        }
+        $subscriptionKey = trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY', frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')));
+
+        if ($baseUrl === '' || $subscriptionKey === '') {
+            Logger::getInstance()->warning('Configurazione @e.bollo incompleta', [
+                'flow' => $flow,
+                'has_base_url' => $baseUrl !== '',
+                'has_id_ci_service' => $idCiService !== '',
+                'has_key' => $subscriptionKey !== '',
+            ]);
+            return [
+                'success' => false,
+                'status' => 503,
+                'message' => 'Configurazione @e.bollo non completa (Base URL o Subscription Key mancanti). Contatta l\'amministratore.',
+            ];
+        }
+
+        $voci = is_array($detail['voci'] ?? null) ? $detail['voci'] : [];
+        $firstVoce = [];
+        foreach ($voci as $voce) {
+            if (!is_array($voce)) {
+                continue;
+            }
+            $tipoBollo = trim((string)($voce['tipoBollo'] ?? $voce['tipo_bollo'] ?? ''));
+            if ($tipoBollo !== '') {
+                $firstVoce = $voce;
+                break;
+            }
+        }
+
+        $province = strtoupper(trim((string)($firstVoce['provinciaResidenza'] ?? '')));
+        $province = preg_replace('/[^A-Z]/', '', $province);
+        if (!is_string($province) || strlen($province) !== 2) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Dati marca da bollo incompleti: provincia di residenza non valida.',
+            ];
+        }
+
+        $documentHash = trim((string)($firstVoce['hashDocumento'] ?? ''));
+        if ($documentHash !== '' && strlen($documentHash) !== 44) {
+            $documentHash = '';
+        }
+
+        $payer = is_array($detail['soggettoPagatore'] ?? null) ? $detail['soggettoPagatore'] : [];
+        $fiscalCode = strtoupper(preg_replace('/\s+/', '', trim((string)($payer['identificativo'] ?? $payer['codiceFiscale'] ?? $payer['fiscalNumber'] ?? ''))));
+        if ($fiscalCode === '') {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Dati marca da bollo incompleti: codice fiscale/partita IVA mancante.',
+            ];
+        }
+
+        $email = trim((string)($payer['email'] ?? ''));
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            $email = trim($fallbackEmail);
+        }
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Dati marca da bollo incompleti: email del pagatore non valida.',
+            ];
+        }
+
+        $anagrafica = trim((string)($payer['anagrafica'] ?? ''));
+        $nomeRaw = trim((string)($payer['nome'] ?? ''));
+        $parts = preg_split('/\s+/', trim($anagrafica));
+        if (!is_array($parts)) {
+            $parts = [];
+        }
+        $firstName = $nomeRaw !== '' ? $nomeRaw : trim((string)($parts[0] ?? ''));
+        $lastName = '';
+        if (count($parts) > 1) {
+            $lastName = trim((string)implode(' ', array_slice($parts, 1)));
+        } elseif ($anagrafica !== '') {
+            $lastName = $anagrafica;
+        }
+        if ($firstName === '') {
+            $firstName = 'SOGGETTO';
+        }
+        if ($lastName === '') {
+            $lastName = 'PAGATORE';
+        }
+
+        $amountCents = frontoffice_amount_to_cents(is_numeric($detail['importo'] ?? null) ? (float)$detail['importo'] : 0.0);
+        if ($amountCents <= 0) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Importo marca da bollo non valido.',
+            ];
+        }
+
+        $paymentNotice = [
+            'firstName' => mb_substr($firstName, 0, 140),
+            'lastName' => mb_substr($lastName, 0, 140),
+            'fiscalCode' => $fiscalCode,
+            'email' => $email,
+            'amount' => $amountCents,
+            'province' => $province,
+        ];
+        if ($documentHash !== '') {
+            $paymentNotice['documentHash'] = $documentHash;
+        }
+
+        $requestBody = [
+            'paymentNotices' => [$paymentNotice],
+            'idCIService' => $idCiService,
+            'returnUrls' => [
+                'successUrl' => $okUrl,
+                'cancelUrl' => $cancelUrl,
+                'errorUrl' => $errorUrl,
+            ],
+        ];
+
+        $requestId = '';
+        try {
+            $requestId = bin2hex(random_bytes(16));
+        } catch (\Throwable) {
+            $requestId = sha1((string)microtime(true));
+        }
+
+        try {
+            $client = new Client([
+                'timeout' => 20,
+                'connect_timeout' => 10,
+                'allow_redirects' => false,
+                'http_errors' => false,
+            ]);
+            $response = $client->request('POST', $baseUrl . '/organizations/' . rawurlencode($idDominio) . '/mbd', [
+                'headers' => [
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                    'Ocp-Apim-Subscription-Key' => $subscriptionKey,
+                    'X-Request-Id' => $requestId,
+                ],
+                'json' => $requestBody,
+            ]);
+
+            $status = $response->getStatusCode();
+            $bodyRaw = (string)$response->getBody();
+            $body = json_decode($bodyRaw, true);
+            $redirectUrl = is_array($body) ? trim((string)($body['checkoutRedirectUrl'] ?? '')) : '';
+
+            if ($status >= 200 && $status < 300 && $redirectUrl !== '') {
+                Logger::getInstance()->info('Checkout @e.bollo avviato', [
+                    'flow' => $flow,
+                    'idPendenza' => $idPendenza,
+                    'requestId' => $requestId,
+                ]);
+                return [
+                    'success' => true,
+                    'location' => $redirectUrl,
+                ];
+            }
+
+            $detailMsg = is_array($body) ? trim((string)($body['detail'] ?? '')) : '';
+            $titleMsg = is_array($body) ? trim((string)($body['title'] ?? '')) : '';
+            $statusMsg = is_array($body) ? (int)($body['status'] ?? 0) : 0;
+            $fallbackMsg = trim((string)($titleMsg !== '' ? $titleMsg : $detailMsg));
+            if ($fallbackMsg === '' && $bodyRaw !== '') {
+                $fallbackMsg = mb_substr(trim($bodyRaw), 0, 220);
+            }
+            Logger::getInstance()->warning('Errore API @e.bollo', [
+                'flow' => $flow,
+                'idPendenza' => $idPendenza,
+                'status' => $status,
+                'requestId' => $requestId,
+                'title' => $titleMsg,
+                'detail' => $detailMsg,
+                'problem_status' => $statusMsg,
+            ]);
+
+            $message = 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.';
+            if ($fallbackMsg !== '') {
+                $message = 'Errore @e.bollo: ' . $fallbackMsg;
+            }
+
+            return [
+                'success' => false,
+                'status' => 503,
+                'message' => $message,
+            ];
+        } catch (\Throwable $e) {
+            $safeErr = Logger::sanitizeErrorForDisplay($e->getMessage());
+            Logger::getInstance()->warning('Eccezione durante chiamata @e.bollo', [
+                'flow' => $flow,
+                'idPendenza' => $idPendenza,
+                'requestId' => $requestId,
+                'error' => $safeErr,
+            ]);
+            return [
+                'success' => false,
+                'status' => 503,
+                'message' => $safeErr !== ''
+                    ? ('Errore connessione @e.bollo: ' . $safeErr)
+                    : 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.',
+            ];
+        }
+    }
+}
+
 
 if (!function_exists('frontoffice_pagopa_checkout_api_client')) {
     function frontoffice_pagopa_checkout_api_client(): ?\PagoPA\CheckoutEc\Api\DefaultApi
@@ -4977,6 +5228,26 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
         $emailNotice = trim((string)($loggedUser['email'] ?? ''));
     }
 
+    if (frontoffice_is_bollo_detail($detail)) {
+        $ebollo = frontoffice_start_ebollo_checkout(
+            $detail,
+            $idPendenza,
+            $idDominio,
+            $okUrl,
+            $cancelUrl,
+            $errorUrl,
+            $emailNotice,
+            'spontaneo'
+        );
+        if (!($ebollo['success'] ?? false)) {
+            http_response_code((int)($ebollo['status'] ?? 503));
+            echo (string)($ebollo['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+        header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    }
+
     try {
         $notice = new \PagoPA\CheckoutEc\Model\PaymentNotice();
         $notice->setNoticeNumber($numeroAvviso);
@@ -5177,6 +5448,26 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
         $emailNotice = trim((string)($loggedUser['email'] ?? ''));
     }
 
+    if (frontoffice_is_bollo_detail($detail)) {
+        $ebollo = frontoffice_start_ebollo_checkout(
+            $detail,
+            $idPendenza,
+            $idDominio,
+            $okUrl,
+            $cancelUrl,
+            $errorUrl,
+            $emailNotice,
+            'avviso'
+        );
+        if (!($ebollo['success'] ?? false)) {
+            http_response_code((int)($ebollo['status'] ?? 503));
+            echo (string)($ebollo['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+        header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    }
+
     try {
         $notice = new \PagoPA\CheckoutEc\Model\PaymentNotice();
         $notice->setNoticeNumber($numeroAvviso);
@@ -5349,6 +5640,27 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza);
     }
 
+    $emailNotice = trim((string)($user['email'] ?? ''));
+    if (frontoffice_is_bollo_detail($detail)) {
+        $ebollo = frontoffice_start_ebollo_checkout(
+            $detail,
+            $idPendenza,
+            $idDominio,
+            $okUrl,
+            $cancelUrl,
+            $errorUrl,
+            $emailNotice,
+            'profilo'
+        );
+        if (!($ebollo['success'] ?? false)) {
+            http_response_code((int)($ebollo['status'] ?? 503));
+            echo (string)($ebollo['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+        header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
+    }
+
     try {
         $notice = new \PagoPA\CheckoutEc\Model\PaymentNotice();
         $notice->setNoticeNumber($numeroAvviso);
@@ -5366,7 +5678,6 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
 
         $cart = new \PagoPA\CheckoutEc\Model\CartRequest();
 
-        $emailNotice = trim((string)($user['email'] ?? ''));
         if ($emailNotice !== '' && filter_var($emailNotice, FILTER_VALIDATE_EMAIL) !== false) {
             $cart->setEmailNotice($emailNotice);
         }
@@ -5559,6 +5870,38 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
                 break;
             }
         }
+    }
+
+    $bolloDetails = array_values(array_filter($pendenzaDetails, static fn (array $d): bool => frontoffice_is_bollo_detail($d)));
+    if (count($bolloDetails) > 0) {
+        if (count($pendenzaDetails) !== 1) {
+            http_response_code(422);
+            echo 'Le pendenze Marca da Bollo devono essere pagate singolarmente.';
+            return;
+        }
+
+        $okUrl     = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode((string)($bolloDetails[0]['idPendenza'] ?? $rawIds[0] ?? ''));
+        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode((string)($bolloDetails[0]['idPendenza'] ?? $rawIds[0] ?? ''));
+        $errorUrl  = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode((string)($bolloDetails[0]['idPendenza'] ?? $rawIds[0] ?? ''));
+
+        $ebollo = frontoffice_start_ebollo_checkout(
+            $bolloDetails[0],
+            (string)($bolloDetails[0]['idPendenza'] ?? $rawIds[0] ?? ''),
+            $idDominio,
+            $okUrl,
+            $cancelUrl,
+            $errorUrl,
+            $emailNotice,
+            'carrello'
+        );
+        if (!($ebollo['success'] ?? false)) {
+            http_response_code((int)($ebollo['status'] ?? 503));
+            echo (string)($ebollo['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.');
+            return;
+        }
+
+        header('Location: ' . (string)$ebollo['location'], true, 302);
+        exit;
     }
 
 
