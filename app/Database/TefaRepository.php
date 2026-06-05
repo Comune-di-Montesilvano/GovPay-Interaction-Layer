@@ -292,7 +292,6 @@ class TefaRepository
         return $stmt->rowCount();
     }
 
-    /** Conteggi per stato per un dato dominio. */
     public function getCounts(string $idDominio): array
     {
         $stmt = $this->pdo->prepare(
@@ -304,8 +303,32 @@ class TefaRepository
             $result[(string)$row['stato']] = (int)$row['n'];
             $result['total'] += (int)$row['n'];
         }
+
+        // Include non-GovPay processed receipts from biz_ricevute not yet queued in tefa_ricevute
+        try {
+            $stmt2 = $this->pdo->prepare(
+                'SELECT COUNT(*)
+                 FROM biz_ricevute b
+                 INNER JOIN flussi_rendicontazioni f
+                   ON f.id_dominio = b.id_dominio
+                  AND f.iur = b.iur
+                  AND f.is_govpay = 0
+                 LEFT JOIN tefa_ricevute t
+                   ON t.id_dominio = b.id_dominio
+                  AND t.iur = b.iur
+                 WHERE b.id_dominio = :id_dominio
+                   AND b.stato = \'PROCESSED\'
+                   AND t.id IS NULL'
+            );
+            $stmt2->execute([':id_dominio' => $idDominio]);
+            $unqueued = (int)$stmt2->fetchColumn();
+            $result['PENDING'] += $unqueued;
+            $result['total'] += $unqueued;
+        } catch (\Throwable $_) {}
+
         return $result;
     }
+
 
     /**
      * Report aggregato per comune nel range date.
@@ -426,6 +449,7 @@ class TefaRepository
                  b.data_pagamento,
                  b.id_dominio
                FROM biz_ricevute b
+               INNER JOIN flussi_rendicontazioni f ON f.id_dominio = b.id_dominio AND f.iur = b.iur AND f.is_govpay = 0
                LEFT JOIN tefa_ricevute t ON t.id_dominio = b.id_dominio AND t.iur = b.iur
                WHERE b.id_dominio = :id_dominio2 AND t.id IS NULL
              ) AS combined

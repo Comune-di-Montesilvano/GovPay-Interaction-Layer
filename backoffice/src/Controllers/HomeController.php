@@ -129,7 +129,7 @@ class HomeController
             $bizQueueRemaining = $flussiRepo->countUnprocessedForBiz($idDominio);
         } catch (\Throwable $_) {}
         try {
-            $tefaQueueRemaining = $bizRepo->countProcessedForTefa($idDominio);
+            $tefaQueueRemaining = $bizRepo->countProcessedForTefa($idDominio) + $tefaRepo->countPendingForProcessing($idDominio);
         } catch (\Throwable $_) {}
 
         // 4. Ripartizione canali d'incasso (GovPay vs Esterno) per doughnut chart
