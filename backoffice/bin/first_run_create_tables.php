@@ -33,7 +33,6 @@ $statements = [
         session_token VARCHAR(64) NULL DEFAULT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
-    // entrate_tipologie
     "CREATE TABLE IF NOT EXISTS entrate_tipologie (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         id_dominio VARCHAR(64) NOT NULL,
@@ -43,6 +42,7 @@ $statements = [
     descrizione_locale VARCHAR(255) NULL,
     descrizione_estesa TEXT NULL,
     iban_accredito VARCHAR(34) NULL,
+    iban_appoggio VARCHAR(34) NULL,
     codice_contabilita VARCHAR(128) NULL,
     tipo_bollo VARCHAR(16) NULL,
     tipo_contabilita VARCHAR(16) NULL,
@@ -208,6 +208,18 @@ try {
     if (!$has) {
         $pdo->exec("ALTER TABLE entrate_tipologie ADD COLUMN descrizione_estesa TEXT NULL AFTER descrizione_locale");
         echo "Added column descrizione_estesa to entrate_tipologie\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+// Campo iban_appoggio
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM entrate_tipologie LIKE 'iban_appoggio'");
+    $has = $stmt ? $stmt->fetch() : false;
+    if (!$has) {
+        $pdo->exec("ALTER TABLE entrate_tipologie ADD COLUMN iban_appoggio VARCHAR(34) NULL AFTER iban_accredito");
+        echo "Added column iban_appoggio to entrate_tipologie\n";
     }
 } catch (Throwable $e) {
     // non fatale

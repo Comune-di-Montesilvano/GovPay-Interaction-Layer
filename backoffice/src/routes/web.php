@@ -240,6 +240,9 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/iban/toggle', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->ibanToggle($request, $response);
     });
+    $app->post('/impostazioni/ruoli/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->ruoliSave($request, $response);
+    });
 
     // Basic route
     $app->get('/', function (Request $request, Response $response) use ($twig): Response {
