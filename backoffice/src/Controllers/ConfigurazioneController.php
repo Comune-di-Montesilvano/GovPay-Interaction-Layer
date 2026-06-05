@@ -1131,8 +1131,8 @@ class ConfigurazioneController
                 }
             }
 
-            // info + dominio
-            if (in_array($tab, ['info', 'dominio'], true)) {
+            // info + dominio + tipologie
+            if (in_array($tab, ['info', 'dominio', 'tipologie'], true)) {
                 try {
                     if (class_exists('GovPay\\Backoffice\\Api\\InfoApi')) {
                         $infoRes  = (new \GovPay\Backoffice\Api\InfoApi($httpClient, $config))->getInfo();
@@ -1855,15 +1855,33 @@ class ConfigurazioneController
                 }
             }
 
-            if (empty($ibanAccredito)) {
-                $_SESSION['flash'][] = ['type' => 'error', 'text' => 'IBAN mancante sulla tipologia: impossibile aggiornare'];
-                return $this->redirectToTab($response, 'tipologie');
+            $entrateRepo = new EntrateRepository();
+            $localRow = $entrateRepo->findDetails($idDominio, $idEntrata);
+
+            if (empty($ibanAccredito) || $ibanAccredito === '-') {
+                $localIban = isset($localRow['iban_accredito']) ? trim((string)$localRow['iban_accredito']) : '';
+                if ($localIban !== '' && $localIban !== '-') {
+                    $ibanAccredito = $localIban;
+                } else {
+                    $ibanAccredito = '-';
+                }
+            }
+
+            if (empty($codiceCont)) {
+                $localCodice = isset($localRow['codice_contabilita']) ? trim((string)$localRow['codice_contabilita']) : '';
+                if ($localCodice !== '') {
+                    $codiceCont = $localCodice;
+                }
             }
 
             $body = new \GovPay\Backoffice\Model\EntrataPost([
-                'iban_accredito' => $ibanAccredito,
                 'abilitato' => $enable,
             ]);
+            if ($ibanAccredito === '-') {
+                $body['iban_accredito'] = null;
+            } else {
+                $body->setIbanAccredito($ibanAccredito);
+            }
 
             if (!empty($codiceCont)) {
                 $body->setCodiceContabilita($codiceCont);
@@ -1873,10 +1891,28 @@ class ConfigurazioneController
 
             $_SESSION['flash'][] = ['type' => 'success', 'text' => ($enable ? 'Abilitata' : 'Disabilitata') . ' su GovPay'];
             Logger::getInstance()->info('Tipologia govpay enabled toggled', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'user_id' => $_SESSION['user']['id'] ?? null, 'enabled' => $enable]);
-        } catch (\GuzzleHttp\Exception\ClientException $ce) {
-            $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore GovPay (' . $code . '): ' . $ce->getMessage()];
-            Logger::getInstance()->error('Error toggling tipologia govpay', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'user_id' => $_SESSION['user']['id'] ?? null, 'code' => $code, 'error' => $ce->getMessage()]);
+        } catch (\GovPay\Backoffice\ApiException $e) {
+            $code = $e->getCode();
+            $body = method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null;
+            $msg = 'Errore GovPay (' . $code . ')';
+            if ($body) {
+                if (is_string($body)) {
+                    $json = json_decode($body, true);
+                    if (is_array($json)) {
+                        $msg .= ': ' . ($json['descrizione'] ?? $json['message'] ?? $body);
+                    } else {
+                        $msg .= ': ' . $body;
+                    }
+                } elseif (is_object($body)) {
+                    $msg .= ': ' . ($body->descrizione ?? $body->message ?? json_encode($body, JSON_UNESCAPED_UNICODE));
+                } else {
+                    $msg .= ': ' . json_encode($body, JSON_UNESCAPED_UNICODE);
+                }
+            } else {
+                $msg .= ': ' . $e->getMessage();
+            }
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => $msg];
+            Logger::getInstance()->error('Error toggling tipologia govpay', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'user_id' => $_SESSION['user']['id'] ?? null, 'code' => $code, 'error' => $e->getMessage()]);
         } catch (\Throwable $e) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore aggiornamento GovPay: ' . $e->getMessage()];
             Logger::getInstance()->error('Error toggling tipologia govpay', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'user_id' => $_SESSION['user']['id'] ?? null, 'error' => $e->getMessage()]);
@@ -2586,6 +2622,91 @@ class ConfigurazioneController
         try {
             $entrateRepo = new EntrateRepository();
             $ioRepo = new \App\Database\IoServiceRepository();
+
+            // Gestione IBAN accredito (se presente nel POST)
+            if (array_key_exists('iban_accredito', $data)) {
+                $rawIban = trim((string)$data['iban_accredito']);
+                $ibanToGovPay = ($rawIban === '' || $rawIban === '-') ? '-' : $rawIban;
+                $ibanAccredito = $ibanToGovPay === '-' ? null : $ibanToGovPay;
+
+                // Aggiorna localmente
+                $entrateRepo->updateIban($idDominio, $idEntrata, $ibanAccredito);
+
+                // Aggiorna su GovPay
+                $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+                if (!empty($backofficeUrl) && class_exists('GovPay\\Backoffice\\Api\\EntiCreditoriApi')) {
+                    try {
+                        $username = SettingsRepository::get('govpay', 'user', '');
+                        $password = SettingsRepository::get('govpay', 'password', '');
+                        $guzzleOptions = ['headers' => ['Accept' => 'application/json']];
+                        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+                        if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
+                            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+                            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+                            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
+                            if (!empty($cert) && !empty($key)) {
+                                $guzzleOptions['cert'] = $cert;
+                                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
+                            }
+                        }
+
+                        $config = new \GovPay\Backoffice\Configuration();
+                        $config->setHost(rtrim($backofficeUrl, '/'));
+                        if ($username !== '' && $password !== '') {
+                            $config->setUsername($username);
+                            $config->setPassword($password);
+                        }
+
+                        $httpClient = new \GuzzleHttp\Client($guzzleOptions);
+                        $entiApi = new \GovPay\Backoffice\Api\EntiCreditoriApi($httpClient, $config);
+
+                        // Recupera l'abilitato corrente da GovPay o locale
+                        $isAbilitata = false;
+                        $row = $entrateRepo->findDetails($idDominio, $idEntrata);
+                        try {
+                            $curr = $entiApi->getEntrataDominio($idDominio, $idEntrata);
+                            if (is_object($curr)) {
+                                $isAbilitata = method_exists($curr, 'getAbilitato') ? (bool)$curr->getAbilitato() : false;
+                            }
+                        } catch (\Throwable $_) {
+                            $isAbilitata = $row ? ((int)$row['abilitato_backoffice'] === 1) : false;
+                        }
+
+                        // Prepara il payload con l'IBAN selezionato
+                        $body = new \GovPay\Backoffice\Model\EntrataPost([
+                            'abilitato' => $isAbilitata,
+                        ]);
+                        if ($ibanToGovPay === '-') {
+                            $body['iban_accredito'] = null;
+                        } else {
+                            $body->setIbanAccredito($ibanToGovPay);
+                        }
+
+                        // Ripristina il codice contabilita se presente
+                        $codiceCont = $row['codice_contabilita'] ?? null;
+                        if (!empty($codiceCont)) {
+                            $body->setCodiceContabilita($codiceCont);
+                        }
+
+                        $entiApi->addEntrataDominio($idDominio, $idEntrata, $body);
+                        Logger::getInstance()->info('IBAN aggiornato su GovPay', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'iban' => $ibanToGovPay]);
+                    } catch (\GovPay\Backoffice\ApiException $ae) {
+                        $aeBody = method_exists($ae, 'getResponseBody') ? $ae->getResponseBody() : null;
+                        $aeDetail = '';
+                        if ($aeBody) {
+                            if (is_string($aeBody)) {
+                                $json = json_decode($aeBody, true);
+                                $aeDetail = is_array($json) ? ($json['descrizione'] ?? $json['message'] ?? $aeBody) : $aeBody;
+                            } elseif (is_object($aeBody)) {
+                                $aeDetail = $aeBody->descrizione ?? $aeBody->message ?? json_encode($aeBody, JSON_UNESCAPED_UNICODE);
+                            }
+                        }
+                        throw new \Exception('Errore sincronizzazione IBAN su GovPay: ' . ($aeDetail !== '' ? $aeDetail : $ae->getMessage()));
+                    } catch (\Throwable $e) {
+                        throw new \Exception('Errore connessione a GovPay per aggiornamento IBAN: ' . $e->getMessage());
+                    }
+                }
+            }
 
             // Descrizione personalizzata (se non vuota)
             $descr = trim((string)($data['descrizione'] ?? ''));

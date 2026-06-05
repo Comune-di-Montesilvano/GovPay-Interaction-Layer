@@ -308,8 +308,22 @@
                   <div class="accordion-body">
                     <div class="row g-3 small">
                       <div class="col-md-4">
-                        <div class="text-muted">IBAN accredito</div>
-                        <div class="fw-semibold">{{ e.ibanAccredito|default('—') }}</div>
+                        <label for="iban_{{ eid }}" class="text-muted fw-semibold d-block">IBAN accredito</label>
+                        {% if current_user and current_user.role == 'superadmin' and idEnt %}
+                          <select id="iban_{{ eid }}" name="iban_accredito" form="form_save_{{ eid }}" class="form-select form-select-sm mt-1" style="max-width:280px">
+                            <option value="-" {% if (e.ibanAccredito|default('—') == '—' or e.ibanAccredito == '' or e.ibanAccredito == '-') %}selected{% endif %}>— Nessuno (conto corrente -) —</option>
+                            {% for cc in dominio.contiAccredito|default([]) %}
+                              {% set ccIban = cc.iban|default('') %}
+                              {% if ccIban and (cc.abilitato or ccIban == e.ibanAccredito) %}
+                                <option value="{{ ccIban }}" {% if ccIban == e.ibanAccredito %}selected{% endif %}>
+                                  {{ ccIban }} {{ cc.descrizione ? '(' ~ cc.descrizione ~ ')' : '' }}
+                                </option>
+                              {% endif %}
+                            {% endfor %}
+                          </select>
+                        {% else %}
+                          <div class="fw-semibold mt-1">{{ e.ibanAccredito|default('—') }}</div>
+                        {% endif %}
                       </div>
                       <div class="col-md-4">
                         <div class="text-muted">Codice contabilità</div>
@@ -384,6 +398,7 @@
                         {% else %}
                         <div class="text-muted small mt-2"><i class="fas fa-mobile-alt me-1"></i>Nessun servizio App IO configurato. <a href="/impostazioni?tab=servizi_io">Aggiungi un servizio</a>.</div>
                         {% endif %}
+
                         {# URL esterna (spostato sopra i pulsanti azione) #}
                         <div class="row g-2 small mt-2">
                           <div class="col-md-12">

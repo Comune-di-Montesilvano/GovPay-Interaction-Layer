@@ -126,6 +126,9 @@ class EntrateRepository
 
     $descrizione = $e['tipoEntrata']['descrizione'] ?? null;
     $iban = $e['ibanAccredito'] ?? null;
+    if ($iban === '-') {
+        $iban = null;
+    }
     $codiceCont = $e['codiceContabilita'] ?? ($e['tipoEntrata']['codiceContabilita'] ?? null);
     $tipoBollo = $e['tipoBollo'] ?? ($e['tipoEntrata']['tipoBollo'] ?? null);
     if ($tipoBollo !== null && !in_array((string)$tipoBollo, ['01'], true)) {
@@ -237,6 +240,19 @@ class EntrateRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':descrizione' => $descrizione,
+            ':now' => date('Y-m-d H:i:s'),
+            ':dom' => $idDominio,
+            ':ent' => $idEntrata,
+        ]);
+    }
+
+    /** Aggiorna l'IBAN accredito della tipologia. */
+    public function updateIban(string $idDominio, string $idEntrata, ?string $iban): void
+    {
+        $sql = 'UPDATE entrate_tipologie SET iban_accredito = :iban, updated_at = :now WHERE id_dominio = :dom AND id_entrata = :ent';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            ':iban' => ($iban === null || trim($iban) === '') ? null : trim($iban),
             ':now' => date('Y-m-d H:i:s'),
             ':dom' => $idDominio,
             ':ent' => $idEntrata,
