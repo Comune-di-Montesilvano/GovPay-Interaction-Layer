@@ -242,6 +242,31 @@ class TefaRepository
      */
     public function fixProcessedTefaMapping(string $idDominio): int
     {
+        // Fix NULL values for is_govpay in flussi_rendicontazioni for this domain
+        $stmtGovPay = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni
+             SET is_govpay = CASE WHEN id_pendenza IS NOT NULL AND TRIM(id_pendenza) != '' THEN 1 ELSE 0 END
+             WHERE id_dominio = :dom AND is_govpay IS NULL"
+        );
+        $stmtGovPay->execute([':dom' => $idDominio]);
+
+        // Fix NULL values for is_multibeneficiario in flussi_rendicontazioni for this domain
+        $stmtMulti = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni
+             SET is_multibeneficiario = 0
+             WHERE id_dominio = :dom AND is_multibeneficiario IS NULL"
+        );
+        $stmtMulti->execute([':dom' => $idDominio]);
+
+        // Fix NULL values for is_govpay and is_multibeneficiario in tefa_ricevute for this domain
+        $stmtTefaNulls = $this->pdo->prepare(
+            "UPDATE tefa_ricevute
+             SET is_govpay = CASE WHEN is_govpay IS NULL THEN 0 ELSE is_govpay END,
+                 is_multibeneficiario = CASE WHEN is_multibeneficiario IS NULL THEN 0 ELSE is_multibeneficiario END
+             WHERE id_dominio = :dom AND (is_govpay IS NULL OR is_multibeneficiario IS NULL)"
+        );
+        $stmtTefaNulls->execute([':dom' => $idDominio]);
+
         $stmt = $this->pdo->prepare(
             "UPDATE flussi_rendicontazioni f
              INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
