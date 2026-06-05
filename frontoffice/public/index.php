@@ -1442,6 +1442,46 @@ if (!function_exists('frontoffice_add_notification_to_pendenza')) {
             if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
                 $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
             }
+
+            // Sanitizza le voci (voci)
+            $hasBolloVoce = false;
+            if (!empty($put['voci']) && is_array($put['voci'])) {
+                foreach ($put['voci'] as &$voce) {
+                    if (!is_array($voce)) {
+                        continue;
+                    }
+
+                    unset($voce['indice'], $voce['stato']);
+
+                    if (
+                        !empty($voce['tipoBollo']) ||
+                        !empty($voce['hashDocumento']) ||
+                        !empty($voce['provinciaResidenza'])
+                    ) {
+                        $hasBolloVoce = true;
+                        $voce['tipoBollo'] = (string)($voce['tipoBollo'] ?? '');
+                        if ($voce['tipoBollo'] === '') {
+                            $voce['tipoBollo'] = '01';
+                        }
+
+                        if (empty($voce['hashDocumento'])) {
+                            $seed = (string)($voce['descrizione'] ?? '') . '|' . (string)($voce['idVocePendenza'] ?? uniqid('', true));
+                            $voce['hashDocumento'] = base64_encode(hash('sha256', $seed, true));
+                        }
+
+                        $prov = strtoupper(trim((string)($voce['provinciaResidenza'] ?? '')));
+                        if ($prov !== '') {
+                            $voce['provinciaResidenza'] = $prov;
+                        }
+                    }
+                }
+                unset($voce);
+            }
+
+            if ($hasBolloVoce && empty($put['tassonomiaAvviso'])) {
+                $put['tassonomiaAvviso'] = 'Imposte e tasse';
+            }
+
             if (!isset($put['datiAllegati']) || !is_array($put['datiAllegati'])) {
                 $put['datiAllegati'] = [];
             }
@@ -1461,10 +1501,25 @@ if (!function_exists('frontoffice_add_notification_to_pendenza')) {
             $putOpts = $opts;
             $putOpts['headers']['Content-Type'] = 'application/json';
             $putOpts['body'] = json_encode($put, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $client->request('PUT', $url, $putOpts);
+            
+            $putResp = $client->request('PUT', $url, $putOpts);
+            $putCode = $putResp->getStatusCode();
+            if ($putCode < 200 || $putCode >= 300) {
+                throw new \RuntimeException('GovPay PUT returned status ' . $putCode . ': ' . (string)$putResp->getBody());
+            }
             return true;
         } catch (\Throwable $e) {
-            Logger::getInstance()->warning('frontoffice_add_notification_to_pendenza failed', ['err' => $e->getMessage()]);
+            $detail = '';
+            if ($e instanceof \GuzzleHttp\Exception\RequestException) {
+                $resp = $e->getResponse();
+                if ($resp) {
+                    $detail = (string)$resp->getBody();
+                }
+            }
+            Logger::getInstance()->warning('frontoffice_add_notification_to_pendenza failed', [
+                'err' => $e->getMessage(),
+                'detail' => $detail
+            ]);
             return false;
         }
     }
