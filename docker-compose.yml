@@ -46,7 +46,7 @@ services:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
       - spid_certs:/var/www/html/spid-certs:ro
-      - gil_certs:/var/www/certificate:ro
+      # gil_certs rimosso: frontoffice sidecar non chiama GovPay direttamente
       - gil_images:/var/www/html/public/img:ro
     environment:
       - APP_SUITE=frontoffice
@@ -209,7 +209,7 @@ volumes:
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
   # Archivi di backup — accessibili a backoffice e metadata-builder
   gil_backups:
-  # Certificati GovPay (mTLS client cert+key) — RW backoffice, RO frontoffice
+  # Certificati GovPay (mTLS client cert+key) — usati solo dal backoffice
   gil_certs:
   # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:
