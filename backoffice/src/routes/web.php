@@ -231,6 +231,15 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/govpay/upload-key', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->uploadGovpayKey($request, $response);
     });
+    $app->get('/impostazioni/iban/list', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->ibanList($request, $response);
+    });
+    $app->post('/impostazioni/iban/save', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->ibanSave($request, $response);
+    });
+    $app->post('/impostazioni/iban/toggle', function (Request $request, Response $response) use ($twig): Response {
+        return (new ImpostazioniController($twig))->ibanToggle($request, $response);
+    });
 
     // Basic route
     $app->get('/', function (Request $request, Response $response) use ($twig): Response {
@@ -877,6 +886,14 @@ return function (App $app, Twig $twig): void {
 
     $app->post('/backup/sistema/ripristina/chunk', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupRestoreChunk($request, $response);
+    });
+
+    $app->post('/backup/sistema/ripristina/avvia', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupRestoreAvvia($request, $response);
+    });
+
+    $app->get('/backup/sistema/ripristina/status', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupRestoreStatus($request, $response);
     });
 
     $app->get('/users/new', function($request, $response) use ($twig) {

@@ -118,6 +118,9 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **cURL PHP 8.5**: `curl_close()` deprecated — scrive notice su stdout e rompe `header()`. Usare `unset($ch)` invece.
 - **GovPay `tipo_bollo`**: API pagamenti ritorna `'Imposta di bollo'` (stringa), non `'01'` — client generato fallisce deserializzazione e fa raw fallback. Atteso, non bug GIL. `normalizeTipoBolloForBackoffice()` in `PendenzeController` converte; frontoffice usa sempre `'01'` hardcoded.
 - **MBT allegato XML**: pendenza pagata con `voci[].riscossioni[tipo='MBT']` contiene `allegato.testo` (base64 XML marca da bollo) — già nei dati della pagina, servire client-side via Blob API senza extra chiamata GovPay.
+- **`ObjectSerializer::sanitizeForSerialization`**: ritorna `stdClass`, non `array`. Prima di accedere a chiavi usare `$arr = is_array($raw) ? $raw : (json_decode(json_encode($raw, JSON_UNESCAPED_SLASHES), true) ?: [])`.
+- **`app_debug` Twig global**: nei template backoffice usare `{% if app_debug %}`, NON `{% if app.debug == 'true' %}`. Il global è registrato in `web.php` come `$twig->addGlobal('app_debug', $displayErrorDetails)`.
+- **Pattern tab Impostazioni GovPay-side**: dati che vivono in GovPay (non in `settings` DB) vengono fetchati in `ImpostazioniController::index()` quando `$tab === 'X'` e passati a Twig. Bottoni di aggiornamento sono AJAX su endpoint dedicati. Non usare `SettingsRepository` per dati GovPay.
 
 ## Integrazioni esterne
 
@@ -150,6 +153,16 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 3. **Marca da Bollo Telematica (@e.bollo)**:
    - Integrazione completa del flusso di inserimento e pagamento del bollo telematico, sia in backoffice che in frontoffice (`bollo.html.twig`, `avviso-bollo.html.twig`).
    - Checkout frontoffice priority: @e.bollo v2 (`PAGOPA_EBOLLO_MODE=v2`) → GovPay checkout (`GOVPAY_CHECKOUT_URL` set) → pagoPA standard. Helper: `frontoffice_resolve_bollo_checkout_url()` in `frontoffice/public/index.php`.
+
+4. **Tab Conti di Accredito (IBAN) in Impostazioni (Giugno 2026)**:
+   - Nuovo tab `iban` in `Impostazioni → GovPay → Conti di accredito` per visualizzare, aggiungere, modificare e abilitare/disabilitare IBAN direttamente da GIL.
+   - Dati **solo in GovPay**, niente `SettingsRepository`. Client: `GovPay\Backoffice\Api\EntiCreditoriApi` (già in `govpay-clients/`).
+   - Pattern server-side: `ImpostazioniController::index()` fetcha GovPay quando `$tab === 'iban'` e passa `iban_list`, `iban_json`, `iban_error` a Twig. Bottone "Aggiorna" è AJAX (`GET /impostazioni/iban/list`).
+   - Route: `GET /impostazioni/iban/list`, `POST /impostazioni/iban/save`, `POST /impostazioni/iban/toggle`. Metodi: `ibanList()`, `ibanSave()`, `ibanToggle()` in `ImpostazioniController`.
+   - Template: `backoffice/templates/impostazioni/tab-iban.html.twig`. Nav link sotto "Dati dominio" nella sezione GovPay.
+   - Disabilita con `abilitato=false` — non esiste endpoint DELETE nell'API GovPay.
+   - **Gotcha `ObjectSerializer::sanitizeForSerialization`**: ritorna `stdClass`, non array. Usare `json_decode(json_encode($raw), true)` prima di leggere le chiavi (come in `ConfigurazioneController`).
+   - **Gotcha `app_debug` Twig**: nei template è globale `app_debug` (booleano/stringa da `web.php:1129`), NON `app.debug` dal settings array.
 
 ## Configurazione: DB vs .env
 
