@@ -1,6 +1,18 @@
 # SPDX-License-Identifier: EUPL-1.2
 # License: European Union Public Licence v1.2 (EUPL-1.2)
 
+# Configura limiti di upload per Apache mod_php
+<IfModule mod_php.c>
+  php_value upload_max_filesize 256M
+  php_value post_max_size 256M
+  php_value memory_limit 256M
+</IfModule>
+<IfModule mod_php7.c>
+  php_value upload_max_filesize 256M
+  php_value post_max_size 256M
+  php_value memory_limit 256M
+</IfModule>
+
 # Attiva il motore di riscrittura URL
 RewriteEngine On
 
@@ -12,3 +24,4 @@ RewriteCond %{REQUEST_FILENAME} !-f
 
 # Altrimenti, reindirizza tutto a index.php
 RewriteRule ^ index.php [QSA,L]
+
