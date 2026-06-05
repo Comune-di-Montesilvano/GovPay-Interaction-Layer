@@ -100,6 +100,16 @@ $repo    = new TefaRepository();
 $bizRepo = new BizRepository();
 $service = new TefaScannerService($repo, $bizRepo);
 
+// Allineamento retroattivo pendenze TEFA in flussi_rendicontazioni all'avvio del demone
+try {
+    $fixed = $repo->fixProcessedTefaMapping((string)$idDominio);
+    if ($fixed > 0) {
+        $log("Allineamento retroattivo TEFA completato: aggiornate {$fixed} pendenze in flussi_rendicontazioni.");
+    }
+} catch (\Throwable $e) {
+    $log("ERRORE allineamento retroattivo TEFA: " . $e->getMessage());
+}
+
 $scanDa  = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
 $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
 $initialBacklog = $bizRepo->countProcessedForTefa((string)$idDominio, $minDate);
