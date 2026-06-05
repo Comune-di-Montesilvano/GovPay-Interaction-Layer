@@ -46,32 +46,14 @@
   </div>
 
   {# 2. Backlog Warning Bar #}
-  {% set total_backlog = biz_queue_remaining + (tefa_enabled|default(false) ? tefa_queue_remaining : 0) %}
-  {% if total_backlog > 0 %}
-    <div class="bo-backlog-bar shadow-sm">
-      <div class="d-flex align-items-center gap-2">
-        <i class="fas fa-triangle-exclamation text-warning" style="font-size: 1.1rem;" aria-hidden="true"></i>
-        <span>
-          Ci sono <strong>{{ total_backlog|number_format(0, ',', '.') }}</strong> transazioni in attesa di elaborazione
-          ({% if biz_queue_remaining > 0 %}<strong>{{ biz_queue_remaining }}</strong> Flussi Esterni{% endif %}
-          {% if biz_queue_remaining > 0 and tefa_queue_remaining > 0 and tefa_enabled|default(false) %} e {% endif %}
-          {% if tefa_queue_remaining > 0 and tefa_enabled|default(false) %}<strong>{{ tefa_queue_remaining }}</strong> TEFA{% endif %}).
-        </span>
-      </div>
-      <div class="d-flex gap-2">
-        {% if biz_queue_remaining > 0 %}
-          <a href="/pagamenti/report-ragioneria?q=1" class="btn btn-warning btn-sm" style="color: var(--ms-ink) !important; border: 1px solid rgba(0,0,0,0.15) !important;">
-            <i class="fas fa-arrow-right me-1" aria-hidden="true"></i> Flussi Esterni
-          </a>
-        {% endif %}
-        {% if tefa_queue_remaining > 0 and tefa_enabled|default(false) %}
-          <a href="/pagamenti/report-tefa?q=1" class="btn btn-warning btn-sm" style="color: var(--ms-ink) !important; border: 1px solid rgba(0,0,0,0.15) !important;">
-            <i class="fas fa-arrow-right me-1" aria-hidden="true"></i> Quota TEFA
-          </a>
-        {% endif %}
-      </div>
+  <div class="bo-backlog-bar shadow-sm d-none" id="bo-backlog-bar" style="margin-bottom: 1.5rem;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="fas fa-triangle-exclamation text-warning" style="font-size: 1.1rem;" aria-hidden="true"></i>
+      <span id="bo-backlog-text">Caricamento stato coda...</span>
     </div>
-  {% endif %}
+    <div class="d-flex gap-2" id="bo-backlog-actions">
+    </div>
+  </div>
 
   {# 3. Hero Metric Cards Grid #}
   <div class="row g-3 mb-4">
@@ -83,10 +65,11 @@
             <i class="fas fa-wallet" aria-hidden="true"></i>
           </div>
           <span class="bo-hero-card-label">Incassi Complessivi</span>
-          <div class="bo-hero-card-value">€ {{ totals.amount|number_format(2, ',', '.') }}</div>
-          <div class="bo-hero-card-meta">
-            <i class="fas fa-circle-check text-success" aria-hidden="true"></i>
-            <span><strong>{{ totals.count|number_format(0, ',', '.') }}</strong> transazioni totali</span>
+          <div class="bo-hero-card-value" id="stats-totals-amount">
+            <i class="fas fa-spinner fa-spin text-muted" style="font-size: 1.2rem;"></i>
+          </div>
+          <div class="bo-hero-card-meta" id="stats-totals-meta">
+            <span>Caricamento...</span>
           </div>
         </div>
       </div>
@@ -117,12 +100,11 @@
             <i class="fas fa-receipt" aria-hidden="true"></i>
           </div>
           <span class="bo-hero-card-label">Ricevute Flussi Esterni</span>
-          <div class="bo-hero-card-value">{{ biz_counts.PROCESSED|number_format(0, ',', '.') }}</div>
-          <div class="bo-hero-card-meta">
-            <span>
-              {% if biz_counts.PENDING > 0 %}<strong class="text-warning">{{ biz_counts.PENDING }}</strong> in attesa · {% endif %}
-              {% if biz_counts.ERROR > 0 %}<strong class="text-danger">{{ biz_counts.ERROR }}</strong> errori{% else %}Elaborate con successo{% endif %}
-            </span>
+          <div class="bo-hero-card-value" id="stats-biz-processed">
+            <i class="fas fa-spinner fa-spin text-muted" style="font-size: 1.2rem;"></i>
+          </div>
+          <div class="bo-hero-card-meta" id="stats-biz-meta">
+            <span>Caricamento...</span>
           </div>
         </div>
       </div>
@@ -137,12 +119,11 @@
             <i class="fas fa-building-columns" aria-hidden="true"></i>
           </div>
           <span class="bo-hero-card-label">Classificazione TEFA</span>
-          <div class="bo-hero-card-value">{{ tefa_counts.PROCESSED|number_format(0, ',', '.') }}</div>
-          <div class="bo-hero-card-meta">
-            <span>
-              {% if tefa_counts.PENDING > 0 %}<strong class="text-warning">{{ tefa_counts.PENDING }}</strong> in attesa · {% endif %}
-              {% if tefa_counts.ERROR > 0 %}<strong class="text-danger">{{ tefa_counts.ERROR }}</strong> errori{% else %}Analizzate correttamente{% endif %}
-            </span>
+          <div class="bo-hero-card-value" id="stats-tefa-processed">
+            <i class="fas fa-spinner fa-spin text-muted" style="font-size: 1.2rem;"></i>
+          </div>
+          <div class="bo-hero-card-meta" id="stats-tefa-meta">
+            <span>Caricamento...</span>
           </div>
         </div>
       </div>
@@ -161,7 +142,11 @@
             <span class="text-muted small">| Totale mensile riscosso ed esito pagamenti</span>
           </div>
         </div>
-        <div class="card-body">
+        <div class="card-body position-relative">
+          <div id="monthly-trend-loading" class="position-absolute top-50 start-50 translate-middle text-center" style="z-index: 10;">
+            <i class="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+            <div class="text-muted small">Caricamento grafico...</div>
+          </div>
           <div style="position: relative; height: 300px; width: 100%;">
             <canvas id="monthlyTrendChart"></canvas>
           </div>
@@ -178,19 +163,23 @@
             <span class="text-muted small">| Incassi reali</span>
           </div>
         </div>
-        <div class="card-body d-flex flex-column align-items-center justify-content-center">
+        <div class="card-body d-flex flex-column align-items-center justify-content-center position-relative">
+          <div id="channel-dist-loading" class="position-absolute top-50 start-50 translate-middle text-center" style="z-index: 10;">
+            <i class="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+            <div class="text-muted small">Caricamento...</div>
+          </div>
           <div style="position: relative; height: 200px; width: 100%;">
             <canvas id="channelDistributionChart"></canvas>
           </div>
-          <div class="mt-3 text-center w-100">
+          <div class="mt-3 text-center w-100" id="channel-dist-legend" style="display: none;">
             <div class="d-flex justify-content-center gap-4 text-muted small">
               <div>
                 <span class="badge" style="background-color: var(--bi-primary); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 6px; vertical-align: middle;"></span>
-                Pendenze Interne: <strong>{{ channels_data.govpay|number_format(0, ',', '.') }}</strong>
+                Pendenze Interne: <strong id="channel-govpay-count">0</strong>
               </div>
               <div>
                 <span class="badge" style="background-color: var(--ms-purple-600); width: 12px; height: 12px; display: inline-block; padding: 0; margin-right: 6px; vertical-align: middle;"></span>
-                Pendenze Esterne: <strong>{{ channels_data.external|number_format(0, ',', '.') }}</strong>
+                Pendenze Esterne: <strong id="channel-external-count">0</strong>
               </div>
             </div>
           </div>
@@ -210,48 +199,11 @@
             <span class="text-muted small">| Aggiornamenti ragioneria</span>
           </div>
         </div>
-        <div class="card-body p-0">
-          {% if recent_flussi is empty %}
-            <div class="p-4 text-center text-muted">
-              <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
-              <p class="mb-0">Nessun flusso sincronizzato presente in archivio.</p>
-            </div>
-          {% else %}
-            <div class="table-responsive">
-              <table class="table table-striped align-middle mb-0" style="font-size: 0.88rem;">
-                <thead>
-                  <tr>
-                    <th scope="col">Data Regolamento</th>
-                    <th scope="col">ID Flusso</th>
-                    <th scope="col">Sorgente</th>
-                    <th scope="col" class="text-end">Transazioni</th>
-                    <th scope="col" class="text-end">Importo Totale</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for flusso in recent_flussi %}
-                    <tr>
-                      <td class="fw-semibold">{{ flusso.data_regolamento }}</td>
-                      <td>
-                        <a href="/pagamenti/ricerca-flussi?q=1&idFlusso={{ flusso.id_flusso|url_encode }}&idDominio={{ id_dominio|url_encode }}" class="text-decoration-none">
-                          <code>{{ flusso.id_flusso|slice(0, 30) }}{% if flusso.id_flusso|length > 30 %}...{% endif %}</code>
-                        </a>
-                      </td>
-                      <td>
-                        {% if flusso.is_govpay == 1 %}
-                          <span class="badge bg-primary">Flussi Interni</span>
-                        {% else %}
-                          <span class="badge" style="background-color: var(--ms-purple-600); color: #fff;">Flussi Esterni</span>
-                        {% endif %}
-                      </td>
-                      <td class="text-end">{{ flusso.transazioni|number_format(0, ',', '.') }}</td>
-                      <td class="text-end fw-bold">€ {{ flusso.importo_totale|number_format(2, ',', '.') }}</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% endif %}
+        <div class="card-body p-0" id="recent-flussi-container">
+          <div class="p-5 text-center text-muted">
+            <i class="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+            <p class="mb-0">Caricamento flussi recenti...</p>
+          </div>
         </div>
       </div>
     </div>
@@ -353,6 +305,7 @@
         </div>
       </div>
     </div>
+  </div>
 
   {# 6. Breakdown by Noticing Type (Tipologie Pendenze) #}
   <div class="row g-3 mt-3 mb-4">
@@ -373,56 +326,16 @@
               <button type="button" class="btn btn-primary" data-periodo="12m">Ultimi 12 mesi</button>
             </div>
             <div class="small text-muted fw-semibold" style="font-size: 0.84rem;">
-              Totale periodo: <span id="bo-tipologie-total" class="text-primary fs-6 fw-bold">€ {{ tipologie_total|number_format(2, ',', '.') }}</span>
+              Totale periodo: <span id="bo-tipologie-total" class="text-primary fs-6 fw-bold">€ 0,00</span>
             </div>
           </div>
         </div>
         <div class="card-body">
           <div id="bo-tipologie-grid-wrap">
-            {% if tipologie_stats is empty %}
-              <div class="p-4 text-center text-muted" id="bo-tipologie-empty">
-                <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
-                <p class="mb-0">Nessun dato registrato sulle tipologie di pendenza.</p>
-              </div>
-            {% else %}
-              <div class="row g-3" id="bo-tipologie-grid">
-                {% for item in tipologie_stats %}
-                  {% set percent = tipologie_total > 0 ? (item.importo_totale / tipologie_total * 100) : 0 %}
-                  {% set is_extra = loop.index0 >= 6 %}
-                  <div class="col-md-6 col-xl-4{{ is_extra ? ' d-none bo-extra-tipologia' : '' }}">
-                    <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
-                      <div>
-                        <div class="mb-2">
-                          <h4 class="h6 mb-0 text-dark fw-bold" style="font-size: 0.92rem; line-height: 1.35;">
-                            {{ item.tipologia_desc }}
-                          </h4>
-                        </div>
-                        <div class="text-muted small mb-3">
-                          <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
-                          <strong>{{ item.transazioni|number_format(0, ',', '.') }}</strong> transazioni
-                        </div>
-                      </div>
-                      <div>
-                        <div class="d-flex justify-content-between align-items-end mb-1">
-                          <span class="fw-bold text-dark" style="font-size: 1.1rem;">€ {{ item.importo_totale|number_format(2, ',', '.') }}</span>
-                          <span class="small fw-semibold text-primary" style="font-size: 0.8rem;">{{ percent|round(1) }}%</span>
-                        </div>
-                        <div class="progress" style="height: 6px;" title="Quota del {{ percent|round(2) }}% sul totale incassato">
-                          <div class="progress-bar progress-bar-striped bg-primary" role="progressbar" style="width: {{ percent }}%" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-
-              <div class="text-center mt-4" id="bo-tipologie-toggle-wrap" {% if tipologie_stats|length <= 6 %}style="display:none"{% endif %}>
-                <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2">
-                  <i class="fas fa-chevron-down me-2" id="bo-toggle-icon"></i>
-                  <span id="bo-toggle-text">Mostra tutte le tipologie ({{ tipologie_stats|length }})</span>
-                </button>
-              </div>
-            {% endif %}
+            <div class="p-5 text-center text-muted">
+              <i class="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+              <p class="mb-0">Caricamento tipologie...</p>
+            </div>
           </div>
         </div>
       </div>
@@ -432,120 +345,289 @@
   {# 7. Custom Scripts for Chart.js & Ajax Daemon toggling #}
   <script src="/assets/chartjs/chart.umd.min.js"></script>
   <script>
-    document.addEventListener("DOMContentLoaded", function() {
-      // ── Charts Implementation ──────────────────────────────────────
-      const monthlyData = {{ monthly_trend_json|raw }};
-      
-      // Chart 1: Monthly Trend Line/Bar Combo Chart
-      const ctxTrend = document.getElementById("monthlyTrendChart");
-      if (ctxTrend && typeof Chart !== 'undefined') {
-        new Chart(ctxTrend.getContext("2d"), {
-          type: "bar",
-          data: {
-            labels: monthlyData.map(item => item.label),
-            datasets: [
-              {
-                type: "line",
-                label: "Numero Transazioni",
-                borderColor: "#C9A13B", // crown gold
-                borderWidth: 3,
-                fill: false,
-                tension: 0.35,
-                yAxisID: "y-count",
-                data: monthlyData.map(item => item.count)
-              },
-              {
-                type: "bar",
-                label: "Pendenze Interne (€)",
-                backgroundColor: "#0066CC", // same blue as channel breakdown
-                hoverBackgroundColor: "#0052a3",
-                borderRadius: 4,
-                yAxisID: "y-amount",
-                data: monthlyData.map(item => item.amount_internal || 0)
-              },
-              {
-                type: "bar",
-                label: "Pendenze Esterne (€)",
-                backgroundColor: "#4A2A6E", // same purple as channel breakdown
-                hoverBackgroundColor: "#382054",
-                borderRadius: 4,
-                yAxisID: "y-amount",
-                data: monthlyData.map(item => item.amount_external || 0)
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: 'top',
-                labels: {
-                  boxWidth: 12,
-                  font: { family: 'Titillium Web', size: 12 }
+    // Global format helpers
+    function fmtEur(val) {
+      let num = parseFloat(val);
+      if (isNaN(num)) return '€\u00a00,00';
+      let parts = num.toFixed(2).split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      return '€\u00a0' + parts.join(',');
+    }
+
+    function fmtNum(val) {
+      let num = parseInt(val, 10);
+      if (isNaN(num)) return '0';
+      return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function() {
+        loadDashboardStats();
+      });
+    } else {
+      loadDashboardStats();
+    }
+
+    async function loadDashboardStats() {
+      try {
+        const response = await fetch('/api/dashboard/stats');
+        if (!response.ok) throw new Error('Errore nel caricamento delle statistiche');
+        const stats = await response.json();
+
+        // ── 1. Popola barra backlog transazioni ──
+        const tefaEnabled = {{ tefa_enabled|default(false) ? 'true' : 'false' }};
+        const totalBacklog = stats.biz_queue_remaining + (tefaEnabled ? stats.tefa_queue_remaining : 0);
+        const backlogBar = document.getElementById('bo-backlog-bar');
+        
+        if (totalBacklog > 0) {
+          document.getElementById('bo-backlog-text').innerHTML = `
+            Ci sono <strong>${fmtNum(totalBacklog)}</strong> transazioni in attesa di elaborazione
+            (${stats.biz_queue_remaining > 0 ? `<strong>${fmtNum(stats.biz_queue_remaining)}</strong> Flussi Esterni` : ''}
+            ${stats.biz_queue_remaining > 0 && stats.tefa_queue_remaining > 0 && tefaEnabled ? ' e ' : ''}
+            ${stats.tefa_queue_remaining > 0 && tefaEnabled ? `<strong>${fmtNum(stats.tefa_queue_remaining)}</strong> TEFA` : ''}).
+          `;
+          
+          let actionsHtml = '';
+          if (stats.biz_queue_remaining > 0) {
+            actionsHtml += `
+              <a href="/pagamenti/report-ragioneria?q=1" class="btn btn-warning btn-sm" style="color: var(--ms-ink) !important; border: 1px solid rgba(0,0,0,0.15) !important;">
+                <i class="fas fa-arrow-right me-1" aria-hidden="true"></i> Flussi Esterni
+              </a>
+            `;
+          }
+          if (stats.tefa_queue_remaining > 0 && tefaEnabled) {
+            actionsHtml += `
+              <a href="/pagamenti/report-tefa?q=1" class="btn btn-warning btn-sm" style="color: var(--ms-ink) !important; border: 1px solid rgba(0,0,0,0.15) !important;">
+                <i class="fas fa-arrow-right me-1" aria-hidden="true"></i> Quota TEFA
+              </a>
+            `;
+          }
+          document.getElementById('bo-backlog-actions').innerHTML = actionsHtml;
+          backlogBar.classList.remove('d-none');
+        }
+
+        // ── 2. Popola Eroi metriche ──
+        document.getElementById('stats-totals-amount').textContent = fmtEur(stats.totals.amount);
+        document.getElementById('stats-totals-meta').innerHTML = `
+          <i class="fas fa-circle-check text-success" aria-hidden="true"></i>
+          <span><strong>${fmtNum(stats.totals.count)}</strong> transazioni totali</span>
+        `;
+
+        document.getElementById('stats-biz-processed').textContent = fmtNum(stats.biz_counts.PROCESSED);
+        let bizMetaHtml = '<span>';
+        if (stats.biz_counts.PENDING > 0) {
+          bizMetaHtml += `<strong class="text-warning">${stats.biz_counts.PENDING}</strong> in attesa · `;
+        }
+        if (stats.biz_counts.ERROR > 0) {
+          bizMetaHtml += `<strong class="text-danger">${stats.biz_counts.ERROR}</strong> errori`;
+        } else {
+          bizMetaHtml += 'Elaborate con successo';
+        }
+        bizMetaHtml += '</span>';
+        document.getElementById('stats-biz-meta').innerHTML = bizMetaHtml;
+
+        const statsTefaProcessed = document.getElementById('stats-tefa-processed');
+        const statsTefaMeta = document.getElementById('stats-tefa-meta');
+        if (statsTefaProcessed && statsTefaMeta) {
+          statsTefaProcessed.textContent = fmtNum(stats.tefa_counts.PROCESSED);
+          let tefaMetaHtml = '<span>';
+          if (stats.tefa_counts.PENDING > 0) {
+            tefaMetaHtml += `<strong class="text-warning">${stats.tefa_counts.PENDING}</strong> in attesa · `;
+          }
+          if (stats.tefa_counts.ERROR > 0) {
+            tefaMetaHtml += `<strong class="text-danger">${stats.tefa_counts.ERROR}</strong> errori`;
+          } else {
+            tefaMetaHtml += 'Analizzate correttamente';
+          }
+          tefaMetaHtml += '</span>';
+          statsTefaMeta.innerHTML = tefaMetaHtml;
+        }
+
+        // ── 3. Disegna Chart 1 (Andamento Incassi) ──
+        const ctxTrend = document.getElementById("monthlyTrendChart");
+        const monthlyTrendLoading = document.getElementById("monthly-trend-loading");
+        if (monthlyTrendLoading) monthlyTrendLoading.style.display = 'none';
+        if (ctxTrend && typeof Chart !== 'undefined') {
+          new Chart(ctxTrend.getContext("2d"), {
+            type: "bar",
+            data: {
+              labels: stats.monthly_trend.map(item => item.label),
+              datasets: [
+                {
+                  type: "line",
+                  label: "Numero Transazioni",
+                  borderColor: "#C9A13B", // crown gold
+                  borderWidth: 3,
+                  fill: false,
+                  tension: 0.35,
+                  yAxisID: "y-count",
+                  data: stats.monthly_trend.map(item => item.count)
+                },
+                {
+                  type: "bar",
+                  label: "Pendenze Interne (€)",
+                  backgroundColor: "#0066CC", 
+                  hoverBackgroundColor: "#0052a3",
+                  borderRadius: 4,
+                  yAxisID: "y-amount",
+                  data: stats.monthly_trend.map(item => item.amount_internal || 0)
+                },
+                {
+                  type: "bar",
+                  label: "Pendenze Esterne (€)",
+                  backgroundColor: "#4A2A6E", 
+                  hoverBackgroundColor: "#382054",
+                  borderRadius: 4,
+                  yAxisID: "y-amount",
+                  data: stats.monthly_trend.map(item => item.amount_external || 0)
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'top',
+                  labels: {
+                    boxWidth: 12,
+                    font: { family: 'Titillium Web', size: 12 }
+                  }
+                },
+                tooltip: {
+                  mode: 'index',
+                  intersect: false
                 }
               },
-              tooltip: {
-                mode: 'index',
-                intersect: false
-              }
-            },
-            scales: {
-              x: {
-                stacked: true,
-                grid: { display: false }
-              },
-              "y-amount": {
-                stacked: true,
-                type: "linear",
-                position: "left",
-                ticks: {
-                  callback: function(value) { return '€ ' + value.toLocaleString('it-IT'); }
+              scales: {
+                x: {
+                  stacked: true,
+                  grid: { display: false }
                 },
-                grid: { color: "#f1f5f9" }
-              },
-              "y-count": {
-                stacked: false,
-                type: "linear",
-                position: "right",
-                grid: { drawOnChartArea: false },
-                ticks: {
-                  precision: 0
+                "y-amount": {
+                  stacked: true,
+                  type: "linear",
+                  position: "left",
+                  ticks: {
+                    callback: function(value) { return '€ ' + value.toLocaleString('it-IT'); }
+                  },
+                  grid: { color: "#f1f5f9" }
+                },
+                "y-count": {
+                  stacked: false,
+                  type: "linear",
+                  position: "right",
+                  grid: { drawOnChartArea: false },
+                  ticks: {
+                    precision: 0
+                  }
                 }
               }
             }
-          }
-        });
-      }
+          });
+        }
 
-      // Chart 2: Channel Distribution Doughnut Chart
-      const ctxChannel = document.getElementById("channelDistributionChart");
-      if (ctxChannel && typeof Chart !== 'undefined') {
-        const govpayCount = {{ channels_data.govpay }};
-        const externalCount = {{ channels_data.external }};
-        
-        new Chart(ctxChannel.getContext("2d"), {
-          type: "doughnut",
-          data: {
-            labels: ["Pendenze Interne", "Pendenze Esterne"],
-            datasets: [{
-              data: [govpayCount, externalCount],
-              backgroundColor: ["#0066CC", "#4A2A6E"], // bi-primary blue vs stemma purple
-              borderWidth: 2,
-              borderColor: "#fff"
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false }
+        // ── 4. Disegna Chart 2 (Ripartizione Canale) ──
+        const ctxChannel = document.getElementById("channelDistributionChart");
+        const channelDistLoading = document.getElementById("channel-dist-loading");
+        if (channelDistLoading) channelDistLoading.style.display = 'none';
+        if (ctxChannel && typeof Chart !== 'undefined') {
+          new Chart(ctxChannel.getContext("2d"), {
+            type: "doughnut",
+            data: {
+              labels: ["Pendenze Interne", "Pendenze Esterne"],
+              datasets: [{
+                data: [stats.channels_data.govpay, stats.channels_data.external],
+                backgroundColor: ["#0066CC", "#4A2A6E"],
+                borderWidth: 2,
+                borderColor: "#fff"
+              }]
             },
-            cutout: "70%"
-          }
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false }
+              },
+              cutout: "70%"
+            }
+          });
+          
+          document.getElementById('channel-govpay-count').textContent = fmtNum(stats.channels_data.govpay);
+          document.getElementById('channel-external-count').textContent = fmtNum(stats.channels_data.external);
+          document.getElementById('channel-dist-legend').style.display = 'block';
+        }
+
+        // ── 5. Popola tabella flussi recenti ──
+        const recentFlussiContainer = document.getElementById('recent-flussi-container');
+        if (!stats.recent_flussi || stats.recent_flussi.length === 0) {
+          recentFlussiContainer.innerHTML = `
+            <div class="p-4 text-center text-muted">
+              <i class="fas fa-info-circle mb-2" style="font-size: 1.5rem;" aria-hidden="true"></i>
+              <p class="mb-0">Nessun flusso sincronizzato presente in archivio.</p>
+            </div>
+          `;
+        } else {
+          let rowsHtml = '';
+          stats.recent_flussi.forEach(flusso => {
+            const isGovpayBadge = flusso.is_govpay == 1 
+              ? '<span class="badge bg-primary">Flussi Interni</span>' 
+              : '<span class="badge" style="background-color: var(--ms-purple-600); color: #fff;">Flussi Esterni</span>';
+            const idFlusso = flusso.id_flusso || '';
+            const escapedIdFlusso = encodeURIComponent(idFlusso);
+            const slicedIdFlusso = idFlusso.length > 30 ? idFlusso.slice(0, 30) + '...' : idFlusso;
+
+            rowsHtml += `
+              <tr>
+                <td class="fw-semibold">${flusso.data_regolamento}</td>
+                <td>
+                  <a href="/pagamenti/ricerca-flussi?q=1&idFlusso=${escapedIdFlusso}&idDominio=${encodeURIComponent('{{ id_dominio }}')}" class="text-decoration-none">
+                    <code>${slicedIdFlusso}</code>
+                  </a>
+                </td>
+                <td>${isGovpayBadge}</td>
+                <td class="text-end">${fmtNum(flusso.transazioni)}</td>
+                <td class="text-end fw-bold">€ ${parseFloat(flusso.importo_totale).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `;
+          });
+
+          recentFlussiContainer.innerHTML = `
+            <div class="table-responsive">
+              <table class="table table-striped align-middle mb-0" style="font-size: 0.88rem;">
+                <thead>
+                  <tr>
+                    <th scope="col">Data Regolamento</th>
+                    <th scope="col">ID Flusso</th>
+                    <th scope="col">Sorgente</th>
+                    <th scope="col" class="text-end">Transazioni</th>
+                    <th scope="col" class="text-end">Importo Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+
+        // ── 6. Popola tipologie pendenze (12 mesi) ──
+        const boTipologieTotal = document.getElementById('bo-tipologie-total');
+        if (boTipologieTotal) {
+          boTipologieTotal.textContent = fmtEur(stats.tipologie_total);
+        }
+        buildGrid(stats.tipologie_stats, stats.tipologie_total);
+
+      } catch (e) {
+        console.error('Errore caricamento statistiche dashboard', e);
+        const containerIds = ['stats-totals-amount', 'stats-biz-processed', 'stats-tefa-processed', 'recent-flussi-container'];
+        containerIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.innerHTML = '<span class="text-danger small"><i class="fas fa-exclamation-triangle"></i> Errore</span>';
         });
       }
-    });
+    }
 
     // ── Daemon Controller AJAX ───────────────────────────────────────
     async function toggleDaemon(job, action) {
@@ -578,132 +660,111 @@
     }
 
     // ── Ripartizione Tipologie: period selector + AJAX reload ────────
-    (function () {
-      const periodoGroup  = document.getElementById('bo-tipologie-periodo');
-      const gridWrap      = document.getElementById('bo-tipologie-grid-wrap');
-      const totalSpan     = document.getElementById('bo-tipologie-total');
-      let expanded        = false;
+    const periodoGroup  = document.getElementById('bo-tipologie-periodo');
+    const gridWrap      = document.getElementById('bo-tipologie-grid-wrap');
+    const totalSpan     = document.getElementById('bo-tipologie-total');
+    let expanded        = false;
 
-      // Format number Italian-style with 2 decimals
-      function fmtEur(val) {
-        let num = parseFloat(val);
-        if (isNaN(num)) return '€\u00a00,00';
-        let parts = num.toFixed(2).split('.');
-        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-        return '€\u00a0' + parts.join(',');
-      }
-      function fmtNum(val) {
-        let num = parseInt(val, 10);
-        if (isNaN(num)) return '0';
-        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    function buildGrid(tipologie, total) {
+      if (!tipologie || tipologie.length === 0) {
+        gridWrap.innerHTML = `
+          <div class="p-4 text-center text-muted" id="bo-tipologie-empty">
+            <i class="fas fa-info-circle mb-2" style="font-size:1.5rem" aria-hidden="true"></i>
+            <p class="mb-0">Nessun dato nel periodo selezionato.</p>
+          </div>`;
+        return;
       }
 
-      function buildGrid(tipologie, total) {
-        if (!tipologie || tipologie.length === 0) {
-          gridWrap.innerHTML = `
-            <div class="p-4 text-center text-muted">
-              <i class="fas fa-info-circle mb-2" style="font-size:1.5rem" aria-hidden="true"></i>
-              <p class="mb-0">Nessun dato nel periodo selezionato.</p>
-            </div>`;
-          return;
-        }
-
-        let cardsHtml = '';
-        tipologie.forEach(function (item, idx) {
-          const percent = total > 0 ? (item.importo_totale / total * 100) : 0;
-          const isExtra = idx >= 6;
-          cardsHtml += `
-            <div class="col-md-6 col-xl-4${isExtra && !expanded ? ' d-none bo-extra-tipologia' : (isExtra ? ' bo-extra-tipologia' : '')}">
-              <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
-                <div>
-                  <div class="mb-2">
-                    <h4 class="h6 mb-0 text-dark fw-bold" style="font-size:0.92rem;line-height:1.35">${item.tipologia_desc}</h4>
-                  </div>
-                  <div class="text-muted small mb-3">
-                    <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
-                    <strong>${fmtNum(item.transazioni)}</strong> transazioni
-                  </div>
+      let cardsHtml = '';
+      tipologie.forEach(function (item, idx) {
+        const percent = total > 0 ? (item.importo_totale / total * 100) : 0;
+        const isExtra = idx >= 6;
+        cardsHtml += `
+          <div class="col-md-6 col-xl-4${isExtra && !expanded ? ' d-none bo-extra-tipologia' : (isExtra ? ' bo-extra-tipologia' : '')}">
+            <div class="p-3 border rounded bg-light h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="mb-2">
+                  <h4 class="h6 mb-0 text-dark fw-bold" style="font-size:0.92rem;line-height:1.35">${item.tipologia_desc}</h4>
                 </div>
-                <div>
-                  <div class="d-flex justify-content-between align-items-end mb-1">
-                    <span class="fw-bold text-dark" style="font-size:1.1rem">${fmtEur(item.importo_totale)}</span>
-                    <span class="small fw-semibold text-primary" style="font-size:0.8rem">${percent.toFixed(1)}%</span>
-                  </div>
-                  <div class="progress" style="height:6px" title="Quota del ${percent.toFixed(2)}% sul totale">
-                    <div class="progress-bar progress-bar-striped bg-primary" role="progressbar"
-                         style="width:${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"></div>
-                  </div>
+                <div class="text-muted small mb-3">
+                  <i class="fas fa-circle-check text-success me-1" aria-hidden="true"></i>
+                  <strong>${fmtNum(item.transazioni)}</strong> transazioni
                 </div>
               </div>
-            </div>`;
-        });
-
-        const toggleWrapHtml = tipologie.length > 6 ? `
-          <div class="text-center mt-4" id="bo-tipologie-toggle-wrap">
-            <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2">
-              <i class="fas fa-chevron-${expanded ? 'up' : 'down'} me-2" id="bo-toggle-icon"></i>
-              <span id="bo-toggle-text">${expanded ? 'Mostra meno' : 'Mostra tutte le tipologie (' + tipologie.length + ')'}</span>
-            </button>
-          </div>` : '';
-
-        gridWrap.innerHTML = `<div class="row g-3" id="bo-tipologie-grid">${cardsHtml}</div>${toggleWrapHtml}`;
-
-        // Re-bind the toggle button
-        const toggleBtn = document.getElementById('bo-btn-toggle-tipologie');
-        if (toggleBtn) toggleBtn.addEventListener('click', toggleExtraTipologie);
-      }
-
-      function toggleExtraTipologie() {
-        const extraCards = document.querySelectorAll('.bo-extra-tipologia');
-        const btnText    = document.getElementById('bo-toggle-text');
-        const btnIcon    = document.getElementById('bo-toggle-icon');
-        expanded = !expanded;
-        extraCards.forEach(card => {
-          card.classList.toggle('d-none', !expanded);
-        });
-        if (expanded) {
-          btnText.textContent = 'Mostra meno';
-          btnIcon.className   = 'fas fa-chevron-up me-2';
-        } else {
-          btnText.textContent = 'Mostra tutte le tipologie (' + (6 + extraCards.length) + ')';
-          btnIcon.className   = 'fas fa-chevron-down me-2';
-        }
-      }
-
-      async function loadTipologie(periodo) {
-        // Spinner
-        gridWrap.innerHTML = `
-          <div class="p-5 text-center text-muted">
-            <i class="fas fa-spinner fa-spin fa-2x"></i>
+              <div>
+                <div class="d-flex justify-content-between align-items-end mb-1">
+                  <span class="fw-bold text-dark" style="font-size:1.1rem">${fmtEur(item.importo_totale)}</span>
+                  <span class="small fw-semibold text-primary" style="font-size:0.8rem">${percent.toFixed(1)}%</span>
+                </div>
+                <div class="progress" style="height:6px" title="Quota del ${percent.toFixed(2)}% sul totale">
+                  <div class="progress-bar progress-bar-striped bg-primary" role="progressbar"
+                       style="width:${percent}%" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+              </div>
+            </div>
           </div>`;
-        try {
-          const res  = await fetch('/api/dashboard/tipologie?periodo=' + encodeURIComponent(periodo));
-          const data = await res.json();
-          if (totalSpan) totalSpan.textContent = fmtEur(data.total);
-          expanded = false;
-          buildGrid(data.tipologie, data.total);
-        } catch (e) {
-          gridWrap.innerHTML = '<div class="p-4 text-center text-danger">Errore nel caricamento dei dati.</div>';
-        }
-      }
+      });
 
-      // Wire up period buttons
-      if (periodoGroup) {
-        periodoGroup.addEventListener('click', function (e) {
-          const btn = e.target.closest('[data-periodo]');
-          if (!btn) return;
-          // Update active state
-          periodoGroup.querySelectorAll('button').forEach(b => {
-            b.classList.toggle('btn-primary', b === btn);
-            b.classList.toggle('btn-outline-primary', b !== btn);
-          });
-          loadTipologie(btn.dataset.periodo);
+      const toggleWrapHtml = tipologie.length > 6 ? `
+        <div class="text-center mt-4" id="bo-tipologie-toggle-wrap">
+          <button type="button" id="bo-btn-toggle-tipologie" class="btn btn-outline-primary px-4 py-2">
+            <i class="fas fa-chevron-${expanded ? 'up' : 'down'} me-2" id="bo-toggle-icon"></i>
+            <span id="bo-toggle-text">${expanded ? 'Mostra meno' : 'Mostra tutte le tipologie (' + tipologie.length + ')'}</span>
+          </button>
+        </div>` : '';
+
+      gridWrap.innerHTML = `<div class="row g-3" id="bo-tipologie-grid">${cardsHtml}</div>${toggleWrapHtml}`;
+
+      // Re-bind the toggle button
+      const toggleBtn = document.getElementById('bo-btn-toggle-tipologie');
+      if (toggleBtn) toggleBtn.addEventListener('click', toggleExtraTipologie);
+    }
+
+    function toggleExtraTipologie() {
+      const extraCards = document.querySelectorAll('.bo-extra-tipologia');
+      const btnText    = document.getElementById('bo-toggle-text');
+      const btnIcon    = document.getElementById('bo-toggle-icon');
+      expanded = !expanded;
+      extraCards.forEach(card => {
+        card.classList.toggle('d-none', !expanded);
+      });
+      if (expanded) {
+        btnText.textContent = 'Mostra meno';
+        btnIcon.className   = 'fas fa-chevron-up me-2';
+      } else {
+        btnText.textContent = 'Mostra tutte le tipologie (' + (6 + extraCards.length) + ')';
+        btnIcon.className   = 'fas fa-chevron-down me-2';
+      }
+    }
+
+    async function loadTipologie(periodo) {
+      gridWrap.innerHTML = `
+        <div class="p-5 text-center text-muted">
+          <i class="fas fa-spinner fa-spin fa-2x"></i>
+        </div>`;
+      try {
+        const res  = await fetch('/api/dashboard/tipologie?periodo=' + encodeURIComponent(periodo));
+        const data = await res.json();
+        if (totalSpan) totalSpan.textContent = fmtEur(data.total);
+        expanded = false;
+        buildGrid(data.tipologie, data.total);
+      } catch (e) {
+        gridWrap.innerHTML = '<div class="p-4 text-center text-danger">Errore nel caricamento dei dati.</div>';
+      }
+    }
+
+    // Wire up period buttons
+    if (periodoGroup) {
+      periodoGroup.addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-periodo]');
+        if (!btn) return;
+        // Update active state
+        periodoGroup.querySelectorAll('button').forEach(b => {
+          b.classList.toggle('btn-primary', b === btn);
+          b.classList.toggle('btn-outline-primary', b !== btn);
         });
-      }
-
-      // Bind the initial static toggle button (if more than 6 rendered server-side)
-      const initToggleBtn = document.getElementById('bo-btn-toggle-tipologie');
-      if (initToggleBtn) initToggleBtn.addEventListener('click', toggleExtraTipologie);
-    })();
+        loadTipologie(btn.dataset.periodo);
+      });
+    }
   </script>
 {% endblock %}

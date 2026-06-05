@@ -253,7 +253,7 @@
                 </div>
                 <div class="field">
                   <label for="telefono">{{ 'Telefono (opzionale)'|trans }}</label>
-                  <input class="input" type="tel" id="telefono" name="soggettoPagatore[telefono]" value="{{ payer.telefono|default('') }}" placeholder="+39 …">
+                  <input class="input" type="tel" id="telefono" name="soggettoPagatore[telefono]" value="{{ payer.telefono|default('+39 ') }}" placeholder="+39 329-3922001">
                 </div>
               </div>
 

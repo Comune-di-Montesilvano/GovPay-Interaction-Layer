@@ -52,45 +52,7 @@ class HomeController
 
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
-        // 1. Inizializzazione Repository
-        $pdo = Connection::getPDO();
-        $bizRepo = new BizRepository($pdo);
-        $tefaRepo = new TefaRepository($pdo);
-        $flussiRepo = new FlussiRendicontazioniRepository($pdo);
-
-        // 2. Volumi e numero transazioni complessive
-        $totals = ['amount' => 0.0, 'count' => 0];
-        try {
-            $stmt = $pdo->prepare('SELECT COUNT(*) AS c, SUM(importo) AS a FROM flussi_rendicontazioni WHERE id_dominio = :dom');
-            $stmt->execute([':dom' => $idDominio]);
-            $row = $stmt->fetch();
-            if ($row) {
-                $totals['count'] = (int)$row['c'];
-                $totals['amount'] = (float)($row['a'] ?? 0.0);
-            }
-        } catch (\Throwable $_) {}
-
-        // 3. Biz Events e TEFA Counts
-        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
-        $tefaCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
-        try {
-            $bizCounts = $bizRepo->getCounts($idDominio);
-        } catch (\Throwable $_) {}
-        try {
-            $tefaCounts = $tefaRepo->getCounts($idDominio);
-        } catch (\Throwable $_) {}
-
-        // 4. Code rimanenti da processare
-        $bizQueueRemaining = 0;
-        $tefaQueueRemaining = 0;
-        try {
-            $bizQueueRemaining = $flussiRepo->countUnprocessedForBiz($idDominio);
-        } catch (\Throwable $_) {}
-        try {
-            $tefaQueueRemaining = $bizRepo->countProcessedForTefa($idDominio);
-        } catch (\Throwable $_) {}
-
-        // 5. Stato dei demoni GIL
+        // Stato dei demoni GIL
         $daemons = [];
         foreach (['biz', 'tefa', 'ragioneria', 'pendenze-massive'] as $key) {
             try {
@@ -108,7 +70,69 @@ class HomeController
             }
         }
 
-        // 6. Ripartizione canali d'incasso (GovPay vs Esterno) per doughnut chart
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        $scanDaFormatted = '';
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa)) {
+            try {
+                $scanDaFormatted = (new \DateTime($scanDa))->format('d/m/Y');
+            } catch (\Throwable $_) {}
+        }
+        if ($scanDaFormatted === '') {
+            $fallbackDate = date('Y-01-01', strtotime('-1 year'));
+            try {
+                $scanDaFormatted = (new \DateTime($fallbackDate))->format('d/m/Y') . ' (Default)';
+            } catch (\Throwable $_) {}
+        }
+
+        return $this->twig->render($response, 'home.html.twig', [
+            'id_dominio' => $idDominio,
+            'daemons' => $daemons,
+            'ragioneria_scan_da_formatted' => $scanDaFormatted,
+            'debug' => nl2br(htmlspecialchars($debug)),
+        ]);
+    }
+
+    public function apiStats(Request $request, Response $response): Response
+    {
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $pdo = Connection::getPDO();
+        $bizRepo = new BizRepository($pdo);
+        $tefaRepo = new TefaRepository($pdo);
+        $flussiRepo = new FlussiRendicontazioniRepository($pdo);
+
+        // 1. Volumi e numero transazioni complessive
+        $totals = ['amount' => 0.0, 'count' => 0];
+        try {
+            $stmt = $pdo->prepare('SELECT COUNT(*) AS c, SUM(importo) AS a FROM flussi_rendicontazioni WHERE id_dominio = :dom');
+            $stmt->execute([':dom' => $idDominio]);
+            $row = $stmt->fetch();
+            if ($row) {
+                $totals['count'] = (int)$row['c'];
+                $totals['amount'] = (float)($row['a'] ?? 0.0);
+            }
+        } catch (\Throwable $_) {}
+
+        // 2. Biz Events e TEFA Counts
+        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
+        $tefaCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
+        try {
+            $bizCounts = $bizRepo->getCounts($idDominio);
+        } catch (\Throwable $_) {}
+        try {
+            $tefaCounts = $tefaRepo->getCounts($idDominio);
+        } catch (\Throwable $_) {}
+
+        // 3. Code rimanenti da processare
+        $bizQueueRemaining = 0;
+        $tefaQueueRemaining = 0;
+        try {
+            $bizQueueRemaining = $flussiRepo->countUnprocessedForBiz($idDominio);
+        } catch (\Throwable $_) {}
+        try {
+            $tefaQueueRemaining = $bizRepo->countProcessedForTefa($idDominio);
+        } catch (\Throwable $_) {}
+
+        // 4. Ripartizione canali d'incasso (GovPay vs Esterno) per doughnut chart
         $channelsData = ['govpay' => 0, 'external' => 0];
         try {
             $stmt = $pdo->prepare('
@@ -128,10 +152,9 @@ class HomeController
             }
         } catch (\Throwable $_) {}
 
-        // 7. Andamento mensile ultimi 6 mesi (importi e transazioni) per combo chart
+        // 5. Andamento mensile ultimi 6 mesi (importi e transazioni) per combo chart
         $monthlyTrend = [];
         try {
-            // Seleziona gli ultimi 6 mesi distinti in cui ci sono stati incassi con ripartizione interna/esterna
             $stmt = $pdo->prepare('
                 SELECT 
                     anno, 
@@ -143,46 +166,51 @@ class HomeController
                 FROM flussi_rendicontazioni
                 WHERE id_dominio = :dom
                 GROUP BY anno, mese
-                ORDER BY anno DESC, mese DESC
-                LIMIT 6
             ');
             $stmt->execute([':dom' => $idDominio]);
-            $rows = $stmt->fetchAll();
-            // Ordiniamo cronologicamente
-            $rows = array_reverse($rows);
-            
+            $dbRows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+
+            $indexed = [];
+            foreach ($dbRows as $row) {
+                $key = $row['anno'] . '_' . $row['mese'];
+                $indexed[$key] = $row;
+            }
+
             $mesiNomi = [
                 1 => 'Gen', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'Mag', 6 => 'Giu',
                 7 => 'Lug', 8 => 'Ago', 9 => 'Set', 10 => 'Ott', 11 => 'Nov', 12 => 'Dic'
             ];
-            
-            foreach ($rows as $row) {
-                $meseNum = (int)$row['mese'];
-                $meseNome = $mesiNomi[$meseNum] ?? (string)$meseNum;
-                $monthlyTrend[] = [
-                    'label' => $meseNome . ' ' . $row['anno'],
-                    'count' => (int)$row['count'],
-                    'amount' => round((float)$row['amount'], 2),
-                    'amount_internal' => round((float)($row['amount_internal'] ?? 0.0), 2),
-                    'amount_external' => round((float)($row['amount_external'] ?? 0.0), 2),
-                ];
+
+            $now = new \DateTimeImmutable('first day of this month');
+            for ($i = 5; $i >= 0; $i--) {
+                $date = $now->modify("-$i month");
+                $y = (int)$date->format('Y');
+                $m = (int)$date->format('n');
+                $key = $y . '_' . $m;
+                $meseNome = $mesiNomi[$m] ?? (string)$m;
+
+                if (isset($indexed[$key])) {
+                    $row = $indexed[$key];
+                    $monthlyTrend[] = [
+                        'label' => $meseNome . ' ' . $y,
+                        'count' => (int)$row['count'],
+                        'amount' => round((float)$row['amount'], 2),
+                        'amount_internal' => round((float)($row['amount_internal'] ?? 0.0), 2),
+                        'amount_external' => round((float)($row['amount_external'] ?? 0.0), 2),
+                    ];
+                } else {
+                    $monthlyTrend[] = [
+                        'label' => $meseNome . ' ' . $y,
+                        'count' => 0,
+                        'amount' => 0.0,
+                        'amount_internal' => 0.0,
+                        'amount_external' => 0.0,
+                    ];
+                }
             }
         } catch (\Throwable $_) {}
 
-        // Se vuoto, prepariamo dati vuoti per non rompere il grafico
-        if ($monthlyTrend === []) {
-            $monthlyTrend = [
-                [
-                    'label' => 'Nessun dato', 
-                    'count' => 0, 
-                    'amount' => 0.0,
-                    'amount_internal' => 0.0,
-                    'amount_external' => 0.0
-                ]
-            ];
-        }
-
-        // 8. Feed ultimi 5 flussi rendicontati
+        // 6. Feed ultimi 5 flussi rendicontati
         $recentFlussi = [];
         try {
             $stmt = $pdo->prepare('
@@ -197,7 +225,7 @@ class HomeController
             $recentFlussi = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
-        // 9. Ripartizione per tipologia di pendenza (Top 5 per importo) per ultimi 12 mesi (default)
+        // 7. Ripartizione per tipologia di pendenza (Top 5 per importo) per ultimi 12 mesi (default)
         $tipologieStats = [];
         $tipologieTotal = 0.0;
         try {
@@ -205,7 +233,6 @@ class HomeController
             $firstDay = $now->modify('-1 year')->setTime(0, 0, 0);
             $dateFrom = $firstDay->format('Y-m-d');
 
-            // Totale periodo
             $stmtTot = $pdo->prepare('
                 SELECT SUM(importo) AS a 
                 FROM flussi_rendicontazioni 
@@ -216,7 +243,6 @@ class HomeController
             $rowTot = $stmtTot->fetch();
             $tipologieTotal = (float)($rowTot['a'] ?? 0.0);
 
-            // Ripartizione
             $stmt = $pdo->prepare('
                 SELECT 
                     COALESCE(e.descrizione_locale, e.descrizione, f.cod_entrata, "Altre pendenze / Esterni") AS tipologia_desc,
@@ -236,7 +262,6 @@ class HomeController
             $tipologieStats = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
-        // Sostituisce tipologia_desc con descrizione custom dove applicabile
         try {
             $customMap = [];
             foreach ((new MappingPendenzeRepository())->getCustomTipologie($idDominio) as $tc) {
@@ -251,36 +276,21 @@ class HomeController
             unset($ts);
         } catch (\Throwable $_) {}
 
-        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
-        $scanDaFormatted = '';
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa)) {
-            try {
-                $scanDaFormatted = (new \DateTime($scanDa))->format('d/m/Y');
-            } catch (\Throwable $_) {}
-        }
-        if ($scanDaFormatted === '') {
-            $fallbackDate = date('Y-01-01', strtotime('-1 year'));
-            try {
-                $scanDaFormatted = (new \DateTime($fallbackDate))->format('d/m/Y') . ' (Default)';
-            } catch (\Throwable $_) {}
-        }
-
-        return $this->twig->render($response, 'home.html.twig', [
-            'id_dominio' => $idDominio,
+        $data = [
             'totals' => $totals,
             'biz_counts' => $bizCounts,
             'tefa_counts' => $tefaCounts,
             'biz_queue_remaining' => $bizQueueRemaining,
             'tefa_queue_remaining' => $tefaQueueRemaining,
-            'daemons' => $daemons,
             'channels_data' => $channelsData,
-            'monthly_trend_json' => json_encode($monthlyTrend, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            'monthly_trend' => $monthlyTrend,
             'recent_flussi' => $recentFlussi,
             'tipologie_stats' => $tipologieStats,
             'tipologie_total' => $tipologieTotal,
-            'ragioneria_scan_da_formatted' => $scanDaFormatted,
-            'debug' => nl2br(htmlspecialchars($debug)),
-        ]);
+        ];
+
+        $response->getBody()->write(json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     public function apiTipologie(Request $request, Response $response): Response

@@ -60,6 +60,41 @@
       </div>
     </div>
 
+    {# ── Marca da Bollo card (gold, separata dalla griglia) ── #}
+    {% if bollot_attivo %}
+      <div class="bollo-spontaneo-wrap" style="margin-bottom:var(--sp-5);">
+        <div class="bollo-card bollo-card--inline">
+          <div class="bollo-card-badge">
+            <span class="badge-gold">
+              <span class="badge-dot"></span>
+              {{ 'Disponibile'|trans }}
+            </span>
+          </div>
+          <div class="bollo-card-header">
+            <div class="bollo-icon-circle">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="2 2"/>
+                <circle cx="12" cy="12" r="3.5" fill="var(--ms-gold-100)" stroke="var(--ms-gold-600)"/>
+                <path d="M12 9v6M9 12h6"/>
+              </svg>
+            </div>
+            <h3>{{ 'Marca da Bollo Digitale'|trans }}</h3>
+          </div>
+          <p class="bollo-card-body">
+            {{ 'Acquista ed emetti online una marca da bollo digitale (tassa di bollo telematica) per le tue istanze amministrative.'|trans }}
+          </p>
+          <div class="bollo-card-footer">
+            <a href="/pagamento-bollo" class="btn-gold">
+              <span>{{ 'Paga Marca da Bollo'|trans }}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+              </svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
     {# ── Services grid ── #}
     {% set all_services = (internal_services|default([]))|merge(external_services|default([])) %}
     {% if all_services %}
@@ -105,6 +140,25 @@
   </div>
 </section>
 
+{% endblock %}
+
+{% block head %}
+<style>
+.bollo-card--inline {
+  display: flex; flex-direction: row; align-items: center; gap: var(--sp-4);
+  max-width: 100%; padding: var(--sp-4) var(--sp-5);
+}
+.bollo-card--inline .bollo-card-header { flex: 0 0 auto; flex-direction: row; align-items: center; gap: var(--sp-3); margin: 0; }
+.bollo-card--inline .bollo-card-body  { flex: 1 1 0; margin: 0; font-size: 14px; }
+.bollo-card--inline .bollo-card-footer { flex: 0 0 auto; margin: 0; }
+.bollo-card--inline .bollo-card-badge  { position: absolute; top: var(--sp-3); right: var(--sp-4); }
+.bollo-spontaneo-wrap { position: relative; }
+@media (max-width: 640px) {
+  .bollo-card--inline { flex-direction: column; align-items: flex-start; }
+  .bollo-card--inline .bollo-card-footer { align-self: stretch; }
+  .bollo-card--inline .bollo-card-footer .btn-gold { width: 100%; justify-content: center; }
+}
+</style>
 {% endblock %}
 
 {% block scripts %}
