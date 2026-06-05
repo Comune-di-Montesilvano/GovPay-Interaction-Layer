@@ -12,7 +12,19 @@ License: European Union Public Licence v1.2 (EUPL-1.2)
 
 ---
 
+## Interfaccia Grafica (Screenshots)
+
+- **Backoffice (Gestione operativa & Impostazioni)**  
+  ![Backoffice - Impostazioni di sistema](docs/images/BackOffice.png)
+
+- **Frontoffice (Portale pagamenti cittadino)**  
+  ![Frontoffice - Home PagoPA](docs/images/FrontOffice.png)
+
+---
+
 ## Indice
+
+- [Interfaccia Grafica (Screenshots)](#interfaccia-grafica-screenshots)
 
 - [Ambiente consigliato](#ambiente-consigliato)
 - [Avvio rapido](#avvio-rapido)
@@ -180,7 +192,7 @@ Vedi [certificate/README.md](certificate/README.md) per dettagli su nomi file ac
 
 Il proxy SPID/CIE è basato su **IAM Proxy Italia (SATOSA)**. I container `auth-proxy` e `auth-proxy-nginx` sono sempre inclusi nello stack — SATOSA viene avviato o fermato automaticamente in base alla configurazione nel backoffice.
 
-> **Stato attuale**: SPID è funzionante. L'integrazione CIE OIDC è in fase di sviluppo/test.
+> **Stato attuale**: Sia SPID che CIE OIDC sono completamente funzionanti, integrati e configurabili tramite l'interfaccia web del Backoffice.
 
 ### Prerequisiti aggiuntivi
 
@@ -396,16 +408,6 @@ Per HTTPS server (browser → applicazione), i certificati validi vanno nel volu
 In Portainer puoi popolare il volume prima del deploy tramite un container helper o `podman volume import`. Vedi [ssl/README.md](ssl/README.md) per dettagli e troubleshooting permessi.
 
 I certificati in `gil_certs` sono distinti: servono per l'autenticazione client verso GovPay (mTLS app → GovPay). Vedi [certificate/README.md](certificate/README.md).
-
-### Screenshots
-
-Esempi dell'interfaccia.
-
-- **Backoffice (admin settings)**  
-   ![Backoffice - Impostazioni di sistema](docs/images/BackOffice.png)
-
-- **Frontoffice (home page)**  
-   ![Frontoffice - Home PagoPA](docs/images/FrontOffice.png)
 
 ### Reverse proxy
 
