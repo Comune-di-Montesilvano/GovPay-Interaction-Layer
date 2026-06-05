@@ -269,7 +269,9 @@ class HomeController
             }
             foreach ($tipologieStats as &$ts) {
                 $cod = (string)($ts['cod_entrata'] ?? '');
-                if ($cod !== '' && isset($customMap[$cod])) {
+                if ($cod === 'TEFA') {
+                    $ts['tipologia_desc'] = 'TEFA (Quota provinciale)';
+                } elseif ($cod !== '' && isset($customMap[$cod])) {
                     $ts['tipologia_desc'] = $customMap[$cod];
                 }
             }
@@ -379,7 +381,9 @@ class HomeController
             }
             foreach ($tipologieStats as &$ts) {
                 $cod = (string)($ts['cod_entrata'] ?? '');
-                if ($cod !== '' && isset($customMap[$cod])) {
+                if ($cod === 'TEFA') {
+                    $ts['tipologia_desc'] = 'TEFA (Quota provinciale)';
+                } elseif ($cod !== '' && isset($customMap[$cod])) {
                     $ts['tipologia_desc'] = $customMap[$cod];
                 }
             }
