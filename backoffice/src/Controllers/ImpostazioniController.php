@@ -125,6 +125,38 @@ class ImpostazioniController
             $data['frontoffice_featured'] = json_decode($featuredRaw ?: '[]', true) ?: [];
         }
 
+        // Tab IBAN: carica lista conti di accredito da GovPay
+        if ($tab === 'iban') {
+            $data['iban_list']  = [];
+            $data['iban_json']  = null;
+            $data['iban_error'] = null;
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+            if ($idDominio === '') {
+                $data['iban_error'] = 'ID Dominio non configurato.';
+            } elseif ($backofficeUrl === '') {
+                $data['iban_error'] = 'GovPay Backoffice URL non configurato.';
+            } elseif (!class_exists('GovPay\Backoffice\Api\EntiCreditoriApi')) {
+                $data['iban_error'] = 'Client GovPay Backoffice non disponibile.';
+            } else {
+                try {
+                    $cfg = new \GovPay\Backoffice\Configuration();
+                    $cfg->setHost(rtrim($backofficeUrl, '/'));
+                    $this->applyGovpayCredentials($cfg);
+                    $api = new \GovPay\Backoffice\Api\EntiCreditoriApi($this->buildGovpayHttpClient(), $cfg);
+                    $result = $api->findContiAccredito($idDominio, 1, 100);
+                    $raw = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($result);
+                    $arr = is_array($raw) ? $raw : (json_decode(json_encode($raw, JSON_UNESCAPED_SLASHES), true) ?: []);
+                    $data['iban_list'] = is_array($arr['risultati'] ?? null) ? $arr['risultati'] : [];
+                    $data['iban_json'] = json_encode($arr, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                } catch (\GovPay\Backoffice\ApiException $e) {
+                    $data['iban_error'] = 'GovPay HTTP ' . $e->getCode() . ': ' . $this->govpayErrorDetail($e->getResponseBody());
+                } catch (\Throwable $e) {
+                    $data['iban_error'] = 'Errore: ' . $e->getMessage();
+                }
+            }
+        }
+
         $data['ssl_on'] = (strtolower((string)(getenv('SSL') ?: 'off')) === 'on');
 
         return $this->twig->render($response, 'impostazioni/index.html.twig', $data);
@@ -3062,6 +3094,166 @@ class ImpostazioniController
         } catch (\Throwable $e) {
             Logger::getInstance()->error('showEncryptionKey fallito', ['error' => $e->getMessage()]);
             return $this->jsonError('Errore interno.', 500);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // IBAN — Conti di Accredito (GovPay EntiCreditoriApi)
+    // ──────────────────────────────────────────────────────────────────────
+
+    public function ibanList(Request $request, Response $response): Response
+    {
+        $this->requireAdminOrAbove();
+
+        if (!class_exists('GovPay\Backoffice\Api\EntiCreditoriApi')) {
+            return $this->jsonError('Client GovPay Backoffice non disponibile.', 500);
+        }
+
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        if ($idDominio === '') {
+            return $this->jsonError('ID Dominio non configurato. Vai al tab <a href="/impostazioni?tab=generale">Dati di base</a> e imposta l\'ID Dominio.', 400);
+        }
+
+        $url = SettingsRepository::get('govpay', 'backoffice_url', '');
+        if ($url === '') {
+            return $this->jsonError('GovPay Backoffice URL non configurato.', 400);
+        }
+
+        try {
+            $cfg = new \GovPay\Backoffice\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            $api = new \GovPay\Backoffice\Api\EntiCreditoriApi($this->buildGovpayHttpClient(), $cfg);
+            $result = $api->findContiAccredito($idDominio, 1, 100);
+            $raw = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($result);
+            $arr = is_array($raw) ? $raw : (json_decode(json_encode($raw, JSON_UNESCAPED_SLASHES), true) ?: []);
+            $list = is_array($arr['risultati'] ?? null) ? $arr['risultati'] : [];
+            return $this->jsonResponse([
+                'success' => true,
+                'data' => $list,
+                '_debug' => [
+                    'id_dominio' => $idDominio,
+                    'backoffice_url' => rtrim($url, '/'),
+                    'raw_keys' => array_keys($arr),
+                    'num_risultati' => $arr['numRisultati'] ?? $arr['num_risultati'] ?? null,
+                    'list_count' => count($list),
+                ],
+            ]);
+        } catch (\GovPay\Backoffice\ApiException $e) {
+            return $this->jsonError('GovPay: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()), 502);
+        } catch (\Throwable $e) {
+            return $this->jsonError('Errore GovPay: ' . $e->getMessage(), 500);
+        }
+    }
+
+    public function ibanSave(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        if (!class_exists('GovPay\Backoffice\Api\EntiCreditoriApi')) {
+            return $this->jsonError('Client GovPay Backoffice non disponibile.', 500);
+        }
+
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        if ($idDominio === '') {
+            return $this->jsonError('ID Dominio non configurato.', 400);
+        }
+
+        $iban = strtoupper(trim((string)($body['iban'] ?? '')));
+        if ($iban === '' || !preg_match('/^[A-Z]{2}[0-9]{2}[A-Z0-9]{1,30}$/', $iban)) {
+            return $this->jsonError('IBAN non valido. Formato atteso: 2 lettere + 2 cifre + fino a 30 alfanumerici.', 422);
+        }
+
+        $url = SettingsRepository::get('govpay', 'backoffice_url', '');
+        if ($url === '') {
+            return $this->jsonError('GovPay Backoffice URL non configurato.', 400);
+        }
+
+        try {
+            $post = new \GovPay\Backoffice\Model\ContiAccreditoPost();
+            $post->setBic(!empty($body['bic']) ? $body['bic'] : null);
+            $post->setIntestatario(!empty($body['intestatario']) ? $body['intestatario'] : null);
+            $post->setDescrizione(!empty($body['descrizione']) ? $body['descrizione'] : null);
+            $post->setPostale(isset($body['postale']) && $body['postale'] === 'true');
+            $post->setMybank(isset($body['mybank']) && $body['mybank'] === 'true');
+            $post->setAbilitato(!isset($body['abilitato']) || $body['abilitato'] !== 'false');
+            if (!empty($body['aut_stampa_poste_italiane'])) {
+                $post->setAutStampaPosteItaliane($body['aut_stampa_poste_italiane']);
+            }
+
+            $cfg = new \GovPay\Backoffice\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            $api = new \GovPay\Backoffice\Api\EntiCreditoriApi($this->buildGovpayHttpClient(), $cfg);
+            $api->addContiAccreditoWithHttpInfo($idDominio, $iban, $post);
+            return $this->jsonOk('Conto di accredito ' . $iban . ' salvato.');
+        } catch (\GovPay\Backoffice\ApiException $e) {
+            return $this->jsonError('GovPay: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()), 502);
+        } catch (\Throwable $e) {
+            return $this->jsonError('Errore GovPay: ' . $e->getMessage(), 500);
+        }
+    }
+
+    public function ibanToggle(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        if (!class_exists('GovPay\Backoffice\Api\EntiCreditoriApi')) {
+            return $this->jsonError('Client GovPay Backoffice non disponibile.', 500);
+        }
+
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        if ($idDominio === '') {
+            return $this->jsonError('ID Dominio non configurato.', 400);
+        }
+
+        $iban = strtoupper(trim((string)($body['iban'] ?? '')));
+        if ($iban === '') {
+            return $this->jsonError('IBAN mancante.', 422);
+        }
+
+        $url = SettingsRepository::get('govpay', 'backoffice_url', '');
+        if ($url === '') {
+            return $this->jsonError('GovPay Backoffice URL non configurato.', 400);
+        }
+
+        try {
+            $cfg = new \GovPay\Backoffice\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            $httpClient = $this->buildGovpayHttpClient();
+            $api = new \GovPay\Backoffice\Api\EntiCreditoriApi($httpClient, $cfg);
+
+            $current = $api->getContiAccredito($idDominio, $iban);
+            $currentData = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($current);
+            $wasAbilitato = is_array($currentData) ? (bool)($currentData['abilitato'] ?? true) : true;
+            $newAbilitato = !$wasAbilitato;
+
+            $post = new \GovPay\Backoffice\Model\ContiAccreditoPost();
+            if (is_array($currentData)) {
+                if (!empty($currentData['bic'])) $post->setBic($currentData['bic']);
+                if (!empty($currentData['intestatario'])) $post->setIntestatario($currentData['intestatario']);
+                if (!empty($currentData['descrizione'])) $post->setDescrizione($currentData['descrizione']);
+                $post->setPostale((bool)($currentData['postale'] ?? false));
+                $post->setMybank((bool)($currentData['mybank'] ?? false));
+                if (!empty($currentData['aut_stampa_poste_italiane'])) $post->setAutStampaPosteItaliane($currentData['aut_stampa_poste_italiane']);
+            }
+            $post->setAbilitato($newAbilitato);
+
+            $api->addContiAccreditoWithHttpInfo($idDominio, $iban, $post);
+            return $this->jsonResponse(['success' => true, 'abilitato' => $newAbilitato, 'message' => 'IBAN ' . ($newAbilitato ? 'abilitato' : 'disabilitato') . '.']);
+        } catch (\GovPay\Backoffice\ApiException $e) {
+            return $this->jsonError('GovPay: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()), 502);
+        } catch (\Throwable $e) {
+            return $this->jsonError('Errore GovPay: ' . $e->getMessage(), 500);
         }
     }
 
