@@ -101,6 +101,9 @@
       <a class="nav-item{{ current_path == '/' ? ' active' : '' }}" href="/">{{ 'Home'|trans }}</a>
       <a class="nav-item{{ current_path starts with '/pagamento-avviso' ? ' active' : '' }}" href="/pagamento-avviso">{{ 'Paga un avviso'|trans }}</a>
       <a class="nav-item{{ current_path starts with '/pagamento-spontaneo' ? ' active' : '' }}" href="/pagamento-spontaneo">{{ 'Pagamento spontaneo'|trans }}</a>
+      {% if bollot_attivo %}
+        <a class="nav-item nav-item--bollo{{ current_path starts with '/pagamento-bollo' ? ' active' : '' }}" href="/pagamento-bollo">{{ 'Marca da Bollo'|trans }}</a>
+      {% endif %}
       {% if spid_enabled %}
         <a class="nav-item{{ current_path starts with '/pendenze' ? ' active' : '' }}" href="/pendenze">{{ 'Le mie pendenze'|trans }}</a>
       {% endif %}
@@ -121,6 +124,8 @@
 </nav>
 
 <style>
+.nav-item--bollo { color: var(--ms-gold-400, #D4AD4A) !important; font-weight: 600; }
+.nav-item--bollo:hover, .nav-item--bollo.active { color: var(--ms-gold-300, #E4BD56) !important; }
 .fo-user-menu { position: relative; }
 .fo-user-dropdown {
   display: none; position: absolute; right: 0; top: calc(100% + 6px); min-width: 180px;

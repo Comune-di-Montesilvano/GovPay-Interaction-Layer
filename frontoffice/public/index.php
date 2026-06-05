@@ -1280,11 +1280,10 @@ if (!function_exists('frontoffice_process_bollo_request')) {
 
         $sendResult = frontoffice_send_pendenza_to_backoffice($payload);
         if (!$sendResult['success']) {
-            $context['form_errors'] = $sendResult['errors'] ?? ['Invio pendenza non riuscito.'];
             $context['form_feedback'] = [
                 'type'    => 'danger',
                 'title'   => 'Invio non riuscito',
-                'message' => implode(' ', $context['form_errors']),
+                'message' => implode(' ', $sendResult['errors'] ?? ['Invio pendenza non riuscito.']),
             ];
             return $context;
         }
@@ -1390,10 +1389,84 @@ if (!function_exists('frontoffice_prepare_payer')) {
         }
         $phone = trim((string)($raw['telefono'] ?? ''));
         if ($phone !== '') {
-            $payload['cellulare'] = $phone;
+            $payload['cellulare'] = frontoffice_normalize_cellulare($phone);
         }
 
         return $payload;
+    }
+}
+
+if (!function_exists('frontoffice_normalize_cellulare')) {
+    function frontoffice_normalize_cellulare(string $phone): string
+    {
+        // GovPay pattern: \+[0-9]{2,2}\s[0-9]{3,3}\-[0-9]{7,7}
+        $clean = preg_replace('/[\s\-\.]/', '', $phone);
+        if (preg_match('/^\+(\d{2})(\d{3})(\d{7})$/', $clean, $m)) {
+            return "+{$m[1]} {$m[2]}-{$m[3]}";
+        }
+        return $phone;
+    }
+}
+
+if (!function_exists('frontoffice_add_notification_to_pendenza')) {
+    function frontoffice_add_notification_to_pendenza(string $idPendenza, array $notificationData): bool
+    {
+        $backofficeUrl = frontoffice_env_value('GOVPAY_BACKOFFICE_URL', '');
+        $idA2A         = frontoffice_env_value('ID_A2A', '');
+        if ($backofficeUrl === '' || $idA2A === '' || $idPendenza === '') {
+            return false;
+        }
+        try {
+            $opts = frontoffice_govpay_client_options();
+            $opts['headers']['Accept'] = 'application/json';
+            $opts['http_errors'] = false;
+            if ($auth = frontoffice_basic_auth()) {
+                $opts['auth'] = $auth;
+            }
+            $client = new Client($opts);
+            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+
+            $resp = $client->request('GET', $url);
+            $pendenza = json_decode((string)$resp->getBody(), true);
+            if (!is_array($pendenza)) {
+                return false;
+            }
+
+            $allowedKeys = [
+                'numeroAvviso','tassonomia','dataValidita','datiAllegati','tassonomiaAvviso',
+                'importo','dataScadenza','dataPromemoriaScadenza','idUnitaOperativa','idDominio','allegati',
+                'dataCaricamento','annoRiferimento','divisione','nome','causale','soggettoPagatore',
+                'dataNotificaAvviso','cartellaPagamento','documento','proprieta','direzione','idTipoPendenza','voci',
+            ];
+            $put = array_intersect_key($pendenza, array_flip($allowedKeys));
+            if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
+                $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
+            }
+            if (!isset($put['datiAllegati']) || !is_array($put['datiAllegati'])) {
+                $put['datiAllegati'] = [];
+            }
+            if (!isset($put['datiAllegati']['notifiche']) || !is_array($put['datiAllegati']['notifiche'])) {
+                $put['datiAllegati']['notifiche'] = [];
+            }
+            $put['datiAllegati']['notifiche'][] = [
+                'timestamp'    => $notificationData['timestamp']   ?? date('Y-m-d H:i:s'),
+                'tipo'         => $notificationData['tipo']         ?? 'creazione_pendenza',
+                'canale'       => $notificationData['canale']       ?? 'email',
+                'destinatario' => $notificationData['destinatario'] ?? '',
+                'esito'        => $notificationData['esito']        ?? 'OK',
+                'message_id'   => $notificationData['message_id']  ?? null,
+                'errore'       => $notificationData['errore']       ?? null,
+            ];
+
+            $putOpts = $opts;
+            $putOpts['headers']['Content-Type'] = 'application/json';
+            $putOpts['body'] = json_encode($put, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $client->request('PUT', $url, $putOpts);
+            return true;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('frontoffice_add_notification_to_pendenza failed', ['err' => $e->getMessage()]);
+            return false;
+        }
     }
 }
 
@@ -1531,8 +1604,15 @@ if (!function_exists('frontoffice_send_pendenza_to_backoffice')) {
                 $body = (string)$e->getResponse()->getBody();
             }
             $message = $body !== '' ? $body : $e->getMessage();
+            $displayMessage = $message;
+            if ($body !== '') {
+                $decoded = json_decode($body, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($decoded['dettaglio'])) {
+                    $displayMessage = $decoded['dettaglio'];
+                }
+            }
             Logger::getInstance()->error('Errore invio pendenza frontoffice', ['error' => $message]);
-            return ['success' => false, 'errors' => [Logger::sanitizeErrorForDisplay($message)]];
+            return ['success' => false, 'errors' => [Logger::sanitizeErrorForDisplay($displayMessage)]];
         } catch (\Throwable $e) {
             Logger::getInstance()->error('Errore inatteso invio pendenza frontoffice', ['error' => $e->getMessage()]);
             return ['success' => false, 'errors' => [Logger::sanitizeErrorForDisplay($e->getMessage())]];
@@ -3303,11 +3383,10 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
 
         $sendResult = frontoffice_send_pendenza_to_backoffice($payload);
         if (!$sendResult['success']) {
-            $context['form_errors'] = $sendResult['errors'] ?? ['Invio pendenza non riuscito.'];
             $context['form_feedback'] = [
                 'type' => 'danger',
                 'title' => 'Invio non riuscito',
-                'message' => implode(' ', $context['form_errors']),
+                'message' => implode(' ', $sendResult['errors'] ?? ['Invio pendenza non riuscito.']),
             ];
             return $context;
         }
@@ -3321,6 +3400,7 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
 
         $context['pendenza_result'] = [
             'idPendenza' => $idPendenza,
+            'idTipoPendenza' => $idTipo,
             'numeroAvviso' => $numeroAvviso,
             'importo' => $importo,
             'causale' => $causale,
@@ -4613,8 +4693,82 @@ $routes = [
                             ]
                         );
                         Logger::getInstance()->info('Email avviso spontaneo', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
+                        if (($mailResult['esito'] ?? '') === 'OK') {
+                            frontoffice_add_notification_to_pendenza(
+                                trim((string)($pr['idPendenza'] ?? '')),
+                                $mailResult
+                            );
+                        }
                     } catch (\Throwable $e) {
                         Logger::getInstance()->warning('Email avviso spontaneo non inviata', ['err' => $e->getMessage()]);
+                    }
+                }
+
+                // App IO: solo persona fisica con CF disponibile
+                $pendenzaId  = trim((string)($pr['idPendenza'] ?? ''));
+                $payerTipo   = strtoupper(trim((string)($payerArr['tipo'] ?? 'F')));
+                $payerCf     = trim((string)($payerArr['identificativo'] ?? ''));
+                if ($pendenzaId !== '' && $payerTipo === 'F' && $payerCf !== '') {
+                    try {
+                        $ioRepo    = new \App\Database\IoServiceRepository();
+                        $idTipo    = trim((string)($pr['idTipoPendenza'] ?? ''));
+                        $ioService = ($idTipo !== '' ? $ioRepo->getTipologiaService($idTipo) : null) ?? $ioRepo->findDefault();
+                        if ($ioService && !empty($ioService['api_key_primaria'])) {
+                            $ioSvc    = new \App\Services\AppIoService();
+                            $causale  = (string)($pr['causale'] ?? '');
+                            $importo  = (float)($pr['importo'] ?? 0);
+                            $scadenza = (string)($pr['data_scadenza'] ?? '');
+                            $isHttps  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+                            $siteBase = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+                            $toAbs    = static function (string $url) use ($siteBase): string {
+                                return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
+                            };
+                            $downloadUrl = $toAbs((string)($pr['download_url'] ?? ''));
+
+                            $ioSubject = 'Pendenza PagoPA - ' . substr($causale, 0, 100);
+                            $markdown  = "## Pendenza PagoPA\n\n"
+                                . "**Causale**: {$causale}\n\n"
+                                . "**Importo**: € " . number_format($importo, 2, ',', '.') . "\n\n";
+                            if ($scadenza !== '') {
+                                $markdown .= "**Scadenza**: {$scadenza}\n\n";
+                            }
+                            if ($downloadUrl !== '') {
+                                $markdown .= "[Scarica il PDF dell'avviso]({$downloadUrl})\n\n";
+                            }
+
+                            $noticeNum   = preg_replace('/\D/', '', (string)($pr['numeroAvviso'] ?? ''));
+                            $paymentData = null;
+                            if (strlen($noticeNum) === 18) {
+                                $paymentData = [
+                                    'noticeNumber'        => $noticeNum,
+                                    'amount'              => (int)round($importo * 100),
+                                    'invalidAfterDueDate' => $scadenza !== '',
+                                ];
+                            }
+                            $dueDate = ($scadenza !== '' && strlen($scadenza) === 10) ? $scadenza . 'T00:00:00Z' : null;
+
+                            $ioResult = $ioSvc->sendMessage(
+                                $ioService['api_key_primaria'],
+                                $payerCf,
+                                $ioSubject,
+                                $markdown,
+                                $dueDate,
+                                $paymentData
+                            );
+                            Logger::getInstance()->info('App IO spontaneo', ['esito' => $ioResult['esito'] ?? '?', 'id' => $ioResult['id'] ?? '']);
+                            if (($ioResult['esito'] ?? 'KO') === 'OK') {
+                                frontoffice_add_notification_to_pendenza($pendenzaId, [
+                                    'timestamp'    => date('Y-m-d H:i:s'),
+                                    'esito'        => 'OK',
+                                    'canale'       => 'app_io',
+                                    'destinatario' => $ioResult['id'] ?? 'N/A',
+                                    'message_id'   => $ioResult['id'] ?? null,
+                                ]);
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        Logger::getInstance()->warning('App IO spontaneo non inviato', ['err' => $e->getMessage()]);
                     }
                 }
             }

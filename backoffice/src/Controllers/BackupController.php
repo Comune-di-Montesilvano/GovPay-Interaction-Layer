@@ -334,6 +334,96 @@ class BackupController
     }
 
     /**
+     * POST /backup/sistema/ripristina/chunk — ricezione chunked di un archivio ZIP.
+     * Il client divide il file in chunk ≤512KB e li invia in sequenza.
+     * Sull'ultimo chunk il server assembla e lancia il restore.
+     */
+    public function systemBackupRestoreChunk(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $body        = $request->getParsedBody() ?? [];
+        $uploadId    = (string)($body['upload_id']    ?? '');
+        $chunkIndex  = (int)  ($body['chunk_index']   ?? -1);
+        $totalChunks = (int)  ($body['total_chunks']  ?? 0);
+
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $uploadId)) {
+            return $this->jsonError('upload_id non valido.');
+        }
+        if ($chunkIndex < 0 || $totalChunks < 1 || $chunkIndex >= $totalChunks) {
+            return $this->jsonError('Parametri chunk non validi.');
+        }
+
+        $uploadedFiles = $request->getUploadedFiles();
+        $chunk = $uploadedFiles['chunk'] ?? null;
+        if (!$chunk || $chunk->getError() !== UPLOAD_ERR_OK) {
+            return $this->jsonError('Errore nel trasferimento del chunk.');
+        }
+
+        $tmpDir    = sys_get_temp_dir() . '/gil-chunk-' . $uploadId;
+        $chunkPath = $tmpDir . '/chunk-' . str_pad((string)$chunkIndex, 6, '0', STR_PAD_LEFT) . '.bin';
+
+        if (!is_dir($tmpDir)) {
+            mkdir($tmpDir, 0700, true);
+        }
+        $chunk->moveTo($chunkPath);
+
+        // Limite totale 256 MB
+        $totalSize = array_sum(array_map('filesize', glob($tmpDir . '/chunk-*.bin') ?: []));
+        if ($totalSize > 256 * 1024 * 1024) {
+            array_map('unlink', glob($tmpDir . '/*') ?: []);
+            rmdir($tmpDir);
+            return $this->jsonError('File troppo grande (limite 256 MB).');
+        }
+
+        $received = count(glob($tmpDir . '/chunk-*.bin') ?: []);
+        if ($received < $totalChunks) {
+            return $this->jsonResponse(['success' => true, 'received' => $received, 'total' => $totalChunks]);
+        }
+
+        // Tutti i chunk ricevuti: assembla e ripristina
+        $zipPath = $tmpDir . '/assembled.zip';
+        try {
+            $out = fopen($zipPath, 'wb');
+            if ($out === false) {
+                throw new \RuntimeException('Impossibile creare file temporaneo.');
+            }
+            $chunks = glob($tmpDir . '/chunk-*.bin') ?: [];
+            sort($chunks);
+            foreach ($chunks as $cp) {
+                $data = file_get_contents($cp);
+                if ($data === false) {
+                    throw new \RuntimeException('Errore lettura chunk.');
+                }
+                fwrite($out, $data);
+                unlink($cp);
+            }
+            fclose($out);
+
+            $result = $this->doRestoreFromZip($zipPath);
+            Logger::getInstance()->info('Ripristino ZIP chunked completato', $result);
+            return $this->jsonResponse([
+                'success' => true,
+                'message' => 'Ripristino completato.',
+                'detail'  => $result,
+            ]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore ripristino ZIP chunked', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore durante il ripristino: ' . $e->getMessage());
+        } finally {
+            @unlink($zipPath);
+            if (is_dir($tmpDir)) {
+                foreach (glob($tmpDir . '/*') ?: [] as $f) {
+                    @unlink($f);
+                }
+                @rmdir($tmpDir);
+            }
+        }
+    }
+
+    /**
      * Esegue il ripristino da un file ZIP già su disco.
      * Restituisce un array di statistiche.
      */
@@ -477,16 +567,27 @@ class BackupController
             if (isset($sections['mapping_pendenze'])) {
                 $patterns = $sections['mapping_pendenze']['patterns'] ?? [];
                 $vocab    = $sections['mapping_pendenze']['vocab'] ?? [];
-                // UPSERT pattern custom (preserva transazioni_count/importo_totale auto-generati)
+                // Passata 1: inserisce tutti i pattern senza accorpato_a per evitare FK violation
+                // sulla FK self-referenziale (accorpato_a → pattern_iuv stessa tabella).
                 $upsertP = $pdo->prepare(
-                    'INSERT INTO mapping_pendenze_pattern (pattern_iuv, id_dominio, fornitore, cod_entrata, accorpato_a, is_custom) VALUES (?,?,?,?,?,1)
-                     ON DUPLICATE KEY UPDATE fornitore=VALUES(fornitore), cod_entrata=VALUES(cod_entrata), accorpato_a=VALUES(accorpato_a), is_custom=1'
+                    'INSERT INTO mapping_pendenze_pattern (pattern_iuv, id_dominio, fornitore, cod_entrata, accorpato_a, is_custom) VALUES (?,?,?,?,NULL,1)
+                     ON DUPLICATE KEY UPDATE fornitore=VALUES(fornitore), cod_entrata=VALUES(cod_entrata), is_custom=1'
                 );
                 foreach ($patterns as $p) {
                     if (empty($p['pattern_iuv'])) {
                         continue;
                     }
-                    $upsertP->execute([$p['pattern_iuv'], $idDominio, $p['fornitore'] ?? null, $p['cod_entrata'] ?? null, $p['accorpato_a'] ?? null]);
+                    $upsertP->execute([$p['pattern_iuv'], $idDominio, $p['fornitore'] ?? null, $p['cod_entrata'] ?? null]);
+                }
+                // Passata 2: aggiorna accorpato_a ora che tutti i parent esistono.
+                $updAcc = $pdo->prepare(
+                    'UPDATE mapping_pendenze_pattern SET accorpato_a = ? WHERE pattern_iuv = ? AND id_dominio = ?'
+                );
+                foreach ($patterns as $p) {
+                    if (empty($p['pattern_iuv']) || empty($p['accorpato_a'])) {
+                        continue;
+                    }
+                    $updAcc->execute([$p['accorpato_a'], $p['pattern_iuv'], $idDominio]);
                 }
                 // Sostituisci tutto il vocab per questo dominio
                 $pdo->prepare('DELETE FROM mapping_pendenze_vocab WHERE id_dominio = ?')->execute([$idDominio]);

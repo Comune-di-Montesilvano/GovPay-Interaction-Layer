@@ -250,6 +250,12 @@ return function (App $app, Twig $twig): void {
         return $controller->apiTipologie($request, $response);
     });
 
+    // Dashboard AJAX: statistiche complete
+    $app->get('/api/dashboard/stats', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new HomeController($twig);
+        return $controller->apiStats($request, $response);
+    });
+
     // Statistiche
     $app->get('/statistiche', function(Request $request, Response $response) use ($twig): Response {
         $controller = new StatisticheController($twig);
@@ -867,6 +873,10 @@ return function (App $app, Twig $twig): void {
 
     $app->post('/backup/sistema/ripristina', function ($request, $response) use ($twig) {
         return (new BackupController($twig))->systemBackupRestore($request, $response);
+    });
+
+    $app->post('/backup/sistema/ripristina/chunk', function ($request, $response) use ($twig) {
+        return (new BackupController($twig))->systemBackupRestoreChunk($request, $response);
     });
 
     $app->get('/users/new', function($request, $response) use ($twig) {

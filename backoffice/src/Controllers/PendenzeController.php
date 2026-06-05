@@ -2782,7 +2782,7 @@ class PendenzeController
             $defaultCurlOptions[CURLOPT_SSLVERSION] = CURL_SSLVERSION_TLSv1_2;
         }
         if (defined('CURL_HTTP_VERSION_1_1')) {
-            $defaultCurlOptions[CURLOPT_HTTP_VERSION] = CURL_HTTP_VERSION_1_1;
+            $guzzleOptions['version'] = '1.1';
         }
         if (defined('CURLOPT_SSL_SESSIONID_CACHE')) {
             $defaultCurlOptions[CURLOPT_SSL_SESSIONID_CACHE] = false;

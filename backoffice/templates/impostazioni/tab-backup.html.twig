@@ -130,6 +130,12 @@
         <strong class="text-danger">I dati esistenti saranno sovrascritti.</strong>
       </p>
       <div id="restore-result" class="mb-3" style="display:none;"></div>
+      <div id="restore-progress" class="mb-3" style="display:none;">
+        <div class="progress" style="height:6px;">
+          <div id="restore-progress-bar" class="progress-bar bg-danger" style="width:0%;transition:width .2s;"></div>
+        </div>
+        <div id="restore-progress-label" class="text-muted small mt-1"></div>
+      </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <input type="file" id="restore-zip-file" class="form-control form-control-sm" accept=".zip" style="max-width:340px;">
         <button class="btn btn-danger btn-sm" onclick="backupRipristina(this)">
@@ -477,20 +483,53 @@
     el.innerHTML = html;
   }
 
-  async function doRestore(formData, btn) {
+  async function doRestoreChunked(file, btn) {
+    const CHUNK_SIZE = 512 * 1024;
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const uploadId = crypto.randomUUID();
+    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+
     const orig = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ripristino in corso…';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Caricamento…';
+
+    const progress = document.getElementById('restore-progress');
+    const bar      = document.getElementById('restore-progress-bar');
+    const label    = document.getElementById('restore-progress-label');
+    if (progress) progress.style.display = '';
+
+    const setProgress = (n, total, msg) => {
+      if (bar)   bar.style.width = Math.round((n / total) * 100) + '%';
+      if (label) label.textContent = msg;
+    };
+
     try {
-      const res = await fetch('/backup/sistema/ripristina', { method: 'POST', body: formData });
-      const json = await parseJsonOrThrow(res);
-      showRestoreResult(!!json.success, json.message || (json.success ? 'Ripristino completato.' : 'Errore.'), json.detail);
-      impToast(json.message || (json.success ? 'Ripristino completato.' : 'Errore.'), !!json.success);
+      let lastJson = null;
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end   = Math.min(start + CHUNK_SIZE, file.size);
+        const fd    = new FormData();
+        fd.append('upload_id',    uploadId);
+        fd.append('chunk_index',  i);
+        fd.append('total_chunks', totalChunks);
+        fd.append('csrf_token',   csrf);
+        fd.append('chunk', file.slice(start, end), 'chunk.bin');
+
+        setProgress(i, totalChunks, `Caricamento ${i + 1}/${totalChunks}…`);
+        const res  = await fetch('/backup/sistema/ripristina/chunk', { method: 'POST', body: fd });
+        lastJson   = await parseJsonOrThrow(res);
+        if (!lastJson.success) throw new Error(lastJson.message || 'Chunk rifiutato dal server.');
+      }
+
+      setProgress(totalChunks, totalChunks, 'Completato.');
+      showRestoreResult(!!lastJson.success, lastJson.message || 'Ripristino completato.', lastJson.detail ?? null);
+      impToast(lastJson.message || 'Ripristino completato.', !!lastJson.success);
     } catch (e) {
       showRestoreResult(false, 'Errore di rete: ' + e.message, null);
     } finally {
       btn.disabled = false;
       btn.innerHTML = orig;
+      if (progress) setTimeout(() => { progress.style.display = 'none'; if (bar) bar.style.width = '0%'; }, 1500);
     }
   }
 
@@ -501,17 +540,12 @@
       return;
     }
     if (!confirm('Ripristinare il backup? I dati correnti verranno sovrascritti con quelli presenti nel file ZIP.')) return;
-    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
-    const fd = new FormData();
-    fd.append('backup_file', fileInput.files[0]);
-    fd.append('csrf_token', csrf);
-    await doRestore(fd, btn);
+    await doRestoreChunked(fileInput.files[0], btn);
     fileInput.value = '';
   };
 
   window.backupRipristinaFile = async function (btn, filename) {
     if (!confirm(`Ripristinare "${filename}"? I dati correnti verranno sovrascritti con quelli presenti nel file ZIP.`)) return;
-    // Scarica il file dal server e lo ri-carica come upload
     btn.disabled = true;
     const origHtml = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
@@ -519,11 +553,7 @@
       const dlRes = await fetch(`/backup/sistema/download?file=${encodeURIComponent(filename)}`);
       if (!dlRes.ok) throw new Error('Download fallito');
       const blob = await dlRes.blob();
-      const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
-      const fd = new FormData();
-      fd.append('backup_file', new File([blob], filename, { type: 'application/zip' }));
-      fd.append('csrf_token', csrf);
-      await doRestore(fd, btn);
+      await doRestoreChunked(new File([blob], filename, { type: 'application/zip' }), btn);
     } catch (e) {
       impToast('Errore: ' + e.message, false);
       btn.disabled = false;
