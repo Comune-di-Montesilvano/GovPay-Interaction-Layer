@@ -16,6 +16,7 @@ use App\Controllers\ReportRagioneriaController;
 use App\Controllers\MappingPendenzeController;
 use App\Controllers\CronController;
 use App\Controllers\ReportTefaController;
+use App\Controllers\FrontofficeApiController;
 use App\Controllers\ImpostazioniController;
 use App\Controllers\PendenzeController;
 use App\Controllers\SetupController;
@@ -78,6 +79,57 @@ return function (App $app, Twig $twig): void {
     $app->get('/api/frontoffice/config', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getFrontofficeConfig($request, $response);
     });
+
+    // ── API frontoffice sidecar (autenticate via Bearer MASTER_TOKEN) ─────────────
+    $app->get('/api/frontoffice/tipologie', function (Request $request, Response $response): Response {
+        return (new FrontofficeApiController())->getTipologie($request, $response);
+    });
+
+    $app->get('/api/frontoffice/pendenza-templates', function (Request $request, Response $response): Response {
+        return (new FrontofficeApiController())->getPendenzaTemplates($request, $response);
+    });
+
+    $app->get('/api/frontoffice/pendenze', function (Request $request, Response $response): Response {
+        return (new FrontofficeApiController())->findPendenze($request, $response);
+    });
+
+    // NOTA: la route avviso deve venire PRIMA di {idA2A}/{idPendenza} per evitare conflict matching
+    $app->get('/api/frontoffice/pendenze/avviso/{idDominio}/{numeroAvviso}', function (Request $request, Response $response, array $args): Response {
+        return (new FrontofficeApiController())->getPendenzaByAvviso($request, $response, $args);
+    });
+
+    $app->get('/api/frontoffice/pendenze/{idA2A}/{idPendenza}', function (Request $request, Response $response, array $args): Response {
+        return (new FrontofficeApiController())->getPendenza($request, $response, $args);
+    });
+
+    $app->get('/api/frontoffice/pendenze/{idA2A}/{idPendenza}/transazioni', function (Request $request, Response $response, array $args): Response {
+        return (new FrontofficeApiController())->getTransazioni($request, $response, $args);
+    });
+
+    $app->post('/api/frontoffice/pendenze', function (Request $request, Response $response): Response {
+        return (new FrontofficeApiController())->createPendenza($request, $response);
+    });
+
+    $app->post('/api/frontoffice/carrello/checkout', function (Request $request, Response $response): Response {
+        return (new FrontofficeApiController())->checkoutCarrello($request, $response);
+    });
+
+    $app->get('/api/frontoffice/ricevuta/{idDominio}/{iuv}/{idRicevuta}', function (Request $request, Response $response, array $args): Response {
+        return (new FrontofficeApiController())->getRicevuta($request, $response, $args);
+    });
+
+    $app->get('/api/frontoffice/avviso/{idDominio}/{numeroAvviso}', function (Request $request, Response $response, array $args): Response {
+        return (new FrontofficeApiController())->getAvvisoPdf($request, $response, $args);
+    });
+
+    $app->get('/api/frontoffice/documento/{numeroDocumento}/avvisi', function (Request $request, Response $response, array $args): Response {
+        return (new FrontofficeApiController())->getDocumentoPdf($request, $response, $args);
+    });
+
+    $app->post('/api/frontoffice/rate-limit/check', function (Request $request, Response $response): Response {
+        return (new FrontofficeApiController())->rateLimitCheck($request, $response);
+    });
+    // ─────────────────────────────────────────────────────────────────────────────
 
     // ── Impostazioni (nuovo config panel, richiede auth) ──────────────────────────
     $app->get('/impostazioni', function (Request $request, Response $response) use ($twig): Response {
