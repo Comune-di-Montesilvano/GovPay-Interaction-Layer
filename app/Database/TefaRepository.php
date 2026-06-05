@@ -171,6 +171,17 @@ class TefaRepository
             ':sorgente'   => $sorgente,
             ':id'         => $id,
         ]);
+
+        // Mark corresponding row in flussi_rendicontazioni as PROCESSED under TEFA category
+        $stmt2 = $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni f
+             INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
+             SET f.mapping_stato = \'PROCESSED\',
+                 f.vocab_stato = \'PROCESSED\',
+                 f.cod_entrata = \'TEFA\'
+             WHERE t.id = :id'
+        );
+        $stmt2->execute([':id' => $id]);
     }
 
     public function markError(int $id, string $msg): void
@@ -215,6 +226,31 @@ class TefaRepository
                AND (data_pagamento IS NULL OR DAY(data_pagamento) = 0)
                AND id_flusso IS NOT NULL
                AND id_flusso REGEXP '^[0-9]{4}-[0-9]{2}'"
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        $rowsUpdated = $stmt->rowCount();
+
+        // Also retrospectively update mapping and vocab statuses in flussi_rendicontazioni for processed TEFA receipts
+        $this->fixProcessedTefaMapping($idDominio);
+
+        return $rowsUpdated;
+    }
+
+    /**
+     * Sincronizza lo stato in flussi_rendicontazioni per i record già PROCESSED in tefa_ricevute.
+     * Imposta mapping_stato='PROCESSED', vocab_stato='PROCESSED', cod_entrata='TEFA'.
+     */
+    public function fixProcessedTefaMapping(string $idDominio): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni f
+             INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
+             SET f.mapping_stato = 'PROCESSED',
+                 f.vocab_stato = 'PROCESSED',
+                 f.cod_entrata = 'TEFA'
+             WHERE t.id_dominio = :dom
+               AND t.stato = 'PROCESSED'
+               AND (f.mapping_stato != 'PROCESSED' OR f.vocab_stato != 'PROCESSED' OR f.cod_entrata IS NULL OR f.cod_entrata != 'TEFA')"
         );
         $stmt->execute([':dom' => $idDominio]);
         return $stmt->rowCount();
@@ -511,6 +547,18 @@ class TefaRepository
                      updated_at = NOW()
                  WHERE id = :id AND id_dominio = :dom AND stato = 'SKIPPED'"
             );
+            $stmt->execute([':id' => $id, ':dom' => $idDominio]);
+
+            // Also update flussi_rendicontazioni
+            $stmt2 = $this->pdo->prepare(
+                'UPDATE flussi_rendicontazioni f
+                 INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
+                 SET f.mapping_stato = \'PROCESSED\',
+                     f.vocab_stato = \'PROCESSED\',
+                     f.cod_entrata = \'TEFA\'
+                 WHERE t.id = :id'
+            );
+            $stmt2->execute([':id' => $id]);
         } else {
             $stmt = $this->pdo->prepare(
                 "UPDATE tefa_ricevute
@@ -518,8 +566,8 @@ class TefaRepository
                      updated_at = NOW()
                  WHERE id = :id AND id_dominio = :dom AND stato = 'SKIPPED'"
             );
+            $stmt->execute([':id' => $id, ':dom' => $idDominio]);
         }
-        $stmt->execute([':id' => $id, ':dom' => $idDominio]);
     }
 
     private function ensureTable(): void
