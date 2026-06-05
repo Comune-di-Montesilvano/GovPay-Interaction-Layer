@@ -1388,7 +1388,7 @@ if (!function_exists('frontoffice_prepare_payer')) {
             $payload['email'] = $email;
         }
         $phone = trim((string)($raw['telefono'] ?? ''));
-        if ($phone !== '') {
+        if ($phone !== '' && trim(preg_replace('/^\+39\s*/', '', $phone)) !== '') {
             $payload['cellulare'] = frontoffice_normalize_cellulare($phone);
         }
 
@@ -4734,6 +4734,7 @@ $routes = [
                     $toAbsolute = static function (string $url) use ($siteBase): string {
                         return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
                     };
+                    $pendenzaIdForMail = trim((string)($pr['idPendenza'] ?? ''));
                     try {
                         $mailResult = \App\Services\MailerService::forSuite('frontoffice')->sendSpontaneoAvviso(
                             $payerEmail,
@@ -4748,14 +4749,15 @@ $routes = [
                             ]
                         );
                         Logger::getInstance()->info('Email avviso spontaneo', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
-                        if (($mailResult['esito'] ?? '') === 'OK') {
-                            frontoffice_add_notification_to_pendenza(
-                                trim((string)($pr['idPendenza'] ?? '')),
-                                $mailResult
-                            );
-                        }
                     } catch (\Throwable $e) {
                         Logger::getInstance()->warning('Email avviso spontaneo non inviata', ['err' => $e->getMessage()]);
+                        $mailResult = ['esito' => 'KO', 'canale' => 'email', 'destinatario' => $payerEmail, 'errore' => $e->getMessage()];
+                    }
+                    if ($pendenzaIdForMail !== '') {
+                        frontoffice_add_notification_to_pendenza($pendenzaIdForMail, array_merge(
+                            ['canale' => 'email', 'destinatario' => $payerEmail],
+                            $mailResult
+                        ));
                     }
                 }
 
@@ -4768,7 +4770,9 @@ $routes = [
                         $ioRepo    = new \App\Database\IoServiceRepository();
                         $idTipo    = trim((string)($pr['idTipoPendenza'] ?? ''));
                         $ioService = ($idTipo !== '' ? $ioRepo->getTipologiaService($idTipo) : null) ?? $ioRepo->findDefault();
-                        if ($ioService && !empty($ioService['api_key_primaria'])) {
+                        if (!$ioService || empty($ioService['api_key_primaria'])) {
+                            Logger::getInstance()->info('App IO spontaneo: nessun servizio IO configurato', ['idTipo' => $idTipo]);
+                        } else {
                             $ioSvc    = new \App\Services\AppIoService();
                             $causale  = (string)($pr['causale'] ?? '');
                             $importo  = (float)($pr['importo'] ?? 0);
@@ -4811,19 +4815,25 @@ $routes = [
                                 $dueDate,
                                 $paymentData
                             );
-                            Logger::getInstance()->info('App IO spontaneo', ['esito' => $ioResult['esito'] ?? '?', 'id' => $ioResult['id'] ?? '']);
-                            if (($ioResult['esito'] ?? 'KO') === 'OK') {
-                                frontoffice_add_notification_to_pendenza($pendenzaId, [
-                                    'timestamp'    => date('Y-m-d H:i:s'),
-                                    'esito'        => 'OK',
-                                    'canale'       => 'app_io',
-                                    'destinatario' => $ioResult['id'] ?? 'N/A',
-                                    'message_id'   => $ioResult['id'] ?? null,
-                                ]);
-                            }
+                            Logger::getInstance()->info('App IO spontaneo', ['esito' => $ioResult['esito'] ?? '?', 'id' => $ioResult['id'] ?? '', 'err' => $ioResult['errore'] ?? '']);
+                            frontoffice_add_notification_to_pendenza($pendenzaId, [
+                                'timestamp'    => date('Y-m-d H:i:s'),
+                                'esito'        => $ioResult['esito'] ?? 'KO',
+                                'canale'       => 'app_io',
+                                'destinatario' => $ioResult['id'] ?? $payerCf,
+                                'message_id'   => $ioResult['id'] ?? null,
+                                'errore'       => $ioResult['errore'] ?? null,
+                            ]);
                         }
                     } catch (\Throwable $e) {
                         Logger::getInstance()->warning('App IO spontaneo non inviato', ['err' => $e->getMessage()]);
+                        frontoffice_add_notification_to_pendenza($pendenzaId, [
+                            'timestamp'    => date('Y-m-d H:i:s'),
+                            'esito'        => 'KO',
+                            'canale'       => 'app_io',
+                            'destinatario' => $payerCf,
+                            'errore'       => $e->getMessage(),
+                        ]);
                     }
                 }
             }
