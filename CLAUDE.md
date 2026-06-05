@@ -12,15 +12,47 @@ Multi-container Docker. Container principali:
 
 | Container | Service | Stack | Scopo |
 |---|---|---|---|
-| `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute |
-| `gil-frontoffice` | `frontoffice` | PHP 8.5 + Slim 4 + Apache | Portale cittadino: visualizza e paga pendenze |
-| `gil-db` | `db` | MariaDB 11 | DB condiviso, utenti separati backoffice (RW) / frontoffice (RO) |
+| `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute. **Unico container che chiama GovPay/pagoPA API.** |
+| `gil-frontoffice` | `frontoffice` | PHP 8.5 + Apache | Portale cittadino (sidecar del backoffice). Non chiama GovPay/pagoPA direttamente: usa API interne backoffice via MASTER_TOKEN. |
+| `gil-db` | `db` | MariaDB 11 | DB condiviso. Backoffice (RW). Frontoffice (RO solo tabella `settings` per config). |
 | `gil-auth-proxy` | `auth-proxy` | Python SATOSA | Proxy SPID/CIE: legge config da backoffice, gestisce SATOSA |
 | `gil-auth-proxy-nginx` | `auth-proxy-nginx` | Nginx | Reverse proxy per SATOSA, serve metadata e disco SPID |
 | `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
 | `gil-metadata-builder` | `metadata-builder` | Bash + OpenSSL | Generazione certificati e metadata SPID/CIE (setup iniziale) |
 
 Le chiamate interne tra servizi usano Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
+
+### Architettura sidecar frontoffice
+
+Il frontoffice è un **sidecar** del backoffice: non ha credenziali GovPay né pagoPA, non chiama le loro API. Ogni operazione passa attraverso endpoint dedicati esposti dal backoffice sotto `/api/frontoffice/*`.
+
+```
+Cittadino → frontoffice
+               ↓  Bearer MASTER_TOKEN
+           backoffice /api/frontoffice/*
+               ↓  Basic Auth / mTLS
+           GovPay API  |  pagoPA CheckoutEC
+```
+
+**Endpoint sidecar backoffice** (`FrontofficeApiController`):
+- `GET  /api/frontoffice/tipologie` — tipologie pendenze + esterne da DB
+- `GET  /api/frontoffice/pendenza-templates` — template pendenze da DB
+- `GET  /api/frontoffice/pendenze` — lista pendenze per CF (paginata)
+- `GET  /api/frontoffice/pendenze/avviso/{idDominio}/{numeroAvviso}` — pendenza per avviso
+- `GET  /api/frontoffice/pendenze/{idA2A}/{idPendenza}` — dettaglio pendenza
+- `GET  /api/frontoffice/pendenze/{idA2A}/{idPendenza}/transazioni` — transazioni
+- `POST /api/frontoffice/pendenze` — crea pendenza (risolve voci/iuv_prefix da DB)
+- `POST /api/frontoffice/carrello/checkout` — avvia checkout pagoPA, ritorna Location
+- `GET  /api/frontoffice/ricevuta/{idDominio}/{iuv}/{idRicevuta}` — stream PDF ricevuta
+- `GET  /api/frontoffice/avviso/{idDominio}/{numeroAvviso}` — stream PDF avviso
+- `GET  /api/frontoffice/documento/{numeroDocumento}/avvisi` — stream PDF documento
+- `POST /api/frontoffice/rate-limit/check` — verifica/consuma rate limit bucket
+
+**Helpers frontoffice** (`frontoffice/public/index.php`):
+- `frontoffice_backoffice_api(method, path, data)` — chiamata JSON al backoffice
+- `frontoffice_backoffice_api_stream(path)` — streaming binario (PDF) dal backoffice
+
+**Pattern errori sidecar**: sempre HTTP 200 con `{success: false, message, error_status}` + header `X-App-Error-Status`. Consistente con pattern esistente backoffice.
 
 ## Comandi principali
 
@@ -121,6 +153,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **`ObjectSerializer::sanitizeForSerialization`**: ritorna `stdClass`, non `array`. Prima di accedere a chiavi usare `$arr = is_array($raw) ? $raw : (json_decode(json_encode($raw, JSON_UNESCAPED_SLASHES), true) ?: [])`.
 - **`app_debug` Twig global**: nei template backoffice usare `{% if app_debug %}`, NON `{% if app.debug == 'true' %}`. Il global è registrato in `web.php` come `$twig->addGlobal('app_debug', $displayErrorDetails)`.
 - **Pattern tab Impostazioni GovPay-side**: dati che vivono in GovPay (non in `settings` DB) vengono fetchati in `ImpostazioniController::index()` quando `$tab === 'X'` e passati a Twig. Bottoni di aggiornamento sono AJAX su endpoint dedicati. Non usare `SettingsRepository` per dati GovPay.
+- **Pattern sidecar frontoffice**: il frontoffice NON chiama GovPay/pagoPA direttamente. Ogni operazione GovPay/pagoPA/DB-business va in `FrontofficeApiController` (backoffice) e chiamata con `frontoffice_backoffice_api()`. Le API sidecar seguono il pattern `jsonOk/jsonError` esistente (HTTP 200 + `success` bool). Eccezione: streaming PDF usa risposta binaria diretta. Non aggiungere credenziali GovPay alle env del container frontoffice.
 
 ## Integrazioni esterne
 
@@ -192,7 +225,22 @@ index.php → bootstrap/app.php → Slim App
   → Route → Controller → GovPay/pagoPA client (via vendor/)
 ```
 
-`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `auth-proxy` e `metadata-builder`.
+`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `auth-proxy`, `metadata-builder` e **frontoffice** (sidecar).
+
+## Flusso request frontoffice (sidecar)
+
+Il frontoffice è un monolite PHP (`frontoffice/public/index.php`, routing via array). **Non** usa Slim — routing funzionale con closure.
+
+```
+Cittadino → Apache → frontoffice/public/index.php
+  → frontoffice_backoffice_api() / frontoffice_backoffice_api_stream()
+      ↓ HTTP Bearer MASTER_TOKEN verso http://backoffice
+  → backoffice /api/frontoffice/* (FrontofficeApiController)
+      ↓
+  → GovPay API / pagoPA API / DB
+```
+
+Il frontoffice gestisce autonomamente: sessione PHP, autenticazione SAML SPID/CIE, CSRF, whitelist sessione per il carrello, validazione form (CF, importo, bollo), generazione token firmati HMAC per link pubblici. Tutto il resto passa dal backoffice.
 
 ## Migrazioni DB
 
