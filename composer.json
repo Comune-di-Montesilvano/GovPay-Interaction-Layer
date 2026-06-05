@@ -1,7 +1,7 @@
 {
     "name": "comune-di-montesilvano/govpay-interaction-layer",
     "description": "Piattaforma Completa per l'Inizializzazione dei Pagamenti (Cittadino) e la Gestione Amministrativa (Ufficio) delle Transazioni PagoPA.",
-    "version": "1.2.52",
+    "version": "1.2.53",
     "type": "project",
     "license": "proprietary",
     "require": {
