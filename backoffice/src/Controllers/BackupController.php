@@ -383,8 +383,9 @@ class BackupController
             return $this->jsonResponse(['success' => true, 'received' => $received, 'total' => $totalChunks]);
         }
 
-        // Tutti i chunk ricevuti: assembla e ripristina
-        $zipPath = $tmpDir . '/assembled.zip';
+        // Tutti i chunk ricevuti: assembla e salva in pending (il restore avviene in /avvia).
+        $zipPath     = $tmpDir . '/assembled.zip';
+        $pendingPath = sys_get_temp_dir() . '/gil-pending-' . $uploadId . '.zip';
         try {
             $out = fopen($zipPath, 'wb');
             if ($out === false) {
@@ -401,17 +402,11 @@ class BackupController
                 unlink($cp);
             }
             fclose($out);
-
-            $result = $this->doRestoreFromZip($zipPath);
-            Logger::getInstance()->info('Ripristino ZIP chunked completato', $result);
-            return $this->jsonResponse([
-                'success' => true,
-                'message' => 'Ripristino completato.',
-                'detail'  => $result,
-            ]);
+            rename($zipPath, $pendingPath);
+            return $this->jsonResponse(['success' => true, 'ready' => true, 'token' => $uploadId]);
         } catch (\Throwable $e) {
-            Logger::getInstance()->error('Errore ripristino ZIP chunked', ['error' => $e->getMessage()]);
-            return $this->jsonError('Errore durante il ripristino: ' . $e->getMessage());
+            Logger::getInstance()->error('Errore assemblaggio chunk ZIP', ['error' => $e->getMessage()]);
+            return $this->jsonError('Errore durante l\'assemblaggio: ' . $e->getMessage());
         } finally {
             @unlink($zipPath);
             if (is_dir($tmpDir)) {
@@ -421,6 +416,85 @@ class BackupController
                 @rmdir($tmpDir);
             }
         }
+    }
+
+    /**
+     * POST /backup/sistema/ripristina/avvia — avvia il restore da ZIP pending.
+     * Usa ignore_user_abort(true) + set_time_limit(0) per sopravvivere a proxy timeout.
+     * Scrive lo stato in un file per permettere il polling via /status.
+     */
+    public function systemBackupRestoreAvvia(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $body  = $request->getParsedBody() ?? [];
+        $token = (string)($body['token'] ?? '');
+
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $token)) {
+            return $this->jsonError('Token non valido.');
+        }
+
+        $pendingPath = sys_get_temp_dir() . '/gil-pending-' . $token . '.zip';
+        $statusFile  = sys_get_temp_dir() . '/gil-restore-status-' . $token . '.json';
+
+        if (!file_exists($pendingPath)) {
+            return $this->jsonError('Sessione di ripristino scaduta o non trovata.');
+        }
+
+        ignore_user_abort(true);
+        set_time_limit(0);
+
+        file_put_contents($statusFile, json_encode(['status' => 'running']));
+
+        try {
+            $result = $this->doRestoreFromZip($pendingPath);
+            file_put_contents($statusFile, json_encode(['status' => 'done', 'result' => $result]));
+            Logger::getInstance()->info('Ripristino ZIP completato', $result);
+            return $this->jsonResponse([
+                'success' => true,
+                'message' => 'Ripristino completato.',
+                'detail'  => $result,
+            ]);
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            file_put_contents($statusFile, json_encode(['status' => 'error', 'message' => $msg]));
+            Logger::getInstance()->error('Errore ripristino ZIP', ['error' => $msg]);
+            return $this->jsonError('Errore durante il ripristino: ' . $msg);
+        } finally {
+            @unlink($pendingPath);
+        }
+    }
+
+    /**
+     * GET /backup/sistema/ripristina/status?token=xxx — polling dello stato del restore.
+     */
+    public function systemBackupRestoreStatus(Request $request, Response $response): Response
+    {
+        if (!$this->isSuperadmin()) {
+            return $this->jsonError('Accesso riservato al superadmin.', 403);
+        }
+
+        $token = (string)($request->getQueryParams()['token'] ?? '');
+
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $token)) {
+            return $this->jsonError('Token non valido.');
+        }
+
+        $statusFile = sys_get_temp_dir() . '/gil-restore-status-' . $token . '.json';
+
+        if (!file_exists($statusFile)) {
+            return $this->jsonResponse(['status' => 'unknown']);
+        }
+
+        $data = json_decode((string)file_get_contents($statusFile), true) ?? ['status' => 'unknown'];
+
+        if (in_array($data['status'] ?? '', ['done', 'error'], true)) {
+            @unlink($statusFile);
+        }
+
+        return $this->jsonResponse($data);
     }
 
     /**
@@ -705,21 +779,27 @@ class BackupController
                 gzwrite($gz, "DROP TABLE IF EXISTS `{$table}`;\n");
                 gzwrite($gz, $ddl . ";\n\n");
 
-                // Utilizziamo un cursore per consumare una riga alla volta senza fetchAll in memoria
                 $stmt = $pdo->query("SELECT * FROM `{$table}`");
-                $first = true;
-                $cols = '';
+                $cols      = '';
+                $batchRows = [];
+                $batchSize = 500;
 
                 while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                    if ($first) {
+                    if ($cols === '') {
                         $cols = '`' . implode('`, `', array_keys($row)) . '`';
-                        $first = false;
                     }
-                    $vals = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $row);
-                    gzwrite($gz, "INSERT INTO `{$table}` ({$cols}) VALUES (" . implode(', ', $vals) . ");\n");
+                    $vals        = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $row);
+                    $batchRows[] = '(' . implode(', ', $vals) . ')';
+
+                    if (count($batchRows) >= $batchSize) {
+                        gzwrite($gz, "INSERT INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
+                        $batchRows = [];
+                    }
                 }
-                
-                if (!$first) {
+                if (!empty($batchRows)) {
+                    gzwrite($gz, "INSERT INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
+                }
+                if ($cols !== '') {
                     gzwrite($gz, "\n");
                 }
             }
@@ -753,32 +833,38 @@ class BackupController
 
         try {
             $pdo = Connection::getPDO();
-            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0; SET autocommit=0;");
 
             $currentStmt = '';
+            $stmtCount   = 0;
+            $commitEvery = 200; // commit ogni N statement per limitare la dimensione della transazione
+
             while (!gzeof($gz)) {
-                $line = gzgets($gz, 1048576); // Legge fino a 1MB per riga
+                $line = gzgets($gz, 4194304); // 4 MB per supportare bulk INSERT row molto larghe
                 if ($line === false) {
                     break;
                 }
-                
+
                 $trimmed = trim($line);
                 if ($trimmed === '') {
                     continue;
                 }
-                
+
                 $currentStmt .= $line;
-                
-                // Se la riga finisce con un punto e virgola (ignorando gli spazi bianchi),
-                // abbiamo terminato un'istruzione SQL completa.
+
                 if (str_ends_with($trimmed, ';')) {
                     $pdo->exec($currentStmt);
                     $currentStmt = '';
+                    $stmtCount++;
+                    if ($stmtCount % $commitEvery === 0) {
+                        $pdo->exec('COMMIT');
+                    }
                 }
             }
 
-            $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+            $pdo->exec("COMMIT; SET autocommit=1; SET FOREIGN_KEY_CHECKS=1;");
         } catch (\Throwable $e) {
+            try { $pdo->exec("ROLLBACK; SET autocommit=1; SET FOREIGN_KEY_CHECKS=1;"); } catch (\Throwable $_) {}
             throw new \RuntimeException("Ripristino DB fallito: " . $e->getMessage(), 0, $e);
         } finally {
             @gzclose($gz);

@@ -75,8 +75,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get purge -y libicu-dev libzip-dev libonig-dev \
     && a2enmod ssl rewrite headers \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf \
-    && printf 'upload_max_filesize=256M\npost_max_size=256M\nmemory_limit=256M\nmax_execution_time=300\n' \
-       > /usr/local/etc/php/conf.d/gil-uploads.ini
+    && printf 'upload_max_filesize=256M\npost_max_size=256M\nmemory_limit=256M\nmax_execution_time=0\n' \
+       > /usr/local/etc/php/conf.d/gil-uploads.ini \
+    && printf 'Timeout 3600\n' > /etc/apache2/conf-enabled/gil-timeout.conf
 
 # Imposta la directory di lavoro subito
 WORKDIR /var/www/html

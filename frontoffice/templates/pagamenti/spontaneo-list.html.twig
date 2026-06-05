@@ -147,16 +147,47 @@
 .bollo-card--inline {
   display: flex; flex-direction: row; align-items: center; gap: var(--sp-4);
   max-width: 100%; padding: var(--sp-4) var(--sp-5);
+  background: #FFFDF5 !important;
+  border: 1.5px solid #F1E2B3 !important;
+  box-shadow: 0 4px 12px rgba(228, 189, 86, 0.08) !important;
+}
+.bollo-card--inline::before {
+  background: radial-gradient(circle, rgba(228, 189, 86, 0.03) 0%, transparent 60%) !important;
+}
+.bollo-card--inline:hover {
+  border-color: var(--ms-gold-400) !important;
+  box-shadow: 0 6px 16px rgba(228, 189, 86, 0.15) !important;
+}
+.bollo-card--inline .bollo-card-header h3 {
+  color: var(--bi-navy) !important;
+}
+.bollo-card--inline .bollo-card-body {
+  color: var(--fg-2) !important;
+}
+.bollo-card--inline .bollo-icon-circle {
+  background: rgba(228, 189, 86, 0.15) !important;
+  border-color: rgba(228, 189, 86, 0.35) !important;
+  color: #B38600 !important;
+}
+.bollo-card--inline .badge-gold {
+  background: #FDF8E7 !important;
+  border-color: rgba(228, 189, 86, 0.4) !important;
+  color: #B38600 !important;
+}
+.bollo-card--inline .badge-dot {
+  background-color: #B38600 !important;
+  box-shadow: 0 0 8px #B38600 !important;
 }
 .bollo-card--inline .bollo-card-header { flex: 0 0 auto; flex-direction: row; align-items: center; gap: var(--sp-3); margin: 0; }
 .bollo-card--inline .bollo-card-body  { flex: 1 1 0; margin: 0; font-size: 14px; }
 .bollo-card--inline .bollo-card-footer { flex: 0 0 auto; margin: 0; }
-.bollo-card--inline .bollo-card-badge  { position: absolute; top: var(--sp-3); right: var(--sp-4); }
+.bollo-card--inline .bollo-card-badge  { position: absolute; top: -12px; right: var(--sp-4); }
 .bollo-spontaneo-wrap { position: relative; }
 @media (max-width: 640px) {
   .bollo-card--inline { flex-direction: column; align-items: flex-start; }
   .bollo-card--inline .bollo-card-footer { align-self: stretch; }
   .bollo-card--inline .bollo-card-footer .btn-gold { width: 100%; justify-content: center; }
+  .bollo-card--inline .bollo-card-badge { position: static; margin-bottom: var(--sp-2); }
 }
 </style>
 {% endblock %}
