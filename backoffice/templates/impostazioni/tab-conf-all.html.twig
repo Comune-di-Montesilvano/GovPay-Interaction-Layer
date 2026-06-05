@@ -307,7 +307,7 @@
                 <div id="collapse_{{ eid }}" class="accordion-collapse collapse" aria-labelledby="heading_{{ eid }}" data-bs-parent="#accordionEntrate">
                   <div class="accordion-body">
                     <div class="row g-3 small">
-                      <div class="col-md-4">
+                      <div class="col-md-3">
                         <label for="iban_{{ eid }}" class="text-muted fw-semibold d-block">IBAN accredito</label>
                         {% if current_user and current_user.role == 'superadmin' and idEnt %}
                           <select id="iban_{{ eid }}" name="iban_accredito" form="form_save_{{ eid }}" class="form-select form-select-sm mt-1" style="max-width:280px">
@@ -325,11 +325,29 @@
                           <div class="fw-semibold mt-1">{{ e.ibanAccredito|default('—') }}</div>
                         {% endif %}
                       </div>
-                      <div class="col-md-4">
+                      <div class="col-md-3">
+                        <label for="iban_appoggio_{{ eid }}" class="text-muted fw-semibold d-block">IBAN appoggio</label>
+                        {% if current_user and current_user.role == 'superadmin' and idEnt %}
+                          <select id="iban_appoggio_{{ eid }}" name="iban_appoggio" form="form_save_{{ eid }}" class="form-select form-select-sm mt-1" style="max-width:280px">
+                            <option value="-" {% if (e.ibanAppoggio|default('—') == '—' or e.ibanAppoggio == '' or e.ibanAppoggio == '-') %}selected{% endif %}>— Nessuno (conto corrente -) —</option>
+                            {% for cc in dominio.contiAccredito|default([]) %}
+                              {% set ccIban = cc.iban|default('') %}
+                              {% if ccIban and (cc.abilitato or ccIban == e.ibanAppoggio) %}
+                                <option value="{{ ccIban }}" {% if ccIban == e.ibanAppoggio %}selected{% endif %}>
+                                  {{ ccIban }} {{ cc.descrizione ? '(' ~ cc.descrizione ~ ')' : '' }}
+                                </option>
+                              {% endif %}
+                            {% endfor %}
+                          </select>
+                        {% else %}
+                          <div class="fw-semibold mt-1">{{ e.ibanAppoggio|default('—') }}</div>
+                        {% endif %}
+                      </div>
+                      <div class="col-md-3">
                         <div class="text-muted">Codice contabilità</div>
                         <div class="fw-semibold">{{ e.codiceContabilita|default(e.tipoEntrata.codiceContabilita|default('—')) }}</div>
                       </div>
-                      <div class="col-md-4">
+                      <div class="col-md-3">
                         <div class="text-muted">ID Entrata</div>
                         <div class="fw-semibold">{{ idEnt|default('—') }}</div>
                       </div>
@@ -1842,20 +1860,414 @@
           </div>
         </div>
       {% elseif currentTab == 'confapi' %}
-        <h2 class="h5">Configurazioni (API Backoffice)</h2>
-        {% if app_debug and cfg_json %}
-          <div class="d-flex justify-content-between align-items-center">
-            <div class="text-muted small">Fonte dati: Backoffice /configurazioni</div>
-            <div class="d-flex align-items-center gap-2">
-              <span class="badge bg-warning text-dark">Debug</span>
-              <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#rawCfgApi" aria-expanded="false" aria-controls="rawCfgApi">Mostra JSON</button>
+        {# ── Configurazioni GovPay (read-only) ───────────────────────────── #}
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-header bg-white py-3">
+            <h2 class="h5 mb-0"><i class="fas fa-sliders-h me-2 text-primary"></i>Configurazioni GovPay</h2>
+          </div>
+          <div class="card-body">
+            {% if cfg_arr_decoded is not empty %}
+              {% set cfg = cfg_arr_decoded %}
+              <div class="row g-3">
+
+                {# Hardening #}
+                {% if cfg.hardening is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Hardening</div>
+                    <div class="mb-1">
+                      Abilitato:
+                      {% if cfg.hardening.abilitato is defined %}
+                        <span class="badge {{ cfg.hardening.abilitato ? 'bg-success' : 'bg-secondary' }}">{{ cfg.hardening.abilitato ? 'Sì' : 'No' }}</span>
+                      {% else %}<span class="text-muted">—</span>{% endif %}
+                    </div>
+                    {% if cfg.hardening.captcha is defined and cfg.hardening.captcha %}
+                      <div class="text-muted small mt-1">reCaptcha configurato</div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {# Mail Batch #}
+                {% if cfg.mailBatch is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Mail Batch</div>
+                    <div class="mb-1">
+                      Abilitato:
+                      {% if cfg.mailBatch.abilitato is defined %}
+                        <span class="badge {{ cfg.mailBatch.abilitato ? 'bg-success' : 'bg-secondary' }}">{{ cfg.mailBatch.abilitato ? 'Sì' : 'No' }}</span>
+                      {% else %}<span class="text-muted">—</span>{% endif %}
+                    </div>
+                    {% if cfg.mailBatch.mailserver is defined and cfg.mailBatch.mailserver %}
+                      <div class="text-muted small mt-1">Mailserver configurato</div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {# Giornale degli eventi #}
+                {% if cfg.giornaleEventi is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Giornale degli eventi</div>
+                    {% if cfg.giornaleEventi.interfacce is defined and cfg.giornaleEventi.interfacce %}
+                      <div class="text-muted small">Interfacce configurate</div>
+                    {% else %}
+                      <div class="text-muted small">Nessuna interfaccia</div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {# Avvisatura Mail #}
+                {% if cfg.avvisaturaMail is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Avvisatura Mail</div>
+                    <div class="text-muted small">
+                      {% set count = 0 %}
+                      {% if cfg.avvisaturaMail.promemoriaAvviso is defined and cfg.avvisaturaMail.promemoriaAvviso %}{% set count = count + 1 %}{% endif %}
+                      {% if cfg.avvisaturaMail.promemoriaRicevuta is defined and cfg.avvisaturaMail.promemoriaRicevuta %}{% set count = count + 1 %}{% endif %}
+                      {% if cfg.avvisaturaMail.promemoriaScadenza is defined and cfg.avvisaturaMail.promemoriaScadenza %}{% set count = count + 1 %}{% endif %}
+                      {{ count }} template configurati su 3
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
+
+                {# Avvisatura App IO #}
+                {% if cfg.avvisaturaAppIO is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Avvisatura App IO</div>
+                    <div class="text-muted small">
+                      {% set countio = 0 %}
+                      {% if cfg.avvisaturaAppIO.promemoriaAvviso is defined and cfg.avvisaturaAppIO.promemoriaAvviso %}{% set countio = countio + 1 %}{% endif %}
+                      {% if cfg.avvisaturaAppIO.promemoriaRicevuta is defined and cfg.avvisaturaAppIO.promemoriaRicevuta %}{% set countio = countio + 1 %}{% endif %}
+                      {% if cfg.avvisaturaAppIO.promemoriaScadenza is defined and cfg.avvisaturaAppIO.promemoriaScadenza %}{% set countio = countio + 1 %}{% endif %}
+                      {{ countio }} template configurati su 3
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
+
+                {# App IO Batch #}
+                {% if cfg.appIOBatch is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">App IO Batch</div>
+                    <span class="badge {{ cfg.appIOBatch ? 'bg-success' : 'bg-secondary' }}">Configurato</span>
+                  </div>
+                </div>
+                {% endif %}
+
+                {# Tracciato CSV #}
+                {% if cfg.tracciatoCsv is defined %}
+                <div class="col-md-4">
+                  <div class="border rounded p-3 h-100">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Tracciato CSV</div>
+                    <span class="badge {{ cfg.tracciatoCsv ? 'bg-success' : 'bg-secondary' }}">Configurato</span>
+                  </div>
+                </div>
+                {% endif %}
+
+              </div>
+            {% else %}
+              <p class="text-muted mb-0">Configurazioni non disponibili. Verificare connessione GovPay.</p>
+            {% endif %}
+          </div>
+          {% if app_debug and cfg_json %}
+            <div class="card-footer bg-transparent d-flex justify-content-between align-items-center py-2">
+              <div class="text-muted small">Backoffice: /configurazioni</div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark">Debug</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#rawCfgApi">Mostra JSON</button>
+              </div>
             </div>
+            <div class="collapse" id="rawCfgApi">
+              <pre class="mb-0 p-3 small">{{ cfg_json }}</pre>
+            </div>
+          {% endif %}
+        </div>
+
+        {# ── Ruoli ────────────────────────────────────────────────────────── #}
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-header bg-white py-3">
+            <h2 class="h5 mb-0"><i class="fas fa-user-shield me-2 text-primary"></i>Ruoli
+              {% if ruoli_arr.risultati is defined %}
+                <span class="badge bg-light text-muted border ms-2 fw-normal small">{{ ruoli_arr.risultati|length }}</span>
+              {% endif %}
+            </h2>
           </div>
-          <div class="collapse mt-2" id="rawCfgApi">
-            <pre class="mb-0">{{ cfg_json }}</pre>
+          <div class="card-body p-0">
+            {% if ruoli_api_status == 'error' or ruoli_api_status == 'missing-client' %}
+              <div class="alert alert-warning mx-3 my-3 mb-0 py-2 small">
+                <i class="fas fa-exclamation-triangle me-2"></i>{{ ruoli_api_error|default('Ruoli non disponibili.') }}
+              </div>
+            {% else %}
+              {% set ruoliLista = ruoli_arr.risultati|default([]) %}
+              {% if ruoliLista|length > 0 %}
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle mb-0 small">
+                    <thead class="table-light">
+                      <tr>
+                        <th>ID Ruolo</th>
+                        <th>ACL</th>
+                        {% if current_user and current_user.role == 'superadmin' %}<th class="text-end">Azioni</th>{% endif %}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for ruolo in ruoliLista %}
+                        <tr>
+                          <td class="font-monospace fw-semibold">{{ ruolo.id|default('—') }}</td>
+                          <td>
+                            {% set acl = ruolo.acl|default([]) %}
+                            {% if acl|length > 0 %}
+                              <div class="d-flex flex-wrap gap-1">
+                                {% for entry in acl %}
+                                  {% set auth = entry.autorizzazioni|default([]) %}
+                                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fw-normal">
+                                    {{ entry.servizio|default('?') }}
+                                    <span class="ms-1 fw-semibold">{{ auth|join('') }}</span>
+                                  </span>
+                                {% endfor %}
+                              </div>
+                            {% else %}
+                              <span class="text-muted">Nessuna ACL</span>
+                            {% endif %}
+                          </td>
+                          {% if current_user and current_user.role == 'superadmin' %}
+                          <td class="text-end">
+                            <button class="btn btn-xs btn-outline-primary"
+                              onclick='confapiFillForm({{ ruolo|json_encode }})'>
+                              <i class="fas fa-edit me-1"></i>Modifica
+                            </button>
+                          </td>
+                          {% endif %}
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <p class="text-muted small px-3 py-3 mb-0">Nessun ruolo configurato.</p>
+              {% endif %}
+              {% if app_debug and ruoli_api_json %}
+                <div class="border-top px-3 py-2 d-flex justify-content-between align-items-center">
+                  <div class="text-muted small">Backoffice: /ruoli</div>
+                  <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-warning text-dark">Debug</span>
+                    <button class="btn btn-sm btn-outline-secondary" type="button"
+                      data-bs-toggle="collapse" data-bs-target="#rawRuoli">Mostra JSON</button>
+                  </div>
+                </div>
+                <div class="collapse" id="rawRuoli">
+                  <pre class="mb-0 p-3 small">{{ ruoli_api_json }}</pre>
+                </div>
+              {% endif %}
+            {% endif %}
           </div>
-        {% else %}
-          <p class="text-muted">Nessun dettaglio JSON disponibile.</p>
+        </div>
+
+        {# ── Form Aggiungi / Modifica Ruolo ──────────────────────────────── #}
+        {% if current_user and current_user.role == 'superadmin' %}
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white py-3">
+            <h2 class="h5 mb-0" id="confapi-form-title">
+              <i class="fas fa-plus me-2 text-success"></i>Aggiungi Ruolo
+            </h2>
+          </div>
+          <div class="card-body">
+            <form id="form-confapi-ruolo" onsubmit="return false;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-5">
+                  <label class="form-label">ID Ruolo <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control font-monospace" name="id_ruolo" id="confapi-id-ruolo"
+                    placeholder="es. operatore-comune" maxlength="255"
+                    pattern="[a-zA-Z0-9\-_]{1,255}" required autocomplete="off">
+                  <div class="form-text">Lettere, cifre, trattino, underscore.</div>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <label class="form-label mb-0 fw-semibold">ACL <span class="text-danger">*</span></label>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confapiAddAclRow()">
+                    <i class="fas fa-plus me-1"></i>Aggiungi servizio
+                  </button>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle" id="confapi-acl-table">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Servizio</th>
+                        <th class="text-center" style="width:60px">R</th>
+                        <th class="text-center" style="width:60px">W</th>
+                        <th style="width:40px"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="confapi-acl-body">
+                      {# Righe aggiunte dinamicamente via JS #}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div id="confapi-save-error" class="alert alert-danger py-2 d-none mt-2"></div>
+              <div class="d-flex gap-2 justify-content-end border-top pt-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confapiClearForm()">
+                  <i class="fas fa-times me-1"></i>Annulla
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="confapiSave(this)">
+                  <i class="fas fa-save me-1"></i>Salva
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <script>
+        (function () {
+          'use strict';
+
+          const SERVIZI = [
+            'Anagrafica PagoPA', 'Anagrafica Creditore', 'Anagrafica Applicazioni',
+            'Anagrafica Ruoli', 'Pagamenti', 'Pendenze',
+            'Rendicontazioni e Incassi', 'Giornale degli Eventi',
+            'Configurazione e manutenzione'
+          ];
+
+          function servizioSelect(selected) {
+            return '<select class="form-select form-select-sm" name="acl_servizio[]">' +
+              SERVIZI.map(s => `<option value="${s}"${s === selected ? ' selected' : ''}>${s}</option>`).join('') +
+              '</select>';
+          }
+
+          function aclRow(servizio, hasR, hasW) {
+            return `<tr>
+              <td>${servizioSelect(servizio || SERVIZI[4])}</td>
+              <td class="text-center"><input type="checkbox" class="form-check-input" name="acl_r[]" ${hasR ? 'checked' : ''}></td>
+              <td class="text-center"><input type="checkbox" class="form-check-input" name="acl_w[]" ${hasW ? 'checked' : ''}></td>
+              <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="this.closest('tr').remove()">
+                <i class="fas fa-times"></i></button></td>
+            </tr>`;
+          }
+
+          window.confapiAddAclRow = function (servizio, hasR, hasW) {
+            document.getElementById('confapi-acl-body').insertAdjacentHTML(
+              'beforeend', aclRow(servizio, hasR !== false, hasW !== false)
+            );
+          };
+
+          window.confapiFillForm = function (ruolo) {
+            const idField = document.getElementById('confapi-id-ruolo');
+            idField.value    = ruolo.id || '';
+            idField.readOnly = true;
+            idField.classList.add('bg-light');
+
+            document.getElementById('confapi-acl-body').innerHTML = '';
+            const acl = ruolo.acl || [];
+            if (acl.length === 0) {
+              confapiAddAclRow();
+            } else {
+              acl.forEach(e => {
+                const auth = e.autorizzazioni || [];
+                confapiAddAclRow(e.servizio, auth.includes('R'), auth.includes('W'));
+              });
+            }
+
+            document.getElementById('confapi-form-title').innerHTML =
+              '<i class="fas fa-edit me-2 text-primary"></i>Modifica Ruolo ' + (ruolo.id || '');
+            idField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          };
+
+          window.confapiClearForm = function () {
+            const idField = document.getElementById('confapi-id-ruolo');
+            idField.value    = '';
+            idField.readOnly = false;
+            idField.classList.remove('bg-light');
+            document.getElementById('confapi-acl-body').innerHTML = '';
+            document.getElementById('confapi-save-error').classList.add('d-none');
+            document.getElementById('confapi-form-title').innerHTML =
+              '<i class="fas fa-plus me-2 text-success"></i>Aggiungi Ruolo';
+          };
+
+          window.confapiSave = async function (btn) {
+            const errEl = document.getElementById('confapi-save-error');
+            errEl.classList.add('d-none');
+
+            const form    = document.getElementById('form-confapi-ruolo');
+            const idRuolo = document.getElementById('confapi-id-ruolo').value.trim();
+            const csrf    = form.querySelector('[name="csrf_token"]').value;
+
+            if (!idRuolo || !/^[a-zA-Z0-9\-_]{1,255}$/.test(idRuolo)) {
+              errEl.textContent = 'ID ruolo non valido.';
+              errEl.classList.remove('d-none');
+              return;
+            }
+
+            const rows = document.querySelectorAll('#confapi-acl-body tr');
+            const acl  = [];
+            rows.forEach(row => {
+              const serv = row.querySelector('[name="acl_servizio[]"]')?.value;
+              const hasR = row.querySelector('[name="acl_r[]"]')?.checked;
+              const hasW = row.querySelector('[name="acl_w[]"]')?.checked;
+              const auth = [];
+              if (hasR) auth.push('R');
+              if (hasW) auth.push('W');
+              if (serv && auth.length > 0) {
+                acl.push({ servizio: serv, autorizzazioni: auth });
+              }
+            });
+
+            if (acl.length === 0) {
+              errEl.textContent = 'Almeno una voce ACL con R o W è richiesta.';
+              errEl.classList.remove('d-none');
+              return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Salvataggio…';
+            try {
+              const res  = await fetch('/impostazioni/ruoli/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf_token: csrf, id_ruolo: idRuolo, acl }),
+              });
+              let json;
+              const text = await res.text();
+              try { json = JSON.parse(text); } catch (_) {
+                errEl.innerHTML = 'Risposta non valida (HTTP ' + res.status + '): ' + text.slice(0, 200);
+                errEl.classList.remove('d-none');
+                return;
+              }
+              if (json.success) {
+                impToast(json.message || 'Salvato.', true);
+                confapiClearForm();
+                window.location.reload();
+              } else {
+                errEl.textContent = json.message || 'Errore sconosciuto.';
+                errEl.classList.remove('d-none');
+              }
+            } catch (e) {
+              errEl.textContent = 'Errore di rete: ' + e.message;
+              errEl.classList.remove('d-none');
+            } finally {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="fas fa-save me-1"></i>Salva';
+            }
+          };
+
+          // Aggiungi una riga ACL vuota di default al caricamento
+          if (document.getElementById('confapi-acl-body')?.children.length === 0) {
+            confapiAddAclRow();
+          }
+        })();
+        </script>
         {% endif %}
       {% else %}
         <p class="text-muted mb-0">Seleziona una sezione dalla navigazione.</p>

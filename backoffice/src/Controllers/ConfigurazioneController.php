@@ -904,7 +904,7 @@ class ConfigurazioneController
         };
 
         // ── Variable defaults ─────────────────────────────────────────────
-        $cfgJson = null; $cfgArr = null;
+        $cfgJson = null; $cfgArr = null; $cfgArrDecoded = []; $ruoliArr = [];
         $appsJson = null; $appsArr = null; $appJson = null; $appArr = null;
         $ruoliApiJson = null; $ruoliApiStatus = null; $ruoliApiError = null; $ruoliApiCount = null;
         $operatoriJson = null; $operatoriArr = null;
@@ -953,6 +953,9 @@ class ConfigurazioneController
                     $ruoliApiStatus = 'error';
                     $ruoliApiError  = $e->getMessage();
                 }
+                // Converti stdClass → array per uso Twig
+                $cfgArrDecoded = json_decode(json_encode($cfgData ?? null, JSON_UNESCAPED_SLASHES), true) ?: [];
+                $ruoliArr = json_decode(json_encode($ruoliData ?? null, JSON_UNESCAPED_SLASHES), true) ?: [];
             }
 
             // applicazioni / gestionali: apps + app
@@ -1413,6 +1416,8 @@ class ConfigurazioneController
             'ruoli_api_status'          => $ruoliApiStatus,
             'ruoli_api_error'           => $ruoliApiError,
             'ruoli_api_count'           => $ruoliApiCount,
+            'ruoli_arr'                 => $ruoliArr,
+            'cfg_arr_decoded'           => $cfgArrDecoded,
             'idA2A'                     => SettingsRepository::get('entity', 'id_a2a') ?: null,
             'profilo_json'              => $profiloJson,
             'entrate_json'              => $entrateJson,
@@ -1827,19 +1832,26 @@ class ConfigurazioneController
 
             $curr = $entiApi->getEntrataDominio($idDominio, $idEntrata);
             $ibanAccredito = null;
+            $ibanAppoggio = null;
             $codiceCont = null;
             if (is_object($curr)) {
                 if (method_exists($curr, 'getIbanAccredito')) {
                     $ibanAccredito = $curr->getIbanAccredito();
                 }
+                if (method_exists($curr, 'getIbanAppoggio')) {
+                    $ibanAppoggio = $curr->getIbanAppoggio();
+                }
                 if (method_exists($curr, 'getCodiceContabilita')) {
                     $codiceCont = $curr->getCodiceContabilita();
                 }
-                if ($ibanAccredito === null || $codiceCont === null) {
+                if ($ibanAccredito === null || $ibanAppoggio === null || $codiceCont === null) {
                     $currData = json_decode(json_encode($curr), true);
                     if (is_array($currData)) {
                         if ($ibanAccredito === null) {
                             $ibanAccredito = $currData['ibanAccredito'] ?? null;
+                        }
+                        if ($ibanAppoggio === null) {
+                            $ibanAppoggio = $currData['ibanAppoggio'] ?? null;
                         }
                         if ($codiceCont === null) {
                             $codiceCont = $currData['codiceContabilita'] ?? null;
@@ -1851,6 +1863,7 @@ class ConfigurazioneController
                 $currArr = json_decode(json_encode($currData), true);
                 if (is_array($currArr)) {
                     $ibanAccredito = $currArr['ibanAccredito'] ?? null;
+                    $ibanAppoggio = $currArr['ibanAppoggio'] ?? null;
                     $codiceCont = $currArr['codiceContabilita'] ?? null;
                 }
             }
@@ -1864,6 +1877,15 @@ class ConfigurazioneController
                     $ibanAccredito = $localIban;
                 } else {
                     $ibanAccredito = '-';
+                }
+            }
+
+            if (empty($ibanAppoggio) || $ibanAppoggio === '-') {
+                $localIbanAppoggio = isset($localRow['iban_appoggio']) ? trim((string)$localRow['iban_appoggio']) : '';
+                if ($localIbanAppoggio !== '' && $localIbanAppoggio !== '-') {
+                    $ibanAppoggio = $localIbanAppoggio;
+                } else {
+                    $ibanAppoggio = '-';
                 }
             }
 
@@ -1881,6 +1903,11 @@ class ConfigurazioneController
                 $body['iban_accredito'] = null;
             } else {
                 $body->setIbanAccredito($ibanAccredito);
+            }
+            if ($ibanAppoggio === '-') {
+                $body['iban_appoggio'] = null;
+            } else {
+                $body->setIbanAppoggio($ibanAppoggio);
             }
 
             if (!empty($codiceCont)) {
@@ -2623,14 +2650,30 @@ class ConfigurazioneController
             $entrateRepo = new EntrateRepository();
             $ioRepo = new \App\Database\IoServiceRepository();
 
-            // Gestione IBAN accredito (se presente nel POST)
-            if (array_key_exists('iban_accredito', $data)) {
-                $rawIban = trim((string)$data['iban_accredito']);
-                $ibanToGovPay = ($rawIban === '' || $rawIban === '-') ? '-' : $rawIban;
-                $ibanAccredito = $ibanToGovPay === '-' ? null : $ibanToGovPay;
+            // Gestione IBAN accredito e appoggio (se presenti nel POST)
+            $updateIbanAccredito = array_key_exists('iban_accredito', $data);
+            $updateIbanAppoggio = array_key_exists('iban_appoggio', $data);
 
-                // Aggiorna localmente
-                $entrateRepo->updateIban($idDominio, $idEntrata, $ibanAccredito);
+            if ($updateIbanAccredito || $updateIbanAppoggio) {
+                $ibanAccredito = null;
+                $ibanToGovPay = null;
+                if ($updateIbanAccredito) {
+                    $rawIban = trim((string)$data['iban_accredito']);
+                    $ibanToGovPay = ($rawIban === '' || $rawIban === '-') ? '-' : $rawIban;
+                    $ibanAccredito = $ibanToGovPay === '-' ? null : $ibanToGovPay;
+                    // Aggiorna localmente
+                    $entrateRepo->updateIban($idDominio, $idEntrata, $ibanAccredito);
+                }
+
+                $ibanAppoggio = null;
+                $ibanAppoggioToGovPay = null;
+                if ($updateIbanAppoggio) {
+                    $rawIbanAppoggio = trim((string)$data['iban_appoggio']);
+                    $ibanAppoggioToGovPay = ($rawIbanAppoggio === '' || $rawIbanAppoggio === '-') ? '-' : $rawIbanAppoggio;
+                    $ibanAppoggio = $ibanAppoggioToGovPay === '-' ? null : $ibanAppoggioToGovPay;
+                    // Aggiorna localmente
+                    $entrateRepo->updateIbanAppoggio($idDominio, $idEntrata, $ibanAppoggio);
+                }
 
                 // Aggiorna su GovPay
                 $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
@@ -2672,14 +2715,33 @@ class ConfigurazioneController
                             $isAbilitata = $row ? ((int)$row['abilitato_backoffice'] === 1) : false;
                         }
 
-                        // Prepara il payload con l'IBAN selezionato
+                        // Prepara il payload con gli IBAN
                         $body = new \GovPay\Backoffice\Model\EntrataPost([
                             'abilitato' => $isAbilitata,
                         ]);
-                        if ($ibanToGovPay === '-') {
+
+                        if ($updateIbanAccredito) {
+                            $finalIbanAccredito = $ibanToGovPay;
+                        } else {
+                            $finalIbanAccredito = ($row && $row['iban_accredito']) ? $row['iban_accredito'] : '-';
+                        }
+
+                        if ($finalIbanAccredito === '-') {
                             $body['iban_accredito'] = null;
                         } else {
-                            $body->setIbanAccredito($ibanToGovPay);
+                            $body->setIbanAccredito($finalIbanAccredito);
+                        }
+
+                        if ($updateIbanAppoggio) {
+                            $finalIbanAppoggio = $ibanAppoggioToGovPay;
+                        } else {
+                            $finalIbanAppoggio = ($row && $row['iban_appoggio']) ? $row['iban_appoggio'] : '-';
+                        }
+
+                        if ($finalIbanAppoggio === '-') {
+                            $body['iban_appoggio'] = null;
+                        } else {
+                            $body->setIbanAppoggio($finalIbanAppoggio);
                         }
 
                         // Ripristina il codice contabilita se presente
@@ -2689,7 +2751,12 @@ class ConfigurazioneController
                         }
 
                         $entiApi->addEntrataDominio($idDominio, $idEntrata, $body);
-                        Logger::getInstance()->info('IBAN aggiornato su GovPay', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'iban' => $ibanToGovPay]);
+                        Logger::getInstance()->info('IBAN aggiornato su GovPay', [
+                            'id_dominio' => $idDominio,
+                            'id_entrata' => $idEntrata,
+                            'iban' => $finalIbanAccredito,
+                            'iban_appoggio' => $finalIbanAppoggio
+                        ]);
                     } catch (\GovPay\Backoffice\ApiException $ae) {
                         $aeBody = method_exists($ae, 'getResponseBody') ? $ae->getResponseBody() : null;
                         $aeDetail = '';

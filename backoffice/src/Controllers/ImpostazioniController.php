@@ -3257,6 +3257,88 @@ class ImpostazioniController
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // RUOLI GovPay (RuoliApi)
+    // ──────────────────────────────────────────────────────────────────────
+
+    public function ruoliSave(Request $request, Response $response): Response
+    {
+        $this->requireSuperadmin();
+        $body = $this->parseBody($request);
+        if (!$this->validateCsrf($body)) {
+            return $this->jsonError('Token non valido.', 403);
+        }
+
+        if (!class_exists('GovPay\Backoffice\Api\RuoliApi')) {
+            return $this->jsonError('Client GovPay Backoffice non disponibile.', 500);
+        }
+
+        $url = SettingsRepository::get('govpay', 'backoffice_url', '');
+        if ($url === '') {
+            return $this->jsonError('GovPay Backoffice URL non configurato.', 400);
+        }
+
+        $idRuolo = trim((string)($body['id_ruolo'] ?? ''));
+        if ($idRuolo === '' || !preg_match('/^[a-zA-Z0-9\-_]{1,255}$/', $idRuolo)) {
+            return $this->jsonError('ID ruolo non valido. Ammessi: lettere, cifre, trattino, underscore (1–255 char).', 422);
+        }
+
+        $aclRaw = $body['acl'] ?? null;
+        if (is_string($aclRaw)) {
+            $aclRaw = json_decode($aclRaw, true);
+        }
+        if (!is_array($aclRaw) || count($aclRaw) === 0) {
+            return $this->jsonError('Almeno una voce ACL è richiesta.', 422);
+        }
+
+        $serviziValidi = [
+            'Anagrafica PagoPA', 'Anagrafica Creditore', 'Anagrafica Applicazioni',
+            'Anagrafica Ruoli', 'Pagamenti', 'Pendenze',
+            'Rendicontazioni e Incassi', 'Giornale degli Eventi',
+            'Configurazione e manutenzione',
+        ];
+
+        $aclList = [];
+        foreach ($aclRaw as $entry) {
+            $servizio = (string)($entry['servizio'] ?? '');
+            if (!in_array($servizio, $serviziValidi, true)) {
+                return $this->jsonError('Servizio non valido: ' . $servizio, 422);
+            }
+            $autorizzazioni = array_values(array_unique(array_intersect(
+                (array)($entry['autorizzazioni'] ?? []),
+                ['R', 'W']
+            )));
+            if (empty($autorizzazioni)) {
+                continue;
+            }
+            $aclEntry = new \GovPay\Backoffice\Model\AclPost();
+            $aclEntry->setServizio($servizio);
+            $aclEntry->setAutorizzazioni($autorizzazioni);
+            $aclList[] = $aclEntry;
+        }
+
+        if (empty($aclList)) {
+            return $this->jsonError('Almeno una voce ACL con autorizzazioni R e/o W è richiesta.', 422);
+        }
+
+        try {
+            $cfg = new \GovPay\Backoffice\Configuration();
+            $cfg->setHost(rtrim($url, '/'));
+            $this->applyGovpayCredentials($cfg);
+            $api = new \GovPay\Backoffice\Api\RuoliApi($this->buildGovpayHttpClient(), $cfg);
+
+            $ruoloPost = new \GovPay\Backoffice\Model\RuoloPost();
+            $ruoloPost->setAcl($aclList);
+
+            $api->addRuoloWithHttpInfo($idRuolo, $ruoloPost);
+            return $this->jsonOk('Ruolo "' . $idRuolo . '" salvato.');
+        } catch (\GovPay\Backoffice\ApiException $e) {
+            return $this->jsonError('GovPay: HTTP ' . $e->getCode() . ' — ' . $this->govpayErrorDetail($e->getResponseBody()), 502);
+        } catch (\Throwable $e) {
+            return $this->jsonError('Errore GovPay: ' . $e->getMessage(), 500);
+        }
+    }
+
     private function triggerAuthProxyReload(): bool
     {
         return $this->callAuthProxyControlEndpoint('reload');
