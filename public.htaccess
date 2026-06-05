@@ -1,3 +1,15 @@
+# Configura limiti di upload per Apache mod_php
+<IfModule mod_php.c>
+  php_value upload_max_filesize 256M
+  php_value post_max_size 256M
+  php_value memory_limit 256M
+</IfModule>
+<IfModule mod_php7.c>
+  php_value upload_max_filesize 256M
+  php_value post_max_size 256M
+  php_value memory_limit 256M
+</IfModule>
+
 RewriteEngine On
 
 # Solo le directory consentite (assets, img, debug) vengono servite direttamente
