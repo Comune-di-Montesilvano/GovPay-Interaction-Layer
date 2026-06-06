@@ -25,6 +25,7 @@ use Psr\Http\Message\RequestInterface as HttpRequest;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
+use App\Services\GovPayClientFactory;
 use App\Services\TracciatoService;
 use App\Services\ValidationService;
 
@@ -480,187 +481,32 @@ class PendenzeController
                 }
             }
             
-            // Invio email automatico al cittadino se presente
-            if ($newId && !empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                try {
-                    $mailer = \App\Services\MailerService::forSuite('backoffice');
-
-                    $pendenzaDataForEmail = [
-                        'causale' => $causale,
-                        'importo' => $importo,
-                        'iuv' => $iuvFromResponse,
-                        'numeroAvviso' => $numeroAvvisoFromResponse,
-                    ];
-                    if (!empty($params['dataScadenza'])) {
-                        $pendenzaDataForEmail['dataScadenza'] = $params['dataScadenza'];
-                    }
-                    
-                    // Costruisci gli URL del frontoffice per PDF e pagamento
-                    $frontofficeUrl = $this->resolveFrontofficePublicBaseUrl($request);
-                    $idDominio = (string)(
-                        $responsePayload['idDominio']
-                        ?? ($responsePayload['pendenza']['idDominio'] ?? null)
-                        ?? (is_array($fetchedPendenza) ? ($fetchedPendenza['idDominio'] ?? null) : null)
-                        ?? ($payload['idDominio'] ?? null)
-                        ?? (SettingsRepository::get('entity', 'id_dominio', ''))
-                    );
-                    $pdfUrl = '';
-                    $paymentUrl = '';
-                    $logoPath = $this->resolveEmbeddedLogoPath();
-                    
-                    if ($frontofficeUrl !== '') {
-                        $paymentUrl = $this->buildCheckoutStartUrl(
-                            $frontofficeUrl,
-                            $identificativo,
-                            $iuvFromResponse,
-                            $numeroAvvisoFromResponse
-                        );
-
-                        // URL PDF firmato (preferito) o fallback classico.
-                        $pdfUrl = $this->buildPdfDownloadUrl(
-                            $frontofficeUrl,
-                            $idDominio,
-                            $identificativo,
-                            $iuvFromResponse,
-                            $numeroAvvisoFromResponse
-                        );
-                    }
-                    
-                    $appName = (string)(SettingsRepository::get('entity', 'name', 'GIL'));
-                    $notificationResult = $mailer->sendPendenzaCreatedNotification(
-                        $email,
-                        $anagrafica,
-                        $pendenzaDataForEmail,
-                        $appName,
-                        $pdfUrl,
-                        $paymentUrl,
-                        $logoPath
-                    );
-                    
-                    // Aggiorna i datiAllegati della pendenza con le informazioni della notifica
-                    if ($notificationResult['esito'] === 'OK') {
-                        $this->addNotificationToPendenza($newId, $notificationResult);
-                        $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Email di notifica inviata al cittadino'];
-                    } else {
-                        Logger::getInstance()->warning('Errore invio email notifica pendenza', [
-                            'idPendenza' => $newId,
-                            'email' => $email,
-                            'errore' => $notificationResult['errore'] ?? 'sconosciuto'
-                        ]);
-                        $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Email non inviata: ' . ($notificationResult['errore'] ?? 'errore sconosciuto')];
-                    }
-                } catch (\Throwable $e) {
-                    Logger::getInstance()->error('Eccezione durante invio email notifica pendenza', [
-                        'idPendenza' => $newId,
-                        'email' => $email,
-                        'exception' => $e->getMessage()
-                    ]);
-                    $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Impossibile inviare email di notifica'];
-                }
+            // Notifiche email + App IO
+            $notifResult = $this->sendCreationNotifications(
+                (string)($newId ?? ''),
+                $email ?? '',
+                $anagrafica ?? '',
+                $identificativo ?? '',
+                $tipoSog ?? 'F',
+                [
+                    'causale'         => $causale,
+                    'importo'         => $importo,
+                    'iuv'             => $iuvFromResponse,
+                    'numeroAvviso'    => $numeroAvvisoFromResponse,
+                    'dataScadenza'    => $params['dataScadenza'] ?? null,
+                    'idTipoPendenza'  => $idTipo ?? '',
+                ],
+                $request
+            );
+            if ($notifResult['email'] === 'OK') {
+                $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Email di notifica inviata al cittadino'];
+            } elseif ($notifResult['email'] === 'error') {
+                $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Email non inviata: errore durante l\'invio'];
             }
-
-            // Invio messaggio App IO se codice fiscale disponibile e servizio IO configurato
-            if ($newId && $identificativo !== '' && $tipoSog === 'F') {
-                try {
-                    $ioRepo = new \App\Database\IoServiceRepository();
-                    // Prova a trovare il servizio associato alla tipologia, altrimenti quello predefinito
-                    $ioService = $ioRepo->getTipologiaService($idTipo) ?? $ioRepo->findDefault();
-                    
-                    if ($ioService) {
-                        $ioSvc = new \App\Services\AppIoService();
-                        // Oggetto del messaggio allineato alle specifiche
-                        $ioSubject = 'Pendenza PagoPA - ' . substr($causale, 0, 100);
-                        
-                        // Recupera IUV / numero avviso dalla risposta
-                        $idDominio = (string)(
-                            $responsePayload['idDominio']
-                            ?? ($responsePayload['pendenza']['idDominio'] ?? null)
-                            ?? (is_array($fetchedPendenza) ? ($fetchedPendenza['idDominio'] ?? null) : null)
-                            ?? ($payload['idDominio'] ?? null)
-                            ?? (SettingsRepository::get('entity', 'id_dominio', ''))
-                        );
-                        $frontofficeUrl = $this->resolveFrontofficePublicBaseUrl($request);
-                        $numeroAvvisoPendenza = $numeroAvvisoFromResponse;
-                        $iuvPendenza = $iuvFromResponse !== '' ? $iuvFromResponse : $numeroAvvisoPendenza;
-
-                        // Costruisci URL firmato PDF.
-                        $signedPdfUrl = $this->buildPdfDownloadUrl(
-                            $frontofficeUrl,
-                            $idDominio,
-                            $identificativo,
-                            $iuvPendenza,
-                            $numeroAvvisoPendenza
-                        );
-
-                        // Costruisci il contenuto markdown
-                        $markdown = "## Pendenza PagoPA\n\n";
-                        $markdown .= "**Causale**: " . $causale . "\n\n";
-                        $markdown .= "**Importo**: € " . number_format($importo, 2, ',', '.') . "\n\n";
-                        if ($iuvPendenza !== '') {
-                            $markdown .= "**IUV**: " . $iuvPendenza . "\n\n";
-                        }
-                        if (!empty($params['dataScadenza'])) {
-                            $markdown .= "**Scadenza**: " . $params['dataScadenza'] . "\n\n";
-                        }
-                        if ($signedPdfUrl !== '') {
-                            $markdown .= "[Scarica il PDF dell'avviso](" . $signedPdfUrl . ")\n\n";
-                        }
-                        // Rimosso link "Paga ora" testuale: il tasto ufficiale è nel paymentData (fix 5)
-
-                        // Costruisci payment_data: preferisci numero avviso/iuv avviso (18 cifre).
-                        $paymentData = null;
-                        $noticeNum = preg_replace('/\D/', '', $numeroAvvisoPendenza !== '' ? $numeroAvvisoPendenza : $iuvPendenza);
-                        if (strlen($noticeNum) === 18) {
-                            $paymentData = [
-                                'noticeNumber' => $noticeNum,
-                                'amount' => (int)round($importo * 100),
-                                'invalidAfterDueDate' => !empty($params['dataScadenza']),
-                            ];
-                        }
-
-                        $dueDate = !empty($params['dataScadenza'])
-                            ? $params['dataScadenza']
-                            : null;
-                        // Se presente una data, normalizza in formato ISO8601 completo
-                        if ($dueDate !== null && strlen($dueDate) === 10) {
-                            $dueDate = $dueDate . 'T00:00:00Z';
-                        }
-
-                        $result = $ioSvc->sendMessage(
-                            $ioService['api_key_primaria'],
-                            $identificativo,
-                            $ioSubject,
-                            $markdown,
-                            $dueDate,
-                            $paymentData
-                        );
-                        
-                        if ($result['esito'] === 'OK') {
-                            $ioNotification = [
-                                'timestamp' => date('Y-m-d H:i:s'),
-                                'esito' => 'OK',
-                                'canale' => 'app_io',
-                                'destinatario' => $result['id'] ?? 'N/A',
-                                'message_id' => $result['id'] ?? null,
-                            ];
-                            $this->addNotificationToPendenza((string)$newId, $ioNotification);
-                            $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Messaggio App IO inviato al cittadino'];
-                        } else {
-                            Logger::getInstance()->warning('Errore invio messaggio IO', [
-                                'idPendenza' => $newId,
-                                'identificativo' => substr($identificativo, -4),
-                                'errore' => $result['errore'] ?? 'sconosciuto'
-                            ]);
-                            $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Messaggio App IO non inviato: ' . ($result['errore'] ?? 'errore sconosciuto')];
-                        }
-                    }
-                } catch (\Throwable $e) {
-                    Logger::getInstance()->error('Eccezione durante invio messaggio IO', [
-                        'idPendenza' => $newId,
-                        'exception' => $e->getMessage()
-                    ]);
-                    $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Impossibile inviare messaggio App IO'];
-                }
+            if ($notifResult['app_io'] === 'OK') {
+                $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Messaggio App IO inviato al cittadino'];
+            } elseif ($notifResult['app_io'] === 'error') {
+                $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Messaggio App IO non inviato'];
             }
             
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Pendenza creata con successo'];
@@ -2762,81 +2608,12 @@ class PendenzeController
     }
 
     /**
-     * Crea un Guzzle client con opzioni di autenticazione e mTLS impostate
+     * Crea un Guzzle client con TLS, retry su cURL 35 e Connection:close.
+     * Delega a GovPayClientFactory — unica implementazione condivisa.
      */
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-            if (!empty($cert) && !empty($key)) {
-                $guzzleOptions['cert'] = $cert;
-                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-            }
-        }
-
-        $defaultCurlOptions = [];
-        if (defined('CURL_SSLVERSION_TLSv1_2')) {
-            $defaultCurlOptions[CURLOPT_SSLVERSION] = CURL_SSLVERSION_TLSv1_2;
-        }
-        if (defined('CURL_HTTP_VERSION_1_1')) {
-            $guzzleOptions['version'] = '1.1';
-        }
-        if (defined('CURLOPT_SSL_SESSIONID_CACHE')) {
-            $defaultCurlOptions[CURLOPT_SSL_SESSIONID_CACHE] = false;
-        }
-        if (defined('CURLOPT_FORBID_REUSE')) {
-            $defaultCurlOptions[CURLOPT_FORBID_REUSE] = true;
-        }
-        if (!empty($defaultCurlOptions)) {
-            $guzzleOptions['curl'] = ($guzzleOptions['curl'] ?? []) + $defaultCurlOptions;
-        }
-
-        // Crea un handler stack con retry automatico sui problemi TLS intermittenti (cURL 35)
-        $handlerStack = new \GuzzleHttp\HandlerStack();
-        $handlerStack->setHandler(new \GuzzleHttp\Handler\CurlHandler());
-
-        $handlerStack->push(Middleware::mapRequest(
-            static function (HttpRequest $request): HttpRequest {
-                return $request->withHeader('Connection', 'close');
-            }
-        ));
-
-        $maxTlsRetries = 5;
-        $handlerStack->push(Middleware::retry(
-            function (int $retries, $request, $response = null, $exception = null) use ($maxTlsRetries): bool {
-                if (!$exception instanceof RequestException) {
-                    return false;
-                }
-                $context = $exception->getHandlerContext();
-                $errno = (int)($context['errno'] ?? 0);
-                $message = strtolower($exception->getMessage());
-                $isTlsError = $errno === 35 || str_contains($message, 'curl error 35');
-                if (!$isTlsError) {
-                    return false;
-                }
-                if ($retries >= $maxTlsRetries) {
-                    Logger::error(sprintf('GovPay TLS error after %d retries (errno %s): %s', $maxTlsRetries, $errno ?: 'n/a', $exception->getMessage()));
-                    return false;
-                }
-                Logger::warning(sprintf('Retry GovPay call after TLS error (attempt %d/%d, errno %s)', $retries + 1, $maxTlsRetries, $errno ?: 'n/a'));
-                return true;
-            },
-            static function (int $retries): int {
-                if ($retries <= 0) {
-                    return 0;
-                }
-                $baseDelay = 200 * (1 << ($retries - 1));
-                $jitter = random_int(0, 100);
-                return (int)min(2000, $baseDelay + $jitter);
-            }
-        ));
-
-        $guzzleOptions['handler'] = $handlerStack;
-
-        return new Client($guzzleOptions);
+        return GovPayClientFactory::makeBackofficeClient($guzzleOptions);
     }
 
     /**
@@ -2847,7 +2624,7 @@ class PendenzeController
      * @return array
      * @throws \Throwable
      */
-    private function callBackofficeFindPendenze(array $query): array
+    public function callBackofficeFindPendenze(array $query): array
     {
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         if (empty($backofficeUrl)) {
@@ -3189,58 +2966,26 @@ class PendenzeController
 
     public function downloadAvviso(Request $request, Response $response, array $args): Response
     {
-        $idDominio = $args['idDominio'] ?? '';
-        $numeroAvviso = $args['numeroAvviso'] ?? '';
+        $idDominio    = (string)($args['idDominio'] ?? '');
+        $numeroAvviso = (string)($args['numeroAvviso'] ?? '');
         if ($idDominio === '' || $numeroAvviso === '') {
             $response->getBody()->write('Parametri mancanti');
             return $response->withStatus(400);
         }
 
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        if (empty($backofficeUrl)) {
-            $response->getBody()->write('GOVPAY_BACKOFFICE_URL non impostata');
-            return $response->withStatus(500);
-        }
-
         try {
-            $username = SettingsRepository::get('govpay', 'user', '');
-            $password = SettingsRepository::get('govpay', 'password', '');
-            $guzzleOptions = [
-                'headers' => ['Accept' => 'application/pdf'],
-            ];
-            $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-            if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-                $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-                $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-                $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-                if (!empty($cert) && !empty($key)) {
-                    $guzzleOptions['cert'] = $cert;
-                    $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-                } else {
-                    $response->getBody()->write('mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati');
-                    return $response->withStatus(500);
-                }
-            }
-            if ($username !== '' && $password !== '') {
-                $guzzleOptions['auth'] = [$username, $password];
-            }
-
-            $http = new Client($guzzleOptions);
-            $url = rtrim($backofficeUrl, '/') . '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso);
-            $resp = $http->request('GET', $url);
-            $contentType = $resp->getHeaderLine('Content-Type') ?: 'application/pdf';
-            $pdf = (string)$resp->getBody();
-            $filename = 'avviso-' . $idDominio . '-' . $numeroAvviso . '.pdf';
-
-            $response = $response
+            $govResp     = $this->fetchAvvisoPdfResponse($idDominio, $numeroAvviso);
+            $contentType = $govResp->getHeaderLine('Content-Type') ?: 'application/pdf';
+            $filename    = 'avviso-' . $idDominio . '-' . $numeroAvviso . '.pdf';
+            $response    = $response
                 ->withHeader('Content-Type', $contentType)
                 ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
                 ->withHeader('Cache-Control', 'no-store');
-            $response->getBody()->write($pdf);
+            $response->getBody()->write((string)$govResp->getBody());
             return $response;
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $msg = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . $ce->getMessage());
+            $msg  = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . $ce->getMessage());
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
         } catch (\Throwable $e) {
@@ -3371,92 +3116,27 @@ class PendenzeController
 
     public function downloadRicevuta(Request $request, Response $response, array $args): Response
     {
-        $idDominio = $args['idDominio'] ?? '';
-        $iuv = $args['iuv'] ?? '';
-        $ccp = $args['ccp'] ?? '';
+        $idDominio = (string)($args['idDominio'] ?? '');
+        $iuv       = (string)($args['iuv'] ?? '');
+        $ccp       = (string)($args['ccp'] ?? '');
         if ($idDominio === '' || $iuv === '' || $ccp === '') {
             $response->getBody()->write('Parametri mancanti');
             return $response->withStatus(400);
         }
 
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        $pendenzeUrl = SettingsRepository::get('govpay', 'pendenze_url', '');
-        if (empty($backofficeUrl) && empty($pendenzeUrl)) {
-            $response->getBody()->write('GOVPAY_BACKOFFICE_URL e GOVPAY_PENDENZE_URL non impostati');
-            return $response->withStatus(500);
-        }
-
         try {
-            $username = SettingsRepository::get('govpay', 'user', '');
-            $password = SettingsRepository::get('govpay', 'password', '');
-            $guzzleOptions = [
-                'headers' => ['Accept' => 'application/pdf'],
-            ];
-            $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-            if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-                $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-                $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-                $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-                if (!empty($cert) && !empty($key)) {
-                    $guzzleOptions['cert'] = $cert;
-                    $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-                } else {
-                    $response->getBody()->write('mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati');
-                    return $response->withStatus(500);
-                }
-            }
-            if ($username !== '' && $password !== '') {
-                $guzzleOptions['auth'] = [$username, $password];
-            }
-
-            $http = new Client($guzzleOptions);
-            $filename = 'rt-' . $iuv . '-' . $ccp . '.pdf';
-
-            // Prova prima Backoffice v1 /rpp/{idDominio}/{iuv}/{ccp}/rt (non filtra per idA2A)
-            // Fallback a Pendenze v2 se Backoffice non disponibile o 403/404
-            $lastError = null;
-            if (!empty($backofficeUrl)) {
-                try {
-                    $url = rtrim($backofficeUrl, '/') . '/rpp/'
-                        . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
-                    $resp = $http->request('GET', $url);
-                    $contentType = $resp->getHeaderLine('Content-Type') ?: 'application/pdf';
-                    $pdf = (string)$resp->getBody();
-                    $response = $response
-                        ->withHeader('Content-Type', $contentType)
-                        ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
-                        ->withHeader('Cache-Control', 'no-store');
-                    $response->getBody()->write($pdf);
-                    return $response;
-                } catch (ClientException $ce) {
-                    $lastError = $ce;
-                    // 403 o 404: proviamo Pendenze v2
-                }
-            }
-
-            if (!empty($pendenzeUrl)) {
-                $url = rtrim($pendenzeUrl, '/') . '/rpp/'
-                    . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
-                $resp = $http->request('GET', $url);
-                $contentType = $resp->getHeaderLine('Content-Type') ?: 'application/pdf';
-                $pdf = (string)$resp->getBody();
-                $response = $response
-                    ->withHeader('Content-Type', $contentType)
-                    ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
-                    ->withHeader('Cache-Control', 'no-store');
-                $response->getBody()->write($pdf);
-                return $response;
-            }
-
-            // Entrambi falliti
-            if ($lastError !== null) {
-                throw $lastError;
-            }
-            $response->getBody()->write('Nessun endpoint disponibile per il download della ricevuta');
-            return $response->withStatus(500);
+            $govResp     = $this->fetchRicevutaPdfResponse($idDominio, $iuv, $ccp);
+            $contentType = $govResp->getHeaderLine('Content-Type') ?: 'application/pdf';
+            $filename    = 'rt-' . $iuv . '-' . $ccp . '.pdf';
+            $response    = $response
+                ->withHeader('Content-Type', $contentType)
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                ->withHeader('Cache-Control', 'no-store');
+            $response->getBody()->write((string)$govResp->getBody());
+            return $response;
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $msg = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . $ce->getMessage());
+            $msg  = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . $ce->getMessage());
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
         } catch (\Throwable $e) {
@@ -4779,7 +4459,7 @@ class PendenzeController
         return $prefix . $suffix;
     }
 
-    private function fetchPendenzaById(string $idPendenza): ?array
+    public function fetchPendenzaById(string $idPendenza): ?array
     {
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
@@ -4868,7 +4548,229 @@ class PendenzeController
         return array_merge($params, ['sig' => $sig]);
     }
 
-    private function addNotificationToPendenza(string $idPendenza, array $notificationData, ?string $storicoOperazione = null): bool
+    /**
+     * Invia notifiche email e/o App IO dopo la creazione di una pendenza.
+     * Estratto da create() per essere riusabile dal frontoffice sidecar.
+     * Non scrive in $_SESSION — ritorna un array con gli esiti.
+     *
+     * @param array $pendenzaData  causale, importo, iuv?, numeroAvviso?, dataScadenza?
+     * @return array{email:string, app_io:string}  valori: 'OK' | 'error' | 'skipped'
+     */
+    public function sendCreationNotifications(
+        string  $idPendenza,
+        string  $email,
+        string  $anagrafica,
+        string  $identificativo,
+        string  $tipoSog,
+        array   $pendenzaData,
+        Request $request
+    ): array {
+        $result = ['email' => 'skipped', 'app_io' => 'skipped'];
+
+        $iuv          = (string)($pendenzaData['iuv'] ?? '');
+        $numeroAvviso = (string)($pendenzaData['numeroAvviso'] ?? '');
+
+        // Recupera iuv/numeroAvviso se mancanti
+        if (($iuv === '' || $numeroAvviso === '') && $idPendenza !== '') {
+            $fetched = $this->fetchPendenzaById($idPendenza);
+            if (is_array($fetched)) {
+                [$fetchedIuv, $fetchedNumero] = $this->extractIuvAndNumeroAvviso($fetched);
+                if ($iuv === '') {
+                    $iuv = $fetchedIuv;
+                }
+                if ($numeroAvviso === '') {
+                    $numeroAvviso = $fetchedNumero;
+                }
+            }
+        }
+
+        $frontofficeUrl = $this->resolveFrontofficePublicBaseUrl($request);
+        $idDominio      = (string)(SettingsRepository::get('entity', 'id_dominio', ''));
+        $pdfUrl         = '';
+        $paymentUrl     = '';
+
+        if ($frontofficeUrl !== '') {
+            $paymentUrl = $this->buildCheckoutStartUrl($frontofficeUrl, $identificativo, $iuv, $numeroAvviso);
+            $pdfUrl     = $this->buildPdfDownloadUrl($frontofficeUrl, $idDominio, $identificativo, $iuv, $numeroAvviso);
+        }
+
+        // Email
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            try {
+                $mailer             = \App\Services\MailerService::forSuite('backoffice');
+                $emailData          = array_merge(['causale' => '', 'importo' => 0], $pendenzaData, [
+                    'iuv'          => $iuv,
+                    'numeroAvviso' => $numeroAvviso,
+                ]);
+                $notificationResult = $mailer->sendPendenzaCreatedNotification(
+                    $email,
+                    $anagrafica,
+                    $emailData,
+                    (string)SettingsRepository::get('entity', 'name', 'GIL'),
+                    $pdfUrl,
+                    $paymentUrl,
+                    $this->resolveEmbeddedLogoPath()
+                );
+                if ($notificationResult['esito'] === 'OK') {
+                    $this->addNotificationToPendenza($idPendenza, $notificationResult);
+                    $result['email'] = 'OK';
+                } else {
+                    $result['email'] = 'error';
+                }
+            } catch (\Throwable $e) {
+                Logger::getInstance()->error('sendCreationNotifications: eccezione email', [
+                    'idPendenza' => $idPendenza,
+                    'error'      => $e->getMessage(),
+                ]);
+                $result['email'] = 'error';
+            }
+        }
+
+        // App IO
+        if ($idPendenza !== '' && $identificativo !== '' && $tipoSog === 'F') {
+            try {
+                $ioRepo    = new \App\Database\IoServiceRepository();
+                $ioService = $ioRepo->getTipologiaService($pendenzaData['idTipoPendenza'] ?? '') ?? $ioRepo->findDefault();
+                if ($ioService) {
+                    $ioSvc   = new \App\Services\AppIoService();
+                    $noticeNum = preg_replace('/\D/', '', $numeroAvviso !== '' ? $numeroAvviso : $iuv);
+                    $paymentData = null;
+                    if (strlen((string)$noticeNum) === 18) {
+                        $paymentData = [
+                            'noticeNumber'        => $noticeNum,
+                            'amount'              => (int)round((float)($pendenzaData['importo'] ?? 0) * 100),
+                            'invalidAfterDueDate' => !empty($pendenzaData['dataScadenza']),
+                        ];
+                    }
+                    $dueDate = ($pendenzaData['dataScadenza'] ?? '') !== '' ? $pendenzaData['dataScadenza'] : null;
+                    if ($dueDate !== null && strlen((string)$dueDate) === 10) {
+                        $dueDate .= 'T00:00:00Z';
+                    }
+                    $markdown  = "## Pendenza PagoPA\n\n";
+                    $markdown .= '**Causale**: ' . ($pendenzaData['causale'] ?? '') . "\n\n";
+                    $markdown .= '**Importo**: € ' . number_format((float)($pendenzaData['importo'] ?? 0), 2, ',', '.') . "\n\n";
+                    if ($iuv !== '') {
+                        $markdown .= '**IUV**: ' . $iuv . "\n\n";
+                    }
+                    if (!empty($pendenzaData['dataScadenza'])) {
+                        $markdown .= '**Scadenza**: ' . $pendenzaData['dataScadenza'] . "\n\n";
+                    }
+                    if ($pdfUrl !== '') {
+                        $markdown .= '[Scarica il PDF](' . $pdfUrl . ')' . "\n\n";
+                    }
+                    $ioResult = $ioSvc->sendMessage(
+                        $ioService['api_key_primaria'],
+                        $identificativo,
+                        'Pendenza PagoPA - ' . substr((string)($pendenzaData['causale'] ?? ''), 0, 100),
+                        $markdown,
+                        $dueDate,
+                        $paymentData
+                    );
+                    if ($ioResult['esito'] === 'OK') {
+                        $this->addNotificationToPendenza($idPendenza, [
+                            'timestamp'   => date('Y-m-d H:i:s'),
+                            'esito'       => 'OK',
+                            'canale'      => 'app_io',
+                            'destinatario'=> $ioResult['id'] ?? 'N/A',
+                            'message_id'  => $ioResult['id'] ?? null,
+                        ]);
+                        $result['app_io'] = 'OK';
+                    } else {
+                        $result['app_io'] = 'error';
+                    }
+                }
+            } catch (\Throwable $e) {
+                Logger::getInstance()->error('sendCreationNotifications: eccezione App IO', [
+                    'idPendenza' => $idPendenza,
+                    'error'      => $e->getMessage(),
+                ]);
+                $result['app_io'] = 'error';
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Scarica il PDF avviso da GovPay Backoffice v1 e ritorna la Guzzle response.
+     * Estratto da downloadAvviso() per essere riusabile da FrontofficeApiController.
+     * Usa makeHttpClient() — TLS + retry cURL 35 inclusi.
+     *
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
+    public function fetchAvvisoPdfResponse(string $idDominio, string $numeroAvviso): \Psr\Http\Message\ResponseInterface
+    {
+        $backofficeUrl = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
+        $url = $backofficeUrl . '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso);
+        $opts = array_merge(
+            ['headers' => ['Accept' => 'application/pdf']],
+            GovPayClientFactory::basicAuthOptions()
+        );
+        return $this->makeHttpClient()->request('GET', $url, $opts);
+    }
+
+    /**
+     * Scarica il PDF avvisi documento (multi-rata) da GovPay Pendenze v2 e ritorna la Guzzle response.
+     * Estratto per essere riusabile da FrontofficeApiController.
+     * Usa makeHttpClient() — TLS + retry cURL 35 inclusi.
+     *
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
+    public function fetchDocumentoPdfResponse(string $idDominio, string $numeroDocumento): \Psr\Http\Message\ResponseInterface
+    {
+        $pendenzeUrl = rtrim((string)SettingsRepository::get('govpay', 'pendenze_url', ''), '/');
+        if ($pendenzeUrl === '') {
+            throw new \RuntimeException('GOVPAY_PENDENZE_URL non configurata');
+        }
+        $url  = $pendenzeUrl . '/documenti/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroDocumento) . '/avvisi';
+        $opts = array_merge(
+            ['headers' => ['Accept' => 'application/pdf']],
+            GovPayClientFactory::basicAuthOptions()
+        );
+        return $this->makeHttpClient()->request('GET', $url, $opts);
+    }
+
+    /**
+     * Scarica il PDF ricevuta (RT) da GovPay Backoffice v1 e ritorna la Guzzle response.
+     * Estratto da downloadRicevuta() per essere riusabile da FrontofficeApiController.
+     * Prova Backoffice v1 /rpp/{iuv}/{ccp}/rt; fallback a Pendenze v2 se configurata.
+     * Usa makeHttpClient() — TLS + retry cURL 35 inclusi.
+     *
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
+    public function fetchRicevutaPdfResponse(string $idDominio, string $iuv, string $ccp): \Psr\Http\Message\ResponseInterface
+    {
+        $backofficeUrl = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
+        $pendenzeUrl   = rtrim((string)SettingsRepository::get('govpay', 'pendenze_url', ''), '/');
+        $opts = array_merge(
+            ['headers' => ['Accept' => 'application/pdf']],
+            GovPayClientFactory::basicAuthOptions()
+        );
+        $http = $this->makeHttpClient();
+        $lastEx = null;
+
+        if ($backofficeUrl !== '') {
+            try {
+                $url = $backofficeUrl . '/rpp/' . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
+                return $http->request('GET', $url, $opts);
+            } catch (ClientException $e) {
+                $lastEx = $e;
+                // 4xx → prova fallback Pendenze v2
+            }
+        }
+
+        if ($pendenzeUrl !== '') {
+            $url = $pendenzeUrl . '/rpp/' . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
+            return $http->request('GET', $url, $opts);
+        }
+
+        if ($lastEx !== null) {
+            throw $lastEx;
+        }
+        throw new \RuntimeException('GOVPAY_BACKOFFICE_URL e GOVPAY_PENDENZE_URL non configurati');
+    }
+
+    protected function addNotificationToPendenza(string $idPendenza, array $notificationData, ?string $storicoOperazione = null): bool
     {
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');

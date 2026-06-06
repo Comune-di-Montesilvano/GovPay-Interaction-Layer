@@ -2936,28 +2936,12 @@ class ImpostazioniController
 
     private function buildGovpayHttpClient(): \GuzzleHttp\Client
     {
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        $options = [];
-        if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key  = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $pass = SettingsRepository::get('govpay', 'tls_key_password');
-            if (!empty($cert) && !empty($key)) {
-                $options['cert']    = $cert;
-                $options['ssl_key'] = ($pass !== null && $pass !== '') ? [$key, $pass] : $key;
-            }
-        }
-        return new \GuzzleHttp\Client($options);
+        return \App\Services\GovPayClientFactory::makeBackofficeClient();
     }
 
     private function applyGovpayCredentials(object $config): void
     {
-        $user = SettingsRepository::get('govpay', 'user', '');
-        $pass = SettingsRepository::get('govpay', 'password', '');
-        if ($user !== '' && $pass !== '') {
-            $config->setUsername($user);
-            $config->setPassword($pass);
-        }
+        \App\Services\GovPayClientFactory::applyCredentials($config);
     }
 
     private function govpayErrorDetail(mixed $body): string
