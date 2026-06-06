@@ -369,6 +369,205 @@ class FrontofficeApiController
         return [$voice];
     }
 
+    // ── Endpoint: bollo GovPay checkout (legacy) ─────────────────────────────
+
+    /**
+     * POST /api/frontoffice/bollo/govpay-checkout
+     *
+     * Body JSON: {idPendenza: string, returnUrl: string}
+     * Il backoffice legge GOVPAY_CHECKOUT_URL e credenziali da settings.
+     * Chiama POST {checkoutUrl}/pagamenti con Basic Auth/mTLS.
+     *
+     * Risposta: {success, location} oppure {success:false, message}
+     */
+    public function bolloGovpayCheckout(Request $request, Response $response): Response
+    {
+        if (!$this->verifyMasterToken($request)) {
+            return $this->jsonError('Non autorizzato', 401);
+        }
+
+        $body = json_decode((string)$request->getBody(), true);
+        if (!is_array($body)) {
+            return $this->jsonError('Body JSON non valido', 400);
+        }
+
+        $idPendenza = trim((string)($body['idPendenza'] ?? ''));
+        $returnUrl  = trim((string)($body['returnUrl'] ?? ''));
+
+        if ($idPendenza === '' || $returnUrl === '') {
+            return $this->jsonError('idPendenza e returnUrl obbligatori', 400);
+        }
+
+        $checkoutUrl = rtrim((string)SettingsRepository::get('govpay', 'checkout_url', ''), '/');
+        $idA2A       = (string)SettingsRepository::get('entity', 'id_a2a', '');
+
+        if ($checkoutUrl === '' || $idA2A === '') {
+            return $this->jsonError('GovPay checkout URL o ID_A2A non configurati', 503);
+        }
+
+        $requestBody = json_encode([
+            'pendenze'   => [['idA2A' => $idA2A, 'idPendenza' => $idPendenza]],
+            'urlRitorno' => $returnUrl,
+        ]);
+
+        $user = (string)SettingsRepository::get('govpay', 'user', '');
+        $pass = (string)SettingsRepository::get('govpay', 'password', '');
+        $authMethod = strtolower((string)SettingsRepository::get('govpay', 'authentication_method', ''));
+
+        $curlOpts = [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $requestBody,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+        ];
+
+        if (in_array($authMethod, ['ssl', 'sslheader'], true)) {
+            $cert    = (string)SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $keyPath = (string)SettingsRepository::get('govpay', 'tls_key_path', '');
+            if ($cert !== '' && $keyPath !== '') {
+                $curlOpts[CURLOPT_SSLCERT] = $cert;
+                $curlOpts[CURLOPT_SSLKEY]  = $keyPath;
+            }
+        } elseif ($user !== '' || $pass !== '') {
+            $curlOpts[CURLOPT_USERPWD] = $user . ':' . $pass;
+        }
+
+        $ch  = curl_init($checkoutUrl . '/pagamenti');
+        curl_setopt_array($ch, $curlOpts);
+        $raw    = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        unset($ch);
+
+        if ($raw === false || $curlErr !== '') {
+            Logger::getInstance()->warning('FrontofficeApi::bolloGovpayCheckout cURL error', ['error' => $curlErr]);
+            return $this->jsonError('Errore di rete verso GovPay checkout', 503);
+        }
+
+        if ($status !== 201) {
+            Logger::getInstance()->warning('FrontofficeApi::bolloGovpayCheckout risposta inattesa', [
+                'status' => $status, 'idPendenza' => $idPendenza,
+            ]);
+            return $this->jsonError('Al momento non riusciamo ad avviare il pagamento GovPay. Riprova più tardi.', 503);
+        }
+
+        $data     = json_decode((string)$raw, true);
+        $redirect = trim((string)($data['redirect'] ?? ''));
+
+        if ($redirect === '') {
+            return $this->jsonError('GovPay checkout: redirect URL mancante nella risposta', 503);
+        }
+
+        return $this->jsonOk('Checkout GovPay avviato', ['location' => $redirect]);
+    }
+
+    // ── Endpoint: bollo @e.bollo checkout ────────────────────────────────────
+
+    /**
+     * POST /api/frontoffice/bollo/ebollo-checkout
+     *
+     * Body JSON: {
+     *   idDominio: string,
+     *   paymentNotices: [{firstName, lastName, fiscalCode, email, amount, province, documentHash?}],
+     *   idCIService: string,
+     *   returnUrls: {successUrl, cancelUrl, errorUrl}
+     * }
+     * Il frontoffice ha già estratto i dati dal detail pendenza e costruito il payload.
+     * Il backoffice aggiunge le subscription keys da settings e fa la chiamata HTTP.
+     *
+     * Risposta: {success, location} oppure {success:false, message}
+     */
+    public function bolloEbolloCheckout(Request $request, Response $response): Response
+    {
+        if (!$this->verifyMasterToken($request)) {
+            return $this->jsonError('Non autorizzato', 401);
+        }
+
+        $body = json_decode((string)$request->getBody(), true);
+        if (!is_array($body)) {
+            return $this->jsonError('Body JSON non valido', 400);
+        }
+
+        $idDominio = trim((string)($body['idDominio'] ?? ''));
+        if ($idDominio === '') {
+            return $this->jsonError('idDominio mancante', 400);
+        }
+
+        $baseUrl     = rtrim((string)SettingsRepository::get('pagopa', 'ebollo_base_url', ''), '/');
+        $idCiService = trim((string)SettingsRepository::get('pagopa', 'ebollo_id_ci_service', '00005')) ?: '00005';
+        $body['idCIService'] = $body['idCIService'] ?? $idCiService;
+
+        $candidateKeys = array_values(array_filter(array_unique([
+            trim((string)SettingsRepository::get('pagopa', 'ebollo_subscription_key', '')),
+            trim((string)SettingsRepository::get('pagopa', 'ebollo_subscription_key_secondary', '')),
+            trim((string)SettingsRepository::get('pagopa', 'checkout_subscription_key', '')),
+        ]), static fn (string $k): bool => $k !== ''));
+
+        if ($baseUrl === '' || empty($candidateKeys)) {
+            return $this->jsonError('Configurazione @e.bollo incompleta (Base URL o Subscription Key mancanti)', 503);
+        }
+
+        $requestPayload = [
+            'paymentNotices' => $body['paymentNotices'] ?? [],
+            'idCIService'    => $body['idCIService'],
+            'returnUrls'     => $body['returnUrls'] ?? [],
+        ];
+
+        if (empty($requestPayload['paymentNotices'])) {
+            return $this->jsonError('paymentNotices mancanti', 400);
+        }
+
+        $requestId = bin2hex(random_bytes(16));
+
+        $httpClient = new \GuzzleHttp\Client([
+            'timeout' => 20, 'connect_timeout' => 10,
+            'allow_redirects' => false, 'http_errors' => false,
+        ]);
+
+        $redirectUrl = '';
+        $lastStatus  = 0;
+        $lastBody    = null;
+
+        foreach ($candidateKeys as $subscriptionKey) {
+            $resp        = $httpClient->request('POST', $baseUrl . '/organizations/' . rawurlencode($idDominio) . '/mbd', [
+                'headers' => [
+                    'Accept'                    => 'application/json',
+                    'Content-Type'              => 'application/json',
+                    'Ocp-Apim-Subscription-Key' => $subscriptionKey,
+                    'X-Request-Id'              => $requestId,
+                ],
+                'query' => ['subscription-key' => $subscriptionKey],
+                'json'  => $requestPayload,
+            ]);
+            $lastStatus  = $resp->getStatusCode();
+            $bodyRaw     = (string)$resp->getBody();
+            $lastBody    = json_decode($bodyRaw, true);
+            $redirectUrl = is_array($lastBody) ? trim((string)($lastBody['checkoutRedirectUrl'] ?? '')) : '';
+
+            if ($lastStatus !== 401 && $lastStatus !== 403) {
+                break;
+            }
+        }
+
+        if ($lastStatus >= 200 && $lastStatus < 300 && $redirectUrl !== '') {
+            Logger::getInstance()->info('FrontofficeApi::bolloEbolloCheckout avviato', [
+                'idDominio' => $idDominio, 'requestId' => $requestId,
+            ]);
+            return $this->jsonOk('@e.bollo checkout avviato', ['location' => $redirectUrl]);
+        }
+
+        $msg = '';
+        if (is_array($lastBody)) {
+            $msg = trim((string)($lastBody['title'] ?? $lastBody['detail'] ?? ''));
+        }
+        Logger::getInstance()->warning('FrontofficeApi::bolloEbolloCheckout errore API', [
+            'idDominio' => $idDominio, 'status' => $lastStatus, 'requestId' => $requestId, 'body' => $lastBody,
+        ]);
+        return $this->jsonError($msg ?: 'Errore @e.bollo. Riprova più tardi.', 503);
+    }
+
     // ── Endpoint: checkout carrello ──────────────────────────────────────────
 
     /**

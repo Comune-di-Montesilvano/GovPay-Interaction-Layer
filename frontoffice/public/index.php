@@ -2559,117 +2559,38 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
             $paymentNotice['documentHash'] = $documentHash;
         }
 
-        $requestBody = [
+        // Delega al backoffice sidecar — le subscription keys @e.bollo restano nel backoffice
+        $apiResult = frontoffice_backoffice_api('POST', '/api/frontoffice/bollo/ebollo-checkout', [
+            'idDominio'      => $idDominio,
             'paymentNotices' => [$paymentNotice],
-            'idCIService' => $idCiService,
-            'returnUrls' => [
+            'idCIService'    => $idCiService,
+            'returnUrls'     => [
                 'successUrl' => $okUrl,
-                'cancelUrl' => $cancelUrl,
-                'errorUrl' => $errorUrl,
+                'cancelUrl'  => $cancelUrl,
+                'errorUrl'   => $errorUrl,
             ],
-        ];
+        ]);
 
-        $requestId = '';
-        try {
-            $requestId = bin2hex(random_bytes(16));
-        } catch (\Throwable) {
-            $requestId = sha1((string)microtime(true));
-        }
-
-        try {
-            $client = new Client([
-                'timeout' => 20,
-                'connect_timeout' => 10,
-                'allow_redirects' => false,
-                'http_errors' => false,
-            ]);
-
-            $response = null;
-            $status = 0;
-            $bodyRaw = '';
-            $body = null;
-            $usedKeyIndex = 0;
-            foreach ($candidateKeys as $idx => $subscriptionKey) {
-                $response = $client->request('POST', $baseUrl . '/organizations/' . rawurlencode($idDominio) . '/mbd', [
-                    'headers' => [
-                        'Accept' => 'application/json',
-                        'Content-Type' => 'application/json',
-                        'Ocp-Apim-Subscription-Key' => $subscriptionKey,
-                        'X-Request-Id' => $requestId,
-                    ],
-                    'query' => [
-                        'subscription-key' => $subscriptionKey,
-                    ],
-                    'json' => $requestBody,
-                ]);
-                $status = $response->getStatusCode();
-                $bodyRaw = (string)$response->getBody();
-                $body = json_decode($bodyRaw, true);
-                $usedKeyIndex = $idx + 1;
-                if ($status !== 401 && $status !== 403) {
-                    break;
-                }
-            }
-
-            $redirectUrl = is_array($body) ? trim((string)($body['checkoutRedirectUrl'] ?? '')) : '';
-
-            if ($status >= 200 && $status < 300 && $redirectUrl !== '') {
-                Logger::getInstance()->info('Checkout @e.bollo avviato', [
-                    'flow' => $flow,
-                    'idPendenza' => $idPendenza,
-                    'requestId' => $requestId,
-                    'key_index' => $usedKeyIndex,
-                ]);
-                return [
-                    'success' => true,
-                    'location' => $redirectUrl,
-                ];
-            }
-
-            $detailMsg = is_array($body) ? trim((string)($body['detail'] ?? '')) : '';
-            $titleMsg = is_array($body) ? trim((string)($body['title'] ?? '')) : '';
-            $statusMsg = is_array($body) ? (int)($body['status'] ?? 0) : 0;
-            $fallbackMsg = trim((string)($titleMsg !== '' ? $titleMsg : $detailMsg));
-            if ($fallbackMsg === '' && $bodyRaw !== '') {
-                $fallbackMsg = mb_substr(trim($bodyRaw), 0, 220);
-            }
-            Logger::getInstance()->warning('Errore API @e.bollo', [
-                'flow' => $flow,
-                'idPendenza' => $idPendenza,
-                'status' => $status,
-                'requestId' => $requestId,
-                'key_index' => $usedKeyIndex,
-                'title' => $titleMsg,
-                'detail' => $detailMsg,
-                'problem_status' => $statusMsg,
-            ]);
-
-            $message = 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.';
-            if ($fallbackMsg !== '') {
-                $message = 'Errore @e.bollo: ' . $fallbackMsg;
-            }
-
-            return [
-                'success' => false,
-                'status' => 503,
-                'message' => $message,
-            ];
-        } catch (\Throwable $e) {
-            $safeErr = Logger::sanitizeErrorForDisplay($e->getMessage());
-            Logger::getInstance()->warning('Eccezione durante chiamata @e.bollo', [
-                'flow' => $flow,
-                'idPendenza' => $idPendenza,
-                'requestId' => $requestId,
-                'error' => $safeErr,
+        if (!$apiResult['success']) {
+            Logger::getInstance()->warning('frontoffice_start_ebollo_checkout: errore backoffice sidecar', [
+                'flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $apiResult['message'],
             ]);
             return [
                 'success' => false,
-                'status' => 503,
-                'message' => $safeErr !== ''
-                    ? ('Errore connessione @e.bollo: ' . $safeErr)
-                    : 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.',
+                'status'  => $apiResult['error_status'] ?: 503,
+                'message' => $apiResult['message'] ?: 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.',
             ];
         }
+
+        $location = trim((string)($apiResult['_raw']['location'] ?? ''));
+        if ($location === '') {
+            return ['success' => false, 'status' => 503, 'message' => '@e.bollo checkout: redirect URL mancante.'];
+        }
+
+        Logger::getInstance()->info('Checkout @e.bollo avviato via backoffice sidecar', [
+            'flow' => $flow, 'idPendenza' => $idPendenza,
+        ]);
+        return ['success' => true, 'location' => $location];
     }
 }
 
@@ -2683,7 +2604,7 @@ if (!function_exists('frontoffice_is_govpay_checkout_enabled')) {
 if (!function_exists('frontoffice_start_govpay_checkout')) {
     /**
      * Avvia il checkout GovPay (API pagamento v2) per una singola pendenza bollo.
-     * Ritorna ['success'=>bool,'location'=>string,'status'=>int,'message'=>string].
+     * Delega al backoffice sidecar — le credenziali GovPay restano nel backoffice.
      */
     function frontoffice_start_govpay_checkout(
         array $detail,
@@ -2691,68 +2612,27 @@ if (!function_exists('frontoffice_start_govpay_checkout')) {
         string $returnUrl,
         string $flow = 'spontaneo'
     ): array {
-        $checkoutUrl = rtrim(frontoffice_env_value('GOVPAY_CHECKOUT_URL', ''), '/');
-        $idA2A       = frontoffice_env_value('ID_A2A', '');
-        $user        = frontoffice_env_value('GOVPAY_USER', '');
-        $pass        = frontoffice_env_value('GOVPAY_PASSWORD', '');
-
-        if ($checkoutUrl === '' || $idA2A === '') {
-            return ['success' => false, 'status' => 503, 'message' => 'GovPay checkout non configurato.'];
-        }
-
-        $body = json_encode([
-            'pendenze'   => [['idA2A' => $idA2A, 'idPendenza' => $idPendenza]],
-            'urlRitorno' => $returnUrl,
+        $result = frontoffice_backoffice_api('POST', '/api/frontoffice/bollo/govpay-checkout', [
+            'idPendenza' => $idPendenza,
+            'returnUrl'  => $returnUrl,
         ]);
 
-        $authMethod = strtolower(trim(frontoffice_env_value('AUTHENTICATION_GOVPAY', 'basic')));
-        $certPath   = frontoffice_env_value('GOVPAY_TLS_CERT', '');
-        $keyPath    = frontoffice_env_value('GOVPAY_TLS_KEY', '');
-
-        $ch = curl_init($checkoutUrl . '/pagamenti');
-        $curlOpts = [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $body,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 20,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
-        ];
-        if (in_array($authMethod, ['ssl', 'sslheader'], true) && $certPath !== '' && $keyPath !== '') {
-            $curlOpts[CURLOPT_SSLCERT] = $certPath;
-            $curlOpts[CURLOPT_SSLKEY]  = $keyPath;
-        } elseif ($user !== '' || $pass !== '') {
-            $curlOpts[CURLOPT_USERPWD] = $user . ':' . $pass;
-        }
-        curl_setopt_array($ch, $curlOpts);
-        $raw    = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        unset($ch);
-
-        if ($status !== 201 || !is_string($raw)) {
-            Logger::getInstance()->warning('Errore GovPay checkout API', [
-                'flow'       => $flow,
-                'idPendenza' => $idPendenza,
-                'status'     => $status,
-                'url'        => $checkoutUrl . '/pagamenti',
-                'response'   => is_string($raw) ? substr($raw, 0, 500) : null,
+        if (!$result['success']) {
+            Logger::getInstance()->warning('frontoffice_start_govpay_checkout: errore backoffice sidecar', [
+                'flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $result['message'],
             ]);
-            return ['success' => false, 'status' => 503, 'message' => 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
+            return ['success' => false, 'status' => $result['error_status'] ?: 503, 'message' => $result['message'] ?: 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
         }
 
-        $data     = json_decode($raw, true);
-        $redirect = trim((string)($data['redirect'] ?? ''));
-        if ($redirect === '') {
-            Logger::getInstance()->warning('GovPay checkout: campo redirect mancante nella risposta', [
-                'flow' => $flow, 'idPendenza' => $idPendenza,
-            ]);
-            return ['success' => false, 'status' => 503, 'message' => 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
+        $location = trim((string)($result['_raw']['location'] ?? ''));
+        if ($location === '') {
+            return ['success' => false, 'status' => 503, 'message' => 'GovPay checkout: redirect URL mancante.'];
         }
 
-        Logger::getInstance()->info('Checkout GovPay avviato', [
-            'flow' => $flow, 'idPendenza' => $idPendenza, 'id' => $data['id'] ?? '',
+        Logger::getInstance()->info('Checkout GovPay avviato via backoffice sidecar', [
+            'flow' => $flow, 'idPendenza' => $idPendenza,
         ]);
-        return ['success' => true, 'location' => $redirect];
+        return ['success' => true, 'location' => $location];
     }
 }
 
