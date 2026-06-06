@@ -4,7 +4,6 @@ declare(strict_types=1);
 use App\Logger;
 use App\Services\ValidationService;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ClientException;
 use OneLogin\Saml2\Auth as SamlAuth;
 use OneLogin\Saml2\Error as SamlError;
 use OneLogin\Saml2\Metadata;
@@ -12,6 +11,59 @@ use Twig\Environment;
 use Twig\Loader\FilesystemLoader;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+
+// ─── Bootstrap config dal backoffice sidecar ─────────────────────────────────
+// Carica all'avvio le variabili di configurazione dall'endpoint /api/frontoffice/config
+// e le inietta in $_ENV. frontoffice_env_value() le troverà senza toccare il DB.
+// Il frontoffice è dipendente dall'avvio del backoffice (depends_on: service_healthy).
+(static function (): void {
+    $backofficeUrl = rtrim((string)($_ENV['BACKOFFICE_INTERNAL_URL'] ?? getenv('BACKOFFICE_INTERNAL_URL') ?: 'http://backoffice'), '/');
+    $masterToken   = (string)($_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '');
+    if ($masterToken === '') {
+        return;
+    }
+    $cacheFile = sys_get_temp_dir() . '/frontoffice_config_cache.json';
+    $cacheTtl  = 300; // 5 minuti
+
+    // Usa cache su file per non chiamare il backoffice ad ogni request
+    if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
+        $cached = json_decode((string)file_get_contents($cacheFile), true);
+        if (is_array($cached)) {
+            foreach ($cached as $k => $v) {
+                if (!isset($_ENV[$k]) && getenv($k) === false) {
+                    $_ENV[$k] = $v;
+                }
+            }
+            return;
+        }
+    }
+
+    // Fetch dal backoffice
+    $ch = curl_init($backofficeUrl . '/api/frontoffice/config');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 5,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $masterToken, 'Accept: application/json'],
+    ]);
+    $raw     = curl_exec($ch);
+    $status  = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    unset($ch);
+
+    if ($raw !== false && $status === 200 && $curlErr === '') {
+        $data = json_decode((string)$raw, true);
+        if (is_array($data)) {
+            file_put_contents($cacheFile, json_encode($data));
+            foreach ($data as $k => $v) {
+                if (!isset($_ENV[$k]) && getenv($k) === false) {
+                    $_ENV[$k] = $v;
+                }
+            }
+        }
+    }
+})();
+// ─────────────────────────────────────────────────────────────────────────────
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_name('govpay_frontoffice');
@@ -21,7 +73,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
         $isHttps = strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https';
     }
 
-    $authProxyTypeFrontoffice = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
+    $authProxyTypeFrontoffice = strtolower(trim((string)($_ENV['FRONTOFFICE_AUTH_PROXY_TYPE'] ?? getenv('FRONTOFFICE_AUTH_PROXY_TYPE') ?: 'none')));
     $spidEnabledByProfile = in_array($authProxyTypeFrontoffice, ['spid', 'cie', 'spid_cie'], true);
 
     // Per callback SPID via POST cross-site (dal proxy al frontoffice) i browser non inviano cookie SameSite=Lax.
@@ -44,16 +96,6 @@ if (!function_exists('frontoffice_env_value')) {
         $value = getenv($key);
         if ($value === false || $value === '') {
             $value = $_ENV[$key] ?? $_SERVER[$key] ?? null;
-        }
-        if ($value === null || $value === '') {
-            try {
-                $cfgValue = \App\Config\Config::get($key, null);
-                if ($cfgValue !== null && $cfgValue !== '') {
-                    return (string) $cfgValue;
-                }
-            } catch (\Throwable) {
-                // Se la risoluzione DB/config non e' disponibile, usa il default.
-            }
         }
         if ($value === null || $value === '') {
             return $default ?? '';
@@ -344,70 +386,6 @@ if (!function_exists('frontoffice_find_service_option')) {
             }
         }
         return null;
-    }
-}
-
-if (!function_exists('frontoffice_basic_auth')) {
-    function frontoffice_basic_auth(): ?array
-    {
-        $username = \App\Config\SettingsRepository::get('govpay', 'user', '') ?: frontoffice_env_value('GOVPAY_USER', '');
-        $password = \App\Config\SettingsRepository::get('govpay', 'password', '') ?: frontoffice_env_value('GOVPAY_PASSWORD', '');
-        if ($username !== '' && $password !== '') {
-            return [$username, $password];
-        }
-        return null;
-    }
-}
-
-if (!function_exists('frontoffice_govpay_client_options')) {
-    function frontoffice_govpay_client_options(): array
-    {
-        $options = [];
-        $authMethod = \App\Config\SettingsRepository::get('govpay', 'authentication_method', '') ?: frontoffice_env_value('AUTHENTICATION_GOVPAY', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = \App\Config\SettingsRepository::get('govpay', 'tls_cert_path', '') ?: frontoffice_env_value('GOVPAY_TLS_CERT', '');
-            $key = \App\Config\SettingsRepository::get('govpay', 'tls_key_path', '') ?: frontoffice_env_value('GOVPAY_TLS_KEY', '');
-            $keyPass = \App\Config\SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-            if ($cert === '' || $key === '') {
-                throw new \RuntimeException('mTLS abilitato ma certificati GovPay non configurati');
-            }
-            $options['cert'] = $cert;
-            $options['ssl_key'] = ($keyPass !== null && $keyPass !== '')
-                ? [$key, $keyPass]
-                : $key;
-        }
-        return $options;
-    }
-}
-
-if (!function_exists('frontoffice_pagamenti_api_client')) {
-    function frontoffice_pagamenti_api_client(): ?PagamentiPendenzeApi
-    {
-        $pagamentiUrl = frontoffice_env_value('GOVPAY_PAGAMENTI_URL', '');
-        if ($pagamentiUrl === '') {
-            Logger::getInstance()->warning('GOVPAY_PAGAMENTI_URL non impostata per il frontoffice');
-            return null;
-        }
-        if (!class_exists(PagamentiPendenzeApi::class)) {
-            Logger::getInstance()->warning('Client GovPay Pagamenti non disponibile nel frontoffice');
-            return null;
-        }
-
-        try {
-            $config = new PagamentiConfiguration();
-            $config->setHost(rtrim($pagamentiUrl, '/'));
-            if ($auth = frontoffice_basic_auth()) {
-                $config->setUsername($auth[0]);
-                $config->setPassword($auth[1]);
-            }
-            $client = new Client(frontoffice_govpay_client_options());
-            return new PagamentiPendenzeApi($client, $config);
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile istanziare il client GovPay Pagamenti', [
-                'error' => $e->getMessage(),
-            ]);
-            return null;
-        }
     }
 }
 
@@ -706,7 +684,7 @@ if (!function_exists('frontoffice_spid_mode')) {
     function frontoffice_spid_mode(): string
     {
         // Sorgente canonica: configurazione Frontoffice da UI.
-        $frontofficeType = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
+        $frontofficeType = strtolower(trim((string)($_ENV['FRONTOFFICE_AUTH_PROXY_TYPE'] ?? getenv('FRONTOFFICE_AUTH_PROXY_TYPE') ?: 'none')));
         if (in_array($frontofficeType, ['spid', 'cie', 'spid_cie'], true)) {
             return 'auth-proxy';
         }
@@ -1346,7 +1324,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
         }
 
         // ID Dominio
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             $errors[] = 'Configurazione mancante: ID_DOMINIO non impostato.';
         }
@@ -1535,114 +1513,19 @@ if (!function_exists('frontoffice_normalize_cellulare')) {
 if (!function_exists('frontoffice_add_notification_to_pendenza')) {
     function frontoffice_add_notification_to_pendenza(string $idPendenza, array $notificationData): bool
     {
-        $backofficeUrl = frontoffice_env_value('GOVPAY_BACKOFFICE_URL', '');
-        $idA2A         = frontoffice_env_value('ID_A2A', '');
-        if ($backofficeUrl === '' || $idA2A === '' || $idPendenza === '') {
+        if ($idPendenza === '') {
             return false;
         }
         try {
-            $opts = frontoffice_govpay_client_options();
-            $opts['headers']['Accept'] = 'application/json';
-            $opts['http_errors'] = false;
-            if ($auth = frontoffice_basic_auth()) {
-                $opts['auth'] = $auth;
-            }
-            $client = new Client($opts);
-            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-
-            $resp = $client->request('GET', $url);
-            $pendenza = json_decode((string)$resp->getBody(), true);
-            if (!is_array($pendenza)) {
-                return false;
-            }
-
-            $allowedKeys = [
-                'numeroAvviso','tassonomia','dataValidita','datiAllegati','tassonomiaAvviso',
-                'importo','dataScadenza','dataPromemoriaScadenza','idUnitaOperativa','idDominio','allegati',
-                'dataCaricamento','annoRiferimento','divisione','nome','causale','soggettoPagatore',
-                'dataNotificaAvviso','cartellaPagamento','documento','proprieta','direzione','idTipoPendenza','voci',
-            ];
-            $put = array_intersect_key($pendenza, array_flip($allowedKeys));
-            if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
-                $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
-            }
-
-            // Sanitizza le voci (voci)
-            $hasBolloVoce = false;
-            if (!empty($put['voci']) && is_array($put['voci'])) {
-                foreach ($put['voci'] as &$voce) {
-                    if (!is_array($voce)) {
-                        continue;
-                    }
-
-                    unset($voce['indice'], $voce['stato']);
-
-                    if (
-                        !empty($voce['tipoBollo']) ||
-                        !empty($voce['hashDocumento']) ||
-                        !empty($voce['provinciaResidenza'])
-                    ) {
-                        $hasBolloVoce = true;
-                        $voce['tipoBollo'] = (string)($voce['tipoBollo'] ?? '');
-                        if ($voce['tipoBollo'] === '') {
-                            $voce['tipoBollo'] = '01';
-                        }
-
-                        if (empty($voce['hashDocumento'])) {
-                            $seed = (string)($voce['descrizione'] ?? '') . '|' . (string)($voce['idVocePendenza'] ?? uniqid('', true));
-                            $voce['hashDocumento'] = base64_encode(hash('sha256', $seed, true));
-                        }
-
-                        $prov = strtoupper(trim((string)($voce['provinciaResidenza'] ?? '')));
-                        if ($prov !== '') {
-                            $voce['provinciaResidenza'] = $prov;
-                        }
-                    }
-                }
-                unset($voce);
-            }
-
-            if ($hasBolloVoce && empty($put['tassonomiaAvviso'])) {
-                $put['tassonomiaAvviso'] = 'Imposte e tasse';
-            }
-
-            if (!isset($put['datiAllegati']) || !is_array($put['datiAllegati'])) {
-                $put['datiAllegati'] = [];
-            }
-            if (!isset($put['datiAllegati']['notifiche']) || !is_array($put['datiAllegati']['notifiche'])) {
-                $put['datiAllegati']['notifiche'] = [];
-            }
-            $put['datiAllegati']['notifiche'][] = [
-                'timestamp'    => $notificationData['timestamp']   ?? date('Y-m-d H:i:s'),
-                'tipo'         => $notificationData['tipo']         ?? 'creazione_pendenza',
-                'canale'       => $notificationData['canale']       ?? 'email',
-                'destinatario' => $notificationData['destinatario'] ?? '',
-                'esito'        => $notificationData['esito']        ?? 'OK',
-                'message_id'   => $notificationData['message_id']  ?? null,
-                'errore'       => $notificationData['errore']       ?? null,
-            ];
-
-            $putOpts = $opts;
-            $putOpts['headers']['Content-Type'] = 'application/json';
-            $putOpts['body'] = json_encode($put, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            
-            $putResp = $client->request('PUT', $url, $putOpts);
-            $putCode = $putResp->getStatusCode();
-            if ($putCode < 200 || $putCode >= 300) {
-                throw new \RuntimeException('GovPay PUT returned status ' . $putCode . ': ' . (string)$putResp->getBody());
-            }
-            return true;
+            $result = frontoffice_backoffice_api(
+                'POST',
+                '/api/frontoffice/pendenze/' . rawurlencode($idPendenza) . '/notifiche',
+                $notificationData
+            );
+            return (bool)($result['_raw']['updated'] ?? false);
         } catch (\Throwable $e) {
-            $detail = '';
-            if ($e instanceof \GuzzleHttp\Exception\RequestException) {
-                $resp = $e->getResponse();
-                if ($resp) {
-                    $detail = (string)$resp->getBody();
-                }
-            }
             Logger::getInstance()->warning('frontoffice_add_notification_to_pendenza failed', [
                 'err' => $e->getMessage(),
-                'detail' => $detail
             ]);
             return false;
         }
@@ -1904,22 +1787,6 @@ if (!function_exists('frontoffice_extract_ricevuta_identifiers_from_pendenza_det
             'idRicevuta' => $idRicevuta,
             'ccp' => $ccp,
         ];
-    }
-}
-
-if (!function_exists('frontoffice_govpay_pendenze_base_url')) {
-    function frontoffice_govpay_pendenze_base_url(): string
-    {
-        $pendenzeUrl = frontoffice_env_value('GOVPAY_PENDENZE_URL', '');
-        return rtrim($pendenzeUrl, '/');
-    }
-}
-
-if (!function_exists('frontoffice_govpay_pagamenti_base_url')) {
-    function frontoffice_govpay_pagamenti_base_url(): string
-    {
-        $pagamentiUrl = frontoffice_env_value('GOVPAY_PAGAMENTI_URL', '');
-        return rtrim($pagamentiUrl, '/');
     }
 }
 
@@ -2442,29 +2309,12 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
         string $fallbackEmail,
         string $flow
     ): array {
-        $baseUrl = rtrim(frontoffice_env_value('PAGOPA_EBOLLO_BASE_URL', ''), '/');
-        // SANP 3.12.0 @e.bollo 2.0 (Pagamento dovuto): idCIService da valorizzare con 00005.
-        $idCiService = trim(frontoffice_env_value('PAGOPA_EBOLLO_ID_CI_SERVICE', '00005'));
-        if ($idCiService === '') {
-            $idCiService = '00005';
-        }
-        $candidateKeys = array_values(array_filter(array_unique([
-            trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY', '')),
-            trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY_SECONDARY', '')),
-            trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')),
-        ]), static fn (string $k): bool => $k !== ''));
-
-        if ($baseUrl === '' || count($candidateKeys) === 0) {
-            Logger::getInstance()->warning('Configurazione @e.bollo incompleta', [
-                'flow' => $flow,
-                'has_base_url' => $baseUrl !== '',
-                'has_id_ci_service' => $idCiService !== '',
-                'has_key' => count($candidateKeys) > 0,
-            ]);
+        if (frontoffice_env_value('PAGOPA_EBOLLO_ENABLED', '0') !== '1') {
+            Logger::getInstance()->warning('Configurazione @e.bollo incompleta', ['flow' => $flow]);
             return [
                 'success' => false,
-                'status' => 503,
-                'message' => 'Configurazione @e.bollo non completa (Base URL o Subscription Key mancanti). Contatta l\'amministratore.',
+                'status'  => 503,
+                'message' => 'Configurazione @e.bollo non completa. Contatta l\'amministratore.',
             ];
         }
 
@@ -2559,11 +2409,10 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
             $paymentNotice['documentHash'] = $documentHash;
         }
 
-        // Delega al backoffice sidecar — le subscription keys @e.bollo restano nel backoffice
+        // Delega al backoffice sidecar — le credenziali @e.bollo restano nel backoffice
         $apiResult = frontoffice_backoffice_api('POST', '/api/frontoffice/bollo/ebollo-checkout', [
             'idDominio'      => $idDominio,
             'paymentNotices' => [$paymentNotice],
-            'idCIService'    => $idCiService,
             'returnUrls'     => [
                 'successUrl' => $okUrl,
                 'cancelUrl'  => $cancelUrl,
@@ -2597,7 +2446,7 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
 if (!function_exists('frontoffice_is_govpay_checkout_enabled')) {
     function frontoffice_is_govpay_checkout_enabled(): bool
     {
-        return trim(frontoffice_env_value('GOVPAY_CHECKOUT_URL', '')) !== '';
+        return frontoffice_env_value('GOVPAY_CHECKOUT_ENABLED', '0') === '1';
     }
 }
 
@@ -2679,42 +2528,10 @@ if (!function_exists('frontoffice_resolve_bollo_checkout_url')) {
     }
 }
 
-if (!function_exists('frontoffice_pagopa_checkout_api_client')) {
-    function frontoffice_pagopa_checkout_api_client(): ?\PagoPA\CheckoutEc\Api\DefaultApi
-    {
-        if (!class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class)) {
-            return null;
-        }
-
-        $subscriptionKey = trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', ''));
-        if ($subscriptionKey === '') {
-            return null;
-        }
-
-        $config = \PagoPA\CheckoutEc\Configuration::getDefaultConfiguration();
-        $host = trim(frontoffice_env_value('PAGOPA_CHECKOUT_EC_BASE_URL', ''));
-        if ($host !== '') {
-            $config->setHost(rtrim($host, '/'));
-        }
-
-        // La spec supporta sia header che query key; impostiamo entrambe allo stesso valore.
-        $config->setApiKey('Ocp-Apim-Subscription-Key', $subscriptionKey);
-        $config->setApiKey('subscription-key', $subscriptionKey);
-
-        $httpClient = new \GuzzleHttp\Client([
-            'timeout' => 15,
-            'connect_timeout' => 10,
-            'allow_redirects' => false,
-        ]);
-
-        return new \PagoPA\CheckoutEc\Api\DefaultApi($httpClient, $config);
-    }
-}
-
 if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
     function frontoffice_lookup_pagopa_avviso(string $numeroAvviso, string $codiceFiscale): array
     {
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             return [
                 'success' => false,
@@ -2738,7 +2555,7 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
         // Se l'utente inserisce 17 cifre numeriche ha omesso l'auxDigit:
         // recuperalo dal DB e prepend prima della ricerca.
         if (strlen($normalizedAvviso) === 17 && ctype_digit($normalizedAvviso)) {
-            $auxDigit = \App\Config\SettingsRepository::get('entity', 'aux_digit', '');
+            $auxDigit = frontoffice_env_value('AUX_DIGIT', '');
             if ($auxDigit !== '' && ctype_digit($auxDigit)) {
                 Logger::getInstance()->info('Numero avviso espanso con aux_digit', [
                     'original'  => $normalizedAvviso,
@@ -2974,7 +2791,7 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             $errors[] = 'Inserisci un indirizzo email valido.';
         }
 
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             $errors[] = 'Configurazione mancante: ID_DOMINIO non impostato.';
         }
@@ -3272,7 +3089,7 @@ $spidCallbackUrl = $frontofficeBaseUrl !== '' ? ($frontofficeBaseUrl . $spidCall
 
 $routes = [
     '/' => static function () use ($serviceCatalog): array {
-        $featuredIds = json_decode(\App\Config\SettingsRepository::get('frontoffice', 'featured_services', '[]') ?: '[]', true) ?: [];
+        $featuredIds = json_decode(frontoffice_env_value('FEATURED_SERVICES', '[]') ?: '[]', true) ?: [];
         $featuredServices = [];
         if (!empty($featuredIds)) {
             $idMap = [];
@@ -3308,7 +3125,7 @@ $routes = [
                 : [];
             $numeroAvvisi = max(count($cartIds), 1);
 
-            $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+            $idDominio = frontoffice_env_value('ID_DOMINIO', '');
             $receiptItems = [];
             foreach (array_slice($cartIds, 0, 5) as $pid) {
                 $detail = frontoffice_fetch_pagamenti_detail((string)$pid);
@@ -3355,7 +3172,7 @@ $routes = [
                 if (is_string($tmp) && $tmp !== '') {
                     $numeroAvviso = $tmp;
                 }
-                $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+                $idDominio = frontoffice_env_value('ID_DOMINIO', '');
                 $cf = frontoffice_extract_pendenza_debtor_cf($detail);
                 if ($cf !== '' && $idDominio !== '') {
                     $receiptUrl = frontoffice_build_public_receipt_url($idDominio, $idPendenza, $cf, 3600);
@@ -4176,7 +3993,7 @@ $routes = [
 
         // Redirect BOLLOT al form dedicato
         if ($method === 'GET' && $selectedId !== '') {
-            $bolloId = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+            $bolloId = frontoffice_env_value('BOLLO_TIPO_PENDENZA', 'BOLLOT');
             if ($selectedId === $bolloId) {
                 header('Location: /pagamento-bollo', true, 302);
                 exit;
@@ -4628,7 +4445,7 @@ $routes = [
             $risultati = [];
         }
 
-        $bollotTipo = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $bollotTipo = frontoffice_env_value('BOLLO_TIPO_PENDENZA', 'BOLLOT');
         $rows = [];
         foreach ($risultati as $pendenza) {
             if (!is_array($pendenza)) {
@@ -4780,7 +4597,7 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4855,7 +4672,7 @@ if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4886,7 +4703,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -4939,7 +4756,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
 }
 
 if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5096,7 +4913,7 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
 }
 
 if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5255,7 +5072,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         exit;
     }
 
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5311,18 +5128,10 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         return;
     }
 
-    $hasCheckoutClient = class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class);
-    $subscriptionKeyConfigured = trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) !== '';
-
-    if (!$hasCheckoutClient || !$subscriptionKeyConfigured) {
+    if (frontoffice_env_value('PAGOPA_CHECKOUT_CONFIGURED', '0') !== '1') {
         http_response_code(503);
-        if (!$hasCheckoutClient) {
-            echo 'Checkout pagoPA non configurato (client non installato).';
-            Logger::getInstance()->warning('Checkout pagoPA non configurato: client non installato');
-        } else {
-            echo 'Checkout pagoPA non configurato (subscription key mancante).';
-            Logger::getInstance()->warning('Checkout pagoPA non configurato: subscription key mancante');
-        }
+        echo 'Checkout pagoPA non configurato.';
+        Logger::getInstance()->warning('Checkout pagoPA non configurato');
         return;
     }
 
@@ -5381,7 +5190,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
 // Disponibile anche per utenti non loggati (guest); l'autorizzazione si basa
 // sulla whitelist di sessione. Se l'utente è loggato si verifica anche il CF.
 if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5602,7 +5411,7 @@ if ($method === 'GET' && $normalizedPath === '/ricevuta/pubblica') {
     $expParam = (int)($_GET['exp'] ?? 0);
     $tokenParam = trim((string)($_GET['t'] ?? ''));
 
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '' || $idPendenzaParam === '' || $expParam <= 0 || $tokenParam === '') {
         http_response_code(404);
         echo 'Not found';
@@ -5709,7 +5518,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/ricevuta$#', $normalize
         exit;
     }
 
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5855,7 +5664,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)$#', $normalizedPath, $m
                     ],
                 ];
             } else {
-                $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+                $idDominio = frontoffice_env_value('ID_DOMINIO', '');
                 $routeDefinition = [
                     'template' => 'pendenze/detail.html.twig',
                     'context' => [
@@ -6036,8 +5845,7 @@ if ($method === 'GET' && $normalizedPath === '/carrello') {
             'cart_items'   => $rows,
             'total_cents'  => $totalCents,
             'total_euro'   => $totalCents / 100,
-            'can_checkout' => count($rows) > 0 && class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class) &&
-                              trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) !== '',
+            'can_checkout' => count($rows) > 0 && frontoffice_env_value('PAGOPA_CHECKOUT_CONFIGURED', '0') === '1',
         ],
     ];
 }

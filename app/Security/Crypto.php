@@ -6,7 +6,6 @@
 namespace App\Security;
 
 use App\Logger;
-use App\Config\ConfigLoader;
 
 class Crypto
 {
@@ -20,13 +19,7 @@ class Crypto
      */
     private static function getKey(): string
     {
-        // Prima priorità: config.json
-        $key = ConfigLoader::get('app.encryption_key');
-
-        // Fallback: variabile d'ambiente (compatibilità .env legacy)
-        if (empty($key)) {
-            $key = $_ENV['APP_ENCRYPTION_KEY'] ?? getenv('APP_ENCRYPTION_KEY');
-        }
+        $key = $_ENV['APP_ENCRYPTION_KEY'] ?? getenv('APP_ENCRYPTION_KEY');
 
         if (empty($key)) {
             throw new \RuntimeException('APP_ENCRYPTION_KEY is not configured in the environment.');
