@@ -34,6 +34,13 @@ use Slim\Views\Twig;
 
 return function (App $app, Twig $twig): void {
 
+    // ── Health check (no auth, usato da Docker healthcheck e depends_on) ─────
+    $app->get('/health', function (Request $request, Response $response): Response {
+        $resp = new \Slim\Psr7\Response(200);
+        $resp->getBody()->write(json_encode(['status' => 'ok']));
+        return $resp->withHeader('Content-Type', 'application/json');
+    });
+
     // ── Setup Wizard (accessibile senza autenticazione, bypassato da SetupMiddleware) ──
     $app->get('/setup', function (Request $request, Response $response) use ($twig): Response {
         return (new SetupController($twig))->welcome($request, $response);
@@ -129,6 +136,10 @@ return function (App $app, Twig $twig): void {
 
     $app->get('/api/frontoffice/documento/{numeroDocumento}/avvisi', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new FrontofficeApiController($twig))->getDocumentoPdf($request, $response, $args);
+    });
+
+    $app->post('/api/frontoffice/pendenze/{idPendenza}/notifiche', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new FrontofficeApiController($twig))->addNotificaToPendenza($request, $response, $args);
     });
 
     $app->post('/api/frontoffice/rate-limit/check', function (Request $request, Response $response) use ($twig): Response {
