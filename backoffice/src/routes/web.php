@@ -111,6 +111,14 @@ return function (App $app, Twig $twig): void {
         return (new FrontofficeApiController($twig))->checkoutCarrello($request, $response);
     });
 
+    $app->post('/api/frontoffice/bollo/govpay-checkout', function (Request $request, Response $response) use ($twig): Response {
+        return (new FrontofficeApiController($twig))->bolloGovpayCheckout($request, $response);
+    });
+
+    $app->post('/api/frontoffice/bollo/ebollo-checkout', function (Request $request, Response $response) use ($twig): Response {
+        return (new FrontofficeApiController($twig))->bolloEbolloCheckout($request, $response);
+    });
+
     $app->get('/api/frontoffice/ricevuta/{idDominio}/{iuv}/{ccp}', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new FrontofficeApiController($twig))->getRicevuta($request, $response, $args);
     });
