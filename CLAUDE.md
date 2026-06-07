@@ -215,6 +215,10 @@ Namespace `App\` mappato su **due** source roots:
 
 Frontoffice non usa Composer/autoload proprio: carica via `require` le classi condivise da `app/`.
 
+## Route backoffice
+
+Tutte le route Slim 4 del backoffice sono definite in un unico file: `backoffice/src/routes/web.php`. Contiene anche la registrazione di Twig e i global Twig (`app_debug`, ecc.).
+
 ## Flusso request backoffice
 
 ```
@@ -245,7 +249,7 @@ Il frontoffice gestisce autonomamente: sessione PHP, autenticazione SAML SPID/CI
 
 ## Migrazioni DB
 
-File SQL in `migrations/` (numerati `003_...sql` → `013_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
+File SQL in `migrations/` (numerati `003_...sql` → `024_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
 
 ## Test
 
@@ -311,6 +315,22 @@ Una pendenza è `NO_MATCH` solo se ha completato l'intero giro (1 → 2 → 3). 
 Così `transazioni_count` riflette le righe **non coperte da prefissi più lunghi**. La soglia attiva è ≥ 5 transazioni (o `is_custom = 1` per bypass). Il matching nel demone L1 è longest-prefix-first (regole ordinate per `CHAR_LENGTH DESC`): i pattern da 5 char vengono applicati prima, poi i 4-char sui PENDING rimanenti, poi i 3-char.
 
 Non modificare questa logica senza aggiornare anche la soglia e il rendering UI (filtri "5 char / 4 char / 3 char" in `mapping_pendenze.html.twig`).
+
+## Servizi chiave (`app/Services/`)
+
+- **`GovPayClientFactory`** — punto unico per tutti i client HTTP verso GovPay Backoffice v1. Gestisce: TLS v1.2 forzato, `Connection: close`, retry automatico su cURL 35 (backoff esponenziale con jitter, max 5 tentativi). Legge `authentication_method` da `SettingsRepository`: `basic` → Basic Auth, `ssl`/`sslheader` → mTLS con cert da `tls_cert_path`/`tls_key_path`. Tutti i controller backoffice che chiamano GovPay usano questa factory.
+- **`RateizzazioneService`** — logica calcolo rate (importi, scadenze, frequenze).
+- **`BizScannerService`** / **`TefaScannerService`** — logica core dei demoni omonimi.
+- **`TracciatoService`** — generazione CSV ragioneria.
+- **`MailerService`** / **`AppIoService`** — notifiche cittadini.
+
+## Sviluppo locale con override
+
+`docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` in locale (non usare in produzione). Aggiunge volume mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice, e forza il build locale di tutti i servizi (incluso auth-proxy e metadata-builder) invece delle immagini GHCR. La directory `debug/` è ignorata da git.
+
+## Asset frontend (`assets/`)
+
+Librerie frontend vendored: `litepicker/` (date picker contabile), `tom-select/` (select avanzati), `css/` e `js/` (CSS/JS compilati del backoffice). Non generati da build step — aggiornare manualmente alla nuova versione se necessario.
 
 ## Generazione API client
 
