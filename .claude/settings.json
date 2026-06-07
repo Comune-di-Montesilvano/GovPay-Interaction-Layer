@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Program Files\\nodejs\\node.exe\" \".claude\\hooks\\block-env-edit.js\"",
+            "timeout": 5,
+            "statusMessage": "Checking edit target..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Program Files\\nodejs\\node.exe\" \".claude\\hooks\\php-syntax-check.js\"",
+            "timeout": 15,
+            "statusMessage": "PHP syntax check..."
+          }
+        ]
+      }
+    ]
+  }
+}
