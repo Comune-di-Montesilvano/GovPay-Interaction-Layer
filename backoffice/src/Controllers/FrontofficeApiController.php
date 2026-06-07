@@ -230,26 +230,12 @@ class FrontofficeApiController
             return $this->jsonError('Parametri mancanti', 400);
         }
 
-        if (!class_exists(\GovPay\Backoffice\Api\PendenzeApi::class)) {
-            return $this->jsonError('Client GovPay Backoffice non disponibile', 503);
+        // Usa HTTP diretto (non SDK generato): il client SDK fallisce su tipoBollo='01'.
+        $pendenza = $this->pendenzeController()->fetchPendenzaByAvvisoRaw($idDominio, $numeroAvviso);
+        if ($pendenza === null) {
+            return $this->jsonError('Avviso non trovato', 404);
         }
-
-        try {
-            $api    = GovPayClientFactory::makeBackofficeSdkApi();
-            $result = $api->getPendenzaByAvviso($idDominio, $numeroAvviso);
-            $data   = json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-            return $this->jsonOk('OK', ['pendenza' => $data]);
-        } catch (\GuzzleHttp\Exception\ClientException $e) {
-            $status = $e->getResponse() ? $e->getResponse()->getStatusCode() : 404;
-            return $this->jsonError('Avviso non trovato', $status === 404 ? 404 : 503);
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('FrontofficeApi::getPendenzaByAvviso errore', [
-                'idDominio'    => $idDominio,
-                'numeroAvviso' => $numeroAvviso,
-                'error'        => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            return $this->jsonError('Errore durante la ricerca avviso', 503);
-        }
+        return $this->jsonOk('OK', ['pendenza' => $pendenza]);
     }
 
     // ── Endpoint: crea pendenza ───────────────────────────────────────────────
@@ -285,17 +271,23 @@ class FrontofficeApiController
             return $this->jsonError('Campi obbligatori mancanti: idTipoPendenza, idDominio, causale, importo', 400);
         }
 
+        $pc = $this->pendenzeController();
+
         // Voci: se presenti nel body le usa (bollo: hashDocumento già calcolato dal frontoffice).
-        // Assenti: backoffice le costruisce da DB (spontaneo: iban, contabilità, tipo_bollo).
+        // Assenti: PendenzeController::buildVociWithAccounting() le costruisce da DB (IBAN, contabilità, tipo_bollo).
         if (empty($body['voci'])) {
-            $body['voci'] = $this->buildVoci($idDominio, $idTipo, $causale, $importo);
+            $errors = [];
+            $body['voci'] = $pc->buildVociWithAccounting(
+                [['idVocePendenza' => '1', 'descrizione' => $causale, 'importo' => $importo]],
+                ['idDominio' => $idDominio, 'idTipoPendenza' => $idTipo],
+                null,
+                $errors
+            );
         }
 
         // Rimuove _notif dal payload prima di inviare a GovPay
-        $notifParams = is_array($body['_notif'] ?? null) ? $body['_notif'] : [];
         unset($body['_notif']);
 
-        $pc     = $this->pendenzeController();
         $result = $pc->sendPendenzaToBackoffice($body);
 
         if (!$result['success']) {
@@ -304,69 +296,26 @@ class FrontofficeApiController
             return $this->jsonError($msg, 422);
         }
 
-        // Notifiche opzionali
-        if (!empty($notifParams['email']) || !empty($notifParams['identificativo'])) {
-            $pc->sendCreationNotifications(
-                (string)($result['idPendenza'] ?? ''),
-                (string)($notifParams['email'] ?? ''),
-                (string)($notifParams['anagrafica'] ?? ''),
-                (string)($notifParams['identificativo'] ?? ''),
-                (string)($notifParams['tipo_soggetto'] ?? 'F'),
-                [
-                    'causale'        => $causale,
-                    'importo'        => $importo,
-                    'dataScadenza'   => $body['dataScadenza'] ?? null,
-                    'idTipoPendenza' => $idTipo,
-                ],
-                $request
-            );
-        }
+        // Notifiche: fire-and-forget via self-POST — Apache le processa in background.
+        // Non blocca la risposta anche se SMTP/App IO è offline o lento.
+        $sog        = is_array($body['soggettoPagatore'] ?? null) ? $body['soggettoPagatore'] : [];
+        $idPendenza = (string)($result['idPendenza'] ?? '');
+        $this->fireAndForgetSelf('/api/frontoffice/notifiche-pendenza-create', [
+            'idPendenza'    => $idPendenza,
+            'email'         => trim((string)($sog['email'] ?? '')),
+            'anagrafica'    => trim((string)($sog['anagrafica'] ?? '')),
+            'identificativo'=> trim((string)($sog['identificativo'] ?? '')),
+            'tipo'          => strtoupper(trim((string)($sog['tipo'] ?? 'F'))),
+            'causale'       => $causale,
+            'importo'       => $importo,
+            'dataScadenza'  => $body['dataScadenza'] ?? null,
+            'idTipoPendenza'=> $idTipo,
+        ]);
 
         return $this->jsonOk('Pendenza creata', [
             'idPendenza' => $result['idPendenza'] ?? '',
             'response'   => $result['response'] ?? null,
         ]);
-    }
-
-    /**
-     * Costruisce le voci per una pendenza spontanea leggendo IBAN/contabilità da DB.
-     * Non usato per bollo — le voci bollo vengono pre-costruite dal frontoffice (con hashDocumento).
-     */
-    private function buildVoci(string $idDominio, string $idTipo, string $descrizione, float $importo): array
-    {
-        $iban = $codCont = $tipoBollo = $tipoCont = '';
-        try {
-            if ($idDominio !== '' && $idTipo !== '') {
-                $details = (new EntrateRepository())->findDetails($idDominio, $idTipo);
-                if ($details) {
-                    $iban          = (string)($details['iban_accredito'] ?? '');
-                    $codCont       = (string)($details['codice_contabilita'] ?? '');
-                    $rawTipoBollo  = (string)($details['tipo_bollo'] ?? '');
-                    $tipoBollo     = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '';
-                    $tipoCont      = (string)($details['tipo_contabilita'] ?? '');
-                }
-            }
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('FrontofficeApi::buildVoci impossibile recuperare dettagli contabilita', ['error' => $e->getMessage()]);
-        }
-
-        $voice = [
-            'idVocePendenza' => '1',
-            'descrizione'    => $descrizione,
-            'importo'        => $importo,
-        ];
-
-        if ($tipoBollo !== '') {
-            $voice['tipoBollo'] = $tipoBollo;
-        } elseif ($iban !== '' && $tipoCont !== '' && $codCont !== '') {
-            $voice['ibanAccredito']     = $iban;
-            $voice['tipoContabilita']   = $tipoCont;
-            $voice['codiceContabilita'] = $codCont;
-        } else {
-            $voice['codEntrata'] = substr(preg_replace('/[^A-Za-z0-9\-_.]/', '', $idTipo), 0, 35);
-        }
-
-        return [$voice];
     }
 
     // ── Endpoint: bollo GovPay checkout (legacy) ─────────────────────────────
@@ -398,69 +347,23 @@ class FrontofficeApiController
             return $this->jsonError('idPendenza e returnUrl obbligatori', 400);
         }
 
-        $checkoutUrl = rtrim((string)SettingsRepository::get('govpay', 'checkout_url', ''), '/');
-        $idA2A       = (string)SettingsRepository::get('entity', 'id_a2a', '');
-
-        if ($checkoutUrl === '' || $idA2A === '') {
-            return $this->jsonError('GovPay checkout URL o ID_A2A non configurati', 503);
-        }
-
-        $requestBody = json_encode([
-            'pendenze'   => [['idA2A' => $idA2A, 'idPendenza' => $idPendenza]],
-            'urlRitorno' => $returnUrl,
-        ]);
-
-        $user = (string)SettingsRepository::get('govpay', 'user', '');
-        $pass = (string)SettingsRepository::get('govpay', 'password', '');
-        $authMethod = strtolower((string)SettingsRepository::get('govpay', 'authentication_method', ''));
-
-        $curlOpts = [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $requestBody,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 20,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
-        ];
-
-        if (in_array($authMethod, ['ssl', 'sslheader'], true)) {
-            $cert    = (string)SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $keyPath = (string)SettingsRepository::get('govpay', 'tls_key_path', '');
-            if ($cert !== '' && $keyPath !== '') {
-                $curlOpts[CURLOPT_SSLCERT] = $cert;
-                $curlOpts[CURLOPT_SSLKEY]  = $keyPath;
-            }
-        } elseif ($user !== '' || $pass !== '') {
-            $curlOpts[CURLOPT_USERPWD] = $user . ':' . $pass;
-        }
-
-        $ch  = curl_init($checkoutUrl . '/pagamenti');
-        curl_setopt_array($ch, $curlOpts);
-        $raw    = curl_exec($ch);
-        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
-        unset($ch);
-
-        if ($raw === false || $curlErr !== '') {
-            Logger::getInstance()->warning('FrontofficeApi::bolloGovpayCheckout cURL error', ['error' => $curlErr]);
-            return $this->jsonError('Errore di rete verso GovPay checkout', 503);
-        }
-
-        if ($status !== 201) {
-            Logger::getInstance()->warning('FrontofficeApi::bolloGovpayCheckout risposta inattesa', [
-                'status' => $status, 'idPendenza' => $idPendenza,
+        try {
+            $redirect = $this->pendenzeController()->initiateGovPayCheckout($idPendenza, $returnUrl);
+            return $this->jsonOk('Checkout GovPay avviato', ['location' => $redirect]);
+        } catch (\RuntimeException $e) {
+            // RuntimeException = URL/configurazione mancante → 404 (non disponibile, non errore GovPay)
+            Logger::getInstance()->info('FrontofficeApi::bolloGovpayCheckout non configurato', [
+                'idPendenza' => $idPendenza,
+                'error'      => Logger::sanitizeErrorForDisplay($e->getMessage()),
+            ]);
+            return $this->jsonError('GovPay checkout non configurato', 404);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('FrontofficeApi::bolloGovpayCheckout errore GovPay', [
+                'idPendenza' => $idPendenza,
+                'error'      => Logger::sanitizeErrorForDisplay($e->getMessage()),
             ]);
             return $this->jsonError('Al momento non riusciamo ad avviare il pagamento GovPay. Riprova più tardi.', 503);
         }
-
-        $data     = json_decode((string)$raw, true);
-        $redirect = trim((string)($data['redirect'] ?? ''));
-
-        if ($redirect === '') {
-            return $this->jsonError('GovPay checkout: redirect URL mancante nella risposta', 503);
-        }
-
-        return $this->jsonOk('Checkout GovPay avviato', ['location' => $redirect]);
     }
 
     // ── Endpoint: bollo @e.bollo checkout ────────────────────────────────────
@@ -735,6 +638,34 @@ class FrontofficeApiController
     }
 
     /**
+     * GET /api/frontoffice/pendenze/{idPendenza}/ricevuta
+     * Risolve IUV+CCP internamente tramite buildReceiptPathLookup (stesso meccanismo backoffice UI).
+     */
+    public function getRicevutaByPendenza(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->verifyMasterToken($request)) {
+            return $this->jsonError('Non autorizzato', 401);
+        }
+
+        $idPendenza = trim((string)($args['idPendenza'] ?? ''));
+        if ($idPendenza === '') {
+            return $this->jsonError('idPendenza mancante', 400);
+        }
+
+        try {
+            $govResp  = $this->pendenzeController()->fetchRicevutaPdfForPendenza($idPendenza);
+            $filename = 'rt-' . preg_replace('/[^A-Za-z0-9._-]+/', '_', $idPendenza) . '.pdf';
+            return $this->wrapPdfResponse($govResp, $filename);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('FrontofficeApi::getRicevutaByPendenza errore', [
+                'idPendenza' => $idPendenza,
+                'error'     => Logger::sanitizeErrorForDisplay($e->getMessage()),
+            ]);
+            return $this->jsonError('Ricevuta non disponibile', 404);
+        }
+    }
+
+    /**
      * GET /api/frontoffice/avviso/{idDominio}/{numeroAvviso}
      * Delega a PendenzeController::fetchAvvisoPdfResponse() (Backoffice v1).
      */
@@ -882,13 +813,110 @@ class FrontofficeApiController
         ]);
     }
 
+    // ── Endpoint: notifiche creazione pendenza (async) ───────────────────────
+
+    /**
+     * POST /api/frontoffice/notifiche-pendenza-create
+     *
+     * Endpoint interno chiamato in fire-and-forget da createPendenza.
+     * Body JSON: { idPendenza, email, anagrafica, identificativo, tipo, causale, importo, dataScadenza?, idTipoPendenza }
+     * Delega a PendenzeController::sendCreationNotifications().
+     */
+    public function sendNotificheCreazionePendenza(Request $request, Response $response): Response
+    {
+        if (!$this->verifyMasterToken($request)) {
+            return $this->jsonError('Non autorizzato', 401);
+        }
+
+        $body = json_decode((string)$request->getBody(), true);
+        if (!is_array($body)) {
+            return $this->jsonError('Body JSON non valido', 400);
+        }
+
+        $idPendenza    = trim((string)($body['idPendenza'] ?? ''));
+        $email         = trim((string)($body['email'] ?? ''));
+        $anagrafica    = trim((string)($body['anagrafica'] ?? ''));
+        $identificativo = trim((string)($body['identificativo'] ?? ''));
+        $tipo          = strtoupper(trim((string)($body['tipo'] ?? 'F')));
+
+        if ($idPendenza === '') {
+            return $this->jsonError('idPendenza mancante', 400);
+        }
+
+        try {
+            $this->pendenzeController()->sendCreationNotifications(
+                $idPendenza,
+                $email,
+                $anagrafica,
+                $identificativo,
+                $tipo,
+                [
+                    'causale'        => $body['causale'] ?? '',
+                    'importo'        => $body['importo'] ?? 0,
+                    'dataScadenza'   => $body['dataScadenza'] ?? null,
+                    'idTipoPendenza' => $body['idTipoPendenza'] ?? '',
+                ],
+                $request
+            );
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('FrontofficeApi::sendNotificheCreazionePendenza errore', [
+                'idPendenza' => $idPendenza,
+                'error'      => Logger::sanitizeErrorForDisplay($e->getMessage()),
+            ]);
+        }
+
+        return $this->jsonOk('Notifiche inviate');
+    }
+
+    /**
+     * Fire-and-forget: invia POST a se stesso senza aspettare la risposta.
+     * Usa socket TCP/SSL diretto su porta 80 (Apache interno, stesso container).
+     * Non lancia eccezioni — fallisce silenziosamente se il socket non si apre.
+     */
+    private function fireAndForgetSelf(string $path, array $data): void
+    {
+        $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
+        if ($masterToken === '') {
+            return;
+        }
+
+        $ssl       = strtolower(trim((string)(getenv('SSL') ?: 'off')));
+        $useHttps  = ($ssl === 'on');
+        $transport = $useHttps ? 'ssl' : 'tcp';
+
+        $payload = (string)json_encode($data, JSON_UNESCAPED_UNICODE);
+        $ctx     = $useHttps
+            ? stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]])
+            : stream_context_create([]);
+
+        $fp = @stream_socket_client("$transport://127.0.0.1:80", $errno, $errstr, 2.0, STREAM_CLIENT_CONNECT, $ctx);
+        if ($fp === false) {
+            Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf socket failed', [
+                'path' => $path, 'errno' => $errno, 'errstr' => $errstr,
+            ]);
+            return;
+        }
+
+        $req = "POST $path HTTP/1.1\r\n"
+            . "Host: 127.0.0.1\r\n"
+            . "Authorization: Bearer $masterToken\r\n"
+            . "Content-Type: application/json\r\n"
+            . "Content-Length: " . strlen($payload) . "\r\n"
+            . "Connection: close\r\n"
+            . "\r\n"
+            . $payload;
+
+        @fwrite($fp, $req);
+        @fclose($fp); // chiude senza leggere la risposta — Apache continua in background
+    }
+
     // ── Endpoint: aggiunta notifica a pendenza GovPay ─────────────────────────
 
     /**
      * POST /api/frontoffice/pendenze/{idPendenza}/notifiche
      *
      * Body JSON: { timestamp?, tipo?, canale?, destinatario?, esito?, message_id?, errore? }
-     * Fa GET + PUT sulla pendenza GovPay aggiungendo la notifica in datiAllegati.notifiche[].
+     * Delega a PendenzeController::addNotificationToPendenza() — usa makeHttpClient() con TLS+auth.
      */
     public function addNotificaToPendenza(Request $request, Response $response, array $args): Response
     {
@@ -906,136 +934,7 @@ class FrontofficeApiController
             return $this->jsonError('Body JSON non valido', 400);
         }
 
-        $backofficeUrl = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
-        $idA2A         = trim((string)SettingsRepository::get('entity', 'id_a2a', ''));
-
-        if ($backofficeUrl === '' || $idA2A === '') {
-            return $this->jsonOk('Skipped: GovPay backoffice URL o ID_A2A non configurati', ['updated' => false]);
-        }
-
-        $user       = (string)SettingsRepository::get('govpay', 'user', '');
-        $pass       = (string)SettingsRepository::get('govpay', 'password', '');
-        $authMethod = strtolower((string)SettingsRepository::get('govpay', 'authentication_method', ''));
-
-        $baseCurlOpts = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_HTTPHEADER     => ['Accept: application/json'],
-        ];
-
-        if (in_array($authMethod, ['ssl', 'sslheader'], true)) {
-            $cert    = (string)SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $keyPath = (string)SettingsRepository::get('govpay', 'tls_key_path', '');
-            if ($cert !== '' && $keyPath !== '') {
-                $baseCurlOpts[CURLOPT_SSLCERT] = $cert;
-                $baseCurlOpts[CURLOPT_SSLKEY]  = $keyPath;
-            }
-        } elseif ($user !== '' || $pass !== '') {
-            $baseCurlOpts[CURLOPT_USERPWD] = $user . ':' . $pass;
-        }
-
-        $url = $backofficeUrl . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-
-        // GET pendenza corrente
-        $ch = curl_init($url);
-        curl_setopt_array($ch, $baseCurlOpts);
-        $raw     = curl_exec($ch);
-        $status  = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
-        unset($ch);
-
-        if ($raw === false || $curlErr !== '' || $status < 200 || $status >= 300) {
-            Logger::getInstance()->warning('FrontofficeApi::addNotificaToPendenza GET failed', [
-                'status' => $status, 'error' => $curlErr, 'idPendenza' => $idPendenza,
-            ]);
-            return $this->jsonOk('GovPay GET fallito — notifica non salvata', ['updated' => false]);
-        }
-
-        $pendenza = json_decode((string)$raw, true);
-        if (!is_array($pendenza)) {
-            return $this->jsonOk('Risposta GovPay non valida — notifica non salvata', ['updated' => false]);
-        }
-
-        $allowedKeys = [
-            'numeroAvviso', 'tassonomia', 'dataValidita', 'datiAllegati', 'tassonomiaAvviso',
-            'importo', 'dataScadenza', 'dataPromemoriaScadenza', 'idUnitaOperativa', 'idDominio', 'allegati',
-            'dataCaricamento', 'annoRiferimento', 'divisione', 'nome', 'causale', 'soggettoPagatore',
-            'dataNotificaAvviso', 'cartellaPagamento', 'documento', 'proprieta', 'direzione', 'idTipoPendenza', 'voci',
-        ];
-        $put = array_intersect_key($pendenza, array_flip($allowedKeys));
-
-        if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
-            $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
-        }
-
-        // Sanitize voci
-        $hasBolloVoce = false;
-        if (!empty($put['voci']) && is_array($put['voci'])) {
-            foreach ($put['voci'] as &$voce) {
-                if (!is_array($voce)) {
-                    continue;
-                }
-                unset($voce['indice'], $voce['stato']);
-                if (!empty($voce['tipoBollo']) || !empty($voce['hashDocumento']) || !empty($voce['provinciaResidenza'])) {
-                    $hasBolloVoce = true;
-                    $voce['tipoBollo'] = (string)($voce['tipoBollo'] ?? '');
-                    if ($voce['tipoBollo'] === '') {
-                        $voce['tipoBollo'] = '01';
-                    }
-                    if (empty($voce['hashDocumento'])) {
-                        $seed = (string)($voce['descrizione'] ?? '') . '|' . (string)($voce['idVocePendenza'] ?? uniqid('', true));
-                        $voce['hashDocumento'] = base64_encode(hash('sha256', $seed, true));
-                    }
-                    $prov = strtoupper(trim((string)($voce['provinciaResidenza'] ?? '')));
-                    if ($prov !== '') {
-                        $voce['provinciaResidenza'] = $prov;
-                    }
-                }
-            }
-            unset($voce);
-        }
-
-        if ($hasBolloVoce && empty($put['tassonomiaAvviso'])) {
-            $put['tassonomiaAvviso'] = 'Imposte e tasse';
-        }
-
-        if (!isset($put['datiAllegati']) || !is_array($put['datiAllegati'])) {
-            $put['datiAllegati'] = [];
-        }
-        if (!isset($put['datiAllegati']['notifiche']) || !is_array($put['datiAllegati']['notifiche'])) {
-            $put['datiAllegati']['notifiche'] = [];
-        }
-        $put['datiAllegati']['notifiche'][] = [
-            'timestamp'    => $notificationData['timestamp']   ?? date('Y-m-d H:i:s'),
-            'tipo'         => $notificationData['tipo']         ?? 'creazione_pendenza',
-            'canale'       => $notificationData['canale']       ?? 'email',
-            'destinatario' => $notificationData['destinatario'] ?? '',
-            'esito'        => $notificationData['esito']        ?? 'OK',
-            'message_id'   => $notificationData['message_id']   ?? null,
-            'errore'       => $notificationData['errore']       ?? null,
-        ];
-
-        // PUT pendenza aggiornata
-        $putOpts = $baseCurlOpts;
-        $putOpts[CURLOPT_CUSTOMREQUEST] = 'PUT';
-        $putOpts[CURLOPT_POSTFIELDS]    = json_encode($put, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $putOpts[CURLOPT_HTTPHEADER]    = array_merge($baseCurlOpts[CURLOPT_HTTPHEADER], ['Content-Type: application/json']);
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, $putOpts);
-        curl_exec($ch);
-        $putStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $putErr    = curl_error($ch);
-        unset($ch);
-
-        if ($putStatus < 200 || $putStatus >= 300 || $putErr !== '') {
-            Logger::getInstance()->warning('FrontofficeApi::addNotificaToPendenza PUT failed', [
-                'status' => $putStatus, 'error' => $putErr, 'idPendenza' => $idPendenza,
-            ]);
-            return $this->jsonOk('GovPay PUT fallito — notifica non salvata', ['updated' => false]);
-        }
-
-        return $this->jsonOk('Notifica aggiunta', ['updated' => true]);
+        $updated = $this->pendenzeController()->addNotificationToPendenza($idPendenza, $notificationData);
+        return $this->jsonOk($updated ? 'Notifica aggiunta' : 'Notifica non salvata', ['updated' => $updated]);
     }
 }

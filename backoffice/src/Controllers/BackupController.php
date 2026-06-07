@@ -792,12 +792,12 @@ class BackupController
                     $batchRows[] = '(' . implode(', ', $vals) . ')';
 
                     if (count($batchRows) >= $batchSize) {
-                        gzwrite($gz, "INSERT INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
+                        gzwrite($gz, "INSERT IGNORE INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
                         $batchRows = [];
                     }
                 }
                 if (!empty($batchRows)) {
-                    gzwrite($gz, "INSERT INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
+                    gzwrite($gz, "INSERT IGNORE INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
                 }
                 if ($cols !== '') {
                     gzwrite($gz, "\n");
@@ -853,7 +853,8 @@ class BackupController
                 $currentStmt .= $line;
 
                 if (str_ends_with($trimmed, ';')) {
-                    $pdo->exec($currentStmt);
+                    $stmt = preg_replace('/^INSERT INTO\b/i', 'INSERT IGNORE INTO', ltrim($currentStmt));
+                    $pdo->exec($stmt ?? $currentStmt);
                     $currentStmt = '';
                     $stmtCount++;
                     if ($stmtCount % $commitEvery === 0) {

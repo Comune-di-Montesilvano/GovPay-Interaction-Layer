@@ -43,7 +43,8 @@ Cittadino → frontoffice
 - `GET  /api/frontoffice/pendenze/{idA2A}/{idPendenza}/transazioni` — transazioni
 - `POST /api/frontoffice/pendenze` — crea pendenza (risolve voci/iuv_prefix da DB)
 - `POST /api/frontoffice/carrello/checkout` — avvia checkout pagoPA, ritorna Location
-- `GET  /api/frontoffice/ricevuta/{idDominio}/{iuv}/{idRicevuta}` — stream PDF ricevuta
+- `GET  /api/frontoffice/pendenze/{idPendenza}/ricevuta` — stream PDF ricevuta (risolve IUV+CCP internamente via buildReceiptPathLookup)
+- `GET  /api/frontoffice/ricevuta/{idDominio}/{iuv}/{ccp}` — stream PDF ricevuta (parametri espliciti, usato da /link/ricevuta)
 - `GET  /api/frontoffice/avviso/{idDominio}/{numeroAvviso}` — stream PDF avviso
 - `GET  /api/frontoffice/documento/{numeroDocumento}/avvisi` — stream PDF documento
 - `POST /api/frontoffice/rate-limit/check` — verifica/consuma rate limit bucket
