@@ -1925,8 +1925,12 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
                 'scadenza' => $scadenzaPreview !== '' ? $scadenzaPreview : null,
             ]), '', '&', PHP_QUERY_RFC3986);
         } else {
-            $downloadUrl = ($numeroAvviso !== '' && $idDominio !== '')
-                ? '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
+            // Usa link firmato per evitare enumerazione IUV su /avvisi/ pubblico
+            if (!$isBolloPreview) {
+                $cf = frontoffice_extract_pendenza_debtor_cf($pendenza);
+            }
+            $downloadUrl = ($numeroAvviso !== '' && $idDominio !== '' && $cf !== '')
+                ? frontoffice_generate_pdf_link($cf, $numeroAvviso)
                 : null;
         }
 
@@ -2939,8 +2943,9 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
         $idPendenza = $sendResult['idPendenza'] ?? '';
         $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
         $numeroAvviso = frontoffice_extract_numero_avviso($sendResult['response'] ?? null, $detail);
-        $downloadUrl = ($numeroAvviso && $idDominio !== '')
-            ? '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
+        $cfSpontaneo = strtoupper(trim((string)($payerRaw['identificativo'] ?? '')));
+        $downloadUrl = ($numeroAvviso && $idDominio !== '' && $cfSpontaneo !== '')
+            ? frontoffice_generate_pdf_link($cfSpontaneo, $numeroAvviso)
             : null;
 
         $context['pendenza_result'] = [
@@ -4504,7 +4509,16 @@ $routes = [
                 'is_payable' => frontoffice_is_pendenza_payable($state),
                 'is_paid' => frontoffice_is_pendenza_paid($state),
                 'download_url' => ($numeroAvviso !== '' && $idDominio !== '')
-                    ? '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
+                    ? ($rowIsBollo
+                        ? ('/avviso-bollo?' . http_build_query(array_filter([
+                            'iuv'      => preg_replace('/\D/', '', $numeroAvviso),
+                            'ente'     => $idDominio,
+                            'importo'  => isset($pendenza['importo']) && is_numeric($pendenza['importo']) && (float)$pendenza['importo'] > 0 ? (int)round((float)$pendenza['importo'] * 100) : null,
+                            'causale'  => ($pendenza['causale'] ?? '') !== '' ? mb_substr(trim((string)$pendenza['causale']), 0, 140) : null,
+                            'cf'       => $codiceFiscale !== '' ? $codiceFiscale : null,
+                            'scadenza' => ($pendenza['dataScadenza'] ?? '') !== '' ? $pendenza['dataScadenza'] : null,
+                        ]), '', '&', PHP_QUERY_RFC3986))
+                        : frontoffice_generate_pdf_link($codiceFiscale, $numeroAvviso))
                     : null,
                 'receipt_url' => (frontoffice_is_pendenza_paid($state) && (string)($pendenza['idPendenza'] ?? '') !== '')
                     ? '/pendenze/' . rawurlencode((string)$pendenza['idPendenza']) . '/ricevuta'
@@ -4607,6 +4621,13 @@ $routes = [
 $routeDefinition = null;
 
 if ($method === 'GET' && preg_match('#^/avvisi/([^/]+)/([^/]+)$#', $normalizedPath, $match)) {
+    // Rate limit per IP — defense-in-depth contro enumerazione IUV
+    if (!frontoffice_rate_limit_check('ip:' . frontoffice_client_ip() . ':avvisi', 20, 60)) {
+        http_response_code(429);
+        header('Retry-After: 60');
+        echo 'Troppi tentativi. Riprova tra un minuto.';
+        return;
+    }
     frontoffice_stream_avviso_pdf(rawurldecode($match[1]), rawurldecode($match[2]));
     return;
 }
