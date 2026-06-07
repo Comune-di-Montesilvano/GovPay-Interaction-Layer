@@ -116,11 +116,13 @@ Obbligatorie prima del primo avvio:
 
 ```bash
 DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD, FRONTOFFICE_DB_PASSWORD
-APP_ENCRYPTION_KEY   # esattamente 32 caratteri
-MASTER_TOKEN         # token Bearer interno
+APP_ENCRYPTION_KEY           # esattamente 32 caratteri
+MASTER_TOKEN                 # token Bearer interno
+FRONTOFFICE_LINK_SIGNING_KEY # chiave firma link pubblici (esadecimale 64 caratteri)
 
 openssl rand -hex 24   # MASTER_TOKEN
 openssl rand -hex 16   # APP_ENCRYPTION_KEY
+openssl rand -hex 32   # FRONTOFFICE_LINK_SIGNING_KEY
 ```
 
 ### Configurazione applicativa (DB → UI)

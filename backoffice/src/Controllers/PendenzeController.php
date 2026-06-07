@@ -4533,12 +4533,7 @@ class PendenzeController
     {
         $signingKey = (string)(getenv('FRONTOFFICE_LINK_SIGNING_KEY') ?: '');
         if ($signingKey === '') {
-            // Fallback: secret derivato da variabili già presenti
-            $signingKey = hash('sha256',
-                (string)(getenv('APP_SECRET') ?: '')
-                . (string)(SettingsRepository::get('entity', 'id_dominio', ''))
-                . 'gil-link-signing-fallback'
-            );
+            throw new \RuntimeException('FRONTOFFICE_LINK_SIGNING_KEY non configurata — impossibile generare o verificare link firmati');
         }
         $expires = time() + $ttlSeconds;
         $params['expires'] = (string)$expires;

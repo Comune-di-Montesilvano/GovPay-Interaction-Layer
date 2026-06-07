@@ -104,6 +104,7 @@
 
             {% if can_checkout %}
               <form method="post" action="/carrello/checkout" id="cart-checkout-form">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 {% for item in items %}
                   <input type="hidden" name="pendenze[]" value="{{ item.id_pendenza }}" class="cart-hidden-input">
                 {% endfor %}
@@ -191,7 +192,7 @@
       var id = this.dataset.id;
       if (!id) return;
       var body = new URLSearchParams({ idPendenza: id });
-      fetch('/carrello/rimuovi', { method: 'POST', body: body, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      fetch('/carrello/rimuovi', { method: 'POST', body: body, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '{{ csrf_token }}' } })
         .then(function(r) { return parseJsonSafely(r); })
         .then(function(data) {
           if (data && data.error) { alert(data.error); return; }

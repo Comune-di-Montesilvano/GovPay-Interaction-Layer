@@ -169,6 +169,7 @@
           <div class="card card-pad-lg">
 
             <form method="post" action="/pagamento-bollo" enctype="multipart/form-data" id="bolloForm">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
               {# ══ Soggetto pagatore ══ #}
               <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0 0 var(--sp-3);">{{ 'Soggetto pagatore'|trans }}</h3>

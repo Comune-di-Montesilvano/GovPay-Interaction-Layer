@@ -196,6 +196,7 @@
             {% endif %}
 
             <form method="post" action="/pagamento-spontaneo">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               {% if selected %}
                 <input type="hidden" name="idTipoPendenza" value="{{ selected.id }}">
               {% endif %}

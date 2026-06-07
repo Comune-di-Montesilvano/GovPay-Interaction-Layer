@@ -225,10 +225,11 @@
 
   {# 5. Chart.js Implementation scripts #}
   {% if chart_payload_json %}
+    <div id="chart-payload-data" data-payload="{{ chart_payload_json|e('html_attr') }}" style="display: none;"></div>
     <script src="/assets/chartjs/chart.umd.min.js"></script>
     <script>
       (function(){
-        const payload = {{ chart_payload_json|raw }};
+        const payload = JSON.parse(document.getElementById('chart-payload-data').dataset.payload);
         // Premium corporate dashboard color palette (harmonized with blue/purple/gold theme)
         const palette = ['#0066CC', '#4A2A6E', '#C9A13B', '#107c41', '#d83b01', '#8a2be2', '#008080', '#ff4500'];
         const colors = payload.labels.map((_, idx) => palette[idx % palette.length]);

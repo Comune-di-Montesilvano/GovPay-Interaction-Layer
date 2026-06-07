@@ -70,7 +70,7 @@
           fetch('/carrello/aggiungi', {
             method: 'POST',
             body: body,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '{{ csrf_token }}' }
           })
           .then(function (r) { return parseJsonSafely(r); })
           .then(function (data) {

@@ -194,8 +194,8 @@ return (function (): array {
     });
 
     // Percorsi pubblici che non richiedono sessione (AuthMiddleware li salta).
-    // Aggiungiamo '/api/*' per permettere chiamate interne autenticata via Bearer (es. auth-proxy/startup.sh)
-    $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health', '/api/*'];
+    // Sostituiamo il wildcard '/api/*' con percorsi specifici così da non bypassare l'AuthMiddleware per API interne ad accesso sessione (es. /api/dashboard/*, /api/biz-event)
+    $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health', '/api/frontoffice/*', '/api/auth-proxy/*'];
     $app->add(new AuthMiddleware($publicPaths));
     // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack
     // (in Slim il middleware viene eseguito in ordine inverso all'aggiunta — l'ultimo aggiunto è il primo eseguito)

@@ -208,6 +208,27 @@
 (function () {
   'use strict';
 
+  // Intercetta tutte le risposte fetch per aggiornare automaticamente il token CSRF nelle form
+  const originalFetch = window.fetch;
+  window.fetch = async function (...args) {
+    const response = await originalFetch(...args);
+    const clone = response.clone();
+    try {
+      const contentType = clone.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const json = await clone.json();
+        if (json && json.csrf_token) {
+          document.querySelectorAll('input[name="csrf_token"]').forEach(el => {
+            el.value = json.csrf_token;
+          });
+        }
+      }
+    } catch (e) {
+      // Ignora errori di parsing JSON
+    }
+    return response;
+  };
+
   // ── Toast helper ──────────────────────────────────────────────────────────
   window.impToast = function (msg, ok) {
     const el = document.getElementById('imp-toast');

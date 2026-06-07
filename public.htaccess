@@ -1,4 +1,13 @@
 # Configura limiti di upload per Apache mod_php
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "payment=(), geolocation=()"
+    # Solo se SSL=on:
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+</IfModule>
+
 <IfModule mod_php.c>
   php_value upload_max_filesize 256M
   php_value post_max_size 256M

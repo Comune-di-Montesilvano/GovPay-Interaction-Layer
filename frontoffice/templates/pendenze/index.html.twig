@@ -81,6 +81,7 @@
 
       {# Hidden form for cart POST #}
       <form id="carrello-form" method="post" action="/carrello/checkout" style="display:none">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <input type="hidden" name="csrf_token" id="csrf_token_field" value="">
       </form>
 
@@ -353,7 +354,7 @@
       fetch('/carrello/aggiungi', {
         method: 'POST',
         body: new URLSearchParams({ idPendenza: id }),
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '{{ csrf_token }}' }
       })
       .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
       .then(function (data) {
@@ -390,7 +391,7 @@
       fetch('/carrello/rimuovi', {
         method: 'POST',
         body: new URLSearchParams({ idPendenza: id }),
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '{{ csrf_token }}' }
       })
       .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
       .then(function (data) {

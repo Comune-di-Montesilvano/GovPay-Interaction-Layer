@@ -39,13 +39,8 @@ class FrontofficeApiController
 
     private function verifyMasterToken(Request $request): bool
     {
-        $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
-        if ($masterToken === '') {
-            return false;
-        }
-        $authHeader = $request->getHeaderLine('Authorization');
-        return str_starts_with($authHeader, 'Bearer ')
-            && hash_equals($masterToken, substr($authHeader, 7));
+        // L'autenticazione è ora delegata a BearerTokenMiddleware a livello di routing.
+        return true;
     }
 
     // ── Response helpers ─────────────────────────────────────────────────────
@@ -868,11 +863,6 @@ class FrontofficeApiController
         return $this->jsonOk('Notifiche inviate');
     }
 
-    /**
-     * Fire-and-forget: invia POST a se stesso senza aspettare la risposta.
-     * Usa socket TCP/SSL diretto su porta 80 (Apache interno, stesso container).
-     * Non lancia eccezioni — fallisce silenziosamente se il socket non si apre.
-     */
     private function fireAndForgetSelf(string $path, array $data): void
     {
         $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
@@ -880,16 +870,9 @@ class FrontofficeApiController
             return;
         }
 
-        $ssl       = strtolower(trim((string)(getenv('SSL') ?: 'off')));
-        $useHttps  = ($ssl === 'on');
-        $transport = $useHttps ? 'ssl' : 'tcp';
-
         $payload = (string)json_encode($data, JSON_UNESCAPED_UNICODE);
-        $ctx     = $useHttps
-            ? stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]])
-            : stream_context_create([]);
 
-        $fp = @stream_socket_client("$transport://127.0.0.1:80", $errno, $errstr, 2.0, STREAM_CLIENT_CONNECT, $ctx);
+        $fp = @stream_socket_client("tcp://127.0.0.1:80", $errno, $errstr, 2.0, STREAM_CLIENT_CONNECT);
         if ($fp === false) {
             Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf socket failed', [
                 'path' => $path, 'errno' => $errno, 'errstr' => $errstr,
