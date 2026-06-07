@@ -119,6 +119,7 @@ class MappingPendenzeController
         unset($_SESSION['flash']);
 
         return $this->twig->render($response, 'pagamenti/mapping_pendenze.html.twig', [
+            'csrf_token'          => $this->generateCsrf(),
             'id_dominio'          => $idDominio,
             'patterns'            => $patterns,
             'stats'               => $stats,
@@ -135,6 +136,10 @@ class MappingPendenzeController
     public function addRule(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $body       = (array)($request->getParsedBody() ?? []);
@@ -165,6 +170,10 @@ class MappingPendenzeController
     public function addVocabRule(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $body       = (array)($request->getParsedBody() ?? []);
@@ -192,9 +201,14 @@ class MappingPendenzeController
     public function deleteRule(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
-        $params = $request->getQueryParams();
+        $body = (array)($request->getParsedBody() ?? []);
+        $params = array_merge($request->getQueryParams(), $body);
         $type   = (string)($params['type'] ?? '');
         $repo   = new MappingPendenzeRepository();
 
@@ -222,6 +236,10 @@ class MappingPendenzeController
     public function applyMappings(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $repo = new MappingPendenzeRepository();
@@ -277,6 +295,10 @@ class MappingPendenzeController
     public function resetMappings(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $repo = new MappingPendenzeRepository();
@@ -293,6 +315,10 @@ class MappingPendenzeController
     public function accorpaRule(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $body       = (array)($request->getParsedBody() ?? []);
@@ -323,9 +349,14 @@ class MappingPendenzeController
     public function disunisciRule(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
-        $params     = $request->getQueryParams();
+        $body = (array)($request->getParsedBody() ?? []);
+        $params = array_merge($request->getQueryParams(), $body);
         $patternIuv = strtoupper(trim((string)($params['pattern_iuv'] ?? '')));
 
         if ($patternIuv === '') {
@@ -347,6 +378,10 @@ class MappingPendenzeController
     public function addCustomTipologia(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $body       = (array)($request->getParsedBody() ?? []);
@@ -372,8 +407,14 @@ class MappingPendenzeController
     public function deleteCustomTipologia(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/funzioni-avanzate/mapping-pendenze')->withStatus(302);
+        }
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
-        $id = (int)(($request->getQueryParams())['id'] ?? 0);
+        $body = (array)($request->getParsedBody() ?? []);
+        $params = array_merge($request->getQueryParams(), $body);
+        $id = (int)($params['id'] ?? 0);
 
         if ($id <= 0) {
             $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'ID non valido.'];
@@ -420,5 +461,31 @@ class MappingPendenzeController
             exit;
         }
         return $user;
+    }
+
+    private function generateCsrf(): string
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        if (empty($_SESSION['mapping_csrf'])) {
+            $_SESSION['mapping_csrf'] = bin2hex(random_bytes(32));
+        }
+        return (string) $_SESSION['mapping_csrf'];
+    }
+
+    private function validateCsrf(Request $request): bool
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        $expected = (string)($_SESSION['mapping_csrf'] ?? '');
+        $body = (array)($request->getParsedBody() ?? []);
+        $provided = (string)($body['csrf_token'] ?? '');
+        
+        if ($expected === '' || $provided === '' || !hash_equals($expected, $provided)) {
+            return false;
+        }
+        return true;
     }
 }

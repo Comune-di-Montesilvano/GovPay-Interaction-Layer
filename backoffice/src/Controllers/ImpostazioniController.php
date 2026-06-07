@@ -906,15 +906,7 @@ class ImpostazioniController
      */
     public function getIamProxyEnv(Request $request, Response $response): Response
     {
-        $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
-        if (empty($masterToken)) {
-            return $this->jsonResponse(['error' => 'MASTER_TOKEN non configurato'], 503);
-        }
 
-        $authHeader = $request->getHeaderLine('Authorization');
-        if (!str_starts_with($authHeader, 'Bearer ') || !hash_equals($masterToken, substr($authHeader, 7))) {
-            return $this->jsonResponse(['error' => 'Non autorizzato'], 401);
-        }
 
         $s            = SettingsRepository::getSection('iam_proxy');
         $sFrontoffice = SettingsRepository::getSection('frontoffice');
@@ -2657,15 +2649,7 @@ class ImpostazioniController
      */
     public function getFrontofficeConfig(Request $request, Response $response): Response
     {
-        $masterToken = $_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '';
-        if (empty($masterToken)) {
-            return $this->jsonResponse(['error' => 'MASTER_TOKEN non configurato'], 503);
-        }
 
-        $authHeader = $request->getHeaderLine('Authorization');
-        if (!str_starts_with($authHeader, 'Bearer ') || !hash_equals($masterToken, substr($authHeader, 7))) {
-            return $this->jsonResponse(['error' => 'Non autorizzato'], 401);
-        }
 
         $frontoffice = SettingsRepository::getSection('frontoffice');
         $entity      = SettingsRepository::getSection('entity');
@@ -2731,6 +2715,8 @@ class ImpostazioniController
      */
     public function getAuthProxyStatus(Request $request, Response $response): Response
     {
+
+
         $statusUrl = 'http://auth-proxy:9191/status';
         $running = false;
         $detail  = 'Status API non raggiungibile';
@@ -3401,8 +3387,9 @@ class ImpostazioniController
     private function encryptValueForKeyRotation(string $plaintext, string $newKey): ?string
     {
         $ivLength = openssl_cipher_iv_length('aes-256-cbc');
-        $iv = openssl_random_pseudo_bytes($ivLength);
-        if ($iv === false) {
+        try {
+            $iv = random_bytes($ivLength);
+        } catch (\Throwable $e) {
             return null;
         }
 
@@ -3426,7 +3413,11 @@ class ImpostazioniController
     {
         $expected = (string) ($_SESSION['impostazioni_csrf'] ?? '');
         $provided = (string) ($body['csrf_token'] ?? '');
-        return $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
+        $valid = $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
+        if ($valid) {
+            unset($_SESSION['impostazioni_csrf']); // Invalida dopo uso
+        }
+        return $valid;
     }
 
     private function parseBody(Request $request): array
@@ -3486,6 +3477,12 @@ class ImpostazioniController
 
     private function jsonResponse(array $data, int $status = 200): Response
     {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            if (empty($_SESSION['impostazioni_csrf'])) {
+                $_SESSION['impostazioni_csrf'] = bin2hex(random_bytes(32));
+            }
+            $data['csrf_token'] = $_SESSION['impostazioni_csrf'];
+        }
         $resp = new SlimResponse($status);
         $resp->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
         return $resp->withHeader('Content-Type', 'application/json');

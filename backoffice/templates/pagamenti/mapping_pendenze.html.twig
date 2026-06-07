@@ -5,6 +5,12 @@
 {% block content %}
   {% set is_admin = current_user.role in ['admin', 'superadmin'] %}
 
+  {# Hidden form for POST deletion/disassociation actions #}
+  <form id="delete-mapping-form" method="post" action="" style="display:none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div id="delete-mapping-form-inputs"></div>
+  </form>
+
   {# ── Read-only Warning for Operator Roles ── #}
   {% if not is_admin %}
     <div class="alert alert-info shadow-sm d-flex align-items-center gap-2 mb-4" role="alert" style="border-radius: 8px;">
@@ -49,11 +55,13 @@
         </span>
         {% if is_admin %}
         <form method="post" action="/funzioni-avanzate/mapping-pendenze/applica" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn btn-primary btn-sm fw-semibold shadow-sm">
             <i class="fas fa-play me-1"></i>Applica ora (L1+L2)
           </button>
         </form>
         <form method="post" action="/funzioni-avanzate/mapping-pendenze/reset" onsubmit="return confirm('Forzare rielaborazione completa L1 + L2? Tutte le pendenze esterne verranno rimappate.');" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn btn-warning btn-sm fw-semibold text-dark shadow-sm">
             <i class="fas fa-arrows-rotate me-1"></i>Reset e Rielabora
           </button>
@@ -148,9 +156,9 @@
           <div class="d-inline-flex align-items-center gap-1 rounded-3 px-2 py-1 border" style="background:#f8fafc; font-size:0.8rem; border-color:#e2e8f0 !important;">
             <code class="text-primary fw-semibold" style="font-size:0.78rem; background:none; padding:0;">{{ tc.cod_entrata }}</code>
             <span class="text-muted mx-1" style="font-size:0.75rem;">{{ tc.descrizione }}</span>
-            <a href="/funzioni-avanzate/mapping-pendenze/tipologie-custom/delete?id={{ tc.id }}"
+            <a href="javascript:void(0)"
                class="text-danger ms-1 d-inline-flex align-items-center"
-               onclick="return confirm('Eliminare \'{{ tc.cod_entrata }}\'?')"
+               onclick="if(confirm('Eliminare \'{{ tc.cod_entrata|e('js') }}\'?')) submitPostAction('/funzioni-avanzate/mapping-pendenze/tipologie-custom/delete', {id: '{{ tc.id }}'});"
                title="Elimina tipologia"
                style="opacity:0.6; text-decoration:none; font-size:0.75rem; line-height:1;">
               <i class="fas fa-times-circle"></i>
@@ -168,6 +176,7 @@
 
       <form method="post" action="/funzioni-avanzate/mapping-pendenze/tipologie-custom/add"
             class="px-3 pb-3 pt-2 mt-1 border-top d-flex align-items-end gap-2 flex-wrap" style="background:#fafafa;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div style="flex: 0 0 160px;">
           <label class="form-label form-label-sm text-muted mb-1" style="font-size:0.72rem; text-transform:uppercase; letter-spacing:.3px;">Codice <span class="text-danger">*</span></label>
           <input type="text" name="cod_entrata" class="form-control form-control-sm" placeholder="Es. TARI" required maxlength="100" style="text-transform:uppercase; font-family:monospace; font-size:0.82rem;">
@@ -194,6 +203,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="/funzioni-avanzate/mapping-pendenze/add" id="mappingRuleForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="row g-3">
           {# Prefisso IUV #}
           <div class="col-md-4">
@@ -251,6 +261,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="/funzioni-avanzate/mapping-pendenze/vocab/add" id="vocabKeywordForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="row g-3">
           <div class="col-md-3">
             <label class="form-label small fw-bold">Pattern IUV</label>
@@ -308,6 +319,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="/funzioni-avanzate/mapping-pendenze/accorpa" id="accorpaPatternForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="row g-3 align-items-end">
           <div class="col-md-4">
             <label class="form-label small fw-bold">Pattern da accorpare (Sorgente)</label>
@@ -462,9 +474,9 @@
                             {% endif %}
                           </span>
                           {% if is_admin and pat.accorpato_a is empty %}
-                          <a href="/funzioni-avanzate/mapping-pendenze/delete?type=vocab&id={{ vk.id }}"
+                          <a href="javascript:void(0)"
                              class="text-danger p-0 ms-2" title="Elimina keyword"
-                             onclick="return confirm('Eliminare la keyword \'{{ vk.keyword|e('js') }}\'?');">
+                             onclick="if(confirm('Eliminare la keyword \'{{ vk.keyword|e('js') }}\'?')) submitPostAction('/funzioni-avanzate/mapping-pendenze/delete', {type: 'vocab', id: '{{ vk.id }}'});">
                              <i class="fas fa-times-circle"></i>
                           </a>
                           {% endif %}
@@ -484,14 +496,15 @@
                   {% if is_admin %}
                     <div class="d-flex justify-content-end gap-1">
                       {% if pat.accorpato_a is not empty %}
-                        <a href="/funzioni-avanzate/mapping-pendenze/disunisci?pattern_iuv={{ pat.pattern_iuv|url_encode }}"
-                           class="btn btn-outline-warning btn-sm px-3" title="Rimuovi accorpamento">
+                        <a href="javascript:void(0)"
+                           class="btn btn-outline-warning btn-sm px-3" title="Rimuovi accorpamento"
+                           onclick="submitPostAction('/funzioni-avanzate/mapping-pendenze/disunisci', {pattern_iuv: '{{ pat.pattern_iuv|e('js') }}'});">
                           <i class="fas fa-unlink"></i>
                         </a>
                       {% endif %}
-                      <a href="/funzioni-avanzate/mapping-pendenze/delete?type=pattern&pattern_iuv={{ pat.pattern_iuv|url_encode }}"
+                      <a href="javascript:void(0)"
                          class="btn btn-outline-danger btn-sm px-3"
-                         onclick="return confirm('Eliminare il pattern IUV \'{{ pat.pattern_iuv }}\' e tutto il suo vocabolario L2?');"
+                         onclick="if(confirm('Eliminare il pattern IUV \'{{ pat.pattern_iuv|e('js') }}\' e tutto il suo vocabolario L2?')) submitPostAction('/funzioni-avanzate/mapping-pendenze/delete', {type: 'pattern', pattern_iuv: '{{ pat.pattern_iuv|e('js') }}'});"
                          title="Elimina pattern e vocab">
                         <i class="fas fa-trash-can"></i>
                       </a>
@@ -798,6 +811,22 @@
           next.style.display = show ? '' : 'none';
         }
       });
+    }
+
+    // ── submitPostAction Helper ──────────────────────────────────────────────
+    function submitPostAction(actionUrl, params) {
+      const form = document.getElementById('delete-mapping-form');
+      form.action = actionUrl;
+      const inputsContainer = document.getElementById('delete-mapping-form-inputs');
+      inputsContainer.innerHTML = '';
+      for (const [key, value] of Object.entries(params)) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        inputsContainer.appendChild(input);
+      }
+      form.submit();
     }
   </script>
 {% endblock %}

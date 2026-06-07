@@ -73,86 +73,68 @@ return function (App $app, Twig $twig): void {
         return (new SetupController($twig))->restoreConfirm($request, $response);
     });
 
-    // ── API interna: endpoint senza sessione (autenticati via Bearer token) ──────
+    // ── API interna ed API frontoffice: endpoint protetti da BearerTokenMiddleware ──
+    $app->group('/api/frontoffice', function (\Slim\Routing\RouteCollectorProxy $group) use ($twig) {
+        $group->get('/config', function (Request $request, Response $response) use ($twig): Response {
+            return (new ImpostazioniController($twig))->getFrontofficeConfig($request, $response);
+        });
+        $group->get('/tipologie', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getTipologie($request, $response);
+        });
+        $group->get('/pendenza-templates', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getPendenzaTemplates($request, $response);
+        });
+        $group->get('/pendenze', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->findPendenze($request, $response);
+        });
+        $group->get('/pendenze/avviso/{idDominio}/{numeroAvviso}', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getPendenzaByAvviso($request, $response, $args);
+        });
+        $group->get('/pendenze/{idPendenza}/ricevuta', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getRicevutaByPendenza($request, $response, $args);
+        });
+        $group->get('/pendenze/{idPendenza}', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getPendenza($request, $response, $args);
+        });
+        $group->post('/pendenze', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->createPendenza($request, $response);
+        });
+        $group->post('/carrello/checkout', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->checkoutCarrello($request, $response);
+        });
+        $group->post('/bollo/govpay-checkout', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->bolloGovpayCheckout($request, $response);
+        });
+        $group->post('/bollo/ebollo-checkout', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->bolloEbolloCheckout($request, $response);
+        });
+        $group->get('/ricevuta/{idDominio}/{iuv}/{ccp}', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getRicevuta($request, $response, $args);
+        });
+        $group->get('/avviso/{idDominio}/{numeroAvviso}', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getAvvisoPdf($request, $response, $args);
+        });
+        $group->get('/documento/{numeroDocumento}/avvisi', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getDocumentoPdf($request, $response, $args);
+        });
+        $group->post('/pendenze/{idPendenza}/notifiche', function (Request $request, Response $response, array $args) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->addNotificaToPendenza($request, $response, $args);
+        });
+        $group->post('/notifiche-pendenza-create', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->sendNotificheCreazionePendenza($request, $response);
+        });
+        $group->post('/rate-limit/check', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->rateLimitCheck($request, $response);
+        });
+    })->add(new \App\Middleware\BearerTokenMiddleware(false));
+
     $app->get('/api/auth-proxy/env', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
-    });
+    })->add(new \App\Middleware\BearerTokenMiddleware(false));
 
-    // Stato runtime Auth Proxy per dashboard/UI. Non richiede sessione.
     $app->get('/api/auth-proxy/status', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->getAuthProxyStatus($request, $response);
-    });
-
-    $app->get('/api/frontoffice/config', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getFrontofficeConfig($request, $response);
-    });
-
-    // ── API frontoffice sidecar (autenticate via Bearer MASTER_TOKEN) ─────────────
-    // Nota: la route avviso deve venire PRIMA di {idPendenza} per evitare conflict matching.
-    // Nota: ricevuta usa {ccp} (codice contesto pagamento) — allineato con Backoffice v1 /rpp endpoint.
-    $app->get('/api/frontoffice/tipologie', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getTipologie($request, $response);
-    });
-
-    $app->get('/api/frontoffice/pendenza-templates', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getPendenzaTemplates($request, $response);
-    });
-
-    $app->get('/api/frontoffice/pendenze', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->findPendenze($request, $response);
-    });
-
-    $app->get('/api/frontoffice/pendenze/avviso/{idDominio}/{numeroAvviso}', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getPendenzaByAvviso($request, $response, $args);
-    });
-
-    $app->get('/api/frontoffice/pendenze/{idPendenza}/ricevuta', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getRicevutaByPendenza($request, $response, $args);
-    });
-
-    $app->get('/api/frontoffice/pendenze/{idPendenza}', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getPendenza($request, $response, $args);
-    });
-
-    $app->post('/api/frontoffice/pendenze', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->createPendenza($request, $response);
-    });
-
-    $app->post('/api/frontoffice/carrello/checkout', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->checkoutCarrello($request, $response);
-    });
-
-    $app->post('/api/frontoffice/bollo/govpay-checkout', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->bolloGovpayCheckout($request, $response);
-    });
-
-    $app->post('/api/frontoffice/bollo/ebollo-checkout', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->bolloEbolloCheckout($request, $response);
-    });
-
-    $app->get('/api/frontoffice/ricevuta/{idDominio}/{iuv}/{ccp}', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getRicevuta($request, $response, $args);
-    });
-
-    $app->get('/api/frontoffice/avviso/{idDominio}/{numeroAvviso}', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getAvvisoPdf($request, $response, $args);
-    });
-
-    $app->get('/api/frontoffice/documento/{numeroDocumento}/avvisi', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->getDocumentoPdf($request, $response, $args);
-    });
-
-    $app->post('/api/frontoffice/pendenze/{idPendenza}/notifiche', function (Request $request, Response $response, array $args) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->addNotificaToPendenza($request, $response, $args);
-    });
-
-    $app->post('/api/frontoffice/notifiche-pendenza-create', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->sendNotificheCreazionePendenza($request, $response);
-    });
-
-    $app->post('/api/frontoffice/rate-limit/check', function (Request $request, Response $response) use ($twig): Response {
-        return (new FrontofficeApiController($twig))->rateLimitCheck($request, $response);
-    });
+    })->add(new \App\Middleware\BearerTokenMiddleware(true));
     // ─────────────────────────────────────────────────────────────────────────────
 
     // ── Impostazioni (nuovo config panel, richiede auth) ──────────────────────────
@@ -375,7 +357,7 @@ return function (App $app, Twig $twig): void {
         $controller = new MappingPendenzeController($twig);
         return $controller->addRule($request, $response);
     });
-    $app->get('/funzioni-avanzate/mapping-pendenze/delete', function(Request $request, Response $response, array $args) use ($twig): Response {
+    $app->post('/funzioni-avanzate/mapping-pendenze/delete', function(Request $request, Response $response, array $args) use ($twig): Response {
         $controller = new MappingPendenzeController($twig);
         return $controller->deleteRule($request, $response, $args);
     });
@@ -398,7 +380,7 @@ return function (App $app, Twig $twig): void {
         return $controller->accorpaRule($request, $response);
     });
 
-    $app->get('/funzioni-avanzate/mapping-pendenze/disunisci', function(Request $request, Response $response) use ($twig): Response {
+    $app->post('/funzioni-avanzate/mapping-pendenze/disunisci', function(Request $request, Response $response) use ($twig): Response {
         $controller = new MappingPendenzeController($twig);
         return $controller->disunisciRule($request, $response);
     });
@@ -406,7 +388,7 @@ return function (App $app, Twig $twig): void {
         $controller = new MappingPendenzeController($twig);
         return $controller->addCustomTipologia($request, $response);
     });
-    $app->get('/funzioni-avanzate/mapping-pendenze/tipologie-custom/delete', function(Request $request, Response $response) use ($twig): Response {
+    $app->post('/funzioni-avanzate/mapping-pendenze/tipologie-custom/delete', function(Request $request, Response $response) use ($twig): Response {
         $controller = new MappingPendenzeController($twig);
         return $controller->deleteCustomTipologia($request, $response);
     });
@@ -1137,6 +1119,28 @@ return function (App $app, Twig $twig): void {
         $data = (array)($request->getParsedBody() ?? []);
         $email = trim($data['email'] ?? '');
         $password = $data['password'] ?? '';
+
+        // Rate limit checks
+        $ip = \App\Security\RateLimiter::getClientIp();
+        $ipKey = 'login_ip:' . $ip;
+        $emailKey = 'login_email:' . strtolower($email);
+
+        // Limit to 10 attempts per 15 minutes per IP
+        if (!\App\Security\RateLimiter::check($ipKey, 10, 900)) {
+            return $twig->render($response, 'login.html.twig', [
+                'error' => 'Troppi tentativi di accesso da questo indirizzo IP. Riprova tra 15 minuti.',
+                'last_email' => $email,
+            ]);
+        }
+
+        // Limit to 5 attempts per 15 minutes per email address
+        if ($email !== '' && !\App\Security\RateLimiter::check($emailKey, 5, 900)) {
+            return $twig->render($response, 'login.html.twig', [
+                'error' => 'Troppi tentativi di accesso per questo account. Riprova tra 15 minuti.',
+                'last_email' => $email,
+            ]);
+        }
+
         $repo = new UserRepository();
         $user = $email !== '' ? $repo->findByEmail($email) : null;
         if ($user && $repo->verifyPassword($password, $user['password_hash'])) {
@@ -1145,6 +1149,9 @@ return function (App $app, Twig $twig): void {
                     'error' => 'Account disabilitato: contatta un amministratore',
                     'last_email' => $email,
                 ]);
+            }
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_regenerate_id(true);
             }
             $repo->updateLastLoginAt((int)$user['id']);
             $user = $repo->findById((int)$user['id']) ?? $user;

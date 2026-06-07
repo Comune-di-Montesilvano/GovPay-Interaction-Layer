@@ -27,6 +27,7 @@
       <div>
         <div class="card card-pad-lg">
           <form method="post" action="/pagamento-avviso">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-4);gap:var(--sp-3);flex-wrap:wrap;">
               <h2 style="margin:0;font-size:22px;">{{ 'Dati richiesti'|trans }}</h2>
               <span style="color:var(--fg-3);font-size:13px;">{{ 'Solo due campi obbligatori'|trans }}</span>

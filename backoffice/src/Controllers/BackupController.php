@@ -1040,7 +1040,11 @@ class BackupController
     {
         $expected = (string)($_SESSION['impostazioni_csrf'] ?? '');
         $provided = (string)($payload['csrf_token'] ?? '');
-        return $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
+        $valid = $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
+        if ($valid) {
+            unset($_SESSION['impostazioni_csrf']); // Invalida dopo uso
+        }
+        return $valid;
     }
 
     private function ensureBackupDirWritable(): bool
@@ -1104,6 +1108,12 @@ class BackupController
 
     private function jsonResponse(array $data, int $status = 200): Response
     {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            if (empty($_SESSION['impostazioni_csrf'])) {
+                $_SESSION['impostazioni_csrf'] = bin2hex(random_bytes(32));
+            }
+            $data['csrf_token'] = $_SESSION['impostazioni_csrf'];
+        }
         $resp = new SlimResponse($status);
         $resp->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
         return $resp->withHeader('Content-Type', 'application/json');

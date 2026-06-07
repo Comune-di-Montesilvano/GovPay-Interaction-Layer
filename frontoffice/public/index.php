@@ -54,7 +54,9 @@ require dirname(__DIR__) . '/vendor/autoload.php';
     if ($raw !== false && $status === 200 && $curlErr === '') {
         $data = json_decode((string)$raw, true);
         if (is_array($data)) {
-            file_put_contents($cacheFile, json_encode($data));
+            if (file_put_contents($cacheFile, json_encode($data)) !== false) {
+                chmod($cacheFile, 0600);
+            }
             foreach ($data as $k => $v) {
                 if (!isset($_ENV[$k]) && getenv($k) === false) {
                     $_ENV[$k] = $v;
@@ -108,6 +110,33 @@ $env = static function (string $key, ?string $default = null): string {
     return frontoffice_env_value($key, $default);
 };
 
+if (!function_exists('frontoffice_csrf_token')) {
+    function frontoffice_csrf_token(): string
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return '';
+        }
+        if (empty($_SESSION['frontoffice_csrf_token'])) {
+            $_SESSION['frontoffice_csrf_token'] = bin2hex(random_bytes(32));
+        }
+        return $_SESSION['frontoffice_csrf_token'];
+    }
+}
+
+if (!function_exists('frontoffice_csrf_validate')) {
+    function frontoffice_csrf_validate(?string $token): bool
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return false;
+        }
+        $stored = $_SESSION['frontoffice_csrf_token'] ?? null;
+        if ($stored === null || $token === null) {
+            return false;
+        }
+        return hash_equals($stored, $token);
+    }
+}
+
 if (!function_exists('frontoffice_backoffice_api')) {
     /**
      * Chiama un endpoint API del backoffice GIL (sidecar pattern).
@@ -139,12 +168,9 @@ if (!function_exists('frontoffice_backoffice_api')) {
         ];
 
         // Propaga IP reale per rate limiting server-side
-        $clientIp = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '');
+        $clientIp = frontoffice_client_ip();
         if ($clientIp !== '') {
-            $firstIp = trim(explode(',', $clientIp)[0] ?? '');
-            if ($firstIp !== '') {
-                $headers['X-Real-IP'] = substr($firstIp, 0, 45);
-            }
+            $headers['X-Real-IP'] = $clientIp;
         }
 
         $ch = curl_init();
@@ -1999,14 +2025,20 @@ if (!function_exists('frontoffice_amount_to_cents')) {
 if (!function_exists('frontoffice_client_ip')) {
     function frontoffice_client_ip(): string
     {
-        $forwarded = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
-        if ($forwarded !== '') {
-            $first = trim((string)(explode(',', $forwarded)[0] ?? ''));
-            if ($first !== '') {
-                return substr($first, 0, 45);
+        $trustedProxiesSetting = frontoffice_env_value('TRUSTED_PROXIES', '');
+        $trustedProxies = array_filter(array_map('trim', explode(',', $trustedProxiesSetting)));
+        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+
+        if (!empty($trustedProxies) && in_array($remoteAddr, $trustedProxies, true)) {
+            $forwarded = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+            if ($forwarded !== '') {
+                $first = trim((string)(explode(',', $forwarded)[0] ?? ''));
+                if ($first !== '' && filter_var($first, FILTER_VALIDATE_IP)) {
+                    return substr($first, 0, 45);
+                }
             }
         }
-        return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+        return substr($remoteAddr, 0, 45);
     }
 }
 
@@ -3026,11 +3058,7 @@ if (!function_exists('frontoffice_link_signing_key')) {
     {
         $key = frontoffice_env_value('FRONTOFFICE_LINK_SIGNING_KEY', '');
         if ($key === '') {
-            // Fallback deterministico basato su segreti già presenti — solo per sviluppo
-            $fallback = frontoffice_env_value('APP_SECRET', '')
-                . frontoffice_env_value('ID_DOMINIO', '')
-                . 'gil-link-signing-fallback';
-            $key = hash('sha256', $fallback);
+            throw new \RuntimeException('FRONTOFFICE_LINK_SIGNING_KEY non configurata — impossibile generare o verificare link firmati');
         }
         return $key;
     }
@@ -3195,6 +3223,20 @@ if ($spidCallbackPath === '' || $spidCallbackPath[0] !== '/') {
     $spidCallbackPath = '/' . ltrim($spidCallbackPath, '/');
 }
 $spidCallbackUrl = $frontofficeBaseUrl !== '' ? ($frontofficeBaseUrl . $spidCallbackPath) : '';
+
+// Validate CSRF token for all POST requests, excluding the SAML assertion callback path.
+if ($method === 'POST' && $normalizedPath !== $spidCallbackPath) {
+    $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+    if (!frontoffice_csrf_validate($csrfToken)) {
+        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
+            'path' => $normalizedPath,
+            'ip' => frontoffice_client_ip(),
+        ]);
+        http_response_code(403);
+        echo 'Forbidden (CSRF token missing or invalid)';
+        return;
+    }
+}
 
 $routes = [
     '/' => static function () use ($serviceCatalog): array {
@@ -5934,6 +5976,7 @@ foreach ((array)($tipologieResp['_raw']['tipologie'] ?? []) as $_row) {
 }
 
 $baseContext = [
+    'csrf_token' => frontoffice_csrf_token(),
     'bollot_attivo' => $bollotAttivo,
     'app_entity' => [
         'name' => $entityName,

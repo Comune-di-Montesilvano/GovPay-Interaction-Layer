@@ -905,14 +905,14 @@ class FlussiRendicontazioniRepository
 
         if ($cf !== '') {
             $whereParts[]         = '(b.cf_debitore LIKE :xcf OR b.cf_pagante LIKE :xcf2)';
-            $cfLike               = '%' . $cf . '%';
+            $cfLike               = '%' . $this->escapeLike($cf) . '%';
             $params[':xcf']       = $cfLike;
             $params[':xcf2']      = $cfLike;
         }
 
         if ($anagrafica !== '') {
             $whereParts[]          = '(b.nominativo_debitore LIKE :xana OR b.nominativo_pagante LIKE :xana2 OR b.company_name LIKE :xana3)';
-            $anaLike               = '%' . $anagrafica . '%';
+            $anaLike               = '%' . $this->escapeLike($anagrafica) . '%';
             $params[':xana']       = $anaLike;
             $params[':xana2']      = $anaLike;
             $params[':xana3']      = $anaLike;
@@ -926,12 +926,20 @@ class FlussiRendicontazioniRepository
 
         if ($iuv !== '') {
             $whereParts[]       = 'f.iuv LIKE :xiuv';
-            $params[':xiuv']    = '%' . $iuv . '%';
+            $params[':xiuv']    = '%' . $this->escapeLike($iuv) . '%';
         }
 
         $whereSql = $whereParts !== [] ? ' AND ' . implode(' AND ', $whereParts) : '';
 
         return ['joinSql' => $joinSql, 'whereSql' => $whereSql, 'params' => $params];
+    }
+
+    /**
+     * Escapes SQL LIKE special characters: %, _ and \.
+     */
+    private function escapeLike(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     /**
