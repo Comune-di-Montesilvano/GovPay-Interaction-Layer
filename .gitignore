@@ -7,7 +7,21 @@
 *.pid
 # File generati a runtime dal master container (env iam-proxy, ecc.)
 runtime/
-.claude/
+# .claude local runtime data — ignore everything except project automations
+.claude/*
+!.claude/settings.json
+!.claude/hooks
+.claude/hooks/*
+!.claude/hooks/php-syntax-check.js
+!.claude/hooks/block-env-edit.js
+!.claude/skills
+.claude/skills/*
+!.claude/skills/new-migration
+.claude/skills/new-migration/*
+!.claude/skills/new-migration/SKILL.md
+!.claude/agents
+.claude/agents/*
+!.claude/agents/security-reviewer.md
 
 # SSL directory - exclude all except README
 ssl/*
