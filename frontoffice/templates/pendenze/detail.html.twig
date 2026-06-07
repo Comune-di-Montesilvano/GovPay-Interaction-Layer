@@ -87,10 +87,11 @@
           </div>
 
           <div class="avviso-actions">
-            {% set is_bollo = voci|length > 0
-                and voci[0].tipoBollo is defined
-                and voci[0].tipoBollo is not null
-                and voci[0].tipoBollo != '' %}
+            {% set is_bollo = p.is_bollo|default(false)
+                or (voci|length > 0
+                    and voci[0].tipoBollo is defined
+                    and voci[0].tipoBollo is not null
+                    and voci[0].tipoBollo != '') %}
             {% if is_bollo %}
               {% set _burl = '/avviso-bollo?iuv=' ~ (p.numero_avviso ?? '')|url_encode
                   ~ '&ente=' ~ (p.id_dominio ?? '')|url_encode
@@ -136,7 +137,12 @@
                   </span>
                 </button>
             {% endif %}
-            {% if p.is_payable and p.checkout_url %}
+            {% if p.is_payable and p.id_pendenza and is_bollo %}
+              <a class="btn btn-primary" href="/pendenze/{{ p.id_pendenza|url_encode }}/checkout" style="color:#fff!important;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 3-7 11h5l-1 7 7-11h-5z"/></svg>
+                {{ 'Paga Marca da Bollo'|trans }}
+              </a>
+            {% elseif p.is_payable and p.checkout_url and not is_bollo %}
               <a class="btn btn-ghost" href="{{ p.checkout_url }}" target="_blank" rel="noopener">{{ 'Paga su pagoPA'|trans }}</a>
             {% endif %}
           </div>

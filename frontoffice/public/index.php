@@ -1375,7 +1375,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
             'annoRiferimento'  => $anno,
             'soggettoPagatore' => frontoffice_prepare_payer($payerRaw),
             'voci'             => $voci,
-            'dataValidita'     => date('Y-m-d'),
+            'dataValidita'     => $dataScadenza,
             'dataScadenza'     => $dataScadenza,
             'datiAllegati'     => frontoffice_build_dati_allegati(),
         ];
@@ -2921,7 +2921,7 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             'importo' => $importo,
             'annoRiferimento' => $anno,
             'soggettoPagatore' => frontoffice_prepare_payer($payerRaw),
-            'dataValidita' => date('Y-m-d'),
+            'dataValidita' => $dataScadenza,
             'dataScadenza' => $dataScadenza,
             'datiAllegati' => frontoffice_build_dati_allegati(),
         ];
