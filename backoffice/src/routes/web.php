@@ -106,6 +106,10 @@ return function (App $app, Twig $twig): void {
         return (new FrontofficeApiController($twig))->getPendenzaByAvviso($request, $response, $args);
     });
 
+    $app->get('/api/frontoffice/pendenze/{idPendenza}/ricevuta', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new FrontofficeApiController($twig))->getRicevutaByPendenza($request, $response, $args);
+    });
+
     $app->get('/api/frontoffice/pendenze/{idPendenza}', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new FrontofficeApiController($twig))->getPendenza($request, $response, $args);
     });
@@ -140,6 +144,10 @@ return function (App $app, Twig $twig): void {
 
     $app->post('/api/frontoffice/pendenze/{idPendenza}/notifiche', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new FrontofficeApiController($twig))->addNotificaToPendenza($request, $response, $args);
+    });
+
+    $app->post('/api/frontoffice/notifiche-pendenza-create', function (Request $request, Response $response) use ($twig): Response {
+        return (new FrontofficeApiController($twig))->sendNotificheCreazionePendenza($request, $response);
     });
 
     $app->post('/api/frontoffice/rate-limit/check', function (Request $request, Response $response) use ($twig): Response {

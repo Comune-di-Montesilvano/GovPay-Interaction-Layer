@@ -4731,6 +4731,134 @@ class PendenzeController
     }
 
     /**
+     * Recupera una pendenza tramite numero avviso usando HTTP diretto (non SDK generato).
+     * Il client SDK fallisce su tipoBollo='01' (si aspetta 'Imposta di bollo').
+     * Usa GET /avvisi/{idDominio}/{numeroAvviso} con makeHttpClient() + basicAuthOptions().
+     *
+     * @return array|null pendenza raw da GovPay, oppure null se non trovata
+     */
+    public function fetchPendenzaByAvvisoRaw(string $idDominio, string $numeroAvviso): ?array
+    {
+        $backofficeUrl = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
+        if ($backofficeUrl === '' || $idDominio === '' || $numeroAvviso === '') {
+            return null;
+        }
+
+        try {
+            $opts = array_merge(
+                ['headers' => ['Accept' => 'application/json']],
+                GovPayClientFactory::basicAuthOptions()
+            );
+            $url  = $backofficeUrl . '/pendenze/byAvviso/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso);
+            $resp = $this->makeHttpClient()->request('GET', $url, $opts);
+            $data = json_decode((string)$resp->getBody(), true);
+            return is_array($data) ? $data : null;
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            if ($e->getResponse() && $e->getResponse()->getStatusCode() === 404) {
+                return null;
+            }
+            Logger::getInstance()->warning('fetchPendenzaByAvvisoRaw errore', [
+                'idDominio'    => $idDominio,
+                'numeroAvviso' => $numeroAvviso,
+                'error'        => $e->getMessage(),
+            ]);
+            return null;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('fetchPendenzaByAvvisoRaw errore', [
+                'idDominio'    => $idDominio,
+                'numeroAvviso' => $numeroAvviso,
+                'error'        => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Avvia il checkout GovPay per una singola pendenza via {govpay_checkout_url}/pagamenti.
+     * Usa makeHttpClient() con TLS+auth da settings — stesso meccanismo di tutti gli altri metodi GovPay.
+     *
+     * @return string URL di redirect restituita da GovPay checkout
+     * @throws \RuntimeException configurazione mancante o risposta inattesa
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
+    public function initiateGovPayCheckout(string $idPendenza, string $returnUrl): string
+    {
+        $checkoutUrl = rtrim((string)SettingsRepository::get('govpay', 'checkout_url', ''), '/');
+        $idA2A       = (string)SettingsRepository::get('entity', 'id_a2a', '');
+
+        if ($checkoutUrl === '' || $idA2A === '') {
+            throw new \RuntimeException('GovPay checkout URL o ID_A2A non configurati');
+        }
+
+        $opts = array_merge(
+            [
+                'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+                'json'    => [
+                    'pendenze'   => [['idA2A' => $idA2A, 'idPendenza' => $idPendenza]],
+                    'urlRitorno' => $returnUrl,
+                ],
+            ],
+            GovPayClientFactory::basicAuthOptions()
+        );
+
+        $resp   = $this->makeHttpClient()->request('POST', $checkoutUrl . '/pagamenti', $opts);
+        $status = $resp->getStatusCode();
+
+        if ($status !== 201) {
+            throw new \RuntimeException('Risposta inattesa da GovPay checkout: HTTP ' . $status);
+        }
+
+        $data     = json_decode((string)$resp->getBody(), true);
+        $redirect = trim((string)($data['redirect'] ?? ''));
+
+        if ($redirect === '') {
+            throw new \RuntimeException('GovPay checkout: redirect URL mancante nella risposta');
+        }
+
+        return $redirect;
+    }
+
+    /**
+     * Recupera la ricevuta RT della pendenza senza che il chiamante debba conoscere IUV/CCP.
+     * Usa fetchPendenzaById() + buildReceiptPathLookup() per risolvere il path GovPay.
+     *
+     * @throws \RuntimeException se la pendenza non è trovata o non ha ricevuta
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
+    public function fetchRicevutaPdfForPendenza(string $idPendenza): \Psr\Http\Message\ResponseInterface
+    {
+        $pendenza = $this->fetchPendenzaById($idPendenza);
+        if (!is_array($pendenza)) {
+            throw new \RuntimeException('Pendenza non trovata');
+        }
+
+        $idDominio = trim((string)($pendenza['idDominio'] ?? $pendenza['dominio']['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
+
+        $rppPaths = $this->buildReceiptPathLookup($pendenza);
+        $rppPath = !empty($rppPaths) ? reset($rppPaths) : '';
+
+        if ($rppPath === '') {
+            throw new \RuntimeException('Ricevuta non disponibile per questa pendenza');
+        }
+
+        // rppPath ha formato /rpp/{idDominio}/{iuv}/{ccp} — lo stesso usato dal template backoffice
+        $segments = explode('/', ltrim($rppPath, '/'));
+        // segments: ['rpp', idDominio, iuv, ccp]
+        if (count($segments) < 4 || $segments[0] !== 'rpp') {
+            throw new \RuntimeException('Formato path ricevuta non riconosciuto: ' . $rppPath);
+        }
+        $pathIdDominio = rawurldecode($segments[1]);
+        $iuv = rawurldecode($segments[2]);
+        $ccp = rawurldecode($segments[3]);
+
+        if ($idDominio === '') {
+            $idDominio = $pathIdDominio;
+        }
+
+        return $this->fetchRicevutaPdfResponse($idDominio, $iuv, $ccp);
+    }
+
+    /**
      * Scarica il PDF ricevuta (RT) da GovPay Backoffice v1 e ritorna la Guzzle response.
      * Estratto da downloadRicevuta() per essere riusabile da FrontofficeApiController.
      * Prova Backoffice v1 /rpp/{iuv}/{ccp}/rt; fallback a Pendenze v2 se configurata.
@@ -4770,7 +4898,7 @@ class PendenzeController
         throw new \RuntimeException('GOVPAY_BACKOFFICE_URL e GOVPAY_PENDENZE_URL non configurati');
     }
 
-    protected function addNotificationToPendenza(string $idPendenza, array $notificationData, ?string $storicoOperazione = null): bool
+    public function addNotificationToPendenza(string $idPendenza, array $notificationData, ?string $storicoOperazione = null): bool
     {
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
