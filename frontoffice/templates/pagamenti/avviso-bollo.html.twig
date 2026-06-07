@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bollettino Marca da Bollo — {{ app_entity.name|default('Ente') }}</title>
+  <title>{{ 'Bollettino Marca da Bollo'|trans }} — {{ app_entity.name|default('Ente') }}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; color: #1a1a1a; margin: 0; padding: 0; background: #f0f2f5; }
@@ -58,47 +58,47 @@
     </div>
     <div class="header-text">
       <h1>{{ app_entity.name|default('Ente') }}</h1>
-      <p>Bollettino pagoPA — Marca da Bollo Telematica</p>
+      <p>{{ 'Bollettino pagoPA — Marca da Bollo Telematica'|trans }}</p>
     </div>
   </div>
 
-  <div><span class="badge-mbt">MARCA DA BOLLO TELEMATICA</span></div>
+  <div><span class="badge-mbt">{{ 'MARCA DA BOLLO TELEMATICA'|trans }}</span></div>
 
   <div class="importo-box">
-    <div class="lbl">Importo da pagare</div>
+    <div class="lbl">{{ 'Importo da pagare'|trans }}</div>
     <div class="amount">€ {{ importoEur }}</div>
   </div>
 
   <div class="fields">
     <div class="field">
-      <div class="lbl">Numero avviso (IUV)</div>
+      <div class="lbl">{{ 'Numero avviso (IUV)'|trans }}</div>
       <div class="val">{{ iuv }}</div>
     </div>
     <div class="field">
-      <div class="lbl">Codice ente</div>
+      <div class="lbl">{{ 'Codice ente'|trans }}</div>
       <div class="val">{{ ente }}</div>
     </div>
     {% if causale %}
     <div class="field full">
-      <div class="lbl">Causale</div>
+      <div class="lbl">{{ 'Causale'|trans }}</div>
       <div class="val">{{ causale }}</div>
     </div>
     {% endif %}
     {% if cfDeb %}
     <div class="field">
-      <div class="lbl">Soggetto pagatore</div>
+      <div class="lbl">{{ 'Soggetto pagatore'|trans }}</div>
       <div class="val">{{ cfDeb }}</div>
     </div>
     {% endif %}
     {% if scadenza %}
     <div class="field">
-      <div class="lbl">Scadenza</div>
+      <div class="lbl">{{ 'Scadenza'|trans }}</div>
       <div class="val">{{ scadenza }}</div>
     </div>
     {% endif %}
     {% if desc is defined and desc|length > 0 %}
     <div class="field full">
-      <div class="lbl">Documenti</div>
+      <div class="lbl">{{ 'Documenti'|trans }}</div>
       <ul class="doc-list">
         {% for d in desc %}
           <li>
@@ -117,20 +117,20 @@
       <div id="qrcode"></div>
     </div>
     <div class="qr-info">
-      <h2>Paga con il QR code</h2>
-      <p>Scansiona il codice con l'<strong>app IO</strong> o con un <strong>terminale POS abilitato pagoPA</strong> per avviare il pagamento.</p>
-      <p>In alternativa, vai su <strong>pagopa.gov.it</strong> e inserisci il numero avviso e il codice ente sopra indicati.</p>
+      <h2>{{ 'Paga con il QR code'|trans }}</h2>
+      <p>{{ 'Scansiona il codice con l\'app IO o con un terminale POS abilitato pagoPA per avviare il pagamento.'|trans }}</p>
+      <p>{{ 'In alternativa, vai su pagopa.gov.it e inserisci il numero avviso e il codice ente sopra indicati.'|trans }}</p>
       <div class="qr-string">{{ qrString }}</div>
     </div>
   </div>
 
   <div class="actions">
-    <button class="btn-print" onclick="window.print()">🖨 Stampa / Salva come PDF</button>
+    <button class="btn-print" onclick="window.print()">{{ '🖨 Stampa / Salva come PDF'|trans }}</button>
   </div>
 
   <div class="footer-note">
-    Bollettino generato da {{ app_entity.name|default('Ente') }} tramite il circuito ufficiale pagoPA.<br>
-    Conserva la ricevuta di pagamento come prova dell'avvenuto versamento.
+    {{ 'Bollettino generato da'|trans }} {{ app_entity.name|default('Ente') }} {{ 'tramite il circuito ufficiale pagoPA.'|trans }}<br>
+    {{ 'Conserva la ricevuta di pagamento come prova dell\'avvenuto versamento.'|trans }}
   </div>
 
 </div>
@@ -150,7 +150,7 @@
       correctLevel: QRCode.CorrectLevel.M
     });
   } else if (el) {
-    el.innerHTML = '<p style="font-size:11px;color:#c00;">QR non disponibile.<br>Usa il numero avviso sopra.</p>';
+    el.innerHTML = '<p style="font-size:11px;color:#c00;">{{ 'QR non disponibile. Usa il numero avviso sopra.'|trans|escape('js') }}</p>';
   }
 })();
 </script>
