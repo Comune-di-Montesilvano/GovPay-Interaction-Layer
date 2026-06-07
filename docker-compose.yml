@@ -34,6 +34,12 @@ services:
       - METADATA_BUILDER_INTERNAL_URL=${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     networks:
       - govpay-network
 
@@ -46,25 +52,32 @@ services:
       - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
       - frontoffice_sp_metadata:/metadata/sp:ro
       - spid_certs:/var/www/html/spid-certs:ro
-      - gil_certs:/var/www/certificate:ro
+      # gil_certs rimosso: frontoffice sidecar non chiama GovPay direttamente
       - gil_images:/var/www/html/public/img:ro
     environment:
       - APP_SUITE=frontoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - APACHE_SERVER_NAME=${APACHE_SERVER_NAME:-localhost}
       - SSL=${SSL:-off}
+      # Sidecar: frontoffice chiama backoffice via API interna (Bearer MASTER_TOKEN).
+      # Nessuna credenziale GovPay/pagoPA necessaria nel frontoffice.
+      - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-http://backoffice}
+      - MASTER_TOKEN=${MASTER_TOKEN}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
+      - AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://auth-proxy-nginx:80/Saml2IDP/metadata}
+      - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
+      # DB — solo per lettura config (settings table). Non contiene credenziali GovPay.
       - DB_HOST=db
       - DB_PORT=3306
       - DB_NAME=${DB_NAME:-govpay}
       - DB_USER=${FRONTOFFICE_DB_USER:-govpay_cittadini}
       - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
-      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      - AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://auth-proxy-nginx:80/Saml2IDP/metadata}
-      - MASTER_TOKEN=${MASTER_TOKEN}
-      - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
+    depends_on:
+      backoffice:
+        condition: service_healthy
     networks:
       - govpay-network
 
@@ -205,7 +218,7 @@ volumes:
     name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
   # Archivi di backup — accessibili a backoffice e metadata-builder
   gil_backups:
-  # Certificati GovPay (mTLS client cert+key) — RW backoffice, RO frontoffice
+  # Certificati GovPay (mTLS client cert+key) — usati solo dal backoffice
   gil_certs:
   # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:
