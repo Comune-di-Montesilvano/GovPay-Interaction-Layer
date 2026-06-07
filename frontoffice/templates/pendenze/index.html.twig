@@ -154,17 +154,42 @@
                 <td style="text-align:right;">
                   <div style="display:flex;gap:4px;justify-content:flex-end;">
                     {% if is_payable and p.id_pendenza and not p.is_bollo|default(false) %}
+                      {% if p.id_pendenza in cart_items_ids|default([]) %}
+                        {# Item già nel carrello — mostra checkmark + bottone rimuovi #}
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-outline btn-cart-row"
+                          data-id="{{ p.id_pendenza }}"
+                          title="{{ 'Nel carrello'|trans }}"
+                          disabled
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+                          <span class="sr-only">{{ 'Nel carrello ✓'|trans }}</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-ghost btn-cart-remove"
+                          data-id="{{ p.id_pendenza }}"
+                          title="{{ 'Rimuovi dal carrello'|trans }}"
+                          aria-label="{{ 'Rimuovi dal carrello'|trans }}"
+                          style="color:var(--c-danger);"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                          <span class="sr-only">{{ 'Rimuovi'|trans }}</span>
+                        </button>
+                      {% else %}
                         <button
                           type="button"
                           class="btn btn-sm btn-primary btn-cart-row"
                           data-id="{{ p.id_pendenza }}"
                           title="{{ 'Aggiungi al carrello'|trans }}"
                           aria-label="{{ 'Aggiungi al carrello'|trans }}"
-                          {{ p.id_pendenza in cart_items_ids|default([]) ? 'disabled' : '' }}
+                          {{ cart_count|default(0) >= 5 ? 'disabled' : '' }}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>
                           <span class="sr-only">{{ 'Aggiungi al carrello'|trans }}</span>
                         </button>
+                      {% endif %}
                     {% endif %}
                     {% if p.detail_url %}
                       <a class="btn btn-sm btn-outline" href="{{ p.detail_url }}" title="{{ 'Dettaglio'|trans }}">
@@ -300,27 +325,55 @@
 })();
 
 (function () {
+  var svgCheck = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>';
+  var svgCart = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l3 12h11l2-8H7"/></svg>';
+  var svgTrash = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>';
+
+  function updateBadges(count) {
+    document.querySelectorAll('.cart-badge').forEach(function (el) {
+      el.textContent = count;
+      el.style.display = count > 0 ? '' : 'none';
+    });
+    // Disabilita tutti i bottoni aggiungi se carrello pieno
+    var full = count >= 5;
+    document.querySelectorAll('.btn-cart-row:not([disabled])').forEach(function (b) {
+      if (!b.classList.contains('btn-outline')) { // non è già "nel carrello"
+        b.disabled = full;
+      }
+    });
+  }
+
+  // Aggiungi al carrello
   document.querySelectorAll('.btn-cart-row').forEach(function (btn) {
+    if (btn.classList.contains('btn-outline')) return; // già nel carrello, skip
     btn.addEventListener('click', function () {
       var id = btn.dataset.id;
       if (!id || btn.disabled) return;
       btn.disabled = true;
-      var body = new URLSearchParams({ idPendenza: id });
       fetch('/carrello/aggiungi', {
         method: 'POST',
-        body: body,
+        body: new URLSearchParams({ idPendenza: id }),
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       })
       .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
       .then(function (data) {
         if (data.error) { btn.disabled = false; alert(data.error); return; }
+        // Trasforma in bottone "nel carrello"
         btn.classList.remove('btn-primary');
         btn.classList.add('btn-outline');
-        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg><span class="sr-only">{{ "Nel carrello ✓"|trans }}</span>';
-        document.querySelectorAll('.cart-badge').forEach(function (el) {
-          el.textContent = data.count || 0;
-          el.style.display = (data.count || 0) > 0 ? '' : 'none';
-        });
+        btn.innerHTML = svgCheck + '<span class="sr-only">{{ "Nel carrello ✓"|trans }}</span>';
+        btn.title = '{{ "Nel carrello"|trans }}';
+        // Inserisci bottone rimuovi accanto
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn-sm btn-ghost btn-cart-remove';
+        rm.dataset.id = id;
+        rm.title = '{{ "Rimuovi dal carrello"|trans }}';
+        rm.style.color = 'var(--c-danger)';
+        rm.innerHTML = svgTrash + '<span class="sr-only">{{ "Rimuovi"|trans }}</span>';
+        btn.insertAdjacentElement('afterend', rm);
+        attachRemove(rm);
+        updateBadges(data.count || 0);
       })
       .catch(function (err) {
         btn.disabled = false;
@@ -328,6 +381,41 @@
       });
     });
   });
+
+  function attachRemove(btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.dataset.id;
+      if (!id || btn.disabled) return;
+      btn.disabled = true;
+      fetch('/carrello/rimuovi', {
+        method: 'POST',
+        body: new URLSearchParams({ idPendenza: id }),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(function (r) { return window.GovPayUi.parseJsonSafely(r); })
+      .then(function (data) {
+        if (data.error) { btn.disabled = false; alert(data.error); return; }
+        // Ripristina bottone aggiungi
+        var addBtn = document.querySelector('.btn-cart-row[data-id="' + id + '"]');
+        if (addBtn) {
+          addBtn.classList.remove('btn-outline');
+          addBtn.classList.add('btn-primary');
+          addBtn.innerHTML = svgCart + '<span class="sr-only">{{ "Aggiungi al carrello"|trans }}</span>';
+          addBtn.title = '{{ "Aggiungi al carrello"|trans }}';
+          addBtn.disabled = false;
+        }
+        btn.remove();
+        updateBadges(data.count || 0);
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        alert(err && err.message ? err.message : '{{ "Servizio temporaneamente non disponibile. Riprova tra poco."|trans|escape("js") }}');
+      });
+    });
+  }
+
+  // Attacca remove ai bottoni già presenti (item già in carrello al caricamento pagina)
+  document.querySelectorAll('.btn-cart-remove').forEach(attachRemove);
 })();
 </script>
 {% endblock %}
