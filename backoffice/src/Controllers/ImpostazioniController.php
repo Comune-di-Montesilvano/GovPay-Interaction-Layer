@@ -2670,28 +2670,51 @@ class ImpostazioniController
         $frontoffice = SettingsRepository::getSection('frontoffice');
         $entity      = SettingsRepository::getSection('entity');
         $iamProxy    = SettingsRepository::getSection('iam_proxy');
+        $pagopa      = SettingsRepository::getSection('pagopa');
+        $govpay      = SettingsRepository::getSection('govpay');
         $ui          = SettingsRepository::getSection('ui');
 
         $config = [
             // frontoffice
-            'FRONTOFFICE_PUBLIC_BASE_URL'  => $frontoffice['public_base_url']   ?? '',
-            'FRONTOFFICE_AUTH_PROXY_TYPE'  => $frontoffice['auth_proxy_type']   ?? '',
+            'FRONTOFFICE_PUBLIC_BASE_URL'       => $frontoffice['public_base_url']          ?? '',
+            'FRONTOFFICE_AUTH_PROXY_TYPE'       => $frontoffice['auth_proxy_type']          ?? '',
+            'BOLLO_TIPO_PENDENZA'               => $frontoffice['bollo_tipo_pendenza']       ?? 'BOLLOT',
+            'FEATURED_SERVICES'                 => $frontoffice['featured_services']         ?? '[]',
             // entity
-            'APP_ENTITY_NAME'              => $entity['name']                   ?? '',
-            'APP_ENTITY_SUFFIX'            => $entity['suffix']                 ?? '',
-            'APP_ENTITY_GOVERNMENT'        => $entity['government']             ?? '',
-            'APP_ENTITY_WEBSITE'           => $entity['url']                    ?? '',
-            'APP_SUPPORT_EMAIL'            => $entity['support_email']          ?? '',
-            'APP_SUPPORT_PHONE'            => $entity['support_phone']          ?? '',
-            'APP_SUPPORT_HOURS'            => $entity['support_hours']          ?? '',
-            'APP_SUPPORT_LOCATION'         => $entity['support_location']       ?? '',
-            // iam_proxy feature flags
-            'ENABLE_SPID'                  => $iamProxy['enable_spid']          ?? '',
-            'ENABLE_CIE_OIDC'              => $iamProxy['enable_cie_oidc']      ?? '',
-            'IAM_PROXY_PUBLIC_BASE_URL'    => $iamProxy['public_base_url']      ?? '',
+            'APP_ENTITY_NAME'                   => $entity['name']                           ?? '',
+            'APP_ENTITY_SUFFIX'                 => $entity['suffix']                         ?? '',
+            'APP_ENTITY_GOVERNMENT'             => $entity['government']                     ?? '',
+            'APP_ENTITY_WEBSITE'                => $entity['url']                            ?? '',
+            'APP_ENTITY_URL'                    => $entity['url']                            ?? '',
+            'APP_ENTITY_IPA_CODE'               => $entity['ipa_code']                       ?? '',
+            'APP_SUPPORT_EMAIL'                 => $entity['support_email']                  ?? '',
+            'APP_SUPPORT_PHONE'                 => $entity['support_phone']                  ?? '',
+            'APP_SUPPORT_HOURS'                 => $entity['support_hours']                  ?? '',
+            'APP_SUPPORT_LOCATION'              => $entity['support_location']               ?? '',
+            'ID_DOMINIO'                        => $entity['id_dominio']                     ?? '',
+            'ID_A2A'                            => $entity['id_a2a']                         ?? '',
+            'AUX_DIGIT'                         => $entity['aux_digit']                      ?? '',
+            // iam_proxy
+            'ENABLE_SPID'                       => $iamProxy['enable_spid']                  ?? '',
+            'ENABLE_CIE_OIDC'                   => $iamProxy['enable_cie_oidc']              ?? '',
+            'IAM_PROXY_PUBLIC_BASE_URL'         => $iamProxy['public_base_url']              ?? '',
+            'SPID_PROXY_PUBLIC_BASE_URL'        => $iamProxy['public_base_url']              ?? '',
+            'SATOSA_CONTACT_PERSON_IPA_CODE'    => $iamProxy['satosa_contact_ipa_code']      ?? '',
+            // pagopa — URL non sensibili
+            'PAGOPA_EBOLLO_MODE'                => $pagopa['ebollo_mode']                    ?? 'legacy',
+            'PAGOPA_EBOLLO_ID_CI_SERVICE'       => $pagopa['ebollo_id_ci_service']           ?? '00005',
+            'PAGOPA_CHECKOUT_COMPANY_NAME'      => $pagopa['checkout_company_name']          ?? '',
+            'PAGOPA_CHECKOUT_EC_BASE_URL'       => $pagopa['checkout_ec_base_url']           ?? '',
+            'PAGOPA_CHECKOUT_RETURN_OK_URL'     => $pagopa['checkout_return_ok_url']         ?? '',
+            'PAGOPA_CHECKOUT_RETURN_CANCEL_URL' => $pagopa['checkout_return_cancel_url']     ?? '',
+            'PAGOPA_CHECKOUT_RETURN_ERROR_URL'  => $pagopa['checkout_return_error_url']      ?? '',
+            // boolean flags — non espone chiavi sensibili
+            'GOVPAY_CHECKOUT_ENABLED'           => ($govpay['checkout_url'] ?? '') !== '' ? '1' : '0',
+            'PAGOPA_CHECKOUT_CONFIGURED'        => ($pagopa['checkout_subscription_key'] ?? '') !== '' ? '1' : '0',
+            'PAGOPA_EBOLLO_ENABLED'             => ($pagopa['ebollo_base_url'] ?? '') !== '' && ($pagopa['ebollo_subscription_key'] ?? '') !== '' ? '1' : '0',
             // ui
-            'APP_LOGO_SRC'                 => $ui['logo_src']                   ?? '',
-            'APP_LOGO_TYPE'                => $ui['logo_type']                  ?? '',
+            'APP_LOGO_SRC'                      => $ui['logo_src']                           ?? '',
+            'APP_LOGO_TYPE'                      => $ui['logo_type']                          ?? '',
         ];
 
         return $this->jsonResponse($config);
@@ -2936,28 +2959,12 @@ class ImpostazioniController
 
     private function buildGovpayHttpClient(): \GuzzleHttp\Client
     {
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        $options = [];
-        if (in_array(strtolower((string)$authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key  = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $pass = SettingsRepository::get('govpay', 'tls_key_password');
-            if (!empty($cert) && !empty($key)) {
-                $options['cert']    = $cert;
-                $options['ssl_key'] = ($pass !== null && $pass !== '') ? [$key, $pass] : $key;
-            }
-        }
-        return new \GuzzleHttp\Client($options);
+        return \App\Services\GovPayClientFactory::makeBackofficeClient();
     }
 
     private function applyGovpayCredentials(object $config): void
     {
-        $user = SettingsRepository::get('govpay', 'user', '');
-        $pass = SettingsRepository::get('govpay', 'password', '');
-        if ($user !== '' && $pass !== '') {
-            $config->setUsername($user);
-            $config->setPassword($pass);
-        }
+        \App\Services\GovPayClientFactory::applyCredentials($config);
     }
 
     private function govpayErrorDetail(mixed $body): string

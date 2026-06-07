@@ -51,10 +51,11 @@ class IoServiceRepository
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ');
         } catch (\PDOException $e) {
-            Logger::getInstance()->error('Errore creazione tabelle IO services', [
+            // Le tabelle probabilmente esistono già ma l'utente DB non ha permessi CREATE.
+            // Logga senza rilanciare — SELECT/INSERT funzioneranno lo stesso.
+            Logger::getInstance()->warning('Errore creazione tabelle IO services (ignoro se già esistono)', [
                 'exception' => $e->getMessage()
             ]);
-            throw $e;
         }
     }
 

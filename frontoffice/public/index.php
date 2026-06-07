@@ -1,14 +1,9 @@
 <?php
 declare(strict_types=1);
 
-use App\Database\EntrateRepository;
-use App\Database\ExternalPaymentTypeRepository;
 use App\Logger;
 use App\Services\ValidationService;
-use GovPay\Pagamenti\Api\PendenzeApi as PagamentiPendenzeApi;
-use GovPay\Pagamenti\Configuration as PagamentiConfiguration;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ClientException;
 use OneLogin\Saml2\Auth as SamlAuth;
 use OneLogin\Saml2\Error as SamlError;
 use OneLogin\Saml2\Metadata;
@@ -16,6 +11,59 @@ use Twig\Environment;
 use Twig\Loader\FilesystemLoader;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+
+// ─── Bootstrap config dal backoffice sidecar ─────────────────────────────────
+// Carica all'avvio le variabili di configurazione dall'endpoint /api/frontoffice/config
+// e le inietta in $_ENV. frontoffice_env_value() le troverà senza toccare il DB.
+// Il frontoffice è dipendente dall'avvio del backoffice (depends_on: service_healthy).
+(static function (): void {
+    $backofficeUrl = rtrim((string)($_ENV['BACKOFFICE_INTERNAL_URL'] ?? getenv('BACKOFFICE_INTERNAL_URL') ?: 'http://backoffice'), '/');
+    $masterToken   = (string)($_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '');
+    if ($masterToken === '') {
+        return;
+    }
+    $cacheFile = sys_get_temp_dir() . '/frontoffice_config_cache.json';
+    $cacheTtl  = 300; // 5 minuti
+
+    // Usa cache su file per non chiamare il backoffice ad ogni request
+    if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
+        $cached = json_decode((string)file_get_contents($cacheFile), true);
+        if (is_array($cached)) {
+            foreach ($cached as $k => $v) {
+                if (!isset($_ENV[$k]) && getenv($k) === false) {
+                    $_ENV[$k] = $v;
+                }
+            }
+            return;
+        }
+    }
+
+    // Fetch dal backoffice
+    $ch = curl_init($backofficeUrl . '/api/frontoffice/config');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 5,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $masterToken, 'Accept: application/json'],
+    ]);
+    $raw     = curl_exec($ch);
+    $status  = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    unset($ch);
+
+    if ($raw !== false && $status === 200 && $curlErr === '') {
+        $data = json_decode((string)$raw, true);
+        if (is_array($data)) {
+            file_put_contents($cacheFile, json_encode($data));
+            foreach ($data as $k => $v) {
+                if (!isset($_ENV[$k]) && getenv($k) === false) {
+                    $_ENV[$k] = $v;
+                }
+            }
+        }
+    }
+})();
+// ─────────────────────────────────────────────────────────────────────────────
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_name('govpay_frontoffice');
@@ -25,7 +73,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
         $isHttps = strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https';
     }
 
-    $authProxyTypeFrontoffice = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
+    $authProxyTypeFrontoffice = strtolower(trim((string)($_ENV['FRONTOFFICE_AUTH_PROXY_TYPE'] ?? getenv('FRONTOFFICE_AUTH_PROXY_TYPE') ?: 'none')));
     $spidEnabledByProfile = in_array($authProxyTypeFrontoffice, ['spid', 'cie', 'spid_cie'], true);
 
     // Per callback SPID via POST cross-site (dal proxy al frontoffice) i browser non inviano cookie SameSite=Lax.
@@ -50,16 +98,6 @@ if (!function_exists('frontoffice_env_value')) {
             $value = $_ENV[$key] ?? $_SERVER[$key] ?? null;
         }
         if ($value === null || $value === '') {
-            try {
-                $cfgValue = \App\Config\Config::get($key, null);
-                if ($cfgValue !== null && $cfgValue !== '') {
-                    return (string) $cfgValue;
-                }
-            } catch (\Throwable) {
-                // Se la risoluzione DB/config non e' disponibile, usa il default.
-            }
-        }
-        if ($value === null || $value === '') {
             return $default ?? '';
         }
         return (string) $value;
@@ -69,6 +107,154 @@ if (!function_exists('frontoffice_env_value')) {
 $env = static function (string $key, ?string $default = null): string {
     return frontoffice_env_value($key, $default);
 };
+
+if (!function_exists('frontoffice_backoffice_api')) {
+    /**
+     * Chiama un endpoint API del backoffice GIL (sidecar pattern).
+     * Autenticazione: Bearer MASTER_TOKEN.
+     * Propaga X-Real-IP dell'utente finale per rate limiting lato backoffice.
+     *
+     * @param string $method  GET | POST | PUT | DELETE
+     * @param string $path    Es. '/api/frontoffice/tipologie'
+     * @param array  $data    Dati query (GET) o body JSON (POST/PUT)
+     * @return array{success:bool,data:mixed,message:string,error_status:int}
+     */
+    function frontoffice_backoffice_api(string $method, string $path, array $data = []): array
+    {
+        $baseUrl     = rtrim(frontoffice_env_value('BACKOFFICE_INTERNAL_URL', 'http://backoffice'), '/');
+        $masterToken = frontoffice_env_value('MASTER_TOKEN', '');
+
+        if ($masterToken === '') {
+            Logger::getInstance()->warning('frontoffice_backoffice_api: MASTER_TOKEN non configurato');
+            return ['success' => false, 'data' => null, 'message' => 'MASTER_TOKEN non configurato', 'error_status' => 503];
+        }
+
+        $method = strtoupper($method);
+        $url    = $baseUrl . $path;
+
+        $headers = [
+            'Authorization' => 'Bearer ' . $masterToken,
+            'Accept'        => 'application/json',
+            'Content-Type'  => 'application/json',
+        ];
+
+        // Propaga IP reale per rate limiting server-side
+        $clientIp = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '');
+        if ($clientIp !== '') {
+            $firstIp = trim(explode(',', $clientIp)[0] ?? '');
+            if ($firstIp !== '') {
+                $headers['X-Real-IP'] = substr($firstIp, 0, 45);
+            }
+        }
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+
+        $headerLines = [];
+        foreach ($headers as $name => $value) {
+            $headerLines[] = $name . ': ' . $value;
+        }
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headerLines);
+
+        if ($method === 'GET' && !empty($data)) {
+            $url .= '?' . http_build_query($data);
+        } elseif (in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data, JSON_UNESCAPED_UNICODE));
+        } elseif ($method !== 'GET') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+        }
+
+        curl_setopt($ch, CURLOPT_URL, $url);
+
+        $rawBody  = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch);
+        unset($ch);
+
+        if ($rawBody === false || $curlErr !== '') {
+            Logger::getInstance()->warning('frontoffice_backoffice_api: errore cURL', [
+                'url'   => $url,
+                'error' => $curlErr,
+            ]);
+            return ['success' => false, 'data' => null, 'message' => 'Errore di rete verso il backoffice', 'error_status' => 503];
+        }
+
+        $decoded = json_decode((string)$rawBody, true);
+        if (!is_array($decoded)) {
+            return ['success' => false, 'data' => null, 'message' => 'Risposta non valida dal backoffice', 'error_status' => 503];
+        }
+
+        $errorStatus = (int)($decoded['error_status'] ?? ($httpCode >= 400 ? $httpCode : 0));
+        return [
+            'success'      => (bool)($decoded['success'] ?? false),
+            'data'         => $decoded['data'] ?? ($decoded['pendenza'] ?? ($decoded['tipologie'] ?? ($decoded['templates'] ?? null))),
+            'message'      => (string)($decoded['message'] ?? ''),
+            'error_status' => $errorStatus,
+            '_raw'         => $decoded,
+        ];
+    }
+}
+
+if (!function_exists('frontoffice_backoffice_api_stream')) {
+    /**
+     * Chiama un endpoint binario del backoffice (es. ricevuta PDF) e streamma la risposta.
+     * Setta header HTTP direttamente e fa echo del body. Non ritorna array.
+     */
+    function frontoffice_backoffice_api_stream(string $path): void
+    {
+        $baseUrl     = rtrim(frontoffice_env_value('BACKOFFICE_INTERNAL_URL', 'http://backoffice'), '/');
+        $masterToken = frontoffice_env_value('MASTER_TOKEN', '');
+
+        if ($masterToken === '') {
+            http_response_code(503);
+            echo 'MASTER_TOKEN non configurato';
+            return;
+        }
+
+        $ch = curl_init($baseUrl . $path);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $masterToken,
+            'Accept: application/pdf',
+        ]);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+
+        $rawResponse = curl_exec($ch);
+        $httpCode    = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize  = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $curlErr     = curl_error($ch);
+        unset($ch);
+
+        if ($rawResponse === false || $curlErr !== '') {
+            http_response_code(503);
+            echo 'Errore di rete verso il backoffice';
+            return;
+        }
+
+        $responseBody = substr((string)$rawResponse, $headerSize);
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            http_response_code($httpCode >= 400 ? $httpCode : 503);
+            echo 'Ricevuta non disponibile';
+            return;
+        }
+
+        $rawHeaders = substr((string)$rawResponse, 0, $headerSize);
+        foreach (explode("\r\n", $rawHeaders) as $line) {
+            $lower = strtolower($line);
+            if (str_starts_with($lower, 'content-type:') || str_starts_with($lower, 'content-disposition:')) {
+                header($line);
+            }
+        }
+        header('X-Content-Type-Options: nosniff');
+        echo $responseBody;
+    }
+}
 
 if (!function_exists('frontoffice_load_pem_value')) {
     function frontoffice_load_pem_value(string $value): string
@@ -119,95 +305,70 @@ if (!function_exists('frontoffice_slugify')) {
 if (!function_exists('frontoffice_load_service_options')) {
     function frontoffice_load_service_options(): array
     {
-        $options = [];
+        $result = frontoffice_backoffice_api('GET', '/api/frontoffice/tipologie');
+        $raw    = $result['_raw'] ?? [];
+
         $internalOptions = [];
         $externalOptions = [];
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
-        if ($idDominio !== '') {
-            try {
-                $repo = new EntrateRepository();
-                $rows = $repo->listByDominio($idDominio);
-                foreach ($rows as $row) {
-                    if ((int)($row['abilitato_backoffice'] ?? 0) !== 1) {
-                        continue;
-                    }
-                    $id = (string)($row['id_entrata'] ?? '');
-                    if ($id === '') {
-                        continue;
-                    }
-                    $label = trim((string)($row['descrizione_effettiva'] ?? $row['descrizione'] ?? $id));
-                    if ($label === '') {
-                        $label = $id;
-                    }
-                    $externalUrl = trim((string)($row['external_url'] ?? '')) ?: null;
-                    $descrizioneEstesa = trim((string)($row['descrizione_estesa'] ?? ''));
-                    $internalOptions[] = [
-                        'id' => $id,
-                        'label' => $label,
-                        'slug' => frontoffice_slugify($label) ?: strtolower($id),
-                        'type' => $externalUrl ? 'external' : 'internal',
-                        'external_url' => $externalUrl,
-                        'descrizione_estesa' => $descrizioneEstesa !== '' ? $descrizioneEstesa : null,
-                    ];
-                }
-                if ($internalOptions !== []) {
-                    $internalCount = count(array_filter($internalOptions, static fn ($opt) => ($opt['type'] ?? 'internal') === 'internal'));
-                    $externalCount = count($internalOptions) - $internalCount;
-                    Logger::getInstance()->info('Tipologie frontoffice caricate dal DB', [
-                        'idDominio' => $idDominio,
-                        'internal' => $internalCount,
-                        'external' => $externalCount,
-                    ]);
-                }
-            } catch (\Throwable $e) {
-                Logger::getInstance()->warning('Impossibile caricare le tipologie per il frontoffice', ['error' => $e->getMessage()]);
+
+        foreach ((array)($raw['tipologie'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
             }
+            if ((int)($row['abilitato_backoffice'] ?? 0) !== 1) {
+                continue;
+            }
+            $id = (string)($row['id_entrata'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $label = trim((string)($row['descrizione_effettiva'] ?? $row['descrizione'] ?? $id));
+            if ($label === '') {
+                $label = $id;
+            }
+            $externalUrl      = trim((string)($row['external_url'] ?? '')) ?: null;
+            $descrizioneEstesa = trim((string)($row['descrizione_estesa'] ?? ''));
+            $internalOptions[] = [
+                'id'                => $id,
+                'label'             => $label,
+                'slug'              => frontoffice_slugify($label) ?: strtolower($id),
+                'type'              => $externalUrl ? 'external' : 'internal',
+                'external_url'      => $externalUrl,
+                'descrizione_estesa'=> $descrizioneEstesa !== '' ? $descrizioneEstesa : null,
+            ];
         }
 
-        // Tipologie di pagamento esterne (catalogo locale) - sempre indipendenti dal dominio
-        try {
-            $repoExternal = new ExternalPaymentTypeRepository();
-            $rows = $repoExternal->listAll();
-            foreach ($rows as $row) {
-                if (!is_array($row)) {
-                    continue;
-                }
-                $id = (string)($row['id'] ?? '');
-                if ($id === '') {
-                    continue;
-                }
-                $label = trim((string)($row['descrizione'] ?? ''));
-                if ($label === '') {
-                    $label = 'Servizio esterno ' . $id;
-                }
-                $url = trim((string)($row['url'] ?? ''));
-                if ($url === '') {
-                    continue;
-                }
-                $descrizioneEstesa = trim((string)($row['descrizione_estesa'] ?? ''));
-                $externalOptions[] = [
-                    'id' => 'EXT:' . $id,
-                    'label' => $label,
-                    'type' => 'external',
-                    'external_url' => $url,
-                    'descrizione_estesa' => $descrizioneEstesa !== '' ? $descrizioneEstesa : null,
-                ];
+        foreach ((array)($raw['tipologie_esterne'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
             }
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile caricare le tipologie esterne per il frontoffice', ['error' => $e->getMessage()]);
+            $id  = (string)($row['id'] ?? '');
+            $url = trim((string)($row['url'] ?? ''));
+            if ($id === '' || $url === '') {
+                continue;
+            }
+            $label            = trim((string)($row['descrizione'] ?? '')) ?: 'Servizio esterno ' . $id;
+            $descrizioneEstesa = trim((string)($row['descrizione_estesa'] ?? ''));
+            $externalOptions[] = [
+                'id'                => 'EXT:' . $id,
+                'label'             => $label,
+                'type'              => 'external',
+                'external_url'      => $url,
+                'descrizione_estesa'=> $descrizioneEstesa !== '' ? $descrizioneEstesa : null,
+            ];
         }
 
         $options = array_merge($internalOptions, $externalOptions);
 
         if ($options === []) {
-            Logger::getInstance()->warning('Tipologie frontoffice assenti dal DB: uso fallback statico', ['idDominio' => $idDominio]);
+            Logger::getInstance()->warning('Tipologie frontoffice assenti: uso fallback statico');
             $options = [
-                ['id' => 'SERV_MENSA', 'label' => 'Mensa e servizi scolastici', 'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
-                ['id' => 'SERV_NIDI', 'label' => "Nidi d'infanzia / rette asilo", 'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
-                ['id' => 'SERV_OCCUPAZIONE_SUOLO', 'label' => 'Occupazione suolo pubblico', 'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
-                ['id' => 'SERV_SANZIONI', 'label' => 'Sanzioni e contravvenzioni', 'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
-                ['id' => 'SERV_DIRITTI_SEGRETERIA', 'label' => 'Diritti di segreteria e certificati', 'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
-                ['id' => 'SERV_ALTRO', 'label' => 'Altro pagamento spontaneo', 'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
+                ['id' => 'SERV_MENSA',              'label' => 'Mensa e servizi scolastici',          'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
+                ['id' => 'SERV_NIDI',               'label' => "Nidi d'infanzia / rette asilo",        'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
+                ['id' => 'SERV_OCCUPAZIONE_SUOLO',  'label' => 'Occupazione suolo pubblico',           'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
+                ['id' => 'SERV_SANZIONI',            'label' => 'Sanzioni e contravvenzioni',           'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
+                ['id' => 'SERV_DIRITTI_SEGRETERIA', 'label' => 'Diritti di segreteria e certificati',  'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
+                ['id' => 'SERV_ALTRO',              'label' => 'Altro pagamento spontaneo',            'type' => 'internal', 'external_url' => null, 'descrizione_estesa' => null],
             ];
         }
 
@@ -225,70 +386,6 @@ if (!function_exists('frontoffice_find_service_option')) {
             }
         }
         return null;
-    }
-}
-
-if (!function_exists('frontoffice_basic_auth')) {
-    function frontoffice_basic_auth(): ?array
-    {
-        $username = \App\Config\SettingsRepository::get('govpay', 'user', '') ?: frontoffice_env_value('GOVPAY_USER', '');
-        $password = \App\Config\SettingsRepository::get('govpay', 'password', '') ?: frontoffice_env_value('GOVPAY_PASSWORD', '');
-        if ($username !== '' && $password !== '') {
-            return [$username, $password];
-        }
-        return null;
-    }
-}
-
-if (!function_exists('frontoffice_govpay_client_options')) {
-    function frontoffice_govpay_client_options(): array
-    {
-        $options = [];
-        $authMethod = \App\Config\SettingsRepository::get('govpay', 'authentication_method', '') ?: frontoffice_env_value('AUTHENTICATION_GOVPAY', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = \App\Config\SettingsRepository::get('govpay', 'tls_cert_path', '') ?: frontoffice_env_value('GOVPAY_TLS_CERT', '');
-            $key = \App\Config\SettingsRepository::get('govpay', 'tls_key_path', '') ?: frontoffice_env_value('GOVPAY_TLS_KEY', '');
-            $keyPass = \App\Config\SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-            if ($cert === '' || $key === '') {
-                throw new \RuntimeException('mTLS abilitato ma certificati GovPay non configurati');
-            }
-            $options['cert'] = $cert;
-            $options['ssl_key'] = ($keyPass !== null && $keyPass !== '')
-                ? [$key, $keyPass]
-                : $key;
-        }
-        return $options;
-    }
-}
-
-if (!function_exists('frontoffice_pagamenti_api_client')) {
-    function frontoffice_pagamenti_api_client(): ?PagamentiPendenzeApi
-    {
-        $pagamentiUrl = frontoffice_env_value('GOVPAY_PAGAMENTI_URL', '');
-        if ($pagamentiUrl === '') {
-            Logger::getInstance()->warning('GOVPAY_PAGAMENTI_URL non impostata per il frontoffice');
-            return null;
-        }
-        if (!class_exists(PagamentiPendenzeApi::class)) {
-            Logger::getInstance()->warning('Client GovPay Pagamenti non disponibile nel frontoffice');
-            return null;
-        }
-
-        try {
-            $config = new PagamentiConfiguration();
-            $config->setHost(rtrim($pagamentiUrl, '/'));
-            if ($auth = frontoffice_basic_auth()) {
-                $config->setUsername($auth[0]);
-                $config->setPassword($auth[1]);
-            }
-            $client = new Client(frontoffice_govpay_client_options());
-            return new PagamentiPendenzeApi($client, $config);
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile istanziare il client GovPay Pagamenti', [
-                'error' => $e->getMessage(),
-            ]);
-            return null;
-        }
     }
 }
 
@@ -587,7 +684,7 @@ if (!function_exists('frontoffice_spid_mode')) {
     function frontoffice_spid_mode(): string
     {
         // Sorgente canonica: configurazione Frontoffice da UI.
-        $frontofficeType = strtolower(trim((string)(\App\Config\SettingsRepository::get('frontoffice', 'auth_proxy_type', 'none') ?? 'none')));
+        $frontofficeType = strtolower(trim((string)($_ENV['FRONTOFFICE_AUTH_PROXY_TYPE'] ?? getenv('FRONTOFFICE_AUTH_PROXY_TYPE') ?: 'none')));
         if (in_array($frontofficeType, ['spid', 'cie', 'spid_cie'], true)) {
             return 'auth-proxy';
         }
@@ -1227,22 +1324,27 @@ if (!function_exists('frontoffice_process_bollo_request')) {
         }
 
         // ID Dominio
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             $errors[] = 'Configurazione mancante: ID_DOMINIO non impostato.';
         }
 
-        // Lookup servizio bollo in DB (tipoBollo dalla config dell'entrata)
-        $idTipo    = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        // Lookup tipo bollo tramite backoffice API (evita accesso DB diretto)
+        $idTipo    = frontoffice_env_value('BOLLO_TIPO_PENDENZA', 'BOLLOT');
+        if ($idTipo === '') {
+            $idTipo = 'BOLLOT';
+        }
         $tipoBollo = '01';
         if ($idDominio !== '') {
-            try {
-                $bolloDetails = (new \App\Database\EntrateRepository())->findDetails($idDominio, $idTipo);
-                if ($bolloDetails && !empty($bolloDetails['tipo_bollo'])) {
-                    $rawTipoBollo = (string) $bolloDetails['tipo_bollo'];
-                    $tipoBollo = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '01';
+            $tipologieResult = frontoffice_backoffice_api('GET', '/api/frontoffice/tipologie');
+            foreach ((array)($tipologieResult['_raw']['tipologie'] ?? []) as $row) {
+                if (is_array($row) && (string)($row['id_entrata'] ?? '') === $idTipo) {
+                    $rawTipoBollo = (string)($row['tipo_bollo'] ?? '');
+                    if (in_array($rawTipoBollo, ['01'], true)) {
+                        $tipoBollo = $rawTipoBollo;
+                    }
+                    break;
                 }
-            } catch (\Throwable $_) {
             }
         }
 
@@ -1411,114 +1513,19 @@ if (!function_exists('frontoffice_normalize_cellulare')) {
 if (!function_exists('frontoffice_add_notification_to_pendenza')) {
     function frontoffice_add_notification_to_pendenza(string $idPendenza, array $notificationData): bool
     {
-        $backofficeUrl = frontoffice_env_value('GOVPAY_BACKOFFICE_URL', '');
-        $idA2A         = frontoffice_env_value('ID_A2A', '');
-        if ($backofficeUrl === '' || $idA2A === '' || $idPendenza === '') {
+        if ($idPendenza === '') {
             return false;
         }
         try {
-            $opts = frontoffice_govpay_client_options();
-            $opts['headers']['Accept'] = 'application/json';
-            $opts['http_errors'] = false;
-            if ($auth = frontoffice_basic_auth()) {
-                $opts['auth'] = $auth;
-            }
-            $client = new Client($opts);
-            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-
-            $resp = $client->request('GET', $url);
-            $pendenza = json_decode((string)$resp->getBody(), true);
-            if (!is_array($pendenza)) {
-                return false;
-            }
-
-            $allowedKeys = [
-                'numeroAvviso','tassonomia','dataValidita','datiAllegati','tassonomiaAvviso',
-                'importo','dataScadenza','dataPromemoriaScadenza','idUnitaOperativa','idDominio','allegati',
-                'dataCaricamento','annoRiferimento','divisione','nome','causale','soggettoPagatore',
-                'dataNotificaAvviso','cartellaPagamento','documento','proprieta','direzione','idTipoPendenza','voci',
-            ];
-            $put = array_intersect_key($pendenza, array_flip($allowedKeys));
-            if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
-                $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
-            }
-
-            // Sanitizza le voci (voci)
-            $hasBolloVoce = false;
-            if (!empty($put['voci']) && is_array($put['voci'])) {
-                foreach ($put['voci'] as &$voce) {
-                    if (!is_array($voce)) {
-                        continue;
-                    }
-
-                    unset($voce['indice'], $voce['stato']);
-
-                    if (
-                        !empty($voce['tipoBollo']) ||
-                        !empty($voce['hashDocumento']) ||
-                        !empty($voce['provinciaResidenza'])
-                    ) {
-                        $hasBolloVoce = true;
-                        $voce['tipoBollo'] = (string)($voce['tipoBollo'] ?? '');
-                        if ($voce['tipoBollo'] === '') {
-                            $voce['tipoBollo'] = '01';
-                        }
-
-                        if (empty($voce['hashDocumento'])) {
-                            $seed = (string)($voce['descrizione'] ?? '') . '|' . (string)($voce['idVocePendenza'] ?? uniqid('', true));
-                            $voce['hashDocumento'] = base64_encode(hash('sha256', $seed, true));
-                        }
-
-                        $prov = strtoupper(trim((string)($voce['provinciaResidenza'] ?? '')));
-                        if ($prov !== '') {
-                            $voce['provinciaResidenza'] = $prov;
-                        }
-                    }
-                }
-                unset($voce);
-            }
-
-            if ($hasBolloVoce && empty($put['tassonomiaAvviso'])) {
-                $put['tassonomiaAvviso'] = 'Imposte e tasse';
-            }
-
-            if (!isset($put['datiAllegati']) || !is_array($put['datiAllegati'])) {
-                $put['datiAllegati'] = [];
-            }
-            if (!isset($put['datiAllegati']['notifiche']) || !is_array($put['datiAllegati']['notifiche'])) {
-                $put['datiAllegati']['notifiche'] = [];
-            }
-            $put['datiAllegati']['notifiche'][] = [
-                'timestamp'    => $notificationData['timestamp']   ?? date('Y-m-d H:i:s'),
-                'tipo'         => $notificationData['tipo']         ?? 'creazione_pendenza',
-                'canale'       => $notificationData['canale']       ?? 'email',
-                'destinatario' => $notificationData['destinatario'] ?? '',
-                'esito'        => $notificationData['esito']        ?? 'OK',
-                'message_id'   => $notificationData['message_id']  ?? null,
-                'errore'       => $notificationData['errore']       ?? null,
-            ];
-
-            $putOpts = $opts;
-            $putOpts['headers']['Content-Type'] = 'application/json';
-            $putOpts['body'] = json_encode($put, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            
-            $putResp = $client->request('PUT', $url, $putOpts);
-            $putCode = $putResp->getStatusCode();
-            if ($putCode < 200 || $putCode >= 300) {
-                throw new \RuntimeException('GovPay PUT returned status ' . $putCode . ': ' . (string)$putResp->getBody());
-            }
-            return true;
+            $result = frontoffice_backoffice_api(
+                'POST',
+                '/api/frontoffice/pendenze/' . rawurlencode($idPendenza) . '/notifiche',
+                $notificationData
+            );
+            return (bool)($result['_raw']['updated'] ?? false);
         } catch (\Throwable $e) {
-            $detail = '';
-            if ($e instanceof \GuzzleHttp\Exception\RequestException) {
-                $resp = $e->getResponse();
-                if ($resp) {
-                    $detail = (string)$resp->getBody();
-                }
-            }
             Logger::getInstance()->warning('frontoffice_add_notification_to_pendenza failed', [
                 'err' => $e->getMessage(),
-                'detail' => $detail
             ]);
             return false;
         }
@@ -1570,163 +1577,48 @@ if (!function_exists('frontoffice_extract_numero_avviso')) {
 }
 
 if (!function_exists('frontoffice_send_pendenza_to_backoffice')) {
+    /**
+     * Delega la creazione pendenza al backoffice sidecar via API.
+     * Il backoffice risolve voci (se non presenti), iuv_prefix e chiama GovPay.
+     */
     function frontoffice_send_pendenza_to_backoffice(array $payload): array
     {
-        $backofficeUrl = frontoffice_env_value('GOVPAY_BACKOFFICE_URL', '');
-        $idA2A = frontoffice_env_value('ID_A2A', '');
-        if ($backofficeUrl === '' || $idA2A === '') {
-            return ['success' => false, 'errors' => ['Configurazione GovPay incompleta (GOVPAY_BACKOFFICE_URL o ID_A2A mancanti).']];
-        }
-
-        // Lookup iuv_prefix per la tipologia (solo DB, nessuna HTTP qui)
-        $iuvPrefix = null;
-        $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
-        $idDominioPayload = trim((string)($payload['idDominio'] ?? \App\Config\SettingsRepository::get('entity', 'id_dominio', '')));
-        if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
-            try {
-                $details = (new \App\Database\EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
-                $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
-            } catch (\Throwable $_) {
-                // fallback a GIL-
-            }
-        }
-
         unset($payload['idPendenza']);
-
-        try {
-            $client = new Client(frontoffice_govpay_client_options());
-
-            // Generazione ID pendenza
-            if ($iuvPrefix !== null) {
-                $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
-                if ($auth = frontoffice_basic_auth()) {
-                    $chkOpts['auth'] = $auth;
-                }
-                $maxAttempts = 10;
-                $idPendenza = '';
-                for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-                    $totalLen = 18;
-                    $suffixLen = max(1, $totalLen - strlen($iuvPrefix));
-                    $datePart = sprintf('%s%03d%s%s', date('y'), (int)date('z') + 1, date('H'), date('i'));
-                    if ($suffixLen >= 9) {
-                        $rand = '';
-                        for ($si = 0; $si < $suffixLen - 9; $si++) { $rand .= (string)random_int(0, 9); }
-                        $candidate = $iuvPrefix . $datePart . $rand;
-                    } else {
-                        $suffix = '';
-                        for ($si = 0; $si < $suffixLen; $si++) { $suffix .= (string)random_int(0, 9); }
-                        $candidate = $iuvPrefix . $suffix;
-                    }
-                    $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
-                    try {
-                        $chkResp = $client->request('GET', $chkUrl, $chkOpts);
-                        $chkCode = $chkResp->getStatusCode();
-                        if ($chkCode === 404 || $chkCode !== 200) {
-                            $idPendenza = $candidate;
-                            break;
-                        }
-                    } catch (\Throwable $_) {
-                        $idPendenza = $candidate;
-                        break;
-                    }
-                }
-                if ($idPendenza === '') {
-                    return ['success' => false, 'errors' => ['IUV vincolato: impossibile generare ID univoco dopo ' . $maxAttempts . ' tentativi']];
-                }
-                $payload['numeroAvviso'] = $idPendenza;
-            } else {
-                $idPendenza = frontoffice_generate_pendenza_id();
-            }
-
-            $requestOptions = [
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'Connection' => 'close',
-                ],
-                'json' => $payload,
-            ];
-            if ($auth = frontoffice_basic_auth()) {
-                $requestOptions['auth'] = $auth;
-            }
-
-            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-            $resp = $client->request('PUT', $url, $requestOptions);
-            $data = json_decode((string)$resp->getBody(), true);
-            return ['success' => true, 'idPendenza' => $idPendenza, 'response' => $data];
-        } catch (ClientException $e) {
-            $body = '';
-            if ($e->getResponse()) {
-                $body = (string)$e->getResponse()->getBody();
-            }
-            $message = $body !== '' ? $body : $e->getMessage();
-            $displayMessage = $message;
-            if ($body !== '') {
-                $decoded = json_decode($body, true);
-                if (json_last_error() === JSON_ERROR_NONE && isset($decoded['dettaglio'])) {
-                    $displayMessage = $decoded['dettaglio'];
-                }
-            }
-            Logger::getInstance()->error('Errore invio pendenza frontoffice', ['error' => $message]);
-            return ['success' => false, 'errors' => [Logger::sanitizeErrorForDisplay($displayMessage)]];
-        } catch (\Throwable $e) {
-            Logger::getInstance()->error('Errore inatteso invio pendenza frontoffice', ['error' => $e->getMessage()]);
-            return ['success' => false, 'errors' => [Logger::sanitizeErrorForDisplay($e->getMessage())]];
+        $result = frontoffice_backoffice_api('POST', '/api/frontoffice/pendenze', $payload);
+        if (!$result['success']) {
+            $msg = $result['message'] ?: 'Invio pendenza non riuscito.';
+            Logger::getInstance()->error('Errore invio pendenza frontoffice via backoffice API', ['error' => $msg]);
+            return ['success' => false, 'errors' => [$msg]];
         }
+        return [
+            'success'    => true,
+            'idPendenza' => (string)($result['_raw']['idPendenza'] ?? ''),
+            'response'   => $result['_raw']['response'] ?? null,
+        ];
     }
 }
 
 if (!function_exists('frontoffice_fetch_pagamenti_detail')) {
     function frontoffice_fetch_pagamenti_detail(string $idPendenza): ?array
     {
-        $idA2A = frontoffice_env_value('ID_A2A', '');
-        if ($idA2A === '' || $idPendenza === '') {
+        if ($idPendenza === '') {
             return null;
         }
-        $api = frontoffice_pagamenti_api_client();
-        if ($api === null) {
+        $result = frontoffice_backoffice_api('GET', '/api/frontoffice/pendenze/' . rawurlencode($idPendenza));
+        if (!$result['success']) {
+            Logger::getInstance()->warning('Impossibile recuperare il dettaglio della pendenza via backoffice API', ['idPendenza' => $idPendenza]);
             return null;
         }
-        try {
-            $result = $api->getPendenza($idA2A, $idPendenza);
-            return json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-        } catch (\InvalidArgumentException $e) {
-            // Generated client rejected an unexpected enum value (e.g. tipoBollo stored with label instead of code).
-            // Fall back to raw HTTP to get the pendenza data without strict deserialization validation.
-            Logger::getInstance()->warning('Fallback raw fetch pendenza per errore deserializzazione', ['error' => $e->getMessage()]);
-            return frontoffice_fetch_pagamenti_detail_raw($idA2A, $idPendenza);
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile recuperare il dettaglio della pendenza da GovPay Pagamenti', ['error' => $e->getMessage()]);
-            return null;
-        }
+        $pendenza = $result['_raw']['pendenza'] ?? null;
+        return is_array($pendenza) ? $pendenza : null;
     }
 }
 
 if (!function_exists('frontoffice_fetch_pagamenti_detail_raw')) {
+    // Mantenuta per compatibilità — delega a frontoffice_fetch_pagamenti_detail
     function frontoffice_fetch_pagamenti_detail_raw(string $idA2A, string $idPendenza): ?array
     {
-        $baseUrl = frontoffice_govpay_pagamenti_base_url();
-        if ($baseUrl === '') {
-            return null;
-        }
-        try {
-            $guzzleOptions = frontoffice_govpay_client_options();
-            $guzzleOptions['headers'] = ['Accept' => 'application/json'];
-            $guzzleOptions['http_errors'] = false;
-            if ($auth = frontoffice_basic_auth()) {
-                $guzzleOptions['auth'] = [$auth[0], $auth[1]];
-            }
-            $client = new Client($guzzleOptions);
-            $url = $baseUrl . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-            $response = $client->get($url);
-            if ($response->getStatusCode() !== 200) {
-                return null;
-            }
-            $data = json_decode((string)$response->getBody(), true);
-            return is_array($data) ? $data : null;
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile recuperare il dettaglio della pendenza (raw fallback)', ['error' => $e->getMessage()]);
-            return null;
-        }
+        return frontoffice_fetch_pagamenti_detail($idPendenza);
     }
 }
 
@@ -1775,42 +1667,23 @@ if (!function_exists('frontoffice_pendenza_belongs_to_cf')) {
 if (!function_exists('frontoffice_fetch_pendenza_by_avviso')) {
     function frontoffice_fetch_pendenza_by_avviso(string $idDominio, string $numeroAvviso): ?array
     {
-        $pendenzeHost = frontoffice_govpay_pendenze_base_url();
-        if ($pendenzeHost === '' || $idDominio === '' || $numeroAvviso === '') {
+        if ($idDominio === '' || $numeroAvviso === '') {
             return null;
         }
-        if (!class_exists('\GovPay\Pendenze\Api\PendenzeApi') || !class_exists('\GovPay\Pendenze\Configuration')) {
-            return null;
-        }
-
-        try {
-            $config = new \GovPay\Pendenze\Configuration();
-            $config->setHost(rtrim($pendenzeHost, '/'));
-            $guzzleOptions = frontoffice_govpay_client_options();
-            if ($auth = frontoffice_basic_auth()) {
-                $guzzleOptions['auth'] = [$auth[0], $auth[1]];
-            }
-            $httpClient = new Client($guzzleOptions);
-            $api = new \GovPay\Pendenze\Api\PendenzeApi($httpClient, $config);
-
-            $result = $api->getPendenzaByAvviso($idDominio, $numeroAvviso);
-            return json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-        } catch (ClientException $e) {
-            $code = $e->getResponse() ? $e->getResponse()->getStatusCode() : 0;
-            Logger::getInstance()->info('Pendenza non trovata via Pendenze v2 (byAvviso)', [
-                'idDominio' => $idDominio,
+        $result = frontoffice_backoffice_api(
+            'GET',
+            '/api/frontoffice/pendenze/avviso/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
+        );
+        if (!$result['success']) {
+            Logger::getInstance()->info('Pendenza non trovata via backoffice API (byAvviso)', [
+                'idDominio'    => $idDominio,
                 'numeroAvviso' => $numeroAvviso,
-                'status' => $code,
-            ]);
-            return null;
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Errore durante la ricerca avviso via Pendenze v2 (byAvviso)', [
-                'idDominio' => $idDominio,
-                'numeroAvviso' => $numeroAvviso,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
+                'error_status' => $result['error_status'],
             ]);
             return null;
         }
+        $pendenza = $result['_raw']['pendenza'] ?? null;
+        return is_array($pendenza) ? $pendenza : null;
     }
 }
 
@@ -1864,7 +1737,15 @@ if (!function_exists('frontoffice_is_pendenza_paid')) {
 if (!function_exists('frontoffice_extract_ricevuta_identifiers_from_pendenza_detail')) {
     function frontoffice_extract_ricevuta_identifiers_from_pendenza_detail(array $detail): array
     {
+        // GovPay Backoffice v1 usa 'iuvPagamento' o 'numeroAvviso', non 'iuv'
         $iuv = trim((string)($detail['iuv'] ?? ''));
+        if ($iuv === '') {
+            $iuv = trim((string)($detail['iuvPagamento'] ?? ''));
+        }
+        if ($iuv === '') {
+            $iuv = trim((string)($detail['numeroAvviso'] ?? ''));
+        }
+
         $idRicevuta = trim((string)($detail['idRicevuta'] ?? ''));
         $ccp = '';
         foreach (['ccp', 'codiceContestoPagamento', 'codice_contesto_pagamento'] as $k) {
@@ -1876,35 +1757,48 @@ if (!function_exists('frontoffice_extract_ricevuta_identifiers_from_pendenza_det
             }
         }
 
+        // GovPay Backoffice v1 usa 'riscossioni' (array), non 'riscossione' (singolare)
         $voci = $detail['voci'] ?? null;
         if (is_array($voci)) {
             foreach ($voci as $voce) {
                 if (!is_array($voce)) {
                     continue;
                 }
-                $riscossione = $voce['riscossione'] ?? null;
-                if (!is_array($riscossione)) {
+                $riscossioni = $voce['riscossioni'] ?? null;
+                if (!is_array($riscossioni)) {
                     continue;
                 }
-                if ($iuv === '') {
-                    $iuv = trim((string)($riscossione['iuv'] ?? ''));
-                }
-                if ($idRicevuta === '') {
-                    $idRicevuta = trim((string)($riscossione['idRicevuta'] ?? ''));
-                }
-                if ($ccp === '') {
-                    foreach (['ccp', 'codiceContestoPagamento', 'codice_contesto_pagamento'] as $k) {
-                        if (isset($riscossione[$k]) && is_scalar($riscossione[$k])) {
-                            $ccp = trim((string)$riscossione[$k]);
-                            if ($ccp !== '') {
-                                break;
-                            }
-                        }
+                foreach ($riscossioni as $riscossione) {
+                    if (!is_array($riscossione)) {
+                        continue;
+                    }
+                    if ($iuv === '') {
+                        $iuv = trim((string)($riscossione['iuv'] ?? ''));
+                    }
+                    if ($idRicevuta === '') {
+                        $idRicevuta = trim((string)($riscossione['idRicevuta'] ?? ''));
                     }
                 }
+            }
+        }
 
-                if ($iuv !== '' && $idRicevuta !== '' && $ccp !== '') {
-                    break;
+        // CCP vive in detail['rpp'][*]['rpt']['datiVersamento']['codiceContestoPagamento']
+        if ($ccp === '') {
+            $rppList = $detail['rpp'] ?? null;
+            if (is_array($rppList)) {
+                foreach ($rppList as $rppEntry) {
+                    if (!is_array($rppEntry)) {
+                        continue;
+                    }
+                    $candidate = trim((string)(
+                        $rppEntry['rpt']['datiVersamento']['codiceContestoPagamento']
+                        ?? $rppEntry['rpt']['creditorReferenceId']
+                        ?? ''
+                    ));
+                    if ($candidate !== '') {
+                        $ccp = $candidate;
+                        break;
+                    }
                 }
             }
         }
@@ -1917,304 +1811,75 @@ if (!function_exists('frontoffice_extract_ricevuta_identifiers_from_pendenza_det
     }
 }
 
-if (!function_exists('frontoffice_govpay_pendenze_base_url')) {
-    function frontoffice_govpay_pendenze_base_url(): string
-    {
-        $pendenzeUrl = frontoffice_env_value('GOVPAY_PENDENZE_URL', '');
-        return rtrim($pendenzeUrl, '/');
-    }
-}
-
-if (!function_exists('frontoffice_govpay_pagamenti_base_url')) {
-    function frontoffice_govpay_pagamenti_base_url(): string
-    {
-        $pagamentiUrl = frontoffice_env_value('GOVPAY_PAGAMENTI_URL', '');
-        return rtrim($pagamentiUrl, '/');
-    }
-}
-
 if (!function_exists('frontoffice_fetch_ricevute_for_iuv')) {
+    // Con Backoffice v1 il ccp viene estratto dalla pendenza detail (riscossioni).
+    // Questo fallback non è più necessario — mantenuto come stub per compatibilità.
     function frontoffice_fetch_ricevute_for_iuv(string $idDominio, string $iuv): ?array
     {
-        $baseUrl = frontoffice_govpay_pagamenti_base_url();
-        if ($baseUrl === '' || $idDominio === '' || $iuv === '') {
-            return null;
-        }
-
-        try {
-            $client = new Client(frontoffice_govpay_client_options());
-            $options = [
-                'headers' => [
-                    'Accept' => 'application/json',
-                ],
-            ];
-            if ($auth = frontoffice_basic_auth()) {
-                $options['auth'] = [$auth[0], $auth[1]];
-            }
-            // Allineato al backoffice (diag): richiedi solo ricevute con esito positivo.
-            $options['query'] = ['esito' => 'ESEGUITO'];
-
-            $url = $baseUrl . '/ricevute/' . rawurlencode($idDominio) . '/' . rawurlencode($iuv);
-            $response = $client->request('GET', $url, $options);
-            $status = $response->getStatusCode();
-            if ($status < 200 || $status >= 300) {
-                return null;
-            }
-
-            $body = (string)$response->getBody();
-            if ($body === '') {
-                return null;
-            }
-            $data = json_decode($body, true);
-            return is_array($data) ? $data : null;
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Errore durante la ricerca ricevute GovPay', [
-                'idDominio' => $idDominio,
-                'iuv' => $iuv,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            return null;
-        }
+        return null;
     }
 }
 
 if (!function_exists('frontoffice_stream_rt_pdf')) {
     function frontoffice_stream_rt_pdf(string $idDominio, string $iuv, string $ccp): void
     {
-        $baseUrl = frontoffice_govpay_pendenze_base_url();
         if ($idDominio === '' || $iuv === '' || $ccp === '') {
             http_response_code(404);
             echo 'Ricevuta non disponibile.';
             return;
         }
-        if ($baseUrl === '') {
-            http_response_code(503);
-            echo 'Configurazione mancante: GOVPAY_PENDENZE_URL non impostata.';
-            return;
-        }
-
-        try {
-            $client = new Client(frontoffice_govpay_client_options());
-            $options = [
-                'headers' => [
-                    'Accept' => 'application/pdf',
-                ],
-            ];
-            if ($auth = frontoffice_basic_auth()) {
-                $options['auth'] = [$auth[0], $auth[1]];
-            }
-
-            $url = $baseUrl . '/rpp/' . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($ccp) . '/rt';
-            $response = $client->request('GET', $url, $options);
-            $status = $response->getStatusCode();
-            if ($status < 200 || $status >= 300) {
-                http_response_code(404);
-                echo 'Ricevuta non disponibile.';
-                return;
-            }
-
-            $contentType = strtolower(implode(' ', $response->getHeader('Content-Type')));
-            if ($contentType !== '' && strpos($contentType, 'application/pdf') === false) {
-                http_response_code(503);
-                echo 'La ricevuta non è disponibile in formato PDF.';
-                return;
-            }
-
-            $filename = 'rt-' . preg_replace('/[^A-Za-z0-9._-]+/', '_', $iuv . '_' . $ccp) . '.pdf';
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            header('X-Content-Type-Options: nosniff');
-            echo (string)$response->getBody();
-            return;
-        } catch (ClientException $e) {
-            http_response_code(($e->getResponse() ? $e->getResponse()->getStatusCode() : 404) ?: 404);
-            echo 'Ricevuta non disponibile.';
-            return;
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Errore durante lo scarico PDF RT (Pendenze /rpp)', [
-                'idDominio' => $idDominio,
-                'iuv' => $iuv,
-                'ccp' => $ccp,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            http_response_code(503);
-            echo 'Al momento non riusciamo a scaricare la ricevuta. Riprova più tardi.';
-        }
+        $path = '/api/frontoffice/ricevuta/'
+            . rawurlencode($idDominio) . '/'
+            . rawurlencode($iuv) . '/'
+            . rawurlencode($ccp);
+        frontoffice_backoffice_api_stream($path);
     }
 }
 
 if (!function_exists('frontoffice_find_paid_rpp_for_pendenza')) {
     /**
-     * Ricava (iuv, ccp) interrogando Pendenze v2 (TransazioniApi::findRpp).
-     * Serve come fallback quando il dettaglio Pagamenti non contiene i riferimenti della RT.
+     * Ricava (iuv, ccp) dal dettaglio pendenza via backoffice API (Backoffice v1).
+     * Con Backoffice v1 il ccp è nelle riscossioni della pendenza — nessuna chiamata extra.
      */
     function frontoffice_find_paid_rpp_for_pendenza(string $idDominio, string $idPendenza, ?string $idA2A = null): ?array
     {
-        $pendenzeHost = frontoffice_govpay_pendenze_base_url();
-        if ($pendenzeHost === '' || $idDominio === '' || $idPendenza === '') {
+        if ($idPendenza === '') {
             return null;
         }
-        if (!class_exists('\GovPay\Pendenze\Api\TransazioniApi') || !class_exists('\GovPay\Pendenze\Configuration')) {
+        $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
+        if (!is_array($detail)) {
             return null;
         }
-
-        try {
-            $config = new \GovPay\Pendenze\Configuration();
-            $config->setHost(rtrim($pendenzeHost, '/'));
-            $guzzleOptions = frontoffice_govpay_client_options();
-            if ($auth = frontoffice_basic_auth()) {
-                $guzzleOptions['auth'] = [$auth[0], $auth[1]];
-            }
-            $httpClient = new Client($guzzleOptions);
-            $api = new \GovPay\Pendenze\Api\TransazioniApi($httpClient, $config);
-
-            $esito = class_exists('\GovPay\Pendenze\Model\EsitoRpp')
-                ? \GovPay\Pendenze\Model\EsitoRpp::ESEGUITO
-                : 'ESEGUITO';
-
-            $result = $api->findRpp(
-                1,
-                25,
-                null,
-                null,
-                $idDominio,
-                null,
-                null,
-                ($idA2A !== null && $idA2A !== '') ? $idA2A : null,
-                $idPendenza,
-                null,
-                $esito
-            );
-
-            $data = json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-            $rows = $data['risultati'] ?? $data['rpps'] ?? null;
-            if (!is_array($rows) || $rows === []) {
-                return null;
-            }
-
-            $first = $rows[0] ?? null;
-            if (!is_array($first)) {
-                return null;
-            }
-
-            $pickScalar = static function ($value): string {
-                return is_scalar($value) ? trim((string)$value) : '';
-            };
-            $getPath = static function (array $root, array $path) use ($pickScalar): string {
-                $current = $root;
-                foreach ($path as $segment) {
-                    if (!is_array($current) || !array_key_exists($segment, $current)) {
-                        return '';
-                    }
-                    $current = $current[$segment];
-                }
-                return $pickScalar($current);
-            };
-
-            // GovPay Pendenze v2: i campi possono essere top-level oppure annidati in pendenza/rpt/rt.
-            $iuv = $pickScalar($first['iuv'] ?? null);
-            if ($iuv === '') {
-                foreach ([
-                    ['pendenza', 'iuvPagamento'],
-                    ['pendenza', 'iuvAvviso'],
-                    ['rpt', 'datiVersamento', 'identificativoUnivocoVersamento'],
-                    ['rt', 'datiPagamento', 'identificativoUnivocoVersamento'],
-                ] as $path) {
-                    $iuv = $getPath($first, $path);
-                    if ($iuv !== '') {
-                        break;
-                    }
-                }
-            }
-
-            $ccp = $pickScalar($first['ccp'] ?? null);
-            if ($ccp === '') {
-                foreach ([
-                    ['codiceContestoPagamento'],
-                    ['pendenza', 'codiceContestoPagamento'],
-                    ['rpt', 'datiVersamento', 'codiceContestoPagamento'],
-                    // In alcune RT il campo arriva con iniziale maiuscola.
-                    ['rt', 'datiPagamento', 'CodiceContestoPagamento'],
-                    ['rt', 'datiPagamento', 'codiceContestoPagamento'],
-                    // Fallback: spesso coincide col CCP.
-                    ['rt', 'datiPagamento', 'datiSingoloPagamento', 0, 'identificativoUnivocoRiscossione'],
-                ] as $path) {
-                    $ccp = $getPath($first, $path);
-                    if ($ccp !== '') {
-                        break;
-                    }
-                }
-            }
-
-            if ($iuv === '' || $ccp === '') {
-                return null;
-            }
-
-            return ['iuv' => $iuv, 'ccp' => $ccp];
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile recuperare RPP da Pendenze v2 per scarico RT', [
-                'idDominio' => $idDominio,
-                'idPendenza' => $idPendenza,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            return null;
-        }
+        $ids = frontoffice_extract_ricevuta_identifiers_from_pendenza_detail($detail);
+        $iuv = trim((string)($ids['iuv'] ?? ''));
+        $ccp = trim((string)($ids['ccp'] ?? ''));
+        return ($iuv !== '' && $ccp !== '') ? ['iuv' => $iuv, 'ccp' => $ccp] : null;
     }
 }
 
 if (!function_exists('frontoffice_stream_ricevuta_pdf')) {
-    function frontoffice_stream_ricevuta_pdf(string $idDominio, string $iuv, string $idRicevuta): void
+    // Con Backoffice v1 il terzo parametro è il ccp (codice contesto pagamento).
+    // Alias a frontoffice_stream_rt_pdf() — stessa chiamata all'endpoint sidecar.
+    function frontoffice_stream_ricevuta_pdf(string $idDominio, string $iuv, string $ccp): void
     {
-        $baseUrl = frontoffice_govpay_pagamenti_base_url();
-        if ($baseUrl === '' || $idDominio === '' || $iuv === '' || $idRicevuta === '') {
+        frontoffice_stream_rt_pdf($idDominio, $iuv, $ccp);
+    }
+}
+
+if (!function_exists('frontoffice_stream_ricevuta_by_pendenza')) {
+    /**
+     * Scarica la RT della pendenza delegando al backoffice la risoluzione di IUV+CCP.
+     * Usa GET /api/frontoffice/pendenze/{idPendenza}/ricevuta — backoffice chiama buildReceiptPathLookup.
+     */
+    function frontoffice_stream_ricevuta_by_pendenza(string $idPendenza): void
+    {
+        if ($idPendenza === '') {
             http_response_code(404);
             echo 'Ricevuta non disponibile.';
             return;
         }
-
-        try {
-            $client = new Client(frontoffice_govpay_client_options());
-            $options = [
-                'headers' => [
-                    'Accept' => 'application/pdf',
-                ],
-            ];
-            if ($auth = frontoffice_basic_auth()) {
-                $options['auth'] = [$auth[0], $auth[1]];
-            }
-
-            $url = $baseUrl . '/ricevute/' . rawurlencode($idDominio) . '/' . rawurlencode($iuv) . '/' . rawurlencode($idRicevuta);
-            $response = $client->request('GET', $url, $options);
-            $status = $response->getStatusCode();
-            if ($status < 200 || $status >= 300) {
-                http_response_code(404);
-                echo 'Ricevuta non disponibile.';
-                return;
-            }
-
-            $contentType = strtolower(implode(' ', $response->getHeader('Content-Type')));
-            if ($contentType !== '' && strpos($contentType, 'application/pdf') === false) {
-                http_response_code(503);
-                echo 'La ricevuta non è disponibile in formato PDF.';
-                return;
-            }
-
-            $filename = 'ricevuta_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', $iuv . '_' . $idRicevuta) . '.pdf';
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            header('X-Content-Type-Options: nosniff');
-            echo (string)$response->getBody();
-            return;
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Errore durante lo scarico PDF ricevuta GovPay', [
-                'idDominio' => $idDominio,
-                'iuv' => $iuv,
-                'idRicevuta' => $idRicevuta,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            http_response_code(503);
-            echo 'Al momento non riusciamo a scaricare la ricevuta. Riprova più tardi.';
-        }
+        $path = '/api/frontoffice/pendenze/' . rawurlencode($idPendenza) . '/ricevuta';
+        frontoffice_backoffice_api_stream($path);
     }
 }
 
@@ -2240,11 +1905,30 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
             $numeroAvviso = $iuv;
         }
 
-        $downloadUrl = ($numeroAvviso !== '' && $idDominio !== '')
-            ? '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
-            : null;
-        $state = strtoupper((string)($pendenza['stato'] ?? ''));
+        $state  = strtoupper((string)($pendenza['stato'] ?? ''));
         $importo = $pendenza['importo'] ?? null;
+
+        // Marca da bollo: GovPay non genera PDF avviso (422). Usa template HTML /avviso-bollo.
+        $isBolloPreview = frontoffice_is_bollo_detail($pendenza);
+        if ($isBolloPreview && $numeroAvviso !== '' && $idDominio !== '') {
+            $cf = frontoffice_extract_pendenza_debtor_cf($pendenza);
+            $importoCentsPreview = is_numeric($importo) ? (int)round((float)$importo * 100) : 0;
+            $causalePreview = mb_substr(trim((string)($pendenza['causale'] ?? '')), 0, 140);
+            $scadenzaPreview = trim((string)($pendenza['dataScadenza'] ?? ''));
+            $iuvClean = preg_replace('/\D/', '', $numeroAvviso);
+            $downloadUrl = '/avviso-bollo?' . http_build_query(array_filter([
+                'iuv'      => $iuvClean !== '' ? $iuvClean : null,
+                'ente'     => $idDominio,
+                'importo'  => $importoCentsPreview > 0 ? $importoCentsPreview : null,
+                'causale'  => $causalePreview !== '' ? $causalePreview : null,
+                'cf'       => $cf !== '' ? $cf : null,
+                'scadenza' => $scadenzaPreview !== '' ? $scadenzaPreview : null,
+            ]), '', '&', PHP_QUERY_RFC3986);
+        } else {
+            $downloadUrl = ($numeroAvviso !== '' && $idDominio !== '')
+                ? '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
+                : null;
+        }
 
         $idPendenza = (string)($pendenza['idPendenza'] ?? '');
         $checkoutUrl = null;
@@ -2286,6 +1970,7 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
             ],
             'is_payable' => frontoffice_is_pendenza_payable($state),
             'is_paid' => $isPaid,
+            'is_bollo' => $isBolloPreview,
             'download_url' => $downloadUrl,
             'receipt_url' => ($isPaid && $idPendenza !== '')
                 ? '/pendenze/' . rawurlencode($idPendenza) . '/ricevuta'
@@ -2305,7 +1990,7 @@ if (!function_exists('frontoffice_amount_to_cents')) {
     }
 }
 
-// ─── Rate limit (MariaDB sliding window) ─────────────────────────────────────
+// ─── Rate limit (delegato al backoffice via API sidecar) ─────────────────────
 
 if (!function_exists('frontoffice_client_ip')) {
     function frontoffice_client_ip(): string
@@ -2323,61 +2008,24 @@ if (!function_exists('frontoffice_client_ip')) {
 
 if (!function_exists('frontoffice_rate_limit_check')) {
     /**
-     * Sliding-window rate limit DB-backed. Ritorna true se entro soglia, false se la supera.
-     * Fail-open su errori DB (log warning).
+     * Sliding-window rate limit delegato al backoffice sidecar.
+     * Ritorna true se entro soglia, false se la supera. Fail-open su errori di rete.
      */
     function frontoffice_rate_limit_check(string $key, int $limit, int $windowSec = 60): bool
     {
         if ($key === '' || $limit <= 0) {
             return true;
         }
-        $bucketKey = substr($key, 0, 190);
-        try {
-            $pdo = \App\Database\Connection::getPDO();
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Rate limit: connessione DB non disponibile, fail-open', [
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
+        $result = frontoffice_backoffice_api('POST', '/api/frontoffice/rate-limit/check', [
+            'key'        => $key,
+            'limit'      => $limit,
+            'window_sec' => $windowSec,
+        ]);
+        if (!$result['success'] && $result['error_status'] === 401) {
+            Logger::getInstance()->warning('Rate limit: autenticazione backoffice fallita, fail-open');
             return true;
         }
-        $now = time();
-        $threshold = $now - $windowSec;
-        try {
-            $stmt = $pdo->prepare(
-                'INSERT INTO rate_limit_buckets (bucket_key, window_start, count) VALUES (:k, :w, 1) '
-                . 'ON DUPLICATE KEY UPDATE '
-                . 'count = IF(window_start < :t, 1, count + 1), '
-                . 'window_start = IF(window_start < :t2, :w2, window_start)'
-            );
-            $stmt->execute([
-                ':k' => $bucketKey,
-                ':w' => $now,
-                ':w2' => $now,
-                ':t' => $threshold,
-                ':t2' => $threshold,
-            ]);
-            $sel = $pdo->prepare('SELECT count FROM rate_limit_buckets WHERE bucket_key = :k LIMIT 1');
-            $sel->execute([':k' => $bucketKey]);
-            $row = $sel->fetch(\PDO::FETCH_ASSOC);
-            $count = is_array($row) ? (int)($row['count'] ?? 0) : 0;
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Rate limit: errore bucket, fail-open', [
-                'bucket' => $bucketKey,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            return true;
-        }
-
-        if (mt_rand(1, 100) === 1) {
-            try {
-                $gc = $pdo->prepare('DELETE FROM rate_limit_buckets WHERE window_start < :t');
-                $gc->execute([':t' => $now - max(600, $windowSec * 10)]);
-            } catch (\Throwable) {
-                // silent: garbage collection best-effort
-            }
-        }
-
-        return $count <= $limit;
+        return (bool)($result['_raw']['allowed'] ?? true);
     }
 }
 
@@ -2442,6 +2090,50 @@ if (!function_exists('frontoffice_verify_checkout_token')) {
         }
         $expected = frontoffice_generate_checkout_token($idPendenza);
         return $expected !== '' && hash_equals($expected, $token);
+    }
+}
+
+if (!function_exists('frontoffice_checkout_return_is_authorized')) {
+    /**
+     * Verifica che il visitante della pagina di return checkout abbia titolo a vedere i dettagli
+     * della pendenza. Tre livelli:
+     *   1. Token HMAC firmato (link costruito dal frontoffice, sopravvive al reload).
+     *   2. Sessione — idPendenza in whitelist corrente (spontaneo/avviso di questa sessione).
+     *   3. Utente loggato con CF corrispondente al debitore (richiede fetch GovPay).
+     *
+     * Se nessuna condizione è vera: false → mostra pagina generica senza dati pendenza.
+     */
+    function frontoffice_checkout_return_is_authorized(string $idPendenza, string $token): bool
+    {
+        if ($idPendenza === '') {
+            return false;
+        }
+
+        // 1. Token HMAC — fast path, no session needed
+        if ($token !== '' && frontoffice_verify_checkout_token($idPendenza, $token)) {
+            return true;
+        }
+
+        // 2. Session whitelist
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            foreach (['frontoffice_spontaneo_pendenze', 'frontoffice_avviso_pendenze'] as $key) {
+                $list = isset($_SESSION[$key]) && is_array($_SESSION[$key]) ? $_SESSION[$key] : [];
+                if (in_array($idPendenza, array_map('strval', $list), true)) {
+                    return true;
+                }
+            }
+        }
+
+        // 3. Utente loggato con CF corrispondente
+        $loggedUser = frontoffice_get_logged_user();
+        if (is_array($loggedUser) && $loggedUser !== []) {
+            $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
+            if (is_array($detail) && frontoffice_pendenza_belongs_to_cf($detail, frontoffice_get_logged_user_fiscal_number())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -2719,29 +2411,12 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
         string $fallbackEmail,
         string $flow
     ): array {
-        $baseUrl = rtrim(frontoffice_env_value('PAGOPA_EBOLLO_BASE_URL', ''), '/');
-        // SANP 3.12.0 @e.bollo 2.0 (Pagamento dovuto): idCIService da valorizzare con 00005.
-        $idCiService = trim(frontoffice_env_value('PAGOPA_EBOLLO_ID_CI_SERVICE', '00005'));
-        if ($idCiService === '') {
-            $idCiService = '00005';
-        }
-        $candidateKeys = array_values(array_filter(array_unique([
-            trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY', '')),
-            trim(frontoffice_env_value('PAGOPA_EBOLLO_SUBSCRIPTION_KEY_SECONDARY', '')),
-            trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')),
-        ]), static fn (string $k): bool => $k !== ''));
-
-        if ($baseUrl === '' || count($candidateKeys) === 0) {
-            Logger::getInstance()->warning('Configurazione @e.bollo incompleta', [
-                'flow' => $flow,
-                'has_base_url' => $baseUrl !== '',
-                'has_id_ci_service' => $idCiService !== '',
-                'has_key' => count($candidateKeys) > 0,
-            ]);
+        if (frontoffice_env_value('PAGOPA_EBOLLO_ENABLED', '0') !== '1') {
+            Logger::getInstance()->warning('Configurazione @e.bollo incompleta', ['flow' => $flow]);
             return [
                 'success' => false,
-                'status' => 503,
-                'message' => 'Configurazione @e.bollo non completa (Base URL o Subscription Key mancanti). Contatta l\'amministratore.',
+                'status'  => 503,
+                'message' => 'Configurazione @e.bollo non completa. Contatta l\'amministratore.',
             ];
         }
 
@@ -2836,131 +2511,51 @@ if (!function_exists('frontoffice_start_ebollo_checkout')) {
             $paymentNotice['documentHash'] = $documentHash;
         }
 
-        $requestBody = [
+        // Delega al backoffice sidecar — le credenziali @e.bollo restano nel backoffice
+        $apiResult = frontoffice_backoffice_api('POST', '/api/frontoffice/bollo/ebollo-checkout', [
+            'idDominio'      => $idDominio,
             'paymentNotices' => [$paymentNotice],
-            'idCIService' => $idCiService,
-            'returnUrls' => [
+            'returnUrls'     => [
                 'successUrl' => $okUrl,
-                'cancelUrl' => $cancelUrl,
-                'errorUrl' => $errorUrl,
+                'cancelUrl'  => $cancelUrl,
+                'errorUrl'   => $errorUrl,
             ],
-        ];
+        ]);
 
-        $requestId = '';
-        try {
-            $requestId = bin2hex(random_bytes(16));
-        } catch (\Throwable) {
-            $requestId = sha1((string)microtime(true));
-        }
-
-        try {
-            $client = new Client([
-                'timeout' => 20,
-                'connect_timeout' => 10,
-                'allow_redirects' => false,
-                'http_errors' => false,
-            ]);
-
-            $response = null;
-            $status = 0;
-            $bodyRaw = '';
-            $body = null;
-            $usedKeyIndex = 0;
-            foreach ($candidateKeys as $idx => $subscriptionKey) {
-                $response = $client->request('POST', $baseUrl . '/organizations/' . rawurlencode($idDominio) . '/mbd', [
-                    'headers' => [
-                        'Accept' => 'application/json',
-                        'Content-Type' => 'application/json',
-                        'Ocp-Apim-Subscription-Key' => $subscriptionKey,
-                        'X-Request-Id' => $requestId,
-                    ],
-                    'query' => [
-                        'subscription-key' => $subscriptionKey,
-                    ],
-                    'json' => $requestBody,
-                ]);
-                $status = $response->getStatusCode();
-                $bodyRaw = (string)$response->getBody();
-                $body = json_decode($bodyRaw, true);
-                $usedKeyIndex = $idx + 1;
-                if ($status !== 401 && $status !== 403) {
-                    break;
-                }
-            }
-
-            $redirectUrl = is_array($body) ? trim((string)($body['checkoutRedirectUrl'] ?? '')) : '';
-
-            if ($status >= 200 && $status < 300 && $redirectUrl !== '') {
-                Logger::getInstance()->info('Checkout @e.bollo avviato', [
-                    'flow' => $flow,
-                    'idPendenza' => $idPendenza,
-                    'requestId' => $requestId,
-                    'key_index' => $usedKeyIndex,
-                ]);
-                return [
-                    'success' => true,
-                    'location' => $redirectUrl,
-                ];
-            }
-
-            $detailMsg = is_array($body) ? trim((string)($body['detail'] ?? '')) : '';
-            $titleMsg = is_array($body) ? trim((string)($body['title'] ?? '')) : '';
-            $statusMsg = is_array($body) ? (int)($body['status'] ?? 0) : 0;
-            $fallbackMsg = trim((string)($titleMsg !== '' ? $titleMsg : $detailMsg));
-            if ($fallbackMsg === '' && $bodyRaw !== '') {
-                $fallbackMsg = mb_substr(trim($bodyRaw), 0, 220);
-            }
-            Logger::getInstance()->warning('Errore API @e.bollo', [
-                'flow' => $flow,
-                'idPendenza' => $idPendenza,
-                'status' => $status,
-                'requestId' => $requestId,
-                'key_index' => $usedKeyIndex,
-                'title' => $titleMsg,
-                'detail' => $detailMsg,
-                'problem_status' => $statusMsg,
-            ]);
-
-            $message = 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.';
-            if ($fallbackMsg !== '') {
-                $message = 'Errore @e.bollo: ' . $fallbackMsg;
-            }
-
-            return [
-                'success' => false,
-                'status' => 503,
-                'message' => $message,
-            ];
-        } catch (\Throwable $e) {
-            $safeErr = Logger::sanitizeErrorForDisplay($e->getMessage());
-            Logger::getInstance()->warning('Eccezione durante chiamata @e.bollo', [
-                'flow' => $flow,
-                'idPendenza' => $idPendenza,
-                'requestId' => $requestId,
-                'error' => $safeErr,
+        if (!$apiResult['success']) {
+            Logger::getInstance()->warning('frontoffice_start_ebollo_checkout: errore backoffice sidecar', [
+                'flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $apiResult['message'],
             ]);
             return [
                 'success' => false,
-                'status' => 503,
-                'message' => $safeErr !== ''
-                    ? ('Errore connessione @e.bollo: ' . $safeErr)
-                    : 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.',
+                'status'  => $apiResult['error_status'] ?: 503,
+                'message' => $apiResult['message'] ?: 'Al momento non riusciamo ad avviare il pagamento @e.bollo. Riprova più tardi.',
             ];
         }
+
+        $location = trim((string)($apiResult['_raw']['location'] ?? ''));
+        if ($location === '') {
+            return ['success' => false, 'status' => 503, 'message' => '@e.bollo checkout: redirect URL mancante.'];
+        }
+
+        Logger::getInstance()->info('Checkout @e.bollo avviato via backoffice sidecar', [
+            'flow' => $flow, 'idPendenza' => $idPendenza,
+        ]);
+        return ['success' => true, 'location' => $location];
     }
 }
 
 if (!function_exists('frontoffice_is_govpay_checkout_enabled')) {
     function frontoffice_is_govpay_checkout_enabled(): bool
     {
-        return trim(frontoffice_env_value('GOVPAY_CHECKOUT_URL', '')) !== '';
+        return frontoffice_env_value('GOVPAY_CHECKOUT_ENABLED', '0') === '1';
     }
 }
 
 if (!function_exists('frontoffice_start_govpay_checkout')) {
     /**
      * Avvia il checkout GovPay (API pagamento v2) per una singola pendenza bollo.
-     * Ritorna ['success'=>bool,'location'=>string,'status'=>int,'message'=>string].
+     * Delega al backoffice sidecar — le credenziali GovPay restano nel backoffice.
      */
     function frontoffice_start_govpay_checkout(
         array $detail,
@@ -2968,68 +2563,27 @@ if (!function_exists('frontoffice_start_govpay_checkout')) {
         string $returnUrl,
         string $flow = 'spontaneo'
     ): array {
-        $checkoutUrl = rtrim(frontoffice_env_value('GOVPAY_CHECKOUT_URL', ''), '/');
-        $idA2A       = frontoffice_env_value('ID_A2A', '');
-        $user        = frontoffice_env_value('GOVPAY_USER', '');
-        $pass        = frontoffice_env_value('GOVPAY_PASSWORD', '');
-
-        if ($checkoutUrl === '' || $idA2A === '') {
-            return ['success' => false, 'status' => 503, 'message' => 'GovPay checkout non configurato.'];
-        }
-
-        $body = json_encode([
-            'pendenze'   => [['idA2A' => $idA2A, 'idPendenza' => $idPendenza]],
-            'urlRitorno' => $returnUrl,
+        $result = frontoffice_backoffice_api('POST', '/api/frontoffice/bollo/govpay-checkout', [
+            'idPendenza' => $idPendenza,
+            'returnUrl'  => $returnUrl,
         ]);
 
-        $authMethod = strtolower(trim(frontoffice_env_value('AUTHENTICATION_GOVPAY', 'basic')));
-        $certPath   = frontoffice_env_value('GOVPAY_TLS_CERT', '');
-        $keyPath    = frontoffice_env_value('GOVPAY_TLS_KEY', '');
-
-        $ch = curl_init($checkoutUrl . '/pagamenti');
-        $curlOpts = [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $body,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 20,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
-        ];
-        if (in_array($authMethod, ['ssl', 'sslheader'], true) && $certPath !== '' && $keyPath !== '') {
-            $curlOpts[CURLOPT_SSLCERT] = $certPath;
-            $curlOpts[CURLOPT_SSLKEY]  = $keyPath;
-        } elseif ($user !== '' || $pass !== '') {
-            $curlOpts[CURLOPT_USERPWD] = $user . ':' . $pass;
-        }
-        curl_setopt_array($ch, $curlOpts);
-        $raw    = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        unset($ch);
-
-        if ($status !== 201 || !is_string($raw)) {
-            Logger::getInstance()->warning('Errore GovPay checkout API', [
-                'flow'       => $flow,
-                'idPendenza' => $idPendenza,
-                'status'     => $status,
-                'url'        => $checkoutUrl . '/pagamenti',
-                'response'   => is_string($raw) ? substr($raw, 0, 500) : null,
+        if (!$result['success']) {
+            Logger::getInstance()->warning('frontoffice_start_govpay_checkout: errore backoffice sidecar', [
+                'flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $result['message'],
             ]);
-            return ['success' => false, 'status' => 503, 'message' => 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
+            return ['success' => false, 'status' => $result['error_status'] ?: 503, 'message' => $result['message'] ?: 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
         }
 
-        $data     = json_decode($raw, true);
-        $redirect = trim((string)($data['redirect'] ?? ''));
-        if ($redirect === '') {
-            Logger::getInstance()->warning('GovPay checkout: campo redirect mancante nella risposta', [
-                'flow' => $flow, 'idPendenza' => $idPendenza,
-            ]);
-            return ['success' => false, 'status' => 503, 'message' => 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
+        $location = trim((string)($result['_raw']['location'] ?? ''));
+        if ($location === '') {
+            return ['success' => false, 'status' => 503, 'message' => 'GovPay checkout: redirect URL mancante.'];
         }
 
-        Logger::getInstance()->info('Checkout GovPay avviato', [
-            'flow' => $flow, 'idPendenza' => $idPendenza, 'id' => $data['id'] ?? '',
+        Logger::getInstance()->info('Checkout GovPay avviato via backoffice sidecar', [
+            'flow' => $flow, 'idPendenza' => $idPendenza,
         ]);
-        return ['success' => true, 'location' => $redirect];
+        return ['success' => true, 'location' => $location];
     }
 }
 
@@ -3063,55 +2617,26 @@ if (!function_exists('frontoffice_resolve_bollo_checkout_url')) {
             return ['location' => (string)$r['location']];
         }
 
-        if (frontoffice_is_govpay_checkout_enabled()) {
-            $returnUrl = $frontofficeBaseUrl . '/checkout/govpay-return?idPendenza=' . rawurlencode($idPendenza);
-            $r = frontoffice_start_govpay_checkout($detail, $idPendenza, $returnUrl, $flow);
-            if (!($r['success'] ?? false)) {
-                return ['error_code' => (int)($r['status'] ?? 503), 'error_msg' => (string)($r['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.')];
-            }
+        // Tenta GovPay checkout senza dipendenza da cache env.
+        // Il backoffice risponde 404 se checkout_url non è configurato (skip a pagoPA),
+        // 503 se GovPay è temporaneamente irraggiungibile (errore visibile all'utente).
+        $returnUrl = $frontofficeBaseUrl . '/checkout/govpay-return?idPendenza=' . rawurlencode($idPendenza);
+        $r = frontoffice_start_govpay_checkout($detail, $idPendenza, $returnUrl, $flow);
+        if ($r['success'] ?? false) {
             return ['location' => (string)$r['location']];
         }
-
-        return ['skip' => true];
-    }
-}
-
-if (!function_exists('frontoffice_pagopa_checkout_api_client')) {
-    function frontoffice_pagopa_checkout_api_client(): ?\PagoPA\CheckoutEc\Api\DefaultApi
-    {
-        if (!class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class)) {
-            return null;
+        if ((int)($r['status'] ?? 503) === 404) {
+            // Checkout URL non configurato → fall-through a pagoPA standard
+            return ['skip' => true];
         }
-
-        $subscriptionKey = trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', ''));
-        if ($subscriptionKey === '') {
-            return null;
-        }
-
-        $config = \PagoPA\CheckoutEc\Configuration::getDefaultConfiguration();
-        $host = trim(frontoffice_env_value('PAGOPA_CHECKOUT_EC_BASE_URL', ''));
-        if ($host !== '') {
-            $config->setHost(rtrim($host, '/'));
-        }
-
-        // La spec supporta sia header che query key; impostiamo entrambe allo stesso valore.
-        $config->setApiKey('Ocp-Apim-Subscription-Key', $subscriptionKey);
-        $config->setApiKey('subscription-key', $subscriptionKey);
-
-        $httpClient = new \GuzzleHttp\Client([
-            'timeout' => 15,
-            'connect_timeout' => 10,
-            'allow_redirects' => false,
-        ]);
-
-        return new \PagoPA\CheckoutEc\Api\DefaultApi($httpClient, $config);
+        return ['error_code' => (int)($r['status'] ?? 503), 'error_msg' => (string)($r['message'] ?? 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.')];
     }
 }
 
 if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
     function frontoffice_lookup_pagopa_avviso(string $numeroAvviso, string $codiceFiscale): array
     {
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             return [
                 'success' => false,
@@ -3135,7 +2660,7 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
         // Se l'utente inserisce 17 cifre numeriche ha omesso l'auxDigit:
         // recuperalo dal DB e prepend prima della ricerca.
         if (strlen($normalizedAvviso) === 17 && ctype_digit($normalizedAvviso)) {
-            $auxDigit = \App\Config\SettingsRepository::get('entity', 'aux_digit', '');
+            $auxDigit = frontoffice_env_value('AUX_DIGIT', '');
             if ($auxDigit !== '' && ctype_digit($auxDigit)) {
                 Logger::getInstance()->info('Numero avviso espanso con aux_digit', [
                     'original'  => $normalizedAvviso,
@@ -3149,65 +2674,31 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
         // Canale principale: GovPay Pendenze v2 (byAvviso) è il modo corretto per interrogare un numero avviso.
         $pendenza = frontoffice_fetch_pendenza_by_avviso($idDominio, $normalizedAvviso);
 
-        // Fallback: manteniamo la vecchia ricerca via GovPay Pagamenti (per compatibilità in ambienti che non espongono byAvviso).
+        // Fallback: ricerca via backoffice API (findPendenze per numeroAvviso)
         if (!is_array($pendenza) || $pendenza === []) {
-            $api = frontoffice_pagamenti_api_client();
-            if ($api === null) {
-                return [
-                    'success' => false,
-                    'errors' => ['Al momento non riusciamo a interrogare il sistema dei pagamenti. Riprova più tardi.'],
-                ];
-            }
-
-            try {
-                $result = $api->findPendenze(
-                    1,
-                    10,
-                    null,
-                    $idDominio,
-                    null,
-                    null,
-                    $normalizedAvviso,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    false,
-                    true,
-                    true
-                );
-                $data = json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-            } catch (\Throwable $e) {
-                Logger::getInstance()->warning('Errore durante la ricerca dell\'avviso PagoPA', [
-                    'codiceAvviso' => $numeroAvviso,
-                    'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-                ]);
-                return [
-                    'success' => false,
-                    'errors' => ['Al momento non riusciamo a interrogare il sistema dei pagamenti. Riprova più tardi.'],
-                ];
-            }
-
-            $risultati = $data['risultati'] ?? [];
-            $loggerPayload = [
-                'numRisultati' => $data['numRisultati'] ?? null,
-                'risultatiPerPagina' => $data['risultatiPerPagina'] ?? null,
-                'pagina' => $data['pagina'] ?? null,
-                'risultatiCount' => is_array($risultati) ? count($risultati) : 0,
+            $fallbackResult = frontoffice_backoffice_api('GET', '/api/frontoffice/pendenze', [
+                'cf'        => '',
+                'page'      => 1,
+                'per_page'  => 10,
+                'numero_avviso' => $normalizedAvviso,
+            ]);
+            $risultati = $fallbackResult['_raw']['data']['risultati'] ?? [];
+            Logger::getInstance()->info('Fallback findPendenze per ricerca avviso via backoffice', [
                 'requestedAvviso' => $normalizedAvviso,
-            ];
-            Logger::getInstance()->info('Risposta GovPay Pagamenti per ricerca avviso', $loggerPayload);
-
-            $pendenza = null;
-            foreach ($risultati as $candidate) {
+                'count'           => is_array($risultati) ? count($risultati) : 0,
+            ]);
+            foreach ((array)$risultati as $candidate) {
                 $candidateAvviso = frontoffice_normalize_avviso_code((string)($candidate['numeroAvviso'] ?? ''));
                 if ($candidateAvviso !== '' && $candidateAvviso === $normalizedAvviso) {
                     $pendenza = $candidate;
                     break;
                 }
+            }
+            if (!is_array($pendenza) || $pendenza === []) {
+                return [
+                    'success' => false,
+                    'errors'  => ['Al momento non riusciamo a interrogare il sistema dei pagamenti. Riprova più tardi.'],
+                ];
             }
         }
 
@@ -3405,7 +2896,7 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             $errors[] = 'Inserisci un indirizzo email valido.';
         }
 
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
         if ($idDominio === '') {
             $errors[] = 'Configurazione mancante: ID_DOMINIO non impostato.';
         }
@@ -3430,7 +2921,6 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
             'importo' => $importo,
             'annoRiferimento' => $anno,
             'soggettoPagatore' => frontoffice_prepare_payer($payerRaw),
-            'voci' => frontoffice_build_voci($idDominio, $idTipo, $causale, $importo),
             'dataValidita' => date('Y-m-d'),
             'dataScadenza' => $dataScadenza,
             'datiAllegati' => frontoffice_build_dati_allegati(),
@@ -3497,83 +2987,28 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
 if (!function_exists('frontoffice_stream_avviso_pdf')) {
     function frontoffice_stream_avviso_pdf(string $idDominio, string $numeroAvviso): void
     {
-        $expectedDominio = frontoffice_env_value('ID_DOMINIO', '');
-        if ($expectedDominio !== '' && $idDominio !== $expectedDominio) {
+        if ($idDominio === '' || $numeroAvviso === '') {
             http_response_code(404);
             echo 'Avviso non trovato';
             return;
         }
-
-        $backofficeUrl = frontoffice_env_value('GOVPAY_BACKOFFICE_URL', '');
-        if ($backofficeUrl === '') {
-            http_response_code(500);
-            echo 'GOVPAY_BACKOFFICE_URL non impostata';
-            return;
-        }
-
-        try {
-            $options = frontoffice_govpay_client_options();
-            $options['headers']['Accept'] = 'application/pdf';
-            $options['headers']['Connection'] = 'close';
-            if ($auth = frontoffice_basic_auth()) {
-                $options['auth'] = $auth;
-            }
-            $client = new Client($options);
-            $url = rtrim($backofficeUrl, '/') . '/avvisi/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso);
-            $resp = $client->request('GET', $url);
-            header('Content-Type: ' . ($resp->getHeaderLine('Content-Type') ?: 'application/pdf'));
-            header('Content-Disposition: attachment; filename="avviso-' . $idDominio . '-' . $numeroAvviso . '.pdf"');
-            header('Cache-Control: no-store');
-            echo (string)$resp->getBody();
-        } catch (ClientException $e) {
-            $status = $e->getResponse() ? $e->getResponse()->getStatusCode() : 502;
-            http_response_code($status);
-            echo 'Errore scaricamento avviso: ' . Logger::sanitizeErrorForDisplay($e->getMessage());
-        } catch (\Throwable $e) {
-            http_response_code(502);
-            echo 'Errore scaricamento avviso: ' . Logger::sanitizeErrorForDisplay($e->getMessage());
-        }
+        frontoffice_backoffice_api_stream(
+            '/api/frontoffice/avviso/' . rawurlencode($idDominio) . '/' . rawurlencode($numeroAvviso)
+        );
     }
 }
 
 if (!function_exists('frontoffice_stream_documento_pdf')) {
-    /**
-     * Scarica da GovPay Pendenze v2 il PDF multi-rata per il documento indicato.
-     * Endpoint: GET /documenti/{idDominio}/{numeroDocumento}/avvisi
-     * Usato dalla route GET /link/documento (link firmato).
-     */
     function frontoffice_stream_documento_pdf(string $numeroDocumento): void
     {
-        $pendenzeUrl = frontoffice_env_value('GOVPAY_PENDENZE_URL', '');
-        $idDominio   = frontoffice_env_value('ID_DOMINIO', '');
-        if ($pendenzeUrl === '' || $idDominio === '' || $numeroDocumento === '') {
+        if ($numeroDocumento === '') {
             http_response_code(400);
-            echo 'Parametri mancanti o GOVPAY_PENDENZE_URL/ID_DOMINIO non configurati.';
+            echo 'Parametro numeroDocumento mancante.';
             return;
         }
-        try {
-            $options = frontoffice_govpay_client_options();
-            $options['headers']['Accept'] = 'application/pdf';
-            $options['headers']['Connection'] = 'close';
-            if ($auth = frontoffice_basic_auth()) {
-                $options['auth'] = $auth;
-            }
-            $client = new Client($options);
-            $url = rtrim($pendenzeUrl, '/') . '/documenti/'
-                . rawurlencode($idDominio) . '/' . rawurlencode($numeroDocumento) . '/avvisi';
-            $resp = $client->request('GET', $url);
-            header('Content-Type: ' . ($resp->getHeaderLine('Content-Type') ?: 'application/pdf'));
-            header('Content-Disposition: attachment; filename="avvisi-' . rawurlencode($numeroDocumento) . '.pdf"');
-            header('Cache-Control: no-store');
-            echo (string)$resp->getBody();
-        } catch (ClientException $e) {
-            $status = $e->getResponse() ? $e->getResponse()->getStatusCode() : 502;
-            http_response_code($status);
-            echo 'Errore scaricamento documento: ' . Logger::sanitizeErrorForDisplay($e->getMessage());
-        } catch (\Throwable $e) {
-            http_response_code(502);
-            echo 'Errore scaricamento documento: ' . Logger::sanitizeErrorForDisplay($e->getMessage());
-        }
+        frontoffice_backoffice_api_stream(
+            '/api/frontoffice/documento/' . rawurlencode($numeroDocumento) . '/avvisi'
+        );
     }
 }
 
@@ -3758,7 +3193,7 @@ $spidCallbackUrl = $frontofficeBaseUrl !== '' ? ($frontofficeBaseUrl . $spidCall
 
 $routes = [
     '/' => static function () use ($serviceCatalog): array {
-        $featuredIds = json_decode(\App\Config\SettingsRepository::get('frontoffice', 'featured_services', '[]') ?: '[]', true) ?: [];
+        $featuredIds = json_decode(frontoffice_env_value('FEATURED_SERVICES', '[]') ?: '[]', true) ?: [];
         $featuredServices = [];
         if (!empty($featuredIds)) {
             $idMap = [];
@@ -3794,7 +3229,7 @@ $routes = [
                 : [];
             $numeroAvvisi = max(count($cartIds), 1);
 
-            $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+            $idDominio = frontoffice_env_value('ID_DOMINIO', '');
             $receiptItems = [];
             foreach (array_slice($cartIds, 0, 5) as $pid) {
                 $detail = frontoffice_fetch_pagamenti_detail((string)$pid);
@@ -3831,9 +3266,20 @@ $routes = [
         // Single-pendenza path (original behavior)
         $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
 
+        // Rate limit + autorizzazione: evita enumerazione IUV da IP arbitrari
+        if (!frontoffice_rate_limit_check('ip:' . frontoffice_client_ip() . ':checkout-return', 30, 60)) {
+            http_response_code(429);
+            return ['template' => 'checkout/ok.html.twig', 'context' => [
+                'detail_path' => $detailPath, 'login_path' => '/login', 'is_logged_in' => false,
+            ]];
+        }
+
+        $tokenParam = trim((string)($_GET['t'] ?? ''));
+        $isAuthorized = $idPendenza !== '' && frontoffice_checkout_return_is_authorized($idPendenza, $tokenParam);
+
         $numeroAvviso = null;
         $receiptUrl   = null;
-        if ($idPendenza !== '') {
+        if ($isAuthorized) {
             $detail = frontoffice_fetch_pagamenti_detail($idPendenza);
             if (is_array($detail)) {
                 $tmp = trim((string)($detail['numeroAvviso'] ?? ''));
@@ -3841,7 +3287,7 @@ $routes = [
                 if (is_string($tmp) && $tmp !== '') {
                     $numeroAvviso = $tmp;
                 }
-                $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+                $idDominio = frontoffice_env_value('ID_DOMINIO', '');
                 $cf = frontoffice_extract_pendenza_debtor_cf($detail);
                 if ($cf !== '' && $idDominio !== '') {
                     $receiptUrl = frontoffice_build_public_receipt_url($idDominio, $idPendenza, $cf, 3600);
@@ -3866,12 +3312,25 @@ $routes = [
         $idCart     = trim((string)($_GET['idCart'] ?? ''));
         $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
 
-        // Collect IDs to process (single pendenza or cart)
+        // Rate limit + autorizzazione
+        if ($idPendenza !== '' && !frontoffice_rate_limit_check('ip:' . frontoffice_client_ip() . ':checkout-return', 30, 60)) {
+            http_response_code(429);
+            return ['template' => 'checkout/cancel.html.twig', 'context' => [
+                'detail_path' => $detailPath, 'login_path' => '/login', 'is_logged_in' => false,
+            ]];
+        }
+
+        $tokenParam = trim((string)($_GET['t'] ?? ''));
+        $isAuthorized = $idCart !== '' || ($idPendenza !== '' && frontoffice_checkout_return_is_authorized($idPendenza, $tokenParam));
+
+        // Collect IDs to process (single pendenza o cart)
         $pendenzaIds = [];
-        if ($idPendenza !== '') {
-            $pendenzaIds = [$idPendenza];
-        } elseif ($idCart !== '' && session_status() === PHP_SESSION_ACTIVE) {
-            $pendenzaIds = (array)($_SESSION['frontoffice_carrello'][$idCart] ?? []);
+        if ($isAuthorized) {
+            if ($idPendenza !== '') {
+                $pendenzaIds = [$idPendenza];
+            } elseif ($idCart !== '' && session_status() === PHP_SESSION_ACTIVE) {
+                $pendenzaIds = (array)($_SESSION['frontoffice_carrello'][$idCart] ?? []);
+            }
         }
 
         $numeroAvviso = null;
@@ -3892,8 +3351,28 @@ $routes = [
             if ($cf === '') {
                 continue;
             }
-            $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => frontoffice_generate_pdf_link($cf, $nav)];
+            if (frontoffice_is_bollo_detail($detail)) {
+                $idDomCan     = frontoffice_env_value('ID_DOMINIO', '');
+                $importoCents = (int)round((float)($detail['importo'] ?? 0) * 100);
+                $causale      = mb_substr(trim((string)($detail['causale'] ?? '')), 0, 140);
+                $scadenza     = trim((string)($detail['dataScadenza'] ?? ''));
+                $bolloParams  = http_build_query(array_filter([
+                    'iuv'      => $nav,
+                    'ente'     => $idDomCan,
+                    'importo'  => $importoCents > 0 ? $importoCents : null,
+                    'causale'  => $causale !== '' ? $causale : null,
+                    'cf'       => $cf,
+                    'scadenza' => $scadenza !== '' ? $scadenza : null,
+                ]), '', '&', PHP_QUERY_RFC3986);
+                $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => '/avviso-bollo?' . $bolloParams, 'is_bollo' => true];
+            } else {
+                $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => frontoffice_generate_pdf_link($cf, $nav), 'is_bollo' => false];
+            }
         }
+
+        $retryUrl = $idCart !== ''
+            ? '/carrello'
+            : ($idPendenza !== '' ? '/pagamento-spontaneo/checkout?idPendenza=' . rawurlencode($idPendenza) . ($tokenParam !== '' ? '&t=' . rawurlencode($tokenParam) : '') : null);
 
         return [
             'template' => 'checkout/cancel.html.twig',
@@ -3903,6 +3382,7 @@ $routes = [
                 'detail_path'   => $detailPath,
                 'login_path'    => '/login?return_to=' . rawurlencode($detailPath),
                 'is_logged_in'  => frontoffice_get_logged_user() !== null,
+                'retry_url'     => $retryUrl,
             ],
         ];
     },
@@ -3911,12 +3391,25 @@ $routes = [
         $idCart     = trim((string)($_GET['idCart'] ?? ''));
         $detailPath = $idPendenza !== '' ? ('/pendenze/' . rawurlencode($idPendenza)) : '/pendenze';
 
-        // Collect IDs to process (single pendenza or cart)
+        // Rate limit + autorizzazione
+        if ($idPendenza !== '' && !frontoffice_rate_limit_check('ip:' . frontoffice_client_ip() . ':checkout-return', 30, 60)) {
+            http_response_code(429);
+            return ['template' => 'checkout/error.html.twig', 'context' => [
+                'detail_path' => $detailPath, 'login_path' => '/login', 'is_logged_in' => false,
+            ]];
+        }
+
+        $tokenParam = trim((string)($_GET['t'] ?? ''));
+        $isAuthorized = $idCart !== '' || ($idPendenza !== '' && frontoffice_checkout_return_is_authorized($idPendenza, $tokenParam));
+
+        // Collect IDs to process (single pendenza o cart)
         $pendenzaIds = [];
-        if ($idPendenza !== '') {
-            $pendenzaIds = [$idPendenza];
-        } elseif ($idCart !== '' && session_status() === PHP_SESSION_ACTIVE) {
-            $pendenzaIds = (array)($_SESSION['frontoffice_carrello'][$idCart] ?? []);
+        if ($isAuthorized) {
+            if ($idPendenza !== '') {
+                $pendenzaIds = [$idPendenza];
+            } elseif ($idCart !== '' && session_status() === PHP_SESSION_ACTIVE) {
+                $pendenzaIds = (array)($_SESSION['frontoffice_carrello'][$idCart] ?? []);
+            }
         }
 
         $numeroAvviso = null;
@@ -3937,8 +3430,28 @@ $routes = [
             if ($cf === '') {
                 continue;
             }
-            $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => frontoffice_generate_pdf_link($cf, $nav)];
+            if (frontoffice_is_bollo_detail($detail)) {
+                $idDomErr     = frontoffice_env_value('ID_DOMINIO', '');
+                $importoCents = (int)round((float)($detail['importo'] ?? 0) * 100);
+                $causale      = mb_substr(trim((string)($detail['causale'] ?? '')), 0, 140);
+                $scadenza     = trim((string)($detail['dataScadenza'] ?? ''));
+                $bolloParams  = http_build_query(array_filter([
+                    'iuv'      => $nav,
+                    'ente'     => $idDomErr,
+                    'importo'  => $importoCents > 0 ? $importoCents : null,
+                    'causale'  => $causale !== '' ? $causale : null,
+                    'cf'       => $cf,
+                    'scadenza' => $scadenza !== '' ? $scadenza : null,
+                ]), '', '&', PHP_QUERY_RFC3986);
+                $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => '/avviso-bollo?' . $bolloParams, 'is_bollo' => true];
+            } else {
+                $pdfItems[] = ['numero_avviso' => $nav, 'pdf_url' => frontoffice_generate_pdf_link($cf, $nav), 'is_bollo' => false];
+            }
         }
+
+        $retryUrl = $idCart !== ''
+            ? '/carrello'
+            : ($idPendenza !== '' ? '/pagamento-spontaneo/checkout?idPendenza=' . rawurlencode($idPendenza) . ($tokenParam !== '' ? '&t=' . rawurlencode($tokenParam) : '') : null);
 
         return [
             'template' => 'checkout/error.html.twig',
@@ -3948,6 +3461,7 @@ $routes = [
                 'detail_path'   => $detailPath,
                 'login_path'    => '/login?return_to=' . rawurlencode($detailPath),
                 'is_logged_in'  => frontoffice_get_logged_user() !== null,
+                'retry_url'     => $retryUrl,
             ],
         ];
     },
@@ -4662,7 +4176,7 @@ $routes = [
 
         // Redirect BOLLOT al form dedicato
         if ($method === 'GET' && $selectedId !== '') {
-            $bolloId = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+            $bolloId = frontoffice_env_value('BOLLO_TIPO_PENDENZA', 'BOLLOT');
             if ($selectedId === $bolloId) {
                 header('Location: /pagamento-bollo', true, 302);
                 exit;
@@ -4720,122 +4234,6 @@ $routes = [
             }
             if (!empty($baseContext['selected_service'])) {
                 $baseContext['form_data']['idTipoPendenza'] = $baseContext['selected_service']['id'];
-            }
-            if (!empty($baseContext['pendenza_result'])) {
-                $pr         = $baseContext['pendenza_result'];
-                $payerArr   = is_array($pr['soggetto_pagatore'] ?? null) ? $pr['soggetto_pagatore'] : [];
-                $rawEmail   = trim((string)($payerArr['email'] ?? ''));
-                $payerEmail = filter_var($rawEmail, FILTER_VALIDATE_EMAIL);
-                if ($payerEmail !== false && $payerEmail !== '') {
-                    $payerDisplay = trim((string)($payerArr['anagrafica'] ?? '')) ?: $payerEmail;
-                    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
-                    $siteBase = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
-                    $toAbsolute = static function (string $url) use ($siteBase): string {
-                        return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
-                    };
-                    $pendenzaIdForMail = trim((string)($pr['idPendenza'] ?? ''));
-                    try {
-                        $mailResult = \App\Services\MailerService::forSuite('frontoffice')->sendSpontaneoAvviso(
-                            $payerEmail,
-                            $payerDisplay,
-                            [
-                                'causale'       => (string)($pr['causale'] ?? ''),
-                                'importo'       => $pr['importo'] ?? 0,
-                                'numeroAvviso'  => (string)($pr['numeroAvviso'] ?? ''),
-                                'data_scadenza' => (string)($pr['data_scadenza'] ?? ''),
-                                'download_url'  => $toAbsolute((string)($pr['download_url'] ?? '')),
-                                'checkout_url'  => $toAbsolute((string)($pr['checkout_url'] ?? '')),
-                            ]
-                        );
-                        Logger::getInstance()->info('Email avviso spontaneo', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
-                    } catch (\Throwable $e) {
-                        Logger::getInstance()->warning('Email avviso spontaneo non inviata', ['err' => $e->getMessage()]);
-                        $mailResult = ['esito' => 'KO', 'canale' => 'email', 'destinatario' => $payerEmail, 'errore' => $e->getMessage()];
-                    }
-                    if ($pendenzaIdForMail !== '') {
-                        frontoffice_add_notification_to_pendenza($pendenzaIdForMail, array_merge(
-                            ['canale' => 'email', 'destinatario' => $payerEmail],
-                            $mailResult
-                        ));
-                    }
-                }
-
-                // App IO: solo persona fisica con CF disponibile
-                $pendenzaId  = trim((string)($pr['idPendenza'] ?? ''));
-                $payerTipo   = strtoupper(trim((string)($payerArr['tipo'] ?? 'F')));
-                $payerCf     = trim((string)($payerArr['identificativo'] ?? ''));
-                if ($pendenzaId !== '' && $payerTipo === 'F' && $payerCf !== '') {
-                    try {
-                        $ioRepo    = new \App\Database\IoServiceRepository();
-                        $idTipo    = trim((string)($pr['idTipoPendenza'] ?? ''));
-                        $ioService = ($idTipo !== '' ? $ioRepo->getTipologiaService($idTipo) : null) ?? $ioRepo->findDefault();
-                        if (!$ioService || empty($ioService['api_key_primaria'])) {
-                            Logger::getInstance()->info('App IO spontaneo: nessun servizio IO configurato', ['idTipo' => $idTipo]);
-                        } else {
-                            $ioSvc    = new \App\Services\AppIoService();
-                            $causale  = (string)($pr['causale'] ?? '');
-                            $importo  = (float)($pr['importo'] ?? 0);
-                            $scadenza = (string)($pr['data_scadenza'] ?? '');
-                            $isHttps  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
-                            $siteBase = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
-                            $toAbs    = static function (string $url) use ($siteBase): string {
-                                return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
-                            };
-                            $downloadUrl = $toAbs((string)($pr['download_url'] ?? ''));
-
-                            $ioSubject = 'Pendenza PagoPA - ' . substr($causale, 0, 100);
-                            $markdown  = "## Pendenza PagoPA\n\n"
-                                . "**Causale**: {$causale}\n\n"
-                                . "**Importo**: € " . number_format($importo, 2, ',', '.') . "\n\n";
-                            if ($scadenza !== '') {
-                                $markdown .= "**Scadenza**: {$scadenza}\n\n";
-                            }
-                            if ($downloadUrl !== '') {
-                                $markdown .= "[Scarica il PDF dell'avviso]({$downloadUrl})\n\n";
-                            }
-
-                            $noticeNum   = preg_replace('/\D/', '', (string)($pr['numeroAvviso'] ?? ''));
-                            $paymentData = null;
-                            if (strlen($noticeNum) === 18) {
-                                $paymentData = [
-                                    'noticeNumber'        => $noticeNum,
-                                    'amount'              => (int)round($importo * 100),
-                                    'invalidAfterDueDate' => $scadenza !== '',
-                                ];
-                            }
-                            $dueDate = ($scadenza !== '' && strlen($scadenza) === 10) ? $scadenza . 'T00:00:00Z' : null;
-
-                            $ioResult = $ioSvc->sendMessage(
-                                $ioService['api_key_primaria'],
-                                $payerCf,
-                                $ioSubject,
-                                $markdown,
-                                $dueDate,
-                                $paymentData
-                            );
-                            Logger::getInstance()->info('App IO spontaneo', ['esito' => $ioResult['esito'] ?? '?', 'id' => $ioResult['id'] ?? '', 'err' => $ioResult['errore'] ?? '']);
-                            frontoffice_add_notification_to_pendenza($pendenzaId, [
-                                'timestamp'    => date('Y-m-d H:i:s'),
-                                'esito'        => $ioResult['esito'] ?? 'KO',
-                                'canale'       => 'app_io',
-                                'destinatario' => $ioResult['id'] ?? $payerCf,
-                                'message_id'   => $ioResult['id'] ?? null,
-                                'errore'       => $ioResult['errore'] ?? null,
-                            ]);
-                        }
-                    } catch (\Throwable $e) {
-                        Logger::getInstance()->warning('App IO spontaneo non inviato', ['err' => $e->getMessage()]);
-                        frontoffice_add_notification_to_pendenza($pendenzaId, [
-                            'timestamp'    => date('Y-m-d H:i:s'),
-                            'esito'        => 'KO',
-                            'canale'       => 'app_io',
-                            'destinatario' => $payerCf,
-                            'errore'       => $e->getMessage(),
-                        ]);
-                    }
-                }
             }
         } else {
             $baseContext['form_data'] = $baseContext['form_data'] ?? ['idTipoPendenza' => $selectedService['id'] ?? ''];
@@ -4897,38 +4295,6 @@ $routes = [
 
         if ($method === 'POST') {
             $result = frontoffice_process_bollo_request($_POST, $_FILES);
-            if (!empty($result['pendenza_result'])) {
-                $pr       = $result['pendenza_result'];
-                $payerArr = is_array($pr['soggetto_pagatore'] ?? null) ? $pr['soggetto_pagatore'] : [];
-                $rawEmail = trim((string)($payerArr['email'] ?? ''));
-                $payerEmail = filter_var($rawEmail, FILTER_VALIDATE_EMAIL);
-                if ($payerEmail !== false && $payerEmail !== '') {
-                    $payerDisplay = trim((string)($payerArr['anagrafica'] ?? '')) ?: $payerEmail;
-                    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
-                    $siteBase   = ($isHttps ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
-                    $toAbsolute = static function (string $url) use ($siteBase): string {
-                        return ($url !== '' && $url[0] === '/') ? $siteBase . $url : $url;
-                    };
-                    try {
-                        $mailResult = \App\Services\MailerService::forSuite('frontoffice')->sendSpontaneoAvviso(
-                            $payerEmail,
-                            $payerDisplay,
-                            [
-                                'causale'       => (string)($pr['causale'] ?? ''),
-                                'importo'       => $pr['importo'] ?? 0,
-                                'numeroAvviso'  => (string)($pr['numeroAvviso'] ?? ''),
-                                'data_scadenza' => (string)($pr['data_scadenza'] ?? ''),
-                                'download_url'  => $toAbsolute((string)($pr['download_url'] ?? '')),
-                                'checkout_url'  => $toAbsolute((string)($pr['checkout_url'] ?? '')),
-                            ]
-                        );
-                        Logger::getInstance()->info('Email avviso bollo inviata', ['to' => $payerEmail, 'esito' => $mailResult['esito'] ?? '?', 'err' => $mailResult['errore'] ?? '']);
-                    } catch (\Throwable $e) {
-                        Logger::getInstance()->warning('Email avviso bollo non inviata', ['err' => $e->getMessage()]);
-                    }
-                }
-            }
             return [
                 'template' => 'pagamenti/bollo.html.twig',
                 'context'  => array_merge(['default_year' => $defaultYear], $result),
@@ -5084,21 +4450,20 @@ $routes = [
             $perPage = 100;
         }
 
-        $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
-        $idA2A = frontoffice_env_value('ID_A2A', '');
-        $statoRaw = strtoupper(trim((string)($_GET['stato'] ?? '')));
-        $allowedStates = [
-            \GovPay\Pagamenti\Model\StatoPendenza::ESEGUITA,
-            \GovPay\Pagamenti\Model\StatoPendenza::NON_ESEGUITA,
-            \GovPay\Pagamenti\Model\StatoPendenza::ESEGUITA_PARZIALE,
-            \GovPay\Pagamenti\Model\StatoPendenza::ANNULLATA,
-            \GovPay\Pagamenti\Model\StatoPendenza::SCADUTA,
-            \GovPay\Pagamenti\Model\StatoPendenza::ANOMALA,
-        ];
+        $idDominio = frontoffice_env_value('ID_DOMINIO', '');
+        $statoRaw  = strtoupper(trim((string)($_GET['stato'] ?? '')));
+        $allowedStates = ['ESEGUITA', 'NON_ESEGUITA', 'ESEGUITA_PARZIALE', 'ANNULLATA', 'SCADUTA', 'ANOMALA'];
         $stato = in_array($statoRaw, $allowedStates, true) ? $statoRaw : null;
 
-        $api = frontoffice_pagamenti_api_client();
-        if ($api === null) {
+        $apiResult = frontoffice_backoffice_api('GET', '/api/frontoffice/pendenze', array_filter([
+            'cf'       => $codiceFiscale,
+            'page'     => $page,
+            'per_page' => $perPage,
+            'stato'    => $stato ?? '',
+        ]));
+
+        if (!$apiResult['success']) {
+            Logger::getInstance()->warning('Errore ricerca pendenze via backoffice API', ['cf' => $codiceFiscale]);
             http_response_code(503);
             return [
                 'template' => 'errors/503.html.twig',
@@ -5108,47 +4473,14 @@ $routes = [
             ];
         }
 
-        try {
-            $result = $api->findPendenze(
-                $page,
-                $perPage,
-                null,
-                $idDominio !== '' ? $idDominio : null,
-                null,
-                null,
-                null,
-                $idA2A !== '' ? $idA2A : null,
-                null,
-                $codiceFiscale,
-                $stato,
-                null,
-                null,
-                null,
-                false,
-                true,
-                true
-            );
-            $data = json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Errore durante la ricerca pendenze per utente frontoffice', [
-                'codiceFiscale' => $codiceFiscale,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
-            http_response_code(503);
-            return [
-                'template' => 'errors/503.html.twig',
-                'context' => [
-                    'message' => 'Al momento non riusciamo a interrogare il sistema dei pagamenti. Riprova più tardi.',
-                ],
-            ];
-        }
+        $data = $apiResult['_raw']['data'] ?? [];
 
         $risultati = $data['risultati'] ?? [];
         if (!is_array($risultati)) {
             $risultati = [];
         }
 
-        $bollotTipo = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $bollotTipo = frontoffice_env_value('BOLLO_TIPO_PENDENZA', 'BOLLOT');
         $rows = [];
         foreach ($risultati as $pendenza) {
             if (!is_array($pendenza)) {
@@ -5255,15 +4587,15 @@ $routes = [
             static fn($d) => mb_substr(trim((string)$d), 0, 200),
             (array)($_GET['desc'] ?? [])
         ), static fn($d) => $d !== ''));
-        if ($iuv === '' || $ente === '' || $importo <= 0) {
+        if ($iuv === '' || $ente === '') {
             http_response_code(400);
             return [
                 'template' => 'errors/404.html.twig',
                 'context'  => ['requested_path' => '/avviso-bollo'],
             ];
         }
-        $qrString   = 'PAGOPA|002|' . $iuv . '|' . $ente . '|' . $importo;
-        $importoEur = number_format($importo / 100, 2, ',', '.');
+        $qrString   = $importo > 0 ? ('PAGOPA|002|' . $iuv . '|' . $ente . '|' . $importo) : '';
+        $importoEur = $importo > 0 ? number_format($importo / 100, 2, ',', '.') : '—';
         return [
             'template' => 'pagamenti/avviso-bollo.html.twig',
             'context'  => compact('iuv', 'ente', 'importo', 'importoEur', 'causale', 'cfDeb', 'scadenza', 'qrString', 'desc'),
@@ -5300,7 +4632,7 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5321,6 +4653,24 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
         ]);
         return;
     }
+    // Marca da bollo: GovPay non genera PDF avviso (ritorna 422).
+    // Redirect al template HTML stampabile /avviso-bollo con dati dalla pendenza.
+    if (frontoffice_is_bollo_detail($pendenza)) {
+        $importoCents = (int)round((float)($pendenza['importo'] ?? 0) * 100);
+        $causale      = mb_substr(trim((string)($pendenza['causale'] ?? '')), 0, 140);
+        $scadenza     = trim((string)($pendenza['dataScadenza'] ?? ''));
+        $params       = http_build_query(array_filter([
+            'iuv'      => $iuv,
+            'ente'     => $idDominio,
+            'importo'  => $importoCents > 0 ? $importoCents : null,
+            'causale'  => $causale !== '' ? $causale : null,
+            'cf'       => $cf,
+            'scadenza' => $scadenza !== '' ? $scadenza : null,
+        ]), '', '&', PHP_QUERY_RFC3986);
+        header('Location: /avviso-bollo?' . $params, true, 302);
+        exit;
+    }
+
     $numeroAvviso = (string)(
         $pendenza['numeroAvviso']
         ?? $pendenza['numero_avviso']
@@ -5375,7 +4725,7 @@ if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5406,7 +4756,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
         echo 'Parametri mancanti.';
         return;
     }
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5459,7 +4809,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
 }
 
 if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5558,46 +4908,21 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
         return;
     }
 
-    $hasCheckoutClient = class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class);
-    $subscriptionKeyConfigured = trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) !== '';
-    if (!$hasCheckoutClient || !$subscriptionKeyConfigured) {
-        http_response_code(503);
-        echo 'Checkout pagoPA non configurato.';
-        Logger::getInstance()->warning('Checkout pagoPA non configurato (spontaneo)', [
-            'has_client' => $hasCheckoutClient,
-            'has_key' => $subscriptionKeyConfigured,
-        ]);
-        return;
-    }
-
-    $api = frontoffice_pagopa_checkout_api_client();
-    if ($api === null) {
-        http_response_code(503);
-        echo 'Checkout pagoPA non configurato.';
-        Logger::getInstance()->warning('Checkout pagoPA non configurato: helper client null (spontaneo)');
-        return;
-    }
-
-    $companyName = trim(frontoffice_env_value('PAGOPA_CHECKOUT_COMPANY_NAME', frontoffice_env_value('APP_ENTITY_NAME', 'Ente')));
-    if ($companyName === '') {
-        $companyName = 'Ente';
-    }
-    $description = trim((string)($detail['causale'] ?? ''));
-
     $okUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_OK_URL', ''));
     $cancelUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_CANCEL_URL', ''));
-    $errorUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_ERROR_URL', ''));
+    $errorUrl  = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_ERROR_URL', ''));
+    $_checkoutTok = frontoffice_generate_checkout_token($idPendenza);
+    $_tokSuffix = $_checkoutTok !== '' ? ('&t=' . rawurlencode($_checkoutTok)) : '';
     if ($okUrl === '') {
-        $okUrl = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($idPendenza);
+        $okUrl = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix;
     }
     if ($cancelUrl === '') {
-        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($idPendenza);
+        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix;
     }
     if ($errorUrl === '') {
-        $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza);
+        $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix;
     }
 
-    // Email notice: preferisci quella del soggetto pagatore; fallback a profilo loggato.
     $emailNotice = '';
     if (isset($detail['soggettoPagatore']) && is_array($detail['soggettoPagatore'])) {
         $emailNotice = trim((string)($detail['soggettoPagatore']['email'] ?? ''));
@@ -5617,69 +4942,33 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
         exit;
     }
 
-    try {
-        $notice = new \PagoPA\CheckoutEc\Model\PaymentNotice();
-        $notice->setNoticeNumber($numeroAvviso);
-        $notice->setFiscalCode($idDominio);
-        $notice->setAmount($amountCents);
-        $notice->setCompanyName($companyName);
-        if ($description !== '') {
-            $notice->setDescription($description);
-        }
+    $cartResult = frontoffice_backoffice_api('POST', '/api/frontoffice/carrello/checkout', [
+        'notices'    => [['numeroAvviso' => $numeroAvviso, 'importo' => $amountEur, 'causale' => trim((string)($detail['causale'] ?? ''))]],
+        'idDominio'  => $idDominio,
+        'returnUrls' => ['ok' => $okUrl, 'cancel' => $cancelUrl, 'error' => $errorUrl],
+        'emailNotice'=> $emailNotice,
+    ]);
 
-        $returnUrls = new \PagoPA\CheckoutEc\Model\CartRequestReturnUrls();
-        $returnUrls->setReturnOkUrl($okUrl);
-        $returnUrls->setReturnCancelUrl($cancelUrl);
-        $returnUrls->setReturnErrorUrl($errorUrl);
-
-        $cart = new \PagoPA\CheckoutEc\Model\CartRequest();
-        if ($emailNotice !== '' && filter_var($emailNotice, FILTER_VALIDATE_EMAIL) !== false) {
-            $cart->setEmailNotice($emailNotice);
-        }
-        $cart->setPaymentNotices([$notice]);
-        $cart->setReturnUrls($returnUrls);
-
-        [, $statusCode, $headers] = $api->postCartsWithHttpInfo($cart);
-
-        $location = '';
-        if (is_array($headers)) {
-            foreach ($headers as $name => $values) {
-                if (strtolower((string)$name) !== 'location') {
-                    continue;
-                }
-                if (is_array($values) && isset($values[0]) && is_string($values[0])) {
-                    $location = trim($values[0]);
-                }
-                break;
-            }
-        }
-
-        if ($location === '' || $statusCode < 300 || $statusCode >= 400) {
-            Logger::getInstance()->warning('Checkout pagoPA: risposta inattesa da POST /carts (spontaneo)', [
-                'idPendenza' => $idPendenza,
-                'status' => $statusCode,
-                'has_location' => $location !== '',
-            ]);
-            http_response_code(503);
-            echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
-            return;
-        }
-
-        header('Location: ' . $location, true, 302);
-        exit;
-    } catch (\Throwable $e) {
-        Logger::getInstance()->warning('Errore durante la creazione del carrello pagoPA Checkout (spontaneo)', [
-            'idPendenza' => $idPendenza,
-            'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-        ]);
+    if (!$cartResult['success']) {
+        Logger::getInstance()->warning('Checkout spontaneo: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
     }
+
+    $location = trim((string)($cartResult['_raw']['location'] ?? ''));
+    if ($location === '') {
+        http_response_code(503);
+        echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
+        return;
+    }
+
+    header('Location: ' . $location, true, 302);
+    exit;
 }
 
 if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5769,46 +5058,21 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
         return;
     }
 
-    $hasCheckoutClient = class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class);
-    $subscriptionKeyConfigured = trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) !== '';
-    if (!$hasCheckoutClient || !$subscriptionKeyConfigured) {
-        http_response_code(503);
-        echo 'Checkout pagoPA non configurato.';
-        Logger::getInstance()->warning('Checkout pagoPA non configurato (avviso)', [
-            'has_client' => $hasCheckoutClient,
-            'has_key' => $subscriptionKeyConfigured,
-        ]);
-        return;
-    }
-
-    $api = frontoffice_pagopa_checkout_api_client();
-    if ($api === null) {
-        http_response_code(503);
-        echo 'Checkout pagoPA non configurato.';
-        Logger::getInstance()->warning('Checkout pagoPA non configurato: helper client null (avviso)');
-        return;
-    }
-
-    $companyName = trim(frontoffice_env_value('PAGOPA_CHECKOUT_COMPANY_NAME', frontoffice_env_value('APP_ENTITY_NAME', 'Ente')));
-    if ($companyName === '') {
-        $companyName = 'Ente';
-    }
-    $description = trim((string)($detail['causale'] ?? ''));
-
     $okUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_OK_URL', ''));
     $cancelUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_CANCEL_URL', ''));
-    $errorUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_ERROR_URL', ''));
+    $errorUrl  = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_ERROR_URL', ''));
+    $_checkoutTok2 = frontoffice_generate_checkout_token($idPendenza);
+    $_tokSuffix2 = $_checkoutTok2 !== '' ? ('&t=' . rawurlencode($_checkoutTok2)) : '';
     if ($okUrl === '') {
-        $okUrl = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($idPendenza);
+        $okUrl = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix2;
     }
     if ($cancelUrl === '') {
-        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($idPendenza);
+        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix2;
     }
     if ($errorUrl === '') {
-        $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza);
+        $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix2;
     }
 
-    // Email notice: preferisci quella del soggetto pagatore; fallback a profilo loggato.
     $emailNotice = '';
     if (isset($detail['soggettoPagatore']) && is_array($detail['soggettoPagatore'])) {
         $emailNotice = trim((string)($detail['soggettoPagatore']['email'] ?? ''));
@@ -5828,67 +5092,30 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
         exit;
     }
 
-    try {
-        $notice = new \PagoPA\CheckoutEc\Model\PaymentNotice();
-        $notice->setNoticeNumber($numeroAvviso);
-        $notice->setFiscalCode($idDominio);
-        $notice->setAmount($amountCents);
-        $notice->setCompanyName($companyName);
-        if ($description !== '') {
-            $notice->setDescription($description);
-        }
+    $cartResult = frontoffice_backoffice_api('POST', '/api/frontoffice/carrello/checkout', [
+        'notices'    => [['numeroAvviso' => $numeroAvviso, 'importo' => $amountEur, 'causale' => trim((string)($detail['causale'] ?? ''))]],
+        'idDominio'  => $idDominio,
+        'returnUrls' => ['ok' => $okUrl, 'cancel' => $cancelUrl, 'error' => $errorUrl],
+        'emailNotice'=> $emailNotice,
+    ]);
 
-        $returnUrls = new \PagoPA\CheckoutEc\Model\CartRequestReturnUrls();
-        $returnUrls->setReturnOkUrl($okUrl);
-        $returnUrls->setReturnCancelUrl($cancelUrl);
-        $returnUrls->setReturnErrorUrl($errorUrl);
-
-        $cart = new \PagoPA\CheckoutEc\Model\CartRequest();
-        if ($emailNotice !== '' && filter_var($emailNotice, FILTER_VALIDATE_EMAIL) !== false) {
-            $cart->setEmailNotice($emailNotice);
-        }
-        $cart->setPaymentNotices([$notice]);
-        $cart->setReturnUrls($returnUrls);
-
-        [, $statusCode, $headers] = $api->postCartsWithHttpInfo($cart);
-
-        $location = '';
-        if (is_array($headers)) {
-            foreach ($headers as $name => $values) {
-                if (strtolower((string)$name) !== 'location') {
-                    continue;
-                }
-                if (is_array($values) && isset($values[0]) && is_string($values[0])) {
-                    $location = trim($values[0]);
-                }
-                break;
-            }
-        }
-
-        if ($location === '' || $statusCode < 300 || $statusCode >= 400) {
-            Logger::getInstance()->warning('Checkout pagoPA: risposta inattesa da POST /carts (avviso)', [
-                'idPendenza' => $idPendenza,
-                'status' => $statusCode,
-                'has_location' => $location !== '',
-            ]);
-            http_response_code(503);
-            echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
-            return;
-        }
-
-        header('Location: ' . $location, true, 302);
-        exit;
-    } catch (\Throwable $e) {
-        Logger::getInstance()->warning('Errore durante la creazione del carrello pagoPA Checkout (avviso)', [
-            'idPendenza' => $idPendenza,
-            'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-        ]);
+    if (!$cartResult['success']) {
+        Logger::getInstance()->warning('Checkout avviso: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
     }
-}
 
+    $location = trim((string)($cartResult['_raw']['location'] ?? ''));
+    if ($location === '') {
+        http_response_code(503);
+        echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
+        return;
+    }
+
+    header('Location: ' . $location, true, 302);
+    exit;
+}
 if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalizedPath, $match)) {
     if (!frontoffice_spid_enabled()) {
         http_response_code(404);
@@ -5902,7 +5129,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         exit;
     }
 
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -5958,49 +5185,29 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         return;
     }
 
-    $hasCheckoutClient = class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class);
-    $subscriptionKeyConfigured = trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) !== '';
-
-    if (!$hasCheckoutClient || !$subscriptionKeyConfigured) {
-        http_response_code(503);
-        if (!$hasCheckoutClient) {
-            echo 'Checkout pagoPA non configurato (client non installato).';
-            Logger::getInstance()->warning('Checkout pagoPA non configurato: client non installato');
-        } else {
-            echo 'Checkout pagoPA non configurato (subscription key mancante).';
-            Logger::getInstance()->warning('Checkout pagoPA non configurato: subscription key mancante');
-        }
-        return;
-    }
-
-    $api = frontoffice_pagopa_checkout_api_client();
-    if ($api === null) {
+    if (frontoffice_env_value('PAGOPA_CHECKOUT_CONFIGURED', '0') !== '1') {
         http_response_code(503);
         echo 'Checkout pagoPA non configurato.';
-        Logger::getInstance()->warning('Checkout pagoPA non configurato: helper client null');
+        Logger::getInstance()->warning('Checkout pagoPA non configurato');
         return;
     }
-
-    $companyName = trim(frontoffice_env_value('PAGOPA_CHECKOUT_COMPANY_NAME', frontoffice_env_value('APP_ENTITY_NAME', 'Ente')));
-    if ($companyName === '') {
-        $companyName = 'Ente';
-    }
-    $description = trim((string)($detail['causale'] ?? ''));
 
     $okUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_OK_URL', ''));
     $cancelUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_CANCEL_URL', ''));
-    $errorUrl = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_ERROR_URL', ''));
+    $errorUrl  = trim(frontoffice_env_value('PAGOPA_CHECKOUT_RETURN_ERROR_URL', ''));
+    $_checkoutTok3 = frontoffice_generate_checkout_token($idPendenza);
+    $_tokSuffix3 = $_checkoutTok3 !== '' ? ('&t=' . rawurlencode($_checkoutTok3)) : '';
     if ($okUrl === '') {
-        $okUrl = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($idPendenza);
+        $okUrl = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix3;
     }
     if ($cancelUrl === '') {
-        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($idPendenza);
+        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix3;
     }
     if ($errorUrl === '') {
-        $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza);
+        $errorUrl = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($idPendenza) . $_tokSuffix3;
     }
 
-    $emailNotice = trim((string)($user['email'] ?? ''));
+    $emailNotice  = trim((string)($user['email'] ?? ''));
     $bolloCheckout = frontoffice_resolve_bollo_checkout_url($detail, $idPendenza, $idDominio, $okUrl, $cancelUrl, $errorUrl, $emailNotice, $frontofficeBaseUrl, 'profilo');
     if (!($bolloCheckout['skip'] ?? false)) {
         if (isset($bolloCheckout['error_code'])) {
@@ -6012,67 +5219,29 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
         exit;
     }
 
-    try {
-        $notice = new \PagoPA\CheckoutEc\Model\PaymentNotice();
-        $notice->setNoticeNumber($numeroAvviso);
-        $notice->setFiscalCode($idDominio);
-        $notice->setAmount($amountCents);
-        $notice->setCompanyName($companyName);
-        if ($description !== '') {
-            $notice->setDescription($description);
-        }
+    $cartResult = frontoffice_backoffice_api('POST', '/api/frontoffice/carrello/checkout', [
+        'notices'    => [['numeroAvviso' => $numeroAvviso, 'importo' => $amountEur, 'causale' => trim((string)($detail['causale'] ?? ''))]],
+        'idDominio'  => $idDominio,
+        'returnUrls' => ['ok' => $okUrl, 'cancel' => $cancelUrl, 'error' => $errorUrl],
+        'emailNotice'=> $emailNotice,
+    ]);
 
-        $returnUrls = new \PagoPA\CheckoutEc\Model\CartRequestReturnUrls();
-        $returnUrls->setReturnOkUrl($okUrl);
-        $returnUrls->setReturnCancelUrl($cancelUrl);
-        $returnUrls->setReturnErrorUrl($errorUrl);
-
-        $cart = new \PagoPA\CheckoutEc\Model\CartRequest();
-
-        if ($emailNotice !== '' && filter_var($emailNotice, FILTER_VALIDATE_EMAIL) !== false) {
-            $cart->setEmailNotice($emailNotice);
-        }
-
-        $cart->setPaymentNotices([$notice]);
-        $cart->setReturnUrls($returnUrls);
-
-        [, $statusCode, $headers] = $api->postCartsWithHttpInfo($cart);
-
-        $location = '';
-        if (is_array($headers)) {
-            foreach ($headers as $name => $values) {
-                if (strtolower((string)$name) !== 'location') {
-                    continue;
-                }
-                if (is_array($values) && isset($values[0]) && is_string($values[0])) {
-                    $location = trim($values[0]);
-                }
-                break;
-            }
-        }
-
-        if ($location === '' || $statusCode < 300 || $statusCode >= 400) {
-            Logger::getInstance()->warning('Checkout pagoPA: risposta inattesa da POST /carts', [
-                'idPendenza' => $idPendenza,
-                'status' => $statusCode,
-                'has_location' => $location !== '',
-            ]);
-            http_response_code(503);
-            echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
-            return;
-        }
-
-        header('Location: ' . $location, true, 302);
-        exit;
-    } catch (\Throwable $e) {
-        Logger::getInstance()->warning('Errore durante la creazione del carrello pagoPA Checkout', [
-            'idPendenza' => $idPendenza,
-            'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-        ]);
+    if (!$cartResult['success']) {
+        Logger::getInstance()->warning('Checkout pendenza/profilo: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
     }
+
+    $location = trim((string)($cartResult['_raw']['location'] ?? ''));
+    if ($location === '') {
+        http_response_code(503);
+        echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
+        return;
+    }
+
+    header('Location: ' . $location, true, 302);
+    exit;
 }
 
 // ─── POST /carrello/checkout ─────────────────────────────────────────────────
@@ -6080,7 +5249,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
 // Disponibile anche per utenti non loggati (guest); l'autorizzazione si basa
 // sulla whitelist di sessione. Se l'utente è loggato si verifica anche il CF.
 if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -6180,22 +5349,6 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
         $pendenzaDetails[] = $detail;
     }
 
-    // Check checkout client availability
-    if (!class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class) ||
-        trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) === '') {
-        http_response_code(503);
-        echo 'Checkout pagoPA non configurato.';
-        Logger::getInstance()->warning('Carrello: checkout pagoPA non configurato');
-        return;
-    }
-
-    $api = frontoffice_pagopa_checkout_api_client();
-    if ($api === null) {
-        http_response_code(503);
-        echo 'Checkout pagoPA non disponibile.';
-        return;
-    }
-
     // Generate a cart ID and store mapping in session for the OK page
     try {
         $idCart = bin2hex(random_bytes(8));
@@ -6224,12 +5377,7 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     }
 
     $bolloDetails = array_values(array_filter($pendenzaDetails, static fn (array $d): bool => frontoffice_is_bollo_detail($d)));
-    if (count($bolloDetails) > 0 && !frontoffice_is_ebollo_v2_enabled() && !frontoffice_is_govpay_checkout_enabled()) {
-        http_response_code(422);
-        echo 'Il pagamento della Marca da Bollo Telematica tramite carrello non è disponibile. Utilizza il pagamento diretto dalla pendenza.';
-        return;
-    }
-    if (count($bolloDetails) > 0 && (frontoffice_is_ebollo_v2_enabled() || frontoffice_is_govpay_checkout_enabled())) {
+    if (count($bolloDetails) > 0) {
         if (count($pendenzaDetails) !== 1) {
             http_response_code(422);
             echo 'Le pendenze Marca da Bollo devono essere pagate singolarmente.';
@@ -6237,9 +5385,11 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
         }
 
         $bolloPendenzaId = (string)($bolloDetails[0]['idPendenza'] ?? $rawIds[0] ?? '');
-        $okUrl     = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($bolloPendenzaId);
-        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($bolloPendenzaId);
-        $errorUrl  = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($bolloPendenzaId);
+        $_bolloCTok = frontoffice_generate_checkout_token($bolloPendenzaId);
+        $_bolloTS   = $_bolloCTok !== '' ? ('&t=' . rawurlencode($_bolloCTok)) : '';
+        $okUrl     = $frontofficeBaseUrl . '/checkout/ok?idPendenza=' . rawurlencode($bolloPendenzaId) . $_bolloTS;
+        $cancelUrl = $frontofficeBaseUrl . '/checkout/cancel?idPendenza=' . rawurlencode($bolloPendenzaId) . $_bolloTS;
+        $errorUrl  = $frontofficeBaseUrl . '/checkout/error?idPendenza=' . rawurlencode($bolloPendenzaId) . $_bolloTS;
         $bolloCheckout = frontoffice_resolve_bollo_checkout_url($bolloDetails[0], $bolloPendenzaId, $idDominio, $okUrl, $cancelUrl, $errorUrl, $emailNotice, $frontofficeBaseUrl, 'carrello');
         if (!($bolloCheckout['skip'] ?? false)) {
             if (isset($bolloCheckout['error_code'])) {
@@ -6252,58 +5402,48 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
         }
     }
 
+    // Costruisce i notice da inviare al backoffice sidecar
+    $notices = [];
+    foreach ($pendenzaDetails as $pd) {
+        $notices[] = [
+            'numeroAvviso' => preg_replace('/\D+/', '', trim((string)($pd['numeroAvviso'] ?? ''))),
+            'importo'      => $pd['importo'] ?? 0,
+            'causale'      => trim((string)($pd['causale'] ?? '')),
+        ];
+    }
 
-    try {
-        $cart = frontoffice_build_cart_request(
-            $pendenzaDetails,
-            $idDominio,
-            $okUrl,
-            $cancelUrl,
-            $errorUrl,
-            $emailNotice
-        );
+    $cartResult = frontoffice_backoffice_api('POST', '/api/frontoffice/carrello/checkout', [
+        'notices'     => $notices,
+        'idDominio'   => $idDominio,
+        'returnUrls'  => ['ok' => $okUrl, 'cancel' => $cancelUrl, 'error' => $errorUrl],
+        'emailNotice' => $emailNotice,
+    ]);
 
-        [, $statusCode, $headers] = $api->postCartsWithHttpInfo($cart);
-
-        $location = '';
-        if (is_array($headers)) {
-            foreach ($headers as $name => $values) {
-                if (strtolower((string)$name) !== 'location') {
-                    continue;
-                }
-                $location = is_array($values) && isset($values[0]) ? trim($values[0]) : '';
-                break;
-            }
-        }
-
-        if ($location === '' || $statusCode < 300 || $statusCode >= 400) {
-            Logger::getInstance()->warning('Carrello: risposta inattesa da POST /carts', [
-                'idCart'   => $idCart,
-                'status'   => $statusCode,
-                'location' => $location,
-            ]);
-            http_response_code(503);
-            echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
-            return;
-        }
-
-        Logger::getInstance()->info('Carrello pagoPA avviato', [
-            'idCart'   => $idCart,
-            'count'    => count($pendenzaDetails),
-            'pendenze' => $rawIds,
-        ]);
-
-        header('Location: ' . $location, true, 302);
-        exit;
-    } catch (\Throwable $e) {
-        Logger::getInstance()->warning('Errore durante la creazione del carrello pagoPA', [
-            'idCart' => $idCart,
-            'error'  => Logger::sanitizeErrorForDisplay($e->getMessage()),
+    if (!$cartResult['success']) {
+        Logger::getInstance()->warning('Carrello: risposta errore dal backoffice API', [
+            'idCart'  => $idCart,
+            'message' => $cartResult['message'],
         ]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
     }
+
+    $location = trim((string)($cartResult['_raw']['location'] ?? ''));
+    if ($location === '') {
+        http_response_code(503);
+        echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
+        return;
+    }
+
+    Logger::getInstance()->info('Carrello pagoPA avviato via backoffice sidecar', [
+        'idCart'   => $idCart,
+        'count'    => count($pendenzaDetails),
+        'pendenze' => $rawIds,
+    ]);
+
+    header('Location: ' . $location, true, 302);
+    exit;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -6327,7 +5467,7 @@ if ($method === 'GET' && $normalizedPath === '/ricevuta/pubblica') {
     $expParam = (int)($_GET['exp'] ?? 0);
     $tokenParam = trim((string)($_GET['t'] ?? ''));
 
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '' || $idPendenzaParam === '' || $expParam <= 0 || $tokenParam === '') {
         http_response_code(404);
         echo 'Not found';
@@ -6361,62 +5501,7 @@ if ($method === 'GET' && $normalizedPath === '/ricevuta/pubblica') {
         return;
     }
 
-    $ids = frontoffice_extract_ricevuta_identifiers_from_pendenza_detail($detail);
-    $iuv = trim((string)($ids['iuv'] ?? ''));
-    $ccp = trim((string)($ids['ccp'] ?? ''));
-    $idRicevuta = trim((string)($ids['idRicevuta'] ?? ''));
-
-    $idA2AFromDetail = trim((string)($detail['idA2A'] ?? $detail['id_a2a'] ?? ''));
-    if (($iuv === '' || $ccp === '')) {
-        $rpp = frontoffice_find_paid_rpp_for_pendenza($idDominio, $idPendenzaParam, ($idA2AFromDetail !== '' ? $idA2AFromDetail : null));
-        if (is_array($rpp)) {
-            if ($iuv === '') {
-                $iuv = trim((string)($rpp['iuv'] ?? ''));
-            }
-            if ($ccp === '') {
-                $ccp = trim((string)($rpp['ccp'] ?? ''));
-            }
-        }
-    }
-
-    if ($iuv === '') {
-        http_response_code(404);
-        echo 'Ricevuta non disponibile.';
-        return;
-    }
-
-    if ($ccp !== '') {
-        frontoffice_stream_rt_pdf($idDominio, $iuv, $ccp);
-        return;
-    }
-
-    $ricevute = frontoffice_fetch_ricevute_for_iuv($idDominio, $iuv);
-    $risultati = is_array($ricevute['risultati'] ?? null) ? $ricevute['risultati'] : [];
-    if ($risultati !== []) {
-        $first = $risultati[0] ?? null;
-        $iuvFromApi = is_array($first) ? trim((string)($first['iuv'] ?? $iuv)) : $iuv;
-        $ccpFromApi = '';
-        if (is_array($first)) {
-            foreach (['ccp', 'codiceContestoPagamento', 'codice_contesto_pagamento'] as $k) {
-                if (isset($first[$k]) && is_scalar($first[$k])) {
-                    $ccpFromApi = trim((string)$first[$k]);
-                    if ($ccpFromApi !== '') {
-                        break;
-                    }
-                }
-            }
-        }
-        if ($ccpFromApi !== '' && $iuvFromApi !== '') {
-            frontoffice_stream_rt_pdf($idDominio, $iuvFromApi, $ccpFromApi);
-            return;
-        }
-        if ($idRicevuta !== '') {
-            frontoffice_stream_ricevuta_pdf($idDominio, $iuv, $idRicevuta);
-            return;
-        }
-    }
-    http_response_code(404);
-    echo 'Ricevuta non disponibile.';
+    frontoffice_stream_ricevuta_by_pendenza($idPendenzaParam);
     return;
 }
 
@@ -6434,7 +5519,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/ricevuta$#', $normalize
         exit;
     }
 
-    $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+    $idDominio = frontoffice_env_value('ID_DOMINIO', '');
     if ($idDominio === '') {
         http_response_code(503);
         echo 'Configurazione mancante: ID_DOMINIO non impostato.';
@@ -6467,71 +5552,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/ricevuta$#', $normalize
         return;
     }
 
-    $ids = frontoffice_extract_ricevuta_identifiers_from_pendenza_detail($detail);
-    $iuv = trim((string)($ids['iuv'] ?? ''));
-    $idRicevuta = trim((string)($ids['idRicevuta'] ?? ''));
-    $ccp = trim((string)($ids['ccp'] ?? ''));
-
-    // Fallback forte: se mancano IUV/CCP nel dettaglio, ricaviamoli da Pendenze v2 (RPP eseguite).
-    $idA2AFromDetail = trim((string)($detail['idA2A'] ?? $detail['id_a2a'] ?? ''));
-    if (($iuv === '' || $ccp === '')) {
-        $rpp = frontoffice_find_paid_rpp_for_pendenza($idDominio, $idPendenza, ($idA2AFromDetail !== '' ? $idA2AFromDetail : null));
-        if (is_array($rpp)) {
-            if ($iuv === '') {
-                $iuv = trim((string)($rpp['iuv'] ?? ''));
-            }
-            if ($ccp === '') {
-                $ccp = trim((string)($rpp['ccp'] ?? ''));
-            }
-        }
-    }
-
-    if ($iuv === '') {
-        http_response_code(404);
-        echo 'Ricevuta non disponibile.';
-        return;
-    }
-
-    // Allineato al backoffice: la RT si scarica da Pendenze v2 /rpp/{idDominio}/{iuv}/{ccp}/rt.
-    if ($ccp !== '') {
-        frontoffice_stream_rt_pdf($idDominio, $iuv, $ccp);
-        return;
-    }
-
-    // Fallback: cerchiamo il CCP interrogando Pagamenti /ricevute/{idDominio}/{iuv}.
-    $ricevute = frontoffice_fetch_ricevute_for_iuv($idDominio, $iuv);
-    $risultati = is_array($ricevute['risultati'] ?? null) ? $ricevute['risultati'] : [];
-    if ($risultati === []) {
-        http_response_code(404);
-        echo 'Ricevuta non disponibile.';
-        return;
-    }
-
-    $first = $risultati[0] ?? null;
-    $iuvFromApi = is_array($first) ? trim((string)($first['iuv'] ?? $iuv)) : $iuv;
-    $ccpFromApi = '';
-    if (is_array($first)) {
-        foreach (['ccp', 'codiceContestoPagamento', 'codice_contesto_pagamento'] as $k) {
-            if (isset($first[$k]) && is_scalar($first[$k])) {
-                $ccpFromApi = trim((string)$first[$k]);
-                if ($ccpFromApi !== '') {
-                    break;
-                }
-            }
-        }
-    }
-    if ($ccpFromApi === '' || $iuvFromApi === '') {
-        // Ultimo fallback: se abbiamo idRicevuta (anche se non abbiamo CCP), proviamo lo scarico PDF legacy.
-        if ($idRicevuta !== '') {
-            frontoffice_stream_ricevuta_pdf($idDominio, $iuv, $idRicevuta);
-            return;
-        }
-        http_response_code(404);
-        echo 'Ricevuta non disponibile.';
-        return;
-    }
-
-    frontoffice_stream_rt_pdf($idDominio, $iuvFromApi, $ccpFromApi);
+    frontoffice_stream_ricevuta_by_pendenza($idPendenza);
     return;
 }
 
@@ -6580,7 +5601,7 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)$#', $normalizedPath, $m
                     ],
                 ];
             } else {
-                $idDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: frontoffice_env_value('ID_DOMINIO', '');
+                $idDominio = frontoffice_env_value('ID_DOMINIO', '');
                 $routeDefinition = [
                     'template' => 'pendenze/detail.html.twig',
                     'context' => [
@@ -6761,8 +5782,7 @@ if ($method === 'GET' && $normalizedPath === '/carrello') {
             'cart_items'   => $rows,
             'total_cents'  => $totalCents,
             'total_euro'   => $totalCents / 100,
-            'can_checkout' => count($rows) > 0 && class_exists(\PagoPA\CheckoutEc\Api\DefaultApi::class) &&
-                              trim(frontoffice_env_value('PAGOPA_CHECKOUT_SUBSCRIPTION_KEY', '')) !== '',
+            'can_checkout' => count($rows) > 0 && frontoffice_env_value('PAGOPA_CHECKOUT_CONFIGURED', '0') === '1',
         ],
     ];
 }
@@ -6882,14 +5902,14 @@ $twig->addExtension(new I18nExtension($translations, $currentLocale));
 
 $versionInfo = \App\Config\Config::getVersionInfo();
 
-$bollotAttivo = false;
-$bollotIdTipo = \App\Config\SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
-$bollotIdDominio = \App\Config\SettingsRepository::get('entity', 'id_dominio', '') ?: $env('ID_DOMINIO', '');
-if ($bollotIdDominio) {
-    try {
-        $det = (new \App\Database\EntrateRepository())->findDetails($bollotIdDominio, $bollotIdTipo);
-        $bollotAttivo = $det !== null && !empty($det['abilitato_backoffice']);
-    } catch (\Throwable $_) {}
+$bollotAttivo  = false;
+$bollotIdTipo  = frontoffice_env_value('BOLLO_TIPO_PENDENZA', 'BOLLOT') ?: 'BOLLOT';
+$tipologieResp = frontoffice_backoffice_api('GET', '/api/frontoffice/tipologie');
+foreach ((array)($tipologieResp['_raw']['tipologie'] ?? []) as $_row) {
+    if (is_array($_row) && (string)($_row['id_entrata'] ?? '') === $bollotIdTipo && (int)($_row['abilitato_backoffice'] ?? 0) === 1) {
+        $bollotAttivo = true;
+        break;
+    }
 }
 
 $baseContext = [
@@ -6912,7 +5932,7 @@ $baseContext = [
     'support_location' => $env('APP_SUPPORT_LOCATION', 'Via Roma 1, 00100 Roma (RM)'),
     'cart_count' => frontoffice_cart_count(),
     'cart_items_ids' => array_keys(frontoffice_cart_items()),
-    'bollo_cart_enabled' => frontoffice_is_ebollo_v2_enabled() || frontoffice_is_govpay_checkout_enabled(),
+    'bollo_cart_enabled' => true,
     'current_locale' => $currentLocale,
     'app_version' => $versionInfo['version'],
     'app_commit' => $versionInfo['commit'],

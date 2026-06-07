@@ -5,10 +5,11 @@
 {% set avviso = avviso_preview|default({}) %}
 {% set pagatore = avviso.soggetto_pagatore|default({}) %}
 {% set voci = avviso.voci|default([]) %}
-{% set is_bollo = voci|length > 0
-    and voci[0].tipoBollo is defined
-    and voci[0].tipoBollo is not null
-    and voci[0].tipoBollo != '' %}
+{% set is_bollo = avviso.is_bollo|default(false)
+    or (voci|length > 0
+        and voci[0].tipoBollo is defined
+        and voci[0].tipoBollo is not null
+        and voci[0].tipoBollo != '') %}
 {% set status_cls = avviso.is_paid
     ? 'status-paid'
     : (avviso.is_payable
@@ -115,15 +116,20 @@
 
           <div class="avviso-actions">
             {% if is_bollo %}
-              {% set _burl = '/avviso-bollo?iuv=' ~ (avviso.numero_avviso ?? '')|url_encode
-                  ~ '&ente=' ~ (avviso.id_dominio ?? id_dominio ?? '')|url_encode
-                  ~ '&importo=' ~ ((avviso.importo ?? 0) * 100)|round
-                  ~ '&causale=' ~ (avviso.causale ?? '')|url_encode
-                  ~ '&cf=' ~ (pagatore.identificativo ?? pagatore.codice_fiscale ?? '')|url_encode
-                  ~ '&scadenza=' ~ (avviso.data_scadenza ?? '')|url_encode %}
-              {% for v in voci %}
-                {% set _burl = _burl ~ '&desc[]=' ~ (v.descrizione ?? '')|url_encode %}
-              {% endfor %}
+              {# Usa download_url già calcolato lato PHP (punta a /avviso-bollo con tutti i params) #}
+              {% set _burl = avviso.download_url is defined and avviso.download_url starts with '/avviso-bollo'
+                  ? avviso.download_url
+                  : ('/avviso-bollo?iuv=' ~ (avviso.numero_avviso ?? '')|url_encode
+                      ~ '&ente=' ~ (avviso.id_dominio ?? id_dominio ?? '')|url_encode
+                      ~ '&importo=' ~ ((avviso.importo ?? 0) * 100)|round
+                      ~ '&causale=' ~ (avviso.causale ?? '')|url_encode
+                      ~ '&cf=' ~ (pagatore.identificativo ?? pagatore.codice_fiscale ?? '')|url_encode
+                      ~ '&scadenza=' ~ (avviso.data_scadenza ?? '')|url_encode) %}
+              {% if not (avviso.download_url starts with '/avviso-bollo') %}
+                {% for v in voci %}
+                  {% set _burl = _burl ~ '&desc[]=' ~ (v.descrizione ?? '')|url_encode %}
+                {% endfor %}
+              {% endif %}
             {% endif %}
 
             {# — Aggiungi al carrello — #}
