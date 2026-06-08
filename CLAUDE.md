@@ -20,7 +20,7 @@ Multi-container Docker. Container principali:
 | `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
 | `gil-metadata-builder` | `metadata-builder` | Bash + OpenSSL | Generazione certificati e metadata SPID/CIE (setup iniziale) |
 
-Le chiamate interne tra servizi usano Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (32 caratteri).
+Le chiamate interne tra servizi usano Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (esattamente 32 caratteri — `Crypto::getKey()` lancia eccezione se < 32).
 
 ### Architettura sidecar frontoffice
 
@@ -157,6 +157,13 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **`app_debug` Twig global**: nei template backoffice usare `{% if app_debug %}`, NON `{% if app.debug == 'true' %}`. Il global è registrato in `web.php` come `$twig->addGlobal('app_debug', $displayErrorDetails)`.
 - **Pattern tab Impostazioni GovPay-side**: dati che vivono in GovPay (non in `settings` DB) vengono fetchati in `ImpostazioniController::index()` quando `$tab === 'X'` e passati a Twig. Bottoni di aggiornamento sono AJAX su endpoint dedicati. Non usare `SettingsRepository` per dati GovPay.
 - **Pattern sidecar frontoffice**: il frontoffice NON chiama GovPay/pagoPA direttamente. Ogni operazione GovPay/pagoPA/DB-business va in `FrontofficeApiController` (backoffice) e chiamata con `frontoffice_backoffice_api()`. Le API sidecar seguono il pattern `jsonOk/jsonError` esistente (HTTP 200 + `success` bool). Eccezione: streaming PDF usa risposta binaria diretta. Non aggiungere credenziali GovPay alle env del container frontoffice.
+- **SPID/CIE rotto dopo `docker compose up --build`**: se login SPID/CIE smette di funzionare con `connect() failed (111: Connection refused)` nei log di `auth-proxy-nginx`, fare `docker compose restart auth-proxy-nginx`. Il container nginx cachea la risoluzione DNS dell'upstream `auth-proxy:10000`; dopo un rebuild il container `auth-proxy` ottiene un nuovo IP e nginx non si aggiorna finché non viene riavviato.
+- **`support_location` nei template frontoffice**: usare `{{ support_location|nl2br }}`, mai `|raw`. Il valore è inserito da operatori via Impostazioni — `|raw` consentirebbe stored XSS su tutti i cittadini.
+- **Link firmati HMAC**: ogni chiamata a `frontoffice_sign_link()` / `buildSignedLinkParams()` deve includere `'type' => '<nome-route>'` nel payload. I route handler verificano che il tipo corrisponda (`avviso`/`ricevuta`/`checkout`/`documento`). Link senza `type` sono accettati per retrocompatibilità ma i nuovi devono sempre includerlo.
+- **`frontoffice_satosa_idp_metadata()` SSRF**: valida il host dell'URL metadata contro una allowlist (`auth-proxy-nginx`, `localhost`, `127.0.0.1`, host di `IAM_PROXY_PUBLIC_BASE_URL`, host di `SPID_PROXY_PUBLIC_BASE_URL`). Se si aggiunge una nuova sorgente metadata IdP il cui host non è in queste variabili, la funzione ritornerà `null` silenziosamente — aggiungere il host all'allowlist o usare `IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL` con host interno.
+- **`frontoffice_spid_proxy_insecure_ssl()`**: ritorna già `true` per host interni (`auth-proxy-nginx`, `localhost`, `127.0.0.1`). Non aggiungere `str_starts_with($url, 'https://')` come condizione per disabilitare SSL — disabiliterebbe la verifica su qualsiasi host HTTPS esterno.
+- **`session_regenerate_id(true)` post-login**: chiamato dopo aver scritto `$_SESSION['frontoffice_user']` in entrambi i path SPID (SAML e TOKEN). Non rimuovere — previene session fixation.
+- **Chiave di firma checkout**: `frontoffice_checkout_token_secret()` usa `FRONTOFFICE_LINK_SIGNING_KEY` (non `APP_ENCRYPTION_KEY`). Mantenere separazione: `APP_ENCRYPTION_KEY` = cifratura simmetrica DB, `FRONTOFFICE_LINK_SIGNING_KEY` = HMAC link/token.
 
 ## Integrazioni esterne
 
