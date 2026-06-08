@@ -22,7 +22,14 @@ require dirname(__DIR__) . '/vendor/autoload.php';
     if ($masterToken === '') {
         return;
     }
-    $cacheFile = sys_get_temp_dir() . '/frontoffice_config_cache.json';
+    $cacheDir = '/var/cache/frontoffice';
+    if (!is_dir($cacheDir)) {
+        @mkdir($cacheDir, 0700, true);
+    }
+    if (!is_dir($cacheDir) || !is_writable($cacheDir)) {
+        $cacheDir = sys_get_temp_dir();
+    }
+    $cacheFile = $cacheDir . '/frontoffice_config_cache.json';
     $cacheTtl  = 300; // 5 minuti
 
     // Usa cache su file per non chiamare il backoffice ad ogni request
@@ -771,7 +778,7 @@ if (!function_exists('frontoffice_http_get_raw')) {
             if ($attempt['host'] !== '') {
                 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Host: ' . $attempt['host']]);
             }
-            if ($insecureSsl || str_starts_with($attempt['url'], 'https://')) {
+            if ($insecureSsl) {
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
             }
@@ -816,8 +823,8 @@ if (!function_exists('frontoffice_http_get_raw')) {
         if ($attempt['host'] !== '') {
             $attemptOpts['http']['header'] = "Host: {$attempt['host']}\r\n";
         }
-        if (stripos($attempt['url'], 'https://') === 0) {
-            $attemptOpts['ssl' ] = [
+        if ($insecureSsl) {
+            $attemptOpts['ssl'] = [
                 'verify_peer' => false,
                 'verify_peer_name' => false,
             ];
@@ -839,6 +846,27 @@ if (!function_exists('frontoffice_satosa_idp_metadata')) {
     {
         $metadataUrl = trim($metadataUrl);
         if ($metadataUrl === '') {
+            return null;
+        }
+
+        // Prevent SSRF: only allow http/https to known proxy hosts
+        $scheme = strtolower((string)(parse_url($metadataUrl, PHP_URL_SCHEME) ?: ''));
+        $host   = strtolower((string)(parse_url($metadataUrl, PHP_URL_HOST) ?: ''));
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+            return null;
+        }
+        $allowedHosts = ['auth-proxy-nginx', 'localhost', '127.0.0.1', '::1'];
+        foreach (['IAM_PROXY_PUBLIC_BASE_URL', 'SPID_PROXY_PUBLIC_BASE_URL'] as $envKey) {
+            $base = frontoffice_env_value($envKey, '');
+            if ($base !== '') {
+                $h = strtolower((string)(parse_url($base, PHP_URL_HOST) ?: ''));
+                if ($h !== '') {
+                    $allowedHosts[] = $h;
+                }
+            }
+        }
+        if (!in_array($host, $allowedHosts, true)) {
+            Logger::getInstance()->warning('IdP metadata URL host non consentito', ['host' => $host]);
             return null;
         }
 
@@ -2099,7 +2127,7 @@ if (!function_exists('frontoffice_normalize_cf_key')) {
 if (!function_exists('frontoffice_checkout_token_secret')) {
     function frontoffice_checkout_token_secret(): string
     {
-        $base = frontoffice_env_value('APP_ENCRYPTION_KEY', '');
+        $base = frontoffice_env_value('FRONTOFFICE_LINK_SIGNING_KEY', '');
         if ($base === '') {
             return '';
         }
@@ -3070,7 +3098,7 @@ if (!function_exists('frontoffice_sign_link')) {
      * $params: array associativo con i parametri payload da firmare (es. ['cf' => ..., 'iuv' => ...])
      * $ttlSeconds: durata validità (default 2 anni = 63072000 secondi)
      */
-    function frontoffice_sign_link(array $params, int $ttlSeconds = 63072000 /* 60*60*24*365*2 = 2 anni */): array
+    function frontoffice_sign_link(array $params, int $ttlSeconds = 31536000 /* 60*60*24*365 = 1 anno */): array
     {
         $expires = time() + $ttlSeconds;
         $params['expires'] = (string)$expires;
@@ -3112,7 +3140,7 @@ if (!function_exists('frontoffice_generate_pdf_link')) {
      */
     function frontoffice_generate_pdf_link(string $codiceFiscale, string $iuv, string $baseUrl = ''): string
     {
-        $params = frontoffice_sign_link(['cf' => $codiceFiscale, 'iuv' => $iuv]);
+        $params = frontoffice_sign_link(['type' => 'avviso', 'cf' => $codiceFiscale, 'iuv' => $iuv]);
         $base = rtrim($baseUrl, '/');
         return $base . '/link/avviso?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
     }
@@ -3124,7 +3152,7 @@ if (!function_exists('frontoffice_generate_ricevuta_link')) {
      */
     function frontoffice_generate_ricevuta_link(string $iuv, string $iur, string $baseUrl = ''): string
     {
-        $params = frontoffice_sign_link(['iuv' => $iuv, 'iur' => $iur]);
+        $params = frontoffice_sign_link(['type' => 'ricevuta', 'iuv' => $iuv, 'iur' => $iur], 7776000 /* 90 giorni */);
         $base = rtrim($baseUrl, '/');
         return $base . '/link/ricevuta?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
     }
@@ -3136,7 +3164,7 @@ if (!function_exists('frontoffice_generate_checkout_link')) {
      */
     function frontoffice_generate_checkout_link(string $codiceFiscale, string $iuv, string $baseUrl = ''): string
     {
-        $params = frontoffice_sign_link(['cf' => $codiceFiscale, 'iuv' => $iuv, 'action' => 'checkout']);
+        $params = frontoffice_sign_link(['type' => 'checkout', 'cf' => $codiceFiscale, 'iuv' => $iuv, 'action' => 'checkout'], 2592000 /* 30 giorni */);
         $base = rtrim($baseUrl, '/');
         return $base . '/link/checkout?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
     }
@@ -3548,15 +3576,6 @@ $routes = [
                 }
             }
             
-            // Debug: Add to session for inspection
-            $_SESSION['debug_spid_url_config'] = [
-                'FRONTOFFICE_PUBLIC_BASE_URL_env' => $envValue,
-                'HTTP_HOST' => $httpHost,
-                'frontofficeBaseUrl_final' => $frontofficeBaseUrl,
-                'timestamp' => date('Y-m-d H:i:s'),
-            ];
-            error_log("DEBUG SPID LOGIN: FRONTOFFICE_PUBLIC_BASE_URL_env=$envValue, HTTP_HOST=$httpHost, final=$frontofficeBaseUrl");
-
             $spidCallbackPath = $env('FRONTOFFICE_SPID_CALLBACK_PATH', '/spid/callback');
             if ($spidCallbackPath === '' || $spidCallbackPath[0] !== '/') {
                 $spidCallbackPath = '/' . ltrim($spidCallbackPath, '/');
@@ -3769,7 +3788,6 @@ $routes = [
             $debug = trim((string)$env('IAM_PROXY_DEBUG', '0')) === '1' || strtolower(trim((string)$env('IAM_PROXY_DEBUG', 'false'))) === 'true';
             $auth = frontoffice_satosa_saml_auth($frontofficeBaseUrl, $spidCallbackPath, $metadataUrl, $debug);
             if (!$auth) {
-                error_log("DEBUG SPID CALLBACK: auth object is null, session_debug=$debugFromSessionStr, frontofficeBaseUrl=$frontofficeBaseUrl, metadataUrl=$metadataUrl");
                 http_response_code(503);
                 return [
                     'template' => 'errors/503.html.twig',
@@ -3780,15 +3798,11 @@ $routes = [
                 ];
             }
 
-            error_log("DEBUG SPID CALLBACK: auth object created, frontofficeBaseUrl=$frontofficeBaseUrl, spidCallbackPath=$spidCallbackPath, metadataUrl=$metadataUrl, session_debug=$debugFromSessionStr");
-
             try {
                 $auth->processResponse();
             } catch (SamlError $e) {
-                error_log("DEBUG SPID CALLBACK: SamlError in processResponse: " . $e->getMessage());
                 Logger::getInstance()->warning('SAML error', ['error' => $e->getMessage()]);
             } catch (\Throwable $e) {
-                error_log("DEBUG SPID CALLBACK: Exception in processResponse: " . $e->getMessage());
                 Logger::getInstance()->warning('Errore processResponse SAML', ['error' => $e->getMessage()]);
             }
 
@@ -3801,16 +3815,13 @@ $routes = [
                 && stripos($reason, 'Signature validation failed') !== false;
 
             if ($shouldRetryWithFreshMetadata) {
-                error_log('DEBUG SPID CALLBACK: retry con metadata SATOSA aggiornati dopo errore firma');
                 $auth = frontoffice_satosa_saml_auth($frontofficeBaseUrl, $spidCallbackPath, $metadataUrl, $debug, true);
                 if ($auth instanceof SamlAuth) {
                     try {
                         $auth->processResponse();
                     } catch (SamlError $e) {
-                        error_log("DEBUG SPID CALLBACK: SamlError in processResponse retry: " . $e->getMessage());
                         Logger::getInstance()->warning('SAML error retry', ['error' => $e->getMessage()]);
                     } catch (\Throwable $e) {
-                        error_log("DEBUG SPID CALLBACK: Exception in processResponse retry: " . $e->getMessage());
                         Logger::getInstance()->warning('Errore processResponse SAML retry', ['error' => $e->getMessage()]);
                     }
                     $errors = $auth->getErrors();
@@ -3818,9 +3829,7 @@ $routes = [
                 }
             }
 
-            error_log("DEBUG SPID CALLBACK: errors=" . implode(', ', $errors) . ", isAuthenticated=" . ($auth->isAuthenticated() ? 'true' : 'false'));
             if (!empty($errors) || !$auth->isAuthenticated()) {
-                error_log("DEBUG SPID CALLBACK: getLastErrorReason=$reason");
                 http_response_code(503);
                 return [
                     'template' => 'errors/503.html.twig',
@@ -3851,18 +3860,6 @@ $routes = [
             if ($rawXmlAttrs !== []) {
                 $attrs = array_merge($rawXmlAttrs, $attrs);
             }
-            error_log('DEBUG SPID ATTR KEYS (SAML): ' . json_encode([
-                'attrs_keys' => array_keys($attrs),
-                'xml_attrs_keys' => array_keys($rawXmlAttrs),
-                'posted_xml_attrs_keys' => array_keys($postedXmlAttrs),
-                'email_candidates' => [
-                    'email' => $attrs['email'] ?? null,
-                    'mail' => $attrs['mail'] ?? null,
-                    'emailAddress' => $attrs['emailAddress'] ?? null,
-                    'urn_mail' => $attrs['urn:oid:0.9.2342.19200300.100.1.3'] ?? null,
-                ],
-            ], JSON_UNESCAPED_UNICODE));
-
             $user = [
                 'first_name' => frontoffice_pick_attribute_value($attrs, ['name', 'givenName', 'given_name', 'first_name', 'nome', 'urn:oid:2.5.4.42']),
                 'last_name' => frontoffice_pick_attribute_value($attrs, ['familyName', 'family_name', 'sn', 'surname', 'last_name', 'cognome', 'urn:oid:2.5.4.4']),
@@ -3875,12 +3872,6 @@ $routes = [
             ];
 
             $_SESSION['frontoffice_user'] = $user;
-            error_log('DEBUG SPID CALLBACK USER (SAML): ' . json_encode([
-                'email' => (string)($user['email'] ?? ''),
-                'mail' => (string)($user['mail'] ?? ''),
-                'fiscal_number' => (string)($user['fiscal_number'] ?? ''),
-                'keys' => array_keys($user),
-            ], JSON_UNESCAPED_UNICODE));
 
             $returnTo = (string)($_POST['RelayState'] ?? ($_SESSION['spid_return_to'] ?? '/'));
             unset($_SESSION['spid_return_to']);
@@ -3888,6 +3879,9 @@ $routes = [
                 $returnTo = '/';
             }
 
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_regenerate_id(true);
+            }
             header('Location: ' . $returnTo, true, 302);
             exit;
         }
@@ -3955,12 +3949,6 @@ $routes = [
         }
 
         $_SESSION['frontoffice_user'] = $user;
-        error_log('DEBUG SPID CALLBACK USER (TOKEN): ' . json_encode([
-            'email' => (string)($user['email'] ?? ''),
-            'mail' => (string)($user['mail'] ?? ''),
-            'fiscal_number' => (string)($user['fiscal_number'] ?? ''),
-            'keys' => array_keys($user),
-        ], JSON_UNESCAPED_UNICODE));
         unset($_SESSION['spid_state']);
         $returnTo = (string)($_SESSION['spid_return_to'] ?? '/');
         unset($_SESSION['spid_return_to']);
@@ -3968,6 +3956,9 @@ $routes = [
             $returnTo = '/';
         }
 
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
         header('Location: ' . $returnTo, true, 302);
         exit;
     },
@@ -4130,12 +4121,6 @@ $routes = [
         }
 
         $user = frontoffice_get_logged_user();
-        error_log('DEBUG PROFILE USER: ' . json_encode([
-            'email' => (string)($user['email'] ?? ''),
-            'mail' => (string)($user['mail'] ?? ''),
-            'fiscal_number' => (string)($user['fiscal_number'] ?? ''),
-            'keys' => is_array($user) ? array_keys($user) : [],
-        ], JSON_UNESCAPED_UNICODE));
         if (!is_array($user) || $user === []) {
             header('Location: /login?return_to=%2Fprofile', true, 302);
             exit;
@@ -4688,6 +4673,12 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
         ]);
         return;
     }
+    $linkType = (string)($qp['type'] ?? '');
+    if ($linkType !== '' && $linkType !== 'avviso') {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
+        return;
+    }
     $cf = trim((string)($qp['cf'] ?? ''));
     $iuv = trim((string)($qp['iuv'] ?? ''));
     if ($cf === '' || $iuv === '') {
@@ -4757,6 +4748,12 @@ if ($method === 'GET' && $normalizedPath === '/link/documento') {
         ]);
         return;
     }
+    $linkType = (string)($qp['type'] ?? '');
+    if ($linkType !== '' && $linkType !== 'documento') {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
+        return;
+    }
     $numeroDocumento = trim((string)($qp['doc'] ?? ''));
     if ($numeroDocumento === '') {
         http_response_code(400);
@@ -4779,6 +4776,12 @@ if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
             'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
             'expires' => $qp['expires'] ?? '',
         ]);
+        return;
+    }
+    $linkType = (string)($qp['type'] ?? '');
+    if ($linkType !== '' && $linkType !== 'ricevuta') {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
         return;
     }
     $iuv = trim((string)($qp['iuv'] ?? ''));
@@ -4810,6 +4813,12 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
             'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
             'expires' => $qp['expires'] ?? '',
         ]);
+        return;
+    }
+    $linkType = (string)($qp['type'] ?? '');
+    if ($linkType !== '' && $linkType !== 'checkout') {
+        http_response_code(403);
+        echo 'Link non valido o scaduto.';
         return;
     }
     $cf = trim((string)($qp['cf'] ?? ''));

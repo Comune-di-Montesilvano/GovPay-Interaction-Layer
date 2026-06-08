@@ -4372,7 +4372,7 @@ class PendenzeController
         // Preferiamo quindi numeroAvviso/iuvAvviso quando disponibile.
         $iuvForSignedLink = $safeNumeroAvviso !== '' ? $safeNumeroAvviso : $safeIuv;
         if ($iuvForSignedLink !== '' && $safeCf !== '') {
-            $signedParams = $this->buildSignedLinkParams(['cf' => $safeCf, 'iuv' => $iuvForSignedLink]);
+            $signedParams = $this->buildSignedLinkParams(['type' => 'avviso', 'cf' => $safeCf, 'iuv' => $iuvForSignedLink]);
             return $baseUrl . '/link/avviso?' . http_build_query($signedParams, '', '&', PHP_QUERY_RFC3986);
         }
 
@@ -4405,10 +4405,11 @@ class PendenzeController
         }
 
         $signedParams = $this->buildSignedLinkParams([
-            'cf' => $safeCf,
-            'iuv' => $checkoutIuv,
+            'type'   => 'checkout',
+            'cf'     => $safeCf,
+            'iuv'    => $checkoutIuv,
             'action' => 'checkout',
-        ]);
+        ], 2592000 /* 30 giorni */);
 
         return $baseUrl . '/link/checkout?' . http_build_query($signedParams, '', '&', PHP_QUERY_RFC3986);
     }
@@ -4419,7 +4420,7 @@ class PendenzeController
         if ($baseUrl === '' || $numeroDocumento === '') {
             return '';
         }
-        $signedParams = $this->buildSignedLinkParams(['doc' => $numeroDocumento]);
+        $signedParams = $this->buildSignedLinkParams(['type' => 'documento', 'doc' => $numeroDocumento]);
         return $baseUrl . '/link/documento?' . http_build_query($signedParams, '', '&', PHP_QUERY_RFC3986);
     }
 
@@ -4529,7 +4530,7 @@ class PendenzeController
      * Usa la variabile d'ambiente FRONTOFFICE_LINK_SIGNING_KEY come secret.
      * @param int $ttlSeconds Durata validità in secondi (default: 63072000 = 2 anni)
      */
-    private function buildSignedLinkParams(array $params, int $ttlSeconds = 63072000 /* 60*60*24*365*2 = 2 anni */): array
+    private function buildSignedLinkParams(array $params, int $ttlSeconds = 31536000 /* 60*60*24*365 = 1 anno */): array
     {
         $signingKey = (string)(getenv('FRONTOFFICE_LINK_SIGNING_KEY') ?: '');
         if ($signingKey === '') {

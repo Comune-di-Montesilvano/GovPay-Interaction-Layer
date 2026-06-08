@@ -436,7 +436,6 @@ class FrontofficeApiController
                     'Ocp-Apim-Subscription-Key' => $subscriptionKey,
                     'X-Request-Id'              => $requestId,
                 ],
-                'query' => ['subscription-key' => $subscriptionKey],
                 'json'  => $requestPayload,
             ]);
             $lastStatus  = $resp->getStatusCode();
@@ -762,9 +761,17 @@ class FrontofficeApiController
         try {
             $pdo = Connection::getPDO();
         } catch (\Throwable $e) {
-            Logger::getInstance()->warning('FrontofficeApi::rateLimitCheck DB non disponibile, fail-open', [
+            Logger::getInstance()->error('FrontofficeApi::rateLimitCheck DB non disponibile', [
                 'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
             ]);
+            if (function_exists('apcu_add') && function_exists('apcu_inc')) {
+                $apcuKey = 'rl:' . md5($key);
+                apcu_add($apcuKey, 0, $windowSec + 10);
+                $apcuCount = (int)apcu_inc($apcuKey);
+                if ($apcuCount > $limit) {
+                    return $this->jsonOk('OK', ['allowed' => false, 'retry_after' => $windowSec]);
+                }
+            }
             return $this->jsonOk('OK', ['allowed' => true]);
         }
 
@@ -785,10 +792,18 @@ class FrontofficeApiController
             $row   = $sel->fetch(\PDO::FETCH_ASSOC);
             $count = is_array($row) ? (int)($row['count'] ?? 0) : 0;
         } catch (\Throwable $e) {
-            Logger::getInstance()->warning('FrontofficeApi::rateLimitCheck errore bucket, fail-open', [
+            Logger::getInstance()->error('FrontofficeApi::rateLimitCheck errore bucket', [
                 'bucket' => $key,
                 'error'  => Logger::sanitizeErrorForDisplay($e->getMessage()),
             ]);
+            if (function_exists('apcu_add') && function_exists('apcu_inc')) {
+                $apcuKey = 'rl:' . md5($key);
+                apcu_add($apcuKey, 0, $windowSec + 10);
+                $apcuCount = (int)apcu_inc($apcuKey);
+                if ($apcuCount > $limit) {
+                    return $this->jsonOk('OK', ['allowed' => false, 'retry_after' => $windowSec]);
+                }
+            }
             return $this->jsonOk('OK', ['allowed' => true]);
         }
 
@@ -870,27 +885,22 @@ class FrontofficeApiController
             return;
         }
 
-        $payload = (string)json_encode($data, JSON_UNESCAPED_UNICODE);
-
-        $fp = @stream_socket_client("tcp://127.0.0.1:80", $errno, $errstr, 2.0, STREAM_CLIENT_CONNECT);
-        if ($fp === false) {
-            Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf socket failed', [
-                'path' => $path, 'errno' => $errno, 'errstr' => $errstr,
+        try {
+            $client = new \GuzzleHttp\Client(['connect_timeout' => 1.0, 'timeout' => 3.0]);
+            $client->post('http://127.0.0.1' . $path, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $masterToken,
+                    'Content-Type'  => 'application/json',
+                    'Connection'    => 'close',
+                ],
+                'body' => (string)json_encode($data, JSON_UNESCAPED_UNICODE),
             ]);
-            return;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf failed', [
+                'path'  => $path,
+                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
+            ]);
         }
-
-        $req = "POST $path HTTP/1.1\r\n"
-            . "Host: 127.0.0.1\r\n"
-            . "Authorization: Bearer $masterToken\r\n"
-            . "Content-Type: application/json\r\n"
-            . "Content-Length: " . strlen($payload) . "\r\n"
-            . "Connection: close\r\n"
-            . "\r\n"
-            . $payload;
-
-        @fwrite($fp, $req);
-        @fclose($fp); // chiude senza leggere la risposta — Apache continua in background
     }
 
     // ── Endpoint: aggiunta notifica a pendenza GovPay ─────────────────────────

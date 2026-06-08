@@ -1385,9 +1385,8 @@ class ImpostazioniController
         $curlErr = '';
         $usedKeyIndex = 0;
         foreach ($candidateKeys as $idx => $key) {
-            $endpoint = $endpointBase . '?subscription-key=' . rawurlencode($key);
             curl_setopt_array($ch, [
-                CURLOPT_URL => $endpoint,
+                CURLOPT_URL => $endpointBase,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 8,
                 CURLOPT_POST => true,
