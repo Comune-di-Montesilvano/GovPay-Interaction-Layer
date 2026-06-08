@@ -183,9 +183,7 @@ while (true) {
                 if ($result['status'] === 'RATE_LIMITED') {
                     $log("  IUR={$iur}: rate limit persistente - errore");
                     $repo->markError((int)$row['id'], 'Rate limit Biz Events (429) dopo 5 tentativi');
-                    if ($i < $total - 1) {
-                        sleep(10);
-                    }
+                    sleep(10);
                     continue;
                 }
             }
@@ -202,9 +200,7 @@ while (true) {
                     break;
             }
 
-            if ($i < $total - 1) {
-                sleep(5);
-            }
+            sleep(5);
         }
 
         $log("Flusso {$idFlusso} completato. Proseguo al flusso successivo...");

@@ -570,7 +570,7 @@ class FlussiRendicontazioniRepository
 
         $sql .= '
             GROUP BY f.iur, f.id_dominio, f.anno, f.mese, f.id_flusso, f.iuv, f.data_pagamento
-            ORDER BY f.data_pagamento ASC, f.iur ASC
+            ORDER BY f.data_pagamento DESC, f.iur DESC
             LIMIT :limit';
 
         $stmt = $this->pdo->prepare($sql);
