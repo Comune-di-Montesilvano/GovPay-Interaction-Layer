@@ -125,7 +125,7 @@
       <div class="card card-pad">
         <h2 style="font-size:18px;margin:0 0 var(--sp-3);">{{ 'Assistenza'|trans }}</h2>
         <p style="margin:0 0 var(--sp-2);">{{ 'Scrivi a'|trans }} <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% if support_phone %} {{ 'oppure chiama'|trans }} {{ support_phone }}{% if support_hours %} ({{ support_hours }}){% endif %}{% endif %}.</p>
-        {% if support_location %}<p style="margin:0;color:var(--fg-2);">{{ support_location|raw }}</p>{% endif %}
+        {% if support_location %}<p style="margin:0;color:var(--fg-2);">{{ support_location|nl2br }}</p>{% endif %}
       </div>
 
     </div>

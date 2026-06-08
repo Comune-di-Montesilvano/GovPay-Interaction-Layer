@@ -26,6 +26,10 @@ class Crypto
             throw new \RuntimeException('APP_ENCRYPTION_KEY is not configured in the environment.');
         }
 
+        if (strlen((string)$key) < 32) {
+            throw new \RuntimeException('APP_ENCRYPTION_KEY must be at least 32 characters for AES-256.');
+        }
+
         return (string)$key;
     }
 
