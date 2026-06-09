@@ -2257,7 +2257,16 @@ class PendenzeController
                 $combinedTs = $this->extractStringByPath($rr, ['pendenza', 'dataCaricamento']);
             }
 
-            $importoRaw = $this->extractStringByPath($rr, ['rpt', 'datiVersamento', 'datiSingoloVersamento', 0, 'importoSingoloVersamento']);
+            $importoRaw = '';
+            if (isset($rr['rpt']['datiVersamento']['importoTotaleDaVersare'])) {
+                $importoRaw = (string)$rr['rpt']['datiVersamento']['importoTotaleDaVersare'];
+            }
+            if ($importoRaw === '' && isset($selectedRt['datiPagamento']['importoTotalePagato'])) {
+                $importoRaw = (string)$selectedRt['datiPagamento']['importoTotalePagato'];
+            }
+            if ($importoRaw === '') {
+                $importoRaw = $this->extractStringByPath($rr, ['rpt', 'datiVersamento', 'datiSingoloVersamento', 0, 'importoSingoloVersamento']);
+            }
             if ($importoRaw === '') {
                 $importoRaw = $this->extractStringByPath($rr, ['rpt', 'paymentAmount']);
             }
