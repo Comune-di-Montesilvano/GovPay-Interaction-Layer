@@ -4182,10 +4182,20 @@ $routes = [
 
         $claims = array_merge(is_array($payload) ? $payload : [], is_array($userinfo) ? $userinfo : []);
 
-        $pickAttr = static function (array $attrs, array $keys): string {
+        $flatVal = static function ($val): string {
+            if (is_array($val)) {
+                $val = reset($val);
+            }
+            return is_scalar($val) ? trim((string)$val) : '';
+        };
+
+        $pickAttr = static function (array $attrs, array $keys) use ($flatVal): string {
             foreach ($keys as $k) {
                 if (isset($attrs[$k]) && $attrs[$k] !== '') {
-                    return trim((string)$attrs[$k]);
+                    $res = $flatVal($attrs[$k]);
+                    if ($res !== '') {
+                        return $res;
+                    }
                 }
             }
             return '';
@@ -4203,15 +4213,19 @@ $routes = [
             'codiceFiscale'
         ]);
 
+        $spidCode = $flatVal($claims['spid_code'] ?? $claims['spidCode'] ?? '');
+        $providerName = $flatVal($claims['provider_name'] ?? $claims['amr'][0] ?? $claims['amr'] ?? 'OIDC');
+        $responseId = $flatVal($claims['jti'] ?? '');
+
         $user = [
             'first_name'    => $firstName,
             'last_name'     => $lastName,
             'email'         => $email,
             'fiscal_number' => frontoffice_normalize_fiscal_number($fiscalNumber),
-            'spid_code'     => $claims['spid_code'] ?? $claims['spidCode'] ?? '',
+            'spid_code'     => $spidCode,
             'provider_id'   => 'EXTERNAL_OIDC_PROXY',
-            'provider_name' => $claims['provider_name'] ?? $claims['amr'][0] ?? 'OIDC',
-            'response_id'   => $claims['jti'] ?? '',
+            'provider_name' => $providerName,
+            'response_id'   => $responseId,
         ];
 
         $_SESSION['frontoffice_user'] = $user;
