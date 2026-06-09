@@ -138,16 +138,6 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
                 {{ 'Bollettino MBT'|trans }}
               </a>
-              {% if bolloXmlTesto %}
-                <button type="button"
-                  class="btn btn-outline download-voce-bollo-xml-btn"
-                  data-testo="{{ bolloXmlTesto }}"
-                  data-iuv="{{ bolloXmlIuv }}"
-                  title="Scarica XML Marca da Bollo Telematica">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
-                  {{ 'Marca da Bollo'|trans }}
-                </button>
-              {% endif %}
             {% elseif p.download_url %}
               <a class="btn btn-outline" href="{{ p.download_url }}" target="_blank" rel="noopener">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
@@ -203,6 +193,7 @@
                   <tr>
                     <th>{{ 'Descrizione'|trans }}</th>
                     {% if is_bollo %}
+                      <th>{{ 'IUBD'|trans }}</th>
                       <th>{{ 'Tipo bollo'|trans }}</th>
                       <th>{{ 'Provincia'|trans }}</th>
                       <th>{{ 'Impronta documento'|trans }}</th>
@@ -216,6 +207,22 @@
                     <tr style="cursor:default;">
                       <td>{{ voce.descrizione|default('—') }}</td>
                       {% if is_bollo %}
+                        <td>
+                          {% set voceBolloIubd = '' %}
+                          {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+                            {% for risc in voce.riscossioni %}
+                              {% if voceBolloIubd == ''
+                                  and risc.tipo is defined and risc.tipo == 'MBT'
+                                  and risc.allegato is defined
+                                  and risc.allegato.contenuto is defined
+                                  and risc.allegato.contenuto.IUBD is defined
+                                  and risc.allegato.contenuto.IUBD %}
+                                {% set voceBolloIubd = risc.allegato.contenuto.IUBD %}
+                              {% endif %}
+                            {% endfor %}
+                          {% endif %}
+                          {{ voceBolloIubd|default('—') }}
+                        </td>
                         <td>{{ voce.tipoBollo|default('—') }}</td>
                         <td>{{ voce.provinciaResidenza|default('—') }}</td>
                         <td>
