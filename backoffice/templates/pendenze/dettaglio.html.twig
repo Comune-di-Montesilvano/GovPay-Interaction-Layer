@@ -324,14 +324,6 @@
               </a>
             {% endif %}
             {% if bolloXmlTesto %}
-              <button type="button"
-                class="btn btn-outline-secondary btn-sm download-voce-bollo-xml-btn"
-                id="download-bollo-xml-btn"
-                data-testo="{{ bolloXmlTesto }}"
-                data-iuv="{{ bolloXmlIuv }}"
-                title="Scarica XML Marca da Bollo Telematica">
-                <i class="fas fa-stamp me-1"></i> Marca da Bollo
-              </button>
               <script>
               (function(){
                 document.addEventListener('click', function(e) {
@@ -587,7 +579,7 @@
               <thead class="table-light">
                 <tr>
                   <th scope="col">#</th>
-                  <th scope="col">ID voce</th>
+                  <th scope="col">{% if is_bollo %}IUBD{% else %}ID voce{% endif %}</th>
                   <th scope="col">Descrizione</th>
                   <th scope="col" class="text-end text-nowrap">Importo</th>
                   <th scope="col">Stato</th>
@@ -608,7 +600,26 @@
                 {% for voce in voci_list %}
                   <tr>
                     <td>{{ voce.indice|default(loop.index) }}</td>
-                    <td>{{ voce.idVocePendenza|default('—') }}</td>
+                    <td>
+                      {% if is_bollo %}
+                        {% set voceBolloIubd = '' %}
+                        {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+                          {% for risc in voce.riscossioni %}
+                            {% if voceBolloIubd == ''
+                                and risc.tipo is defined and risc.tipo == 'MBT'
+                                and risc.allegato is defined
+                                and risc.allegato.contenuto is defined
+                                and risc.allegato.contenuto.IUBD is defined
+                                and risc.allegato.contenuto.IUBD %}
+                              {% set voceBolloIubd = risc.allegato.contenuto.IUBD %}
+                            {% endif %}
+                          {% endfor %}
+                        {% endif %}
+                        {{ voceBolloIubd|default('—') }}
+                      {% else %}
+                        {{ voce.idVocePendenza|default('—') }}
+                      {% endif %}
+                    </td>
                     <td>{{ voce.descrizione|default('—') }}</td>
                     <td class="text-end text-nowrap">{% if voce.importo is defined %}{{ voce.importo|number_format(2, ',', '.') }} €{% else %}—{% endif %}</td>
                     <td>
