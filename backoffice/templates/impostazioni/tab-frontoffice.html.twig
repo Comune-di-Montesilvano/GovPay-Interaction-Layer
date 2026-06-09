@@ -31,8 +31,78 @@
             <option value="spid" {{ frontoffice.auth_proxy_type|default('') == 'spid' ? 'selected' : '' }}>SPID</option>
             <option value="cie" {{ frontoffice.auth_proxy_type|default('') == 'cie' ? 'selected' : '' }}>CIE</option>
             <option value="spid_cie" {{ frontoffice.auth_proxy_type|default('') == 'spid_cie' ? 'selected' : '' }}>SPID + CIE</option>
+            <option value="external" {{ frontoffice.auth_proxy_type|default('') == 'external' ? 'selected' : '' }}>Esterno (OIDC Proxy)</option>
           </select>
           <div class="form-text">Configurazione dettagliata nella sezione <a href="/impostazioni?tab=login-proxy">Login Proxy</a>.</div>
+        </div>
+      </div>
+
+      {# ─── Configurazione OIDC Proxy Esterno ────────────────────────────── #}
+      <div id="external-oidc-config" class="mb-4" style="display: {{ frontoffice.auth_proxy_type|default('') == 'external' ? 'block' : 'none' }}; border: 1px solid var(--border-1); border-radius: var(--r-md); padding: 1.25rem; background: var(--bg-2-subtle, #f8f9fa);">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-3">
+          <i class="fas fa-cog me-1"></i>Configurazione OIDC Proxy Esterno
+        </h6>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">OIDC Issuer (Base URL) <span class="text-danger">*</span></label>
+            <input type="url" class="form-control font-monospace" name="external_oidc_issuer" id="oidc-issuer"
+              value="{{ frontoffice.external_oidc_issuer|default('') }}" placeholder="https://sso.comune.example.it"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <div class="form-text">URL pubblico del proxy OIDC (es. <code>https://sso.comune.example.it</code>)</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Client ID <span class="text-danger">*</span></label>
+            <input type="text" class="form-control font-monospace" name="external_oidc_client_id" id="oidc-client-id"
+              value="{{ frontoffice.external_oidc_client_id|default('') }}" placeholder="govpay-frontoffice"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <div class="form-text">Client ID registrato su sso-proxy</div>
+          </div>
+        </div>
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <label class="form-label">Client Secret (Opzionale)</label>
+            <div class="input-group">
+              <input type="password" class="form-control font-monospace" name="external_oidc_client_secret" id="oidc-client-secret"
+                placeholder="Lascia vuoto per non modificare" autocomplete="new-password"
+                {{ not is_superadmin ? 'readonly' : '' }}>
+              <button class="btn btn-outline-secondary" type="button" onclick="toggleExternalOidcSecret(this)" title="Mostra/Nascondi password">
+                <i class="fas fa-eye" id="oidc-secret-eye"></i>
+              </button>
+            </div>
+            <div class="form-text">Client Secret registrato su sso-proxy (se richiesto)</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">OIDC Logout URL <span class="text-danger">*</span></label>
+            <input type="url" class="form-control font-monospace" name="external_oidc_logout_url" id="oidc-logout-url"
+              value="{{ frontoffice.external_oidc_logout_url|default('') }}" placeholder="https://sso.comune.example.it/logout"
+              {{ not is_superadmin ? 'readonly' : '' }}>
+            <div class="form-text">URL di logout sul proxy OIDC (es. <code>https://sso.comune.example.it/logout</code>)</div>
+          </div>
+        </div>
+
+        {# Info Card per parametri da passare a sso-proxy #}
+        <div class="card border-info shadow-none bg-info-subtle mb-0">
+          <div class="card-body py-3">
+            <h6 class="card-title text-info-emphasis fw-semibold mb-2"><i class="fas fa-info-circle me-1"></i>Parametri da configurare in pa-sso-proxy</h6>
+            <p class="card-text small mb-3 text-secondary-emphasis">Usa questi dati per registrare il client nella WebUI di <strong>pa-sso-proxy</strong>:</p>
+            <div class="row g-3">
+              <div class="col-md-12">
+                <label class="form-label small fw-semibold text-secondary-emphasis mb-1">Redirect URI</label>
+                <div class="input-group">
+                  <input type="text" class="form-control form-control-sm font-monospace bg-white" id="oidc-redirect-uri-display" readonly>
+                  <button class="btn btn-sm btn-outline-info" type="button" onclick="copyOidcRedirectUri()" title="Copia negli appunti">
+                    <i class="fas fa-copy"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="small"><strong>Allowed Scopes:</strong> <code class="bg-white px-1 py-0.5 rounded border text-monospace">openid profile email</code></div>
+              </div>
+              <div class="col-md-6">
+                <div class="small"><strong>Response Type:</strong> <code class="bg-white px-1 py-0.5 rounded border text-monospace">code</code> (Auth Code Flow + PKCE)</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -222,5 +292,72 @@
   updateUpDown();
   updateCounter();
   updateAvailMsg();
+
+  // ─── External OIDC Proxy dynamic logic ──────────────────────────────────────
+  var proxyTypeSelect = document.querySelector('select[name="auth_proxy_type"]');
+  var extOidcConfigDiv = document.getElementById('external-oidc-config');
+  var publicBaseUrlInput = document.querySelector('input[name="public_base_url"]');
+  var redirectUriDisplay = document.getElementById('oidc-redirect-uri-display');
+
+  function updateRedirectUri() {
+    if (redirectUriDisplay && publicBaseUrlInput) {
+      var base = publicBaseUrlInput.value.trim().replace(/\/+$/, '');
+      redirectUriDisplay.value = base ? base + '/oidc/callback' : '';
+    }
+  }
+
+  if (proxyTypeSelect && extOidcConfigDiv) {
+    proxyTypeSelect.addEventListener('change', function() {
+      if (proxyTypeSelect.value === 'external') {
+        extOidcConfigDiv.style.display = 'block';
+      } else {
+        extOidcConfigDiv.style.display = 'none';
+      }
+    });
+  }
+
+  if (publicBaseUrlInput) {
+    publicBaseUrlInput.addEventListener('input', updateRedirectUri);
+    updateRedirectUri(); // run once at startup
+  }
+
+  window.toggleExternalOidcSecret = function(btn) {
+    var input = document.getElementById('oidc-client-secret');
+    var eye = document.getElementById('oidc-secret-eye');
+    if (input && eye) {
+      if (input.type === 'password') {
+        input.type = 'text';
+        eye.classList.remove('fa-eye');
+        eye.classList.add('fa-eye-slash');
+      } else {
+        input.type = 'password';
+        eye.classList.remove('fa-eye-slash');
+        eye.classList.add('fa-eye');
+      }
+    }
+  };
+
+  window.copyOidcRedirectUri = function() {
+    var input = document.getElementById('oidc-redirect-uri-display');
+    if (input && input.value) {
+      input.select();
+      input.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(input.value);
+      
+      // show visual feedback on the button
+      var btn = document.querySelector('button[onclick="copyOidcRedirectUri()"]');
+      if (btn) {
+        var icon = btn.querySelector('i');
+        if (icon) {
+          icon.classList.remove('fa-copy');
+          icon.classList.add('fa-check');
+          setTimeout(function() {
+            icon.classList.remove('fa-check');
+            icon.classList.add('fa-copy');
+          }, 1500);
+        }
+      }
+    }
+  };
 })();
 </script>
