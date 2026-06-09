@@ -4,6 +4,7 @@
 
 {% set items = pendenze|default([]) %}
 {% set stato = filters.stato|default('') %}
+{% set selected_tipologia = filters.tipologia|default('') %}
 {% set pagina = pagination.pagina|default(1) %}
 {% set per_pagina = pagination.risultati_per_pagina|default(25) %}
 
@@ -54,6 +55,17 @@
             <option value="SCADUTA" {{ stato == 'SCADUTA' ? 'selected' : '' }}>{{ 'Scaduta'|trans }}</option>
             <option value="ANNULLATA" {{ stato == 'ANNULLATA' ? 'selected' : '' }}>{{ 'Annullata'|trans }}</option>
             <option value="ANOMALA" {{ stato == 'ANOMALA' ? 'selected' : '' }}>{{ 'In verifica'|trans }}</option>
+          </select>
+        </div>
+        <div class="field" style="min-width:200px;flex:1;margin:0;">
+          <label for="tipologia">{{ 'Tipologia'|trans }}</label>
+          <select class="select" id="tipologia" name="tipologia">
+            <option value="" {{ selected_tipologia == '' ? 'selected' : '' }}>{{ 'Tutte'|trans }}</option>
+            {% for t in tipologie|default([]) %}
+              <option value="{{ t.id_entrata }}" {{ selected_tipologia == t.id_entrata ? 'selected' : '' }}>
+                {{ t.descrizione_effettiva|default(t.descrizione|default(t.id_entrata)) }}
+              </option>
+            {% endfor %}
           </select>
         </div>
         <div class="field" style="min-width:140px;flex:0 0 auto;margin:0;">
@@ -132,6 +144,12 @@
                   <div style="font-weight:600;">{{ p.causale|default('—') }}</div>
                   {% if p.numero_avviso %}
                     <div class="mono" style="font-size:12px;color:var(--fg-3);">{{ p.numero_avviso }}</div>
+                  {% endif %}
+                  {% if p.tipologia and p.tipologia.descrizione %}
+                    <div style="font-size:12px;color:var(--fg-3);margin-top:2px;display:flex;align-items:center;gap:4px;">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--c-primary);flex-shrink:0;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r=".01"/></svg>
+                      <span>{{ p.tipologia.descrizione }}</span>
+                    </div>
                   {% endif %}
                 </td>
                 <td class="amount" style="text-align:right;white-space:nowrap;">
@@ -224,12 +242,12 @@
           <div style="display:flex;gap:var(--sp-2);">
             <a
               class="btn btn-sm btn-ghost {% if pagination.pagina <= 1 %}disabled{% endif %}"
-              href="?page={{ pagination.pagina - 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}"
+              href="?page={{ pagination.pagina - 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}{% if filters.tipologia %}&tipologia={{ filters.tipologia }}{% endif %}"
               {% if pagination.pagina <= 1 %}aria-disabled="true" tabindex="-1"{% endif %}
             >{{ 'Precedente'|trans }}</a>
             <a
               class="btn btn-sm btn-ghost {% if pagination.pagina >= (pagination.total_pages|default(1)) %}disabled{% endif %}"
-              href="?page={{ pagination.pagina + 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}"
+              href="?page={{ pagination.pagina + 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}{% if filters.tipologia %}&tipologia={{ filters.tipologia }}{% endif %}"
               {% if pagination.pagina >= (pagination.total_pages|default(1)) %}aria-disabled="true" tabindex="-1"{% endif %}
             >{{ 'Successiva'|trans }}</a>
           </div>

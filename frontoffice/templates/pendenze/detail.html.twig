@@ -102,6 +102,12 @@
               <span class="k">{{ 'Causale'|trans }}</span>
               <span class="v">{{ p.causale|default('—') }}</span>
             </div>
+            {% if p.tipologia and p.tipologia.descrizione %}
+              <div class="avviso-row">
+                <span class="k">{{ 'Tipologia'|trans }}</span>
+                <span class="v">{{ p.tipologia.descrizione }}</span>
+              </div>
+            {% endif %}
             <div class="avviso-row">
               <span class="k">{{ 'Pagatore'|trans }}</span>
               <span class="v">

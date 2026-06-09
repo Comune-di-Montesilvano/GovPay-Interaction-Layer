@@ -2036,6 +2036,10 @@ if (!function_exists('frontoffice_build_avviso_preview')) {
             'is_payable' => frontoffice_is_pendenza_payable($state),
             'is_paid' => $isPaid,
             'is_bollo' => $isBolloPreview,
+            'tipologia' => isset($pendenza['tipoPendenza']) && is_array($pendenza['tipoPendenza']) ? [
+                'id' => (string)($pendenza['tipoPendenza']['idTipoPendenza'] ?? $pendenza['tipoPendenza']['idTipo'] ?? $pendenza['tipoPendenza']['id'] ?? ''),
+                'descrizione' => trim((string)($pendenza['tipoPendenza']['descrizione'] ?? '')),
+            ] : null,
             'download_url' => $downloadUrl,
             'receipt_url' => ($isPaid && $idPendenza !== '')
                 ? '/pendenze/' . rawurlencode($idPendenza) . '/ricevuta'
@@ -4780,12 +4784,21 @@ $routes = [
         $statoRaw  = strtoupper(trim((string)($_GET['stato'] ?? '')));
         $allowedStates = ['ESEGUITA', 'NON_ESEGUITA', 'ESEGUITA_PARZIALE', 'ANNULLATA', 'SCADUTA', 'ANOMALA'];
         $stato = in_array($statoRaw, $allowedStates, true) ? $statoRaw : null;
+        $idTipoPendenza = trim((string)($_GET['tipologia'] ?? ''));
+
+        // Fetch internal typologies for the filter select dropdown
+        $tipologieApiResult = frontoffice_backoffice_api('GET', '/api/frontoffice/tipologie');
+        $tipologie = [];
+        if ($tipologieApiResult['success']) {
+            $tipologie = $tipologieApiResult['data'] ?? $tipologieApiResult['_raw']['tipologie'] ?? [];
+        }
 
         $apiResult = frontoffice_backoffice_api('GET', '/api/frontoffice/pendenze', array_filter([
-            'cf'       => $codiceFiscale,
-            'page'     => $page,
-            'per_page' => $perPage,
-            'stato'    => $stato ?? '',
+            'cf'             => $codiceFiscale,
+            'page'           => $page,
+            'per_page'       => $perPage,
+            'stato'          => $stato ?? '',
+            'idTipoPendenza' => $idTipoPendenza,
         ]));
 
         if (!$apiResult['success']) {
@@ -4848,6 +4861,10 @@ $routes = [
                     ? '/pendenze/' . rawurlencode((string)$pendenza['idPendenza'])
                     : null,
                 'is_bollo' => $rowIsBollo,
+                'tipologia' => isset($pendenza['tipoPendenza']) && is_array($pendenza['tipoPendenza']) ? [
+                    'id' => (string)($pendenza['tipoPendenza']['idTipoPendenza'] ?? $pendenza['tipoPendenza']['idTipo'] ?? $pendenza['tipoPendenza']['id'] ?? ''),
+                    'descrizione' => trim((string)($pendenza['tipoPendenza']['descrizione'] ?? '')),
+                ] : null,
             ];
         }
 
@@ -4869,8 +4886,10 @@ $routes = [
                 'profile' => $user,
                 'codice_fiscale' => $codiceFiscale,
                 'pendenze' => $rows,
+                'tipologie' => $tipologie,
                 'filters' => [
                     'stato' => $statoRaw,
+                    'tipologia' => $idTipoPendenza,
                 ],
                 'pagination' => (static function () use ($data, $page, $perPage, $rows): array {
                     $meta       = is_array($data['metadatiPaginazione'] ?? null) ? $data['metadatiPaginazione'] : [];
