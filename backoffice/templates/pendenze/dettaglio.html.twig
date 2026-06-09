@@ -325,7 +325,7 @@
             {% endif %}
             {% if bolloXmlTesto %}
               <button type="button"
-                class="btn btn-outline-secondary btn-sm"
+                class="btn btn-outline-secondary btn-sm download-voce-bollo-xml-btn"
                 id="download-bollo-xml-btn"
                 data-testo="{{ bolloXmlTesto }}"
                 data-iuv="{{ bolloXmlIuv }}"
@@ -334,11 +334,11 @@
               </button>
               <script>
               (function(){
-                const btn = document.getElementById('download-bollo-xml-btn');
-                if (!btn) return;
-                btn.addEventListener('click', function() {
-                  const b64      = this.dataset.testo;
-                  const iuv      = this.dataset.iuv || 'bollo';
+                document.addEventListener('click', function(e) {
+                  const btn = e.target.closest('.download-voce-bollo-xml-btn');
+                  if (!btn) return;
+                  const b64      = btn.dataset.testo;
+                  const iuv      = btn.dataset.iuv || 'bollo';
                   const filename = 'marca-da-bollo-' + iuv + '.xml';
                   try {
                     const binary = atob(b64);
@@ -351,8 +351,8 @@
                     document.body.appendChild(a); a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
-                  } catch(e) {
-                    alert('Errore download marca da bollo: ' + e.message);
+                  } catch(err) {
+                    alert('Errore download marca da bollo: ' + err.message);
                   }
                 });
               })();
@@ -595,6 +595,7 @@
                     <th scope="col">Tipo bollo</th>
                     <th scope="col">Provincia</th>
                     <th scope="col">Impronta documento</th>
+                    <th scope="col" class="text-center">Azioni</th>
                   {% else %}
                     <th scope="col">Descrizione tipologia</th>
                     <th scope="col">IBAN</th>
@@ -621,6 +622,33 @@
                         {% if voce.hashDocumento is defined and voce.hashDocumento %}
                           <code class="small user-select-all" title="{{ voce.hashDocumento }}">{{ voce.hashDocumento|slice(0,24) }}&hellip;</code>
                         {% else %}—{% endif %}
+                      </td>
+                      <td class="text-center">
+                        {% set voceBolloXmlTesto = '' %}
+                        {% set voceBolloXmlIuv = '' %}
+                        {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+                          {% for risc in voce.riscossioni %}
+                            {% if voceBolloXmlTesto == ''
+                                and risc.tipo is defined and risc.tipo == 'MBT'
+                                and risc.allegato is defined
+                                and risc.allegato.testo is defined
+                                and risc.allegato.testo %}
+                              {% set voceBolloXmlTesto = risc.allegato.testo %}
+                              {% set voceBolloXmlIuv = risc.iuv|default('bollo') %}
+                            {% endif %}
+                          {% endfor %}
+                        {% endif %}
+                        {% if voceBolloXmlTesto %}
+                          <button type="button"
+                            class="btn btn-outline-secondary btn-sm px-2 py-0 download-voce-bollo-xml-btn"
+                            data-testo="{{ voceBolloXmlTesto }}"
+                            data-iuv="{{ voceBolloXmlIuv }}"
+                            title="Scarica XML Marca da Bollo Telematica">
+                            <i class="fas fa-stamp" aria-hidden="true"></i>
+                          </button>
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
                       </td>
                     {% else %}
                       <td class="text-break small">

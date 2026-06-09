@@ -11,6 +11,29 @@
     ? 'status-paid'
     : (p.stato.code|default('') in ['NON_ESEGUITA','ESEGUITA_PARZIALE'] ? 'status-pay'
         : (p.stato.code|default('') in ['SCADUTA','ANOMALA'] ? 'status-due' : 'status-cancel')) %}
+{% set is_bollo = p.is_bollo|default(false)
+    or (voci|length > 0
+        and voci[0].tipoBollo is defined
+        and voci[0].tipoBollo is not null
+        and voci[0].tipoBollo != '') %}
+{% set bolloXmlTesto = '' %}
+{% set bolloXmlIuv   = '' %}
+{% if voci is iterable %}
+  {% for voce in voci %}
+    {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+      {% for risc in voce.riscossioni %}
+        {% if bolloXmlTesto == ''
+            and risc.tipo is defined and risc.tipo == 'MBT'
+            and risc.allegato is defined
+            and risc.allegato.testo is defined
+            and risc.allegato.testo %}
+          {% set bolloXmlTesto = risc.allegato.testo %}
+          {% set bolloXmlIuv   = risc.iuv|default('bollo') %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
 
 {% block content %}
 
@@ -38,6 +61,20 @@
 
       {# ── Main ── #}
       <div>
+
+        {% if is_bollo %}
+          <div class="alert alert-info" role="status" style="margin-bottom:var(--sp-4); display: flex; gap: var(--sp-2); align-items: start;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon" style="flex-shrink: 0; margin-top: 2px;" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+            </svg>
+            <div>
+              <strong>{{ 'Marca da Bollo Telematica'|trans }}</strong> — {{ voci|length }} {{ (voci|length > 1 ? 'voci'|trans : 'voce'|trans) }} {{ 'da € 16,00 ciascuna'|trans }}.
+              {% set _prov = (voci|length > 0 and voci[0].provinciaResidenza is defined) ? voci[0].provinciaResidenza : '' %}
+              {% if _prov %}{{ 'Provincia di residenza'|trans }}: <strong>{{ _prov }}</strong>.{% endif %}
+              {{ 'Avviso PDF e rateizzazione non applicabili.'|trans }}
+            </div>
+          </div>
+        {% endif %}
 
         {# ── avviso-card ── #}
         <div class="avviso-card" style="margin-bottom:var(--sp-4);">
@@ -87,11 +124,6 @@
           </div>
 
           <div class="avviso-actions">
-            {% set is_bollo = p.is_bollo|default(false)
-                or (voci|length > 0
-                    and voci[0].tipoBollo is defined
-                    and voci[0].tipoBollo is not null
-                    and voci[0].tipoBollo != '') %}
             {% if is_bollo %}
               {% set _burl = '/avviso-bollo?iuv=' ~ (p.numero_avviso ?? '')|url_encode
                   ~ '&ente=' ~ (p.id_dominio ?? '')|url_encode
@@ -106,6 +138,16 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
                 {{ 'Bollettino MBT'|trans }}
               </a>
+              {% if bolloXmlTesto %}
+                <button type="button"
+                  class="btn btn-outline download-voce-bollo-xml-btn"
+                  data-testo="{{ bolloXmlTesto }}"
+                  data-iuv="{{ bolloXmlIuv }}"
+                  title="Scarica XML Marca da Bollo Telematica">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                  {{ 'Marca da Bollo'|trans }}
+                </button>
+              {% endif %}
             {% elseif p.download_url %}
               <a class="btn btn-outline" href="{{ p.download_url }}" target="_blank" rel="noopener">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h4"/></svg>
@@ -160,6 +202,12 @@
                 <thead>
                   <tr>
                     <th>{{ 'Descrizione'|trans }}</th>
+                    {% if is_bollo %}
+                      <th>{{ 'Tipo bollo'|trans }}</th>
+                      <th>{{ 'Provincia'|trans }}</th>
+                      <th>{{ 'Impronta documento'|trans }}</th>
+                      <th style="text-align:center;">{{ 'Azioni'|trans }}</th>
+                    {% endif %}
                     <th style="text-align:right;">{{ 'Importo'|trans }}</th>
                   </tr>
                 </thead>
@@ -167,6 +215,43 @@
                   {% for voce in voci %}
                     <tr style="cursor:default;">
                       <td>{{ voce.descrizione|default('—') }}</td>
+                      {% if is_bollo %}
+                        <td>{{ voce.tipoBollo|default('—') }}</td>
+                        <td>{{ voce.provinciaResidenza|default('—') }}</td>
+                        <td>
+                          {% if voce.hashDocumento is defined and voce.hashDocumento %}
+                            <code class="small user-select-all" style="font-family:var(--font-mono);font-size:12px;" title="{{ voce.hashDocumento }}">{{ voce.hashDocumento|slice(0,24) }}&hellip;</code>
+                          {% else %}—{% endif %}
+                        </td>
+                        <td style="text-align:center;">
+                          {% set voceBolloXmlTesto = '' %}
+                          {% set voceBolloXmlIuv = '' %}
+                          {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
+                            {% for risc in voce.riscossioni %}
+                              {% if voceBolloXmlTesto == ''
+                                  and risc.tipo is defined and risc.tipo == 'MBT'
+                                  and risc.allegato is defined
+                                  and risc.allegato.testo is defined
+                                  and risc.allegato.testo %}
+                                {% set voceBolloXmlTesto = risc.allegato.testo %}
+                                {% set voceBolloXmlIuv = risc.iuv|default('bollo') %}
+                              {% endif %}
+                            {% endfor %}
+                          {% endif %}
+                          {% if voceBolloXmlTesto %}
+                            <button type="button"
+                              class="btn btn-outline btn-sm download-voce-bollo-xml-btn"
+                              style="padding: 2px 8px; font-size: 12px; height: auto; min-height: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;"
+                              data-testo="{{ voceBolloXmlTesto }}"
+                              data-iuv="{{ voceBolloXmlIuv }}"
+                              title="Scarica XML Marca da Bollo Telematica">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
+                            </button>
+                          {% else %}
+                            <span style="color:var(--fg-3);">—</span>
+                          {% endif %}
+                        </td>
+                      {% endif %}
                       <td class="amount" style="text-align:right;">
                         {% if voce.importo is defined %}
                           € {{ voce.importo|number_format(2, ',', '.') }}
@@ -201,5 +286,35 @@
     </div>
   </div>
 </section>
+
+{% block scripts %}
+  {% if is_bollo %}
+    <script>
+    (function(){
+      document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.download-voce-bollo-xml-btn');
+        if (!btn) return;
+        const b64      = btn.dataset.testo;
+        const iuv      = btn.dataset.iuv || 'bollo';
+        const filename = 'marca-da-bollo-' + iuv + '.xml';
+        try {
+          const binary = atob(b64);
+          const bytes  = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'application/xml' });
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href = url; a.download = filename;
+          document.body.appendChild(a); a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch(err) {
+          alert('Errore download marca da bollo: ' + err.message);
+        }
+      });
+    })();
+    </script>
+  {% endif %}
+{% endblock %}
 
 {% endblock %}
