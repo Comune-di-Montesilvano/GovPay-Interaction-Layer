@@ -330,8 +330,8 @@
                   const btn = e.target.closest('.download-voce-bollo-xml-btn');
                   if (!btn) return;
                   const b64      = btn.dataset.testo;
-                  const iuv      = btn.dataset.iuv || 'bollo';
-                  const filename = 'marca-da-bollo-' + iuv + '.xml';
+                  const iubd     = btn.dataset.iubd || btn.dataset.iuv || 'bollo';
+                  const filename = 'marca-da-bollo-' + iubd + '.xml';
                   try {
                     const binary = atob(b64);
                     const bytes  = new Uint8Array(binary.length);
@@ -637,6 +637,7 @@
                       <td class="text-center">
                         {% set voceBolloXmlTesto = '' %}
                         {% set voceBolloXmlIuv = '' %}
+                        {% set voceBolloIubd = '' %}
                         {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
                           {% for risc in voce.riscossioni %}
                             {% if voceBolloXmlTesto == ''
@@ -646,6 +647,9 @@
                                 and risc.allegato.testo %}
                               {% set voceBolloXmlTesto = risc.allegato.testo %}
                               {% set voceBolloXmlIuv = risc.iuv|default('bollo') %}
+                              {% if risc.allegato.contenuto is defined and risc.allegato.contenuto.IUBD is defined %}
+                                {% set voceBolloIubd = risc.allegato.contenuto.IUBD %}
+                              {% endif %}
                             {% endif %}
                           {% endfor %}
                         {% endif %}
@@ -654,6 +658,7 @@
                             class="btn btn-outline-secondary btn-sm px-2 py-0 download-voce-bollo-xml-btn"
                             data-testo="{{ voceBolloXmlTesto }}"
                             data-iuv="{{ voceBolloXmlIuv }}"
+                            data-iubd="{{ voceBolloIubd }}"
                             title="Scarica XML Marca da Bollo Telematica">
                             <i class="fas fa-stamp" aria-hidden="true"></i>
                           </button>

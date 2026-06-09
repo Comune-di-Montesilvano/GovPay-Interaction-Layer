@@ -233,6 +233,7 @@
                         <td style="text-align:center;">
                           {% set voceBolloXmlTesto = '' %}
                           {% set voceBolloXmlIuv = '' %}
+                          {% set voceBolloIubd = '' %}
                           {% if voce.riscossioni is defined and voce.riscossioni is iterable %}
                             {% for risc in voce.riscossioni %}
                               {% if voceBolloXmlTesto == ''
@@ -242,6 +243,9 @@
                                   and risc.allegato.testo %}
                                 {% set voceBolloXmlTesto = risc.allegato.testo %}
                                 {% set voceBolloXmlIuv = risc.iuv|default('bollo') %}
+                                {% if risc.allegato.contenuto is defined and risc.allegato.contenuto.IUBD is defined %}
+                                  {% set voceBolloIubd = risc.allegato.contenuto.IUBD %}
+                                {% endif %}
                               {% endif %}
                             {% endfor %}
                           {% endif %}
@@ -251,6 +255,7 @@
                               style="padding: 2px 8px; font-size: 12px; height: auto; min-height: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;"
                               data-testo="{{ voceBolloXmlTesto }}"
                               data-iuv="{{ voceBolloXmlIuv }}"
+                              data-iubd="{{ voceBolloIubd }}"
                               title="Scarica XML Marca da Bollo Telematica">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>
                             </button>
@@ -302,8 +307,8 @@
         const btn = e.target.closest('.download-voce-bollo-xml-btn');
         if (!btn) return;
         const b64      = btn.dataset.testo;
-        const iuv      = btn.dataset.iuv || 'bollo';
-        const filename = 'marca-da-bollo-' + iuv + '.xml';
+        const iubd     = btn.dataset.iubd || btn.dataset.iuv || 'bollo';
+        const filename = 'marca-da-bollo-' + iubd + '.xml';
         try {
           const binary = atob(b64);
           const bytes  = new Uint8Array(binary.length);
