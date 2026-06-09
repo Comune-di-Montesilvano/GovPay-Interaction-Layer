@@ -312,11 +312,24 @@ class ImpostazioniController
             array_filter(array_map('strval', (array)($body['featured_services'] ?? []))),
             0, 8
         ));
-        SettingsRepository::setSection('frontoffice', [
-            'public_base_url'   => $publicBaseUrl,
-            'auth_proxy_type'   => $body['auth_proxy_type'] ?? 'none',
-            'featured_services' => json_encode($featuredIds),
-        ], $by);
+        
+        $frontofficeData = [
+            'public_base_url'      => $publicBaseUrl,
+            'auth_proxy_type'      => $body['auth_proxy_type'] ?? 'none',
+            'featured_services'    => json_encode($featuredIds),
+            'external_oidc_issuer' => $body['external_oidc_issuer'] ?? '',
+            'external_oidc_client_id' => $body['external_oidc_client_id'] ?? '',
+            'external_oidc_logout_url' => $body['external_oidc_logout_url'] ?? '',
+        ];
+        
+        if (isset($body['external_oidc_client_secret']) && $body['external_oidc_client_secret'] !== '') {
+            $frontofficeData['external_oidc_client_secret'] = [
+                'value' => $body['external_oidc_client_secret'],
+                'encrypted' => true
+            ];
+        }
+        
+        SettingsRepository::setSection('frontoffice', $frontofficeData, $by);
 
         return $this->jsonOk('Impostazioni Frontoffice salvate.');
     }
@@ -2663,6 +2676,10 @@ class ImpostazioniController
             'FRONTOFFICE_AUTH_PROXY_TYPE'       => $frontoffice['auth_proxy_type']          ?? '',
             'BOLLO_TIPO_PENDENZA'               => $frontoffice['bollo_tipo_pendenza']       ?? 'BOLLOT',
             'FEATURED_SERVICES'                 => $frontoffice['featured_services']         ?? '[]',
+            'EXTERNAL_OIDC_ISSUER'              => $frontoffice['external_oidc_issuer']              ?? '',
+            'EXTERNAL_OIDC_CLIENT_ID'           => $frontoffice['external_oidc_client_id']           ?? '',
+            'EXTERNAL_OIDC_CLIENT_SECRET'       => $frontoffice['external_oidc_client_secret']       ?? '',
+            'EXTERNAL_OIDC_LOGOUT_URL'          => $frontoffice['external_oidc_logout_url']          ?? '',
             // entity
             'APP_ENTITY_NAME'                   => $entity['name']                           ?? '',
             'APP_ENTITY_SUFFIX'                 => $entity['suffix']                         ?? '',

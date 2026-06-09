@@ -721,6 +721,9 @@ if (!function_exists('frontoffice_spid_mode')) {
         if (in_array($frontofficeType, ['spid', 'cie', 'spid_cie'], true)) {
             return 'auth-proxy';
         }
+        if ($frontofficeType === 'external') {
+            return 'external';
+        }
         return 'none';
     }
 }
@@ -734,12 +737,16 @@ if (!function_exists('frontoffice_spid_enabled')) {
 
 if (!function_exists('frontoffice_auth_proxy_type')) {
     /**
-     * @return 'php-proxy'|'auth-proxy-saml2'
+     * @return 'php-proxy'|'auth-proxy-saml2'|'external-oidc'
      */
     function frontoffice_auth_proxy_type(): string
     {
-        if (frontoffice_spid_mode() === 'auth-proxy') {
+        $mode = frontoffice_spid_mode();
+        if ($mode === 'auth-proxy') {
             return 'auth-proxy-saml2';
+        }
+        if ($mode === 'external') {
+            return 'external-oidc';
         }
         return 'php-proxy';
     }
@@ -3552,7 +3559,7 @@ $routes = [
             ],
         ];
     },
-    '/login' => static function () use ($env, $spidCallbackUrl): array {
+    '/login' => static function () use ($env, $spidCallbackUrl, $frontofficeBaseUrl): array {
         if (!frontoffice_spid_enabled()) {
             http_response_code(404);
             return [
@@ -3561,6 +3568,56 @@ $routes = [
                     'requested_path' => '/login',
                 ],
             ];
+        }
+
+        if (frontoffice_auth_proxy_type() === 'external-oidc') {
+            $issuer = rtrim($env('EXTERNAL_OIDC_ISSUER', ''), '/');
+            $clientId = trim($env('EXTERNAL_OIDC_CLIENT_ID', ''));
+            
+            if ($issuer === '' || $clientId === '') {
+                http_response_code(503);
+                return [
+                    'template' => 'errors/503.html.twig',
+                    'context' => [
+                        'message' => 'Login OIDC esterno non configurato. Imposta EXTERNAL_OIDC_ISSUER e EXTERNAL_OIDC_CLIENT_ID.',
+                    ],
+                ];
+            }
+
+            try {
+                $state = bin2hex(random_bytes(16));
+                $codeVerifier = bin2hex(random_bytes(32));
+            } catch (\Throwable $e) {
+                $state = md5((string)microtime(true) . uniqid('', true));
+                $codeVerifier = md5(uniqid('', true) . microtime(true));
+            }
+
+            $_SESSION['oidc_state'] = $state;
+            $_SESSION['oidc_code_verifier'] = $codeVerifier;
+            
+            $challengeHash = hash('sha256', $codeVerifier, true);
+            $codeChallenge = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($challengeHash));
+
+            $returnTo = (string)($_GET['return_to'] ?? '/');
+            if ($returnTo === '' || $returnTo[0] !== '/') {
+                $returnTo = '/';
+            }
+            $_SESSION['spid_return_to'] = $returnTo;
+
+            $redirectUri = rtrim($frontofficeBaseUrl, '/') . '/oidc/callback';
+            
+            $authUrl = $issuer . '/OIDC/authorization?' . http_build_query([
+                'client_id'             => $clientId,
+                'response_type'         => 'code',
+                'scope'                 => 'openid profile email',
+                'redirect_uri'          => $redirectUri,
+                'state'                 => $state,
+                'code_challenge'        => $codeChallenge,
+                'code_challenge_method' => 'S256',
+            ]);
+
+            header('Location: ' . $authUrl, true, 302);
+            exit;
         }
 
         if (frontoffice_auth_proxy_type() === 'auth-proxy-saml2') {
@@ -3962,6 +4019,168 @@ $routes = [
         header('Location: ' . $returnTo, true, 302);
         exit;
     },
+    '/oidc/callback' => static function () use ($env, $frontofficeBaseUrl): array {
+        if (!frontoffice_spid_enabled() || frontoffice_auth_proxy_type() !== 'external-oidc') {
+            http_response_code(404);
+            return [
+                'template' => 'errors/404.html.twig',
+                'context' => [
+                    'requested_path' => '/oidc/callback',
+                ],
+            ];
+        }
+
+        $state = (string)($_GET['state'] ?? '');
+        $expectedState = (string)($_SESSION['oidc_state'] ?? '');
+        if ($state === '' || $expectedState === '' || !hash_equals($expectedState, $state)) {
+            http_response_code(400);
+            return [
+                'template' => 'errors/503.html.twig',
+                'context' => [
+                    'message' => 'State OIDC non valido o sessione scaduta. Riprova ad accedere.',
+                ],
+            ];
+        }
+        unset($_SESSION['oidc_state']);
+
+        $code = (string)($_GET['code'] ?? '');
+        if ($code === '') {
+            http_response_code(400);
+            return [
+                'template' => 'errors/503.html.twig',
+                'context' => [
+                    'message' => 'Codice di autorizzazione OIDC non fornito dal proxy.',
+                ],
+            ];
+        }
+
+        $issuer = rtrim($env('EXTERNAL_OIDC_ISSUER', ''), '/');
+        $clientId = trim($env('EXTERNAL_OIDC_CLIENT_ID', ''));
+        $clientSecret = trim($env('EXTERNAL_OIDC_CLIENT_SECRET', ''));
+        $redirectUri = rtrim($frontofficeBaseUrl, '/') . '/oidc/callback';
+        $codeVerifier = (string)($_SESSION['oidc_code_verifier'] ?? '');
+        unset($_SESSION['oidc_code_verifier']);
+
+        $tokenUrl = $issuer . '/OIDC/token';
+
+        $postData = [
+            'grant_type'    => 'authorization_code',
+            'code'          => $code,
+            'redirect_uri'  => $redirectUri,
+            'code_verifier' => $codeVerifier,
+        ];
+
+        $ch = curl_init($tokenUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        
+        // Autenticazione client tramite client_secret_basic (Basic Auth) come richiesto da sso-proxy
+        curl_setopt($ch, CURLOPT_USERPWD, $clientId . ':' . $clientSecret);
+
+        $urlHost = (string)(parse_url($tokenUrl, PHP_URL_HOST) ?: '');
+        $insecureSsl = in_array(strtolower($urlHost), ['localhost', '127.0.0.1', '::1', 'auth-proxy-nginx', 'pa-sso-proxy', 'sso-proxy'], true);
+        if ($insecureSsl) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        }
+
+        $res = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        unset($ch);
+
+        if ($res === false || $status < 200 || $status >= 300) {
+            http_response_code(503);
+            return [
+                'template' => 'errors/503.html.twig',
+                'context' => [
+                    'message' => 'Scambio del token OIDC fallito. HTTP status: ' . $status . ($err ? ' - Errore: ' . $err : '') . "\nRisposta: " . $res,
+                ],
+            ];
+        }
+
+        $tokenResponse = json_decode($res, true);
+        $idToken = $tokenResponse['id_token'] ?? '';
+        if ($idToken === '') {
+            http_response_code(503);
+            return [
+                'template' => 'errors/503.html.twig',
+                'context' => [
+                    'message' => 'Scambio del token OIDC fallito: la risposta non contiene un id_token valido.',
+                ],
+            ];
+        }
+
+        $parts = explode('.', $idToken);
+        if (count($parts) < 2) {
+            http_response_code(503);
+            return [
+                'template' => 'errors/503.html.twig',
+                'context' => [
+                    'message' => 'ID Token OIDC non valido (manca la sezione payload).',
+                ],
+            ];
+        }
+
+        $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], $parts[1])), true);
+        if (!is_array($payload)) {
+            http_response_code(503);
+            return [
+                'template' => 'errors/503.html.twig',
+                'context' => [
+                    'message' => 'Impossibile decodificare il payload dell\'ID Token OIDC.',
+                ],
+            ];
+        }
+
+        $pickAttr = static function (array $attrs, array $keys): string {
+            foreach ($keys as $k) {
+                if (isset($attrs[$k]) && $attrs[$k] !== '') {
+                    return trim((string)$attrs[$k]);
+                }
+            }
+            return '';
+        };
+
+        $firstName = $pickAttr($payload, ['given_name', 'first_name', 'name', 'givenName']);
+        $lastName = $pickAttr($payload, ['family_name', 'last_name', 'sn', 'surname', 'familyName']);
+        $email = $pickAttr($payload, ['email', 'mail', 'emailAddress']);
+        $fiscalNumber = $pickAttr($payload, [
+            'fiscal_number',
+            'https://attributes.eid.gov.it/fiscal_number',
+            'https://attributes.spid.gov.it/fiscalNumber',
+            'fiscalNumber',
+            'fiscalCode',
+            'codiceFiscale'
+        ]);
+
+        $user = [
+            'first_name'    => $firstName,
+            'last_name'     => $lastName,
+            'email'         => $email,
+            'fiscal_number' => frontoffice_normalize_fiscal_number($fiscalNumber),
+            'spid_code'     => $payload['spid_code'] ?? $payload['spidCode'] ?? '',
+            'provider_id'   => 'EXTERNAL_OIDC_PROXY',
+            'provider_name' => $payload['provider_name'] ?? $payload['amr'][0] ?? 'OIDC',
+            'response_id'   => $payload['jti'] ?? '',
+        ];
+
+        $_SESSION['frontoffice_user'] = $user;
+
+        $returnTo = (string)($_SESSION['spid_return_to'] ?? '/');
+        unset($_SESSION['spid_return_to']);
+        if ($returnTo === '' || $returnTo[0] !== '/') {
+            $returnTo = '/';
+        }
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+        header('Location: ' . $returnTo, true, 302);
+        exit;
+    },
     '/saml/sp' => static function () use ($env): array {
         if (!frontoffice_spid_enabled()) {
             http_response_code(404);
@@ -4165,6 +4384,20 @@ $routes = [
                 setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
             }
             session_destroy();
+        }
+
+        if (frontoffice_auth_proxy_type() === 'external-oidc') {
+            $logoutUrl = trim($env('EXTERNAL_OIDC_LOGOUT_URL', ''));
+            $clientId = trim($env('EXTERNAL_OIDC_CLIENT_ID', ''));
+            if ($logoutUrl !== '') {
+                $separator = str_contains($logoutUrl, '?') ? '&' : '?';
+                $target = $logoutUrl
+                    . $separator . 'client_id=' . rawurlencode($clientId)
+                    . '&post_logout_redirect_uri=' . rawurlencode($redirectUri)
+                    . '&redirect_uri=' . rawurlencode($redirectUri);
+                header('Location: ' . $target, true, 302);
+                exit;
+            }
         }
 
         if (frontoffice_auth_proxy_type() === 'php-proxy' && $proxyBase !== '' && $clientId !== '' && $redirectUri !== '') {
