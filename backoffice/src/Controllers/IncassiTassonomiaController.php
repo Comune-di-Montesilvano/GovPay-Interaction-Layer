@@ -183,7 +183,7 @@ class IncassiTassonomiaController
             return $response;
         }
 
-        fputcsv($stream, ['tassonomia', 'data', 'id_dominio', 'iuv', 'iur', 'indice', 'stato', 'tipo', 'importo', 'id_voce_pendenza', 'incasso'], ';');
+        fputcsv($stream, ['tassonomia', 'data', 'id_dominio', 'iuv', 'iur', 'indice', 'stato', 'tipo', 'importo', 'id_voce_pendenza', 'incasso'], ';', '"', '\\');
 
         foreach ($rows as $row) {
             fputcsv($stream, [
@@ -198,7 +198,7 @@ class IncassiTassonomiaController
                 (string)number_format((float)($row['importo'] ?? 0), 2, '.', ''),
                 (string)($row['id_voce_pendenza'] ?? ''),
                 (string)($row['incasso'] ?? ''),
-            ], ';');
+            ], ';', '"', '\\');
         }
 
         rewind($stream);

@@ -356,7 +356,7 @@ class ReportTefaController
             'ID Flusso', 'Data Flusso', 'Data Regolamento', 'TRN',
             'ID PSP', 'Ragione PSP', 'Importo Originale (€)',
             'Esito', 'Stato Rend.', 'Cod. Entrata', 'Descrizione Entrata', 'ID Pendenza',
-        ], ';');
+        ], ';', '"', '\\');
 
         foreach ($rows as $r) {
             fputcsv($out, [
@@ -386,7 +386,7 @@ class ReportTefaController
                 $r['cod_entrata'] ?? '',
                 $r['descrizione_entrata'] ?? '',
                 $r['id_pendenza'] ?? '',
-            ], ';');
+            ], ';', '"', '\\');
         }
 
         rewind($out);
