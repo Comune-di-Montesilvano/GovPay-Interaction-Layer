@@ -4102,6 +4102,7 @@ $routes = [
         }
 
         $tokenResponse = json_decode($res, true);
+        Logger::getInstance()->info('OIDC token exchange response keys: ' . implode(', ', array_keys($tokenResponse ?: [])));
         $idToken = $tokenResponse['id_token'] ?? '';
         if ($idToken === '') {
             http_response_code(503);
@@ -4125,6 +4126,7 @@ $routes = [
         }
 
         $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], $parts[1])), true);
+        Logger::getInstance()->info('OIDC ID Token Decoded Payload: ' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         if (!is_array($payload)) {
             http_response_code(503);
             return [
