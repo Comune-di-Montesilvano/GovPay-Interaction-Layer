@@ -4070,28 +4070,34 @@ $routes = [
             'code_verifier' => $codeVerifier,
         ];
 
-        $ch = curl_init($tokenUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        
-        // Autenticazione client tramite client_secret_basic (Basic Auth) come richiesto da sso-proxy
-        curl_setopt($ch, CURLOPT_USERPWD, $clientId . ':' . $clientSecret);
-
         $urlHost = (string)(parse_url($tokenUrl, PHP_URL_HOST) ?: '');
         $insecureSsl = in_array(strtolower($urlHost), ['localhost', '127.0.0.1', '::1', 'auth-proxy-nginx', 'pa-sso-proxy', 'sso-proxy'], true);
-        if ($insecureSsl) {
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+        $res = '';
+        $status = 0;
+        $err = '';
+        try {
+            $client = new \GuzzleHttp\Client([
+                'timeout'     => 10,
+                'verify'      => !$insecureSsl,
+                'http_errors' => false,
+            ]);
+
+            $response = $client->request('POST', $tokenUrl, [
+                'auth'        => [$clientId, $clientSecret], // Client authentication basic
+                'form_params' => $postData,
+                'headers'     => [
+                    'Accept' => 'application/json',
+                ],
+            ]);
+
+            $status = $response->getStatusCode();
+            $res = (string)$response->getBody();
+        } catch (\Throwable $e) {
+            $err = $e->getMessage();
         }
 
-        $res = curl_exec($ch);
-        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err = curl_error($ch);
-        unset($ch);
-
-        if ($res === false || $status < 200 || $status >= 300) {
+        if ($res === '' || $status < 200 || $status >= 300) {
             http_response_code(503);
             return [
                 'template' => 'errors/503.html.twig',
@@ -4137,6 +4143,45 @@ $routes = [
             ];
         }
 
+        // Recupero claims/attributi utente da UserInfo endpoint (standard OIDC per CIE e SPID se non inclusi nell'ID Token)
+        $userinfo = [];
+        $accessToken = $tokenResponse['access_token'] ?? '';
+        if ($accessToken !== '') {
+            $userinfoUrl = $issuer . '/OIDC/userinfo';
+            try {
+                $client = new \GuzzleHttp\Client([
+                    'timeout'     => 10,
+                    'verify'      => !$insecureSsl,
+                    'http_errors' => false,
+                ]);
+
+                $response = $client->request('GET', $userinfoUrl, [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $accessToken,
+                        'Accept'        => 'application/json',
+                    ],
+                ]);
+
+                $userinfoStatus = $response->getStatusCode();
+                $userinfoRes = (string)$response->getBody();
+
+                Logger::getInstance()->info('OIDC UserInfo HTTP status: ' . $userinfoStatus);
+                if ($userinfoRes !== '' && $userinfoStatus >= 200 && $userinfoStatus < 300) {
+                    Logger::getInstance()->info('OIDC UserInfo response: ' . $userinfoRes);
+                    $userinfo = json_decode($userinfoRes, true) ?: [];
+                } else {
+                    Logger::getInstance()->warning('OIDC UserInfo failed', ['status' => $userinfoStatus, 'response' => $userinfoRes]);
+                }
+            } catch (\Throwable $e) {
+                Logger::getInstance()->error('OIDC UserInfo request failed', [
+                    'url'   => $userinfoUrl,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        $claims = array_merge(is_array($payload) ? $payload : [], is_array($userinfo) ? $userinfo : []);
+
         $pickAttr = static function (array $attrs, array $keys): string {
             foreach ($keys as $k) {
                 if (isset($attrs[$k]) && $attrs[$k] !== '') {
@@ -4146,10 +4191,10 @@ $routes = [
             return '';
         };
 
-        $firstName = $pickAttr($payload, ['given_name', 'first_name', 'name', 'givenName']);
-        $lastName = $pickAttr($payload, ['family_name', 'last_name', 'sn', 'surname', 'familyName']);
-        $email = $pickAttr($payload, ['email', 'mail', 'emailAddress']);
-        $fiscalNumber = $pickAttr($payload, [
+        $firstName = $pickAttr($claims, ['given_name', 'first_name', 'name', 'givenName']);
+        $lastName = $pickAttr($claims, ['family_name', 'last_name', 'sn', 'surname', 'familyName']);
+        $email = $pickAttr($claims, ['email', 'mail', 'emailAddress']);
+        $fiscalNumber = $pickAttr($claims, [
             'fiscal_number',
             'https://attributes.eid.gov.it/fiscal_number',
             'https://attributes.spid.gov.it/fiscalNumber',
@@ -4163,10 +4208,10 @@ $routes = [
             'last_name'     => $lastName,
             'email'         => $email,
             'fiscal_number' => frontoffice_normalize_fiscal_number($fiscalNumber),
-            'spid_code'     => $payload['spid_code'] ?? $payload['spidCode'] ?? '',
+            'spid_code'     => $claims['spid_code'] ?? $claims['spidCode'] ?? '',
             'provider_id'   => 'EXTERNAL_OIDC_PROXY',
-            'provider_name' => $payload['provider_name'] ?? $payload['amr'][0] ?? 'OIDC',
-            'response_id'   => $payload['jti'] ?? '',
+            'provider_name' => $claims['provider_name'] ?? $claims['amr'][0] ?? 'OIDC',
+            'response_id'   => $claims['jti'] ?? '',
         ];
 
         $_SESSION['frontoffice_user'] = $user;
