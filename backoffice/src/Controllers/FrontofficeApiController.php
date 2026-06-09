@@ -154,6 +154,7 @@ class FrontofficeApiController
         $perPage      = min(200, max(1, (int)($params['per_page'] ?? 25)));
         $stato        = trim((string)($params['stato'] ?? ''));
         $numeroAvviso = trim((string)($params['numero_avviso'] ?? ''));
+        $idTipoPendenza = trim((string)($params['idTipoPendenza'] ?? ''));
         $idDominio    = (string)SettingsRepository::get('entity', 'id_dominio', '');
         $idA2A        = (string)SettingsRepository::get('entity', 'id_a2a', '');
 
@@ -169,6 +170,7 @@ class FrontofficeApiController
             'idDebitore'         => $cf ?: null,
             'iuv'                => $numeroAvviso ?: null,
             'stato'              => $stato ?: null,
+            'idTipoPendenza'     => $idTipoPendenza ?: null,
             'metadatiPaginazione'=> true,
         ], static fn ($v) => $v !== null && $v !== '');
 
