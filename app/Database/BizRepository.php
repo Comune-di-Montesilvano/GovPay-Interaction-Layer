@@ -228,16 +228,17 @@ class BizRepository
 
         $sql = 'SELECT b.*
             FROM biz_ricevute b
-            INNER JOIN flussi_rendicontazioni f
-              ON f.id_dominio = b.id_dominio
-             AND f.iur = b.iur
-             AND f.is_govpay = 0
             LEFT JOIN tefa_ricevute t
               ON t.id_dominio = b.id_dominio
              AND t.iur = b.iur
+            LEFT JOIN flussi_rendicontazioni f
+              ON f.id_dominio = b.id_dominio
+             AND f.iur = b.iur
+             AND f.is_govpay = 1
             WHERE b.id_dominio = :id_dominio
               AND b.stato = \'PROCESSED\'
-              AND t.id IS NULL';
+              AND t.id IS NULL
+              AND f.id IS NULL';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND b.data_pagamento >= :min_date';
@@ -259,16 +260,17 @@ class BizRepository
     {
         $sql = 'SELECT COUNT(*)
             FROM biz_ricevute b
-            INNER JOIN flussi_rendicontazioni f
-              ON f.id_dominio = b.id_dominio
-             AND f.iur = b.iur
-             AND f.is_govpay = 0
             LEFT JOIN tefa_ricevute t
               ON t.id_dominio = b.id_dominio
              AND t.iur = b.iur
+            LEFT JOIN flussi_rendicontazioni f
+              ON f.id_dominio = b.id_dominio
+             AND f.iur = b.iur
+             AND f.is_govpay = 1
             WHERE b.id_dominio = :id_dominio
               AND b.stato = \'PROCESSED\'
-              AND t.id IS NULL';
+              AND t.id IS NULL
+              AND f.id IS NULL';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND b.data_pagamento >= :min_date';

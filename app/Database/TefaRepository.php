@@ -308,17 +308,18 @@ class TefaRepository
         try {
             $stmt2 = $this->pdo->prepare(
                 'SELECT COUNT(*)
-                 FROM biz_ricevute b
-                 INNER JOIN flussi_rendicontazioni f
-                   ON f.id_dominio = b.id_dominio
-                  AND f.iur = b.iur
-                  AND f.is_govpay = 0
-                 LEFT JOIN tefa_ricevute t
-                   ON t.id_dominio = b.id_dominio
-                  AND t.iur = b.iur
-                 WHERE b.id_dominio = :id_dominio
-                   AND b.stato = \'PROCESSED\'
-                   AND t.id IS NULL'
+                  FROM biz_ricevute b
+                  LEFT JOIN tefa_ricevute t
+                    ON t.id_dominio = b.id_dominio
+                   AND t.iur = b.iur
+                  LEFT JOIN flussi_rendicontazioni f
+                    ON f.id_dominio = b.id_dominio
+                   AND f.iur = b.iur
+                   AND f.is_govpay = 1
+                  WHERE b.id_dominio = :id_dominio
+                    AND b.stato = \'PROCESSED\'
+                    AND t.id IS NULL
+                    AND f.id IS NULL'
             );
             $stmt2->execute([':id_dominio' => $idDominio]);
             $unqueued = (int)$stmt2->fetchColumn();
@@ -448,10 +449,10 @@ class TefaRepository
                  END AS stato,
                  b.data_pagamento,
                  b.id_dominio
-               FROM biz_ricevute b
-               INNER JOIN flussi_rendicontazioni f ON f.id_dominio = b.id_dominio AND f.iur = b.iur AND f.is_govpay = 0
-               LEFT JOIN tefa_ricevute t ON t.id_dominio = b.id_dominio AND t.iur = b.iur
-               WHERE b.id_dominio = :id_dominio2 AND t.id IS NULL
+                 FROM biz_ricevute b
+                 LEFT JOIN tefa_ricevute t ON t.id_dominio = b.id_dominio AND t.iur = b.iur
+                 LEFT JOIN flussi_rendicontazioni f ON f.id_dominio = b.id_dominio AND f.iur = b.iur AND f.is_govpay = 1
+                 WHERE b.id_dominio = :id_dominio2 AND t.id IS NULL AND f.id IS NULL
              ) AS combined
              WHERE id_dominio = :id_dominio3
                AND (

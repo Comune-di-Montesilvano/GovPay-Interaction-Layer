@@ -128,9 +128,7 @@ class HomeController
         try {
             $bizQueueRemaining = $flussiRepo->countUnprocessedForBiz($idDominio);
         } catch (\Throwable $_) {}
-        try {
-            $tefaQueueRemaining = $bizRepo->countProcessedForTefa($idDominio) + $tefaRepo->countPendingForProcessing($idDominio);
-        } catch (\Throwable $_) {}
+        $tefaQueueRemaining = (int)($tefaCounts['PENDING'] ?? 0);
 
         // 4. Ripartizione canali d'incasso (GovPay vs Esterno) per doughnut chart
         $channelsData = ['govpay' => 0, 'external' => 0];
@@ -214,14 +212,22 @@ class HomeController
         $recentFlussi = [];
         try {
             $stmt = $pdo->prepare('
-                SELECT id_flusso, data_regolamento, ragione_psp, SUM(importo) as importo_totale, COUNT(*) as transazioni, is_govpay
-                FROM flussi_rendicontazioni
-                WHERE id_dominio = :dom
-                GROUP BY id_flusso, data_regolamento, ragione_psp, is_govpay
-                ORDER BY data_regolamento DESC, id_flusso DESC
-                LIMIT 5
+                SELECT f.id_flusso, f.data_regolamento, f.ragione_psp, f.is_govpay, 
+                       SUM(f.importo) as importo_totale, COUNT(*) as transazioni
+                FROM flussi_rendicontazioni f
+                INNER JOIN (
+                    SELECT data_regolamento, id_flusso
+                    FROM flussi_rendicontazioni
+                    WHERE id_dominio = :dom_sub
+                    GROUP BY data_regolamento, id_flusso
+                    ORDER BY data_regolamento DESC, id_flusso DESC
+                    LIMIT 5
+                ) f_recent ON f_recent.id_flusso = f.id_flusso AND f_recent.data_regolamento = f.data_regolamento
+                WHERE f.id_dominio = :dom
+                GROUP BY f.id_flusso, f.data_regolamento, f.ragione_psp, f.is_govpay
+                ORDER BY f.data_regolamento DESC, f.id_flusso DESC
             ');
-            $stmt->execute([':dom' => $idDominio]);
+            $stmt->execute([':dom' => $idDominio, ':dom_sub' => $idDominio]);
             $recentFlussi = $stmt->fetchAll() ?: [];
         } catch (\Throwable $_) {}
 
