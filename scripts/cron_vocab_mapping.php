@@ -49,8 +49,11 @@ $stopFile = '/tmp/cron-stop-vocab';
 if (file_exists($pidFile)) {
     $existingPid = (int)file_get_contents($pidFile);
     if ($existingPid > 0 && file_exists('/proc/' . $existingPid)) {
-        $log("Istanza già attiva (PID $existingPid). Uscita.");
-        exit(0);
+        $cmdline = @file_get_contents('/proc/' . $existingPid . '/cmdline');
+        if ($cmdline !== false && strpos($cmdline, 'cron_vocab_mapping.php') !== false) {
+            $log("Istanza già attiva (PID $existingPid). Uscita.");
+            exit(0);
+        }
     }
 }
 file_put_contents($pidFile, (string)getmypid());
