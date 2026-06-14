@@ -66,7 +66,7 @@
           btn.disabled = true;
           var lbl = document.getElementById('btn-cart-label');
 
-          var body = new URLSearchParams({ idPendenza: id });
+          var body = new URLSearchParams({ idPendenza: id, _csrf: '{{ csrf_token }}' });
           fetch('/carrello/aggiungi', {
             method: 'POST',
             body: body,

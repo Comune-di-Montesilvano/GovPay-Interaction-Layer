@@ -191,7 +191,7 @@
     btn.addEventListener('click', function() {
       var id = this.dataset.id;
       if (!id) return;
-      var body = new URLSearchParams({ idPendenza: id });
+      var body = new URLSearchParams({ idPendenza: id, _csrf: '{{ csrf_token }}' });
       fetch('/carrello/rimuovi', { method: 'POST', body: body, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': '{{ csrf_token }}' } })
         .then(function(r) { return parseJsonSafely(r); })
         .then(function(data) {
