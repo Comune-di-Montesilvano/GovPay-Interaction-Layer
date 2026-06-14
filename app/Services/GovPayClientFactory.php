@@ -48,10 +48,10 @@ class GovPayClientFactory
             }
         }
 
-        $defaultCurlOptions = [];
-        if (defined('CURL_SSLVERSION_TLSv1_2')) {
-            $defaultCurlOptions[CURLOPT_SSLVERSION] = CURL_SSLVERSION_TLSv1_2;
+        if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
+            $guzzleOptions['crypto_method'] = STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
         }
+        $defaultCurlOptions = [];
         if (defined('CURL_HTTP_VERSION_1_1')) {
             $guzzleOptions['version'] = '1.1';
         }
