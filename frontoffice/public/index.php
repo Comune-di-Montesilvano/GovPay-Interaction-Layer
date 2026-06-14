@@ -99,7 +99,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-// ─── i18n Language selection (run early while session is writeable) ───────────
+// ─── i18n Language selection & CSRF initialization (run early while session is writeable) ───
 (static function (): void {
     $supportedLocales = ['it', 'en', 'es', 'fr', 'de'];
     if (isset($_GET['lang']) && in_array($_GET['lang'], $supportedLocales, true)) {
@@ -116,6 +116,11 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
                 }
             }
         }
+    }
+
+    // Inizializza token CSRF finché la sessione è scrivibile
+    if (empty($_SESSION['frontoffice_csrf_token'])) {
+        $_SESSION['frontoffice_csrf_token'] = bin2hex(random_bytes(32));
     }
 })();
 
@@ -140,24 +145,18 @@ $env = static function (string $key, ?string $default = null): string {
 if (!function_exists('frontoffice_csrf_token')) {
     function frontoffice_csrf_token(): string
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            return '';
-        }
-        if (empty($_SESSION['frontoffice_csrf_token'])) {
+        if (empty($_SESSION['frontoffice_csrf_token']) && session_status() === PHP_SESSION_ACTIVE) {
             $_SESSION['frontoffice_csrf_token'] = bin2hex(random_bytes(32));
         }
-        return $_SESSION['frontoffice_csrf_token'];
+        return $_SESSION['frontoffice_csrf_token'] ?? '';
     }
 }
 
 if (!function_exists('frontoffice_csrf_validate')) {
     function frontoffice_csrf_validate(?string $token): bool
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            return false;
-        }
         $stored = $_SESSION['frontoffice_csrf_token'] ?? null;
-        if ($stored === null || $token === null) {
+        if ($stored === null || $token === null || $token === '') {
             return false;
         }
         return hash_equals($stored, $token);
