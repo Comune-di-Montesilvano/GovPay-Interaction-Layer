@@ -6218,7 +6218,7 @@ if ($routeDefinition === null) {
 } else {
     // Rilasciamo il lock di sessione per le richieste GET (sola lettura) lente,
     // escludendo i flussi critici di login/auth.
-    $bypassPaths = ['/login', '/logout', '/spid/callback', '/saml/sp'];
+    $bypassPaths = ['/login', '/logout', '/spid/callback', '/saml/sp', '/oidc/callback'];
     if ($method === 'GET' && !in_array($normalizedPath, $bypassPaths, true)) {
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
