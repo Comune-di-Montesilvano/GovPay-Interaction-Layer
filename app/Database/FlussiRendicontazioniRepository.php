@@ -561,6 +561,7 @@ class FlussiRendicontazioniRepository
               ON b.id_dominio = f.id_dominio
              AND b.iur = f.iur
             WHERE f.id_dominio = :id_dominio
+              AND f.vocab_stato IN (\'PENDING\', \'NO_MATCH\')
               AND f.is_govpay = 0
               AND b.id IS NULL';
 
@@ -592,6 +593,7 @@ class FlussiRendicontazioniRepository
               ON b.id_dominio = f.id_dominio
              AND b.iur = f.iur
             WHERE f.id_dominio = :id_dominio
+              AND f.vocab_stato IN (\'PENDING\', \'NO_MATCH\')
               AND f.is_govpay = 0
               AND b.id IS NULL';
 
