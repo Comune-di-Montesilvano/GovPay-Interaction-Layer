@@ -3289,6 +3289,10 @@ if ($method === 'POST' && $normalizedPath !== $spidCallbackPath) {
         Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
             'path' => $normalizedPath,
             'ip' => frontoffice_client_ip(),
+            'received_token' => $csrfToken,
+            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
+            'session_id' => session_id(),
+            'session_status' => session_status(),
         ]);
         http_response_code(403);
         echo 'Forbidden (CSRF token missing or invalid)';
@@ -6209,6 +6213,9 @@ if ($routeDefinition === null) {
     // escludendo i flussi critici di login/auth.
     $bypassPaths = ['/login', '/logout', '/spid/callback', '/saml/sp'];
     if ($method === 'GET' && !in_array($normalizedPath, $bypassPaths, true)) {
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
+        header('Expires: 0');
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
         }
