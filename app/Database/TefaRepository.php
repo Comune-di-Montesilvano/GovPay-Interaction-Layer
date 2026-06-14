@@ -218,17 +218,34 @@ class TefaRepository
      */
     public function fixNullDataPagamento(string $idDominio): int
     {
-        $stmt = $this->pdo->prepare(
-            "UPDATE tefa_ricevute
-             SET data_pagamento = DATE(CONCAT(SUBSTRING(id_flusso, 1, 7), '-01')),
-                 updated_at = NOW()
-             WHERE id_dominio = :dom
-               AND (data_pagamento IS NULL OR DAY(data_pagamento) = 0)
-               AND id_flusso IS NOT NULL
-               AND id_flusso REGEXP '^[0-9]{4}-[0-9]{2}'"
-        );
-        $stmt->execute([':dom' => $idDominio]);
-        $rowsUpdated = $stmt->rowCount();
+        $rowsUpdated = 0;
+        try {
+            // Check if there are any records that need fixing first
+            $check = $this->pdo->prepare(
+                "SELECT 1 FROM tefa_ricevute
+                 WHERE id_dominio = :dom
+                   AND (data_pagamento IS NULL OR DAY(data_pagamento) = 0)
+                   AND id_flusso IS NOT NULL
+                   AND id_flusso REGEXP '^[0-9]{4}-[0-9]{2}'
+                 LIMIT 1"
+            );
+            $check->execute([':dom' => $idDominio]);
+            if ($check->fetchColumn() !== false) {
+                $stmt = $this->pdo->prepare(
+                    "UPDATE tefa_ricevute
+                     SET data_pagamento = DATE(CONCAT(SUBSTRING(id_flusso, 1, 7), '-01')),
+                         updated_at = NOW()
+                     WHERE id_dominio = :dom
+                       AND (data_pagamento IS NULL OR DAY(data_pagamento) = 0)
+                       AND id_flusso IS NOT NULL
+                       AND id_flusso REGEXP '^[0-9]{4}-[0-9]{2}'"
+                );
+                $stmt->execute([':dom' => $idDominio]);
+                $rowsUpdated = $stmt->rowCount();
+            }
+        } catch (\Throwable $e) {
+            error_log("Errore/Deadlock in fixNullDataPagamento: " . $e->getMessage());
+        }
 
         // Also retrospectively update mapping and vocab statuses in flussi_rendicontazioni for processed TEFA receipts
         $this->fixProcessedTefaMapping($idDominio);
@@ -242,43 +259,92 @@ class TefaRepository
      */
     public function fixProcessedTefaMapping(string $idDominio): int
     {
-        // Fix NULL values for is_govpay in flussi_rendicontazioni for this domain
-        $stmtGovPay = $this->pdo->prepare(
-            "UPDATE flussi_rendicontazioni
-             SET is_govpay = CASE WHEN id_pendenza IS NOT NULL AND TRIM(id_pendenza) != '' THEN 1 ELSE 0 END
-             WHERE id_dominio = :dom AND is_govpay IS NULL"
-        );
-        $stmtGovPay->execute([':dom' => $idDominio]);
+        try {
+            // Fix NULL values for is_govpay in flussi_rendicontazioni for this domain
+            $checkGovPay = $this->pdo->prepare(
+                "SELECT 1 FROM flussi_rendicontazioni WHERE id_dominio = :dom AND is_govpay IS NULL LIMIT 1"
+            );
+            $checkGovPay->execute([':dom' => $idDominio]);
+            if ($checkGovPay->fetchColumn() !== false) {
+                $stmtGovPay = $this->pdo->prepare(
+                    "UPDATE flussi_rendicontazioni
+                     SET is_govpay = CASE WHEN id_pendenza IS NOT NULL AND TRIM(id_pendenza) != '' THEN 1 ELSE 0 END
+                     WHERE id_dominio = :dom AND is_govpay IS NULL"
+                );
+                $stmtGovPay->execute([':dom' => $idDominio]);
+            }
+        } catch (\Throwable $e) {
+            error_log("Errore/Deadlock in fixProcessedTefaMapping (is_govpay): " . $e->getMessage());
+        }
 
-        // Fix NULL values for is_multibeneficiario in flussi_rendicontazioni for this domain
-        $stmtMulti = $this->pdo->prepare(
-            "UPDATE flussi_rendicontazioni
-             SET is_multibeneficiario = 0
-             WHERE id_dominio = :dom AND is_multibeneficiario IS NULL"
-        );
-        $stmtMulti->execute([':dom' => $idDominio]);
+        try {
+            // Fix NULL values for is_multibeneficiario in flussi_rendicontazioni for this domain
+            $checkMulti = $this->pdo->prepare(
+                "SELECT 1 FROM flussi_rendicontazioni WHERE id_dominio = :dom AND is_multibeneficiario IS NULL LIMIT 1"
+            );
+            $checkMulti->execute([':dom' => $idDominio]);
+            if ($checkMulti->fetchColumn() !== false) {
+                $stmtMulti = $this->pdo->prepare(
+                    "UPDATE flussi_rendicontazioni
+                     SET is_multibeneficiario = 0
+                     WHERE id_dominio = :dom AND is_multibeneficiario IS NULL"
+                );
+                $stmtMulti->execute([':dom' => $idDominio]);
+            }
+        } catch (\Throwable $e) {
+            error_log("Errore/Deadlock in fixProcessedTefaMapping (is_multibeneficiario): " . $e->getMessage());
+        }
 
-        // Fix NULL values for is_govpay and is_multibeneficiario in tefa_ricevute for this domain
-        $stmtTefaNulls = $this->pdo->prepare(
-            "UPDATE tefa_ricevute
-             SET is_govpay = CASE WHEN is_govpay IS NULL THEN 0 ELSE is_govpay END,
-                 is_multibeneficiario = CASE WHEN is_multibeneficiario IS NULL THEN 0 ELSE is_multibeneficiario END
-             WHERE id_dominio = :dom AND (is_govpay IS NULL OR is_multibeneficiario IS NULL)"
-        );
-        $stmtTefaNulls->execute([':dom' => $idDominio]);
+        try {
+            // Fix NULL values for is_govpay and is_multibeneficiario in tefa_ricevute for this domain
+            $checkTefaNulls = $this->pdo->prepare(
+                "SELECT 1 FROM tefa_ricevute WHERE id_dominio = :dom AND (is_govpay IS NULL OR is_multibeneficiario IS NULL) LIMIT 1"
+            );
+            $checkTefaNulls->execute([':dom' => $idDominio]);
+            if ($checkTefaNulls->fetchColumn() !== false) {
+                $stmtTefaNulls = $this->pdo->prepare(
+                    "UPDATE tefa_ricevute
+                     SET is_govpay = CASE WHEN is_govpay IS NULL THEN 0 ELSE is_govpay END,
+                         is_multibeneficiario = CASE WHEN is_multibeneficiario IS NULL THEN 0 ELSE is_multibeneficiario END
+                     WHERE id_dominio = :dom AND (is_govpay IS NULL OR is_multibeneficiario IS NULL)"
+                );
+                $stmtTefaNulls->execute([':dom' => $idDominio]);
+            }
+        } catch (\Throwable $e) {
+            error_log("Errore/Deadlock in fixProcessedTefaMapping (tefa nulls): " . $e->getMessage());
+        }
 
-        $stmt = $this->pdo->prepare(
-            "UPDATE flussi_rendicontazioni f
-             INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
-             SET f.mapping_stato = 'PROCESSED',
-                 f.vocab_stato = 'PROCESSED',
-                 f.cod_entrata = 'TEFA'
-             WHERE t.id_dominio = :dom
-               AND t.stato = 'PROCESSED'
-               AND (f.mapping_stato != 'PROCESSED' OR f.vocab_stato != 'PROCESSED' OR f.cod_entrata IS NULL OR f.cod_entrata != 'TEFA')"
-        );
-        $stmt->execute([':dom' => $idDominio]);
-        return $stmt->rowCount();
+        $affected = 0;
+        try {
+            // Check if there are any processed TEFA mappings to fix
+            $checkMappings = $this->pdo->prepare(
+                "SELECT 1 FROM flussi_rendicontazioni f
+                 INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
+                 WHERE t.id_dominio = :dom
+                   AND t.stato = 'PROCESSED'
+                   AND (f.mapping_stato != 'PROCESSED' OR f.vocab_stato != 'PROCESSED' OR f.cod_entrata IS NULL OR f.cod_entrata != 'TEFA')
+                 LIMIT 1"
+            );
+            $checkMappings->execute([':dom' => $idDominio]);
+            if ($checkMappings->fetchColumn() !== false) {
+                $stmt = $this->pdo->prepare(
+                    "UPDATE flussi_rendicontazioni f
+                     INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio
+                     SET f.mapping_stato = 'PROCESSED',
+                         f.vocab_stato = 'PROCESSED',
+                         f.cod_entrata = 'TEFA'
+                     WHERE t.id_dominio = :dom
+                       AND t.stato = 'PROCESSED'
+                       AND (f.mapping_stato != 'PROCESSED' OR f.vocab_stato != 'PROCESSED' OR f.cod_entrata IS NULL OR f.cod_entrata != 'TEFA')"
+                );
+                $stmt->execute([':dom' => $idDominio]);
+                $affected = $stmt->rowCount();
+            }
+        } catch (\Throwable $e) {
+            error_log("Errore/Deadlock in fixProcessedTefaMapping (mapping sync): " . $e->getMessage());
+        }
+
+        return $affected;
     }
 
     /** Resetta SKIPPED → PENDING per ri-elaborazione. Ritorna n. righe modificate. */
