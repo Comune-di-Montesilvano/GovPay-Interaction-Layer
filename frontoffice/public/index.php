@@ -4892,8 +4892,12 @@ $routes = [
         }
 
         // Populate session whitelist so /carrello/checkout can authorize these pendenze.
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            $fetchedIds = array_values(array_filter(array_map(static fn ($r) => $r['id_pendenza'] ?? '', $rows), static fn ($v) => $v !== ''));
+        $fetchedIds = array_values(array_filter(array_map(static fn ($r) => $r['id_pendenza'] ?? '', $rows), static fn ($v) => $v !== ''));
+        if (!empty($fetchedIds)) {
+            $sessionActive = (session_status() === PHP_SESSION_ACTIVE);
+            if (!$sessionActive) {
+                session_start();
+            }
             $key = 'frontoffice_pendenze_whitelist';
             $existing = isset($_SESSION[$key]) && is_array($_SESSION[$key]) ? $_SESSION[$key] : [];
             $merged = array_values(array_unique(array_merge($existing, $fetchedIds)));
@@ -4901,6 +4905,9 @@ $routes = [
                 $merged = array_slice($merged, -100);
             }
             $_SESSION[$key] = $merged;
+            if (!$sessionActive) {
+                session_write_close();
+            }
         }
 
         return [
