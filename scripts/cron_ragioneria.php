@@ -31,8 +31,11 @@ $rescanFile = '/tmp/cron-rescan-ragioneria';
 if (file_exists($pidFile)) {
     $existingPid = (int)file_get_contents($pidFile);
     if ($existingPid > 0 && file_exists('/proc/' . $existingPid)) {
-        $log("Istanza già attiva (PID $existingPid). Uscita.");
-        exit(0);
+        $cmdline = @file_get_contents('/proc/' . $existingPid . '/cmdline');
+        if ($cmdline !== false && strpos($cmdline, 'cron_ragioneria.php') !== false) {
+            $log("Istanza già attiva (PID $existingPid). Uscita.");
+            exit(0);
+        }
     }
 }
 
@@ -55,6 +58,11 @@ $checkRescan = static function () use ($rescanFile, $log, &$rollingFrom): bool {
     if (file_exists($rescanFile)) {
         @unlink($rescanFile);
         $rollingFrom = null;
+        try {
+            SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', null);
+        } catch (Throwable $e) {
+            $log('Errore reset progress rolling from nel DB: ' . $e->getMessage());
+        }
         $log('Segnale rescan ricevuto: prossimo ciclo scan completo da data configurazione.');
         return true;
     }
@@ -104,9 +112,22 @@ $repo = new FlussiRendicontazioniRepository();
 
 $log('Daemon ragioneria avviato.');
 
-// After the first full scan we use a rolling window (max synced date - 3 days) so
-// subsequent cycles only re-query recent flussi from GovPay instead of the full history.
-$rollingFrom = null;
+// Ripristina progresso scansione in caso di riavvio container
+$savedScanDa = SettingsRepository::get('backoffice', 'ragioneria_progress_scan_da');
+$savedRollingFrom = SettingsRepository::get('backoffice', 'ragioneria_progress_rolling_from');
+
+$scanDaConfig = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDaConfig)) {
+    $scanDaConfig = date('Y-01-01', strtotime('-1 year'));
+}
+
+if ($savedScanDa === $scanDaConfig && $savedRollingFrom !== null && $savedRollingFrom !== '') {
+    $rollingFrom = $savedRollingFrom;
+    $log("Ripristinato progresso scansione: rollingFrom={$rollingFrom} per scan_da={$scanDaConfig}");
+} else {
+    $rollingFrom = null;
+    $log("Nessun progresso ripristinabile o data configurazione cambiata. Avvio con scan completo da {$scanDaConfig}");
+}
 
 while (true) {
     $checkStop();
@@ -115,6 +136,15 @@ while (true) {
     $scanDaConfig = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDaConfig)) {
         $scanDaConfig = date('Y-01-01', strtotime('-1 year'));
+    }
+
+    // Se la data configurazione è cambiata rispetto al progresso salvato, resetta la finestra scorrevole
+    $savedScanDa = SettingsRepository::get('backoffice', 'ragioneria_progress_scan_da');
+    if ($savedScanDa !== null && $savedScanDa !== '' && $savedScanDa !== $scanDaConfig) {
+        $rollingFrom = null;
+        SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', $scanDaConfig);
+        SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', null);
+        $log("Data configurazione modificata rilevata in esecuzione. Reset rolling window.");
     }
 
     // Use rolling window when available; fall back to full config date.
@@ -263,6 +293,19 @@ while (true) {
             max(0, $flussoRowsTotal - $flussoGovPayYes),
             $affected
         ));
+
+        // Salvataggio periodico del progresso (ogni 25 flussi processati)
+        if ($dataFlussoScan !== '' && $scanIndex % 25 === 0) {
+            $progressDate = date('Y-m-d', strtotime($dataFlussoScan . ' -2 days'));
+            if ($progressDate < $scanDaConfig) {
+                $progressDate = $scanDaConfig;
+            }
+            $savedRollingFrom = SettingsRepository::get('backoffice', 'ragioneria_progress_rolling_from');
+            if ($savedRollingFrom === null || $savedRollingFrom === '' || $progressDate > $savedRollingFrom) {
+                SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', $scanDaConfig);
+                SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', $progressDate);
+            }
+        }
     }
 
     $log(sprintf(
@@ -279,6 +322,8 @@ while (true) {
     $maxDate = getMaxSyncedFlussoDate($repo->getPdo(), $idDominio);
     if ($maxDate !== null) {
         $rollingFrom = date('Y-m-d', strtotime($maxDate . ' -15 days'));
+        SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', $scanDaConfig);
+        SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', $rollingFrom);
     }
 
     if ($newRows > 0) {
