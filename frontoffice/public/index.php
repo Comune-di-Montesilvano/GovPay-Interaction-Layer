@@ -2320,7 +2320,7 @@ if (!function_exists('frontoffice_cart_items')) {
      */
     function frontoffice_cart_items(): array
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
+        if (!isset($_SESSION) || !is_array($_SESSION)) {
             return [];
         }
         $cart = $_SESSION['frontoffice_cart'] ?? [];
