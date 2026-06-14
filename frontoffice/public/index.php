@@ -99,6 +99,26 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+// ─── i18n Language selection (run early while session is writeable) ───────────
+(static function (): void {
+    $supportedLocales = ['it', 'en', 'es', 'fr', 'de'];
+    if (isset($_GET['lang']) && in_array($_GET['lang'], $supportedLocales, true)) {
+        $_SESSION['locale'] = $_GET['lang'];
+    }
+    if (!isset($_SESSION['locale']) || !in_array($_SESSION['locale'], $supportedLocales, true)) {
+        if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+            $browserLangs = explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE']);
+            foreach ($browserLangs as $lang) {
+                $langCode = strtolower(substr(trim($lang), 0, 2));
+                if (in_array($langCode, $supportedLocales, true)) {
+                    $_SESSION['locale'] = $langCode;
+                    break;
+                }
+            }
+        }
+    }
+})();
+
 if (!function_exists('frontoffice_env_value')) {
     function frontoffice_env_value(string $key, ?string $default = null): string
     {
@@ -6186,6 +6206,14 @@ if ($routeDefinition === null) {
         ],
     ];
 } else {
+    // Rilasciamo il lock di sessione per le richieste GET (sola lettura) lente,
+    // escludendo i flussi critici di login/auth.
+    $bypassPaths = ['/login', '/logout', '/spid/callback', '/saml/sp'];
+    if ($method === 'GET' && !in_array($normalizedPath, $bypassPaths, true)) {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+    }
     $route = is_callable($routeDefinition) ? $routeDefinition() : $routeDefinition;
 }
 
@@ -6214,26 +6242,9 @@ $twig = new Environment($loader, [
 
 // ─── i18n (Multilingual Support) ──────────────────────────────────────────────
 $supportedLocales = ['it', 'en', 'es', 'fr', 'de'];
-$currentLocale = 'it';
-
-if (isset($_GET['lang']) && in_array($_GET['lang'], $supportedLocales, true)) {
-    $_SESSION['locale'] = $_GET['lang'];
-}
-
-if (isset($_SESSION['locale']) && in_array($_SESSION['locale'], $supportedLocales, true)) {
-    $currentLocale = $_SESSION['locale'];
-} else {
-    if (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
-        $browserLangs = explode(',', $_SERVER['HTTP_ACCEPT_LANGUAGE']);
-        foreach ($browserLangs as $lang) {
-            $langCode = strtolower(substr(trim($lang), 0, 2));
-            if (in_array($langCode, $supportedLocales, true)) {
-                $currentLocale = $langCode;
-                $_SESSION['locale'] = $currentLocale;
-                break;
-            }
-        }
-    }
+$currentLocale = $_SESSION['locale'] ?? 'it';
+if (!in_array($currentLocale, $supportedLocales, true)) {
+    $currentLocale = 'it';
 }
 
 $localesDir = dirname(__DIR__) . '/locales';

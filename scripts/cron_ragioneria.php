@@ -332,18 +332,7 @@ function buildGovPayClient(): Client
         $opts['auth'] = [$username, $password];
     }
 
-    $authMethod = strtolower((string)SettingsRepository::get('govpay', 'authentication_method', ''));
-    if (in_array($authMethod, ['ssl', 'sslheader'], true)) {
-        $cert = (string)SettingsRepository::get('govpay', 'tls_cert_path', '');
-        $key = (string)SettingsRepository::get('govpay', 'tls_key_path', '');
-        $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
-        if ($cert !== '' && $key !== '') {
-            $opts['cert'] = $cert;
-            $opts['ssl_key'] = $keyPass ? [$key, (string)$keyPass] : $key;
-        }
-    }
-
-    return new Client($opts);
+    return \App\Services\GovPayClientFactory::makeBackofficeClient($opts);
 }
 
 function extractNextPage(string $prossimiRisultati): ?int

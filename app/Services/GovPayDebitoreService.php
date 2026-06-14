@@ -115,18 +115,10 @@ class GovPayDebitoreService
 
     private function buildClient(): Client
     {
-        $opts = ['connect_timeout' => 5, 'timeout' => 20];
-
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-            if ($cert !== '' && $key !== '') {
-                $opts['cert']    = $cert;
-                $opts['ssl_key'] = $keyPass !== null ? [$key, $keyPass] : $key;
-            }
-        }
+        $opts = [
+            'connect_timeout' => 5,
+            'timeout'         => 20,
+        ];
 
         $username = SettingsRepository::get('govpay', 'user', '');
         $password = SettingsRepository::get('govpay', 'password', '');
@@ -134,6 +126,6 @@ class GovPayDebitoreService
             $opts['auth'] = [$username, $password];
         }
 
-        return new Client($opts);
+        return GovPayClientFactory::makeBackofficeClient($opts);
     }
 }

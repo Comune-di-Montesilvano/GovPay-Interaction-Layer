@@ -32,7 +32,10 @@ class GovPayClientFactory
      */
     public static function makeBackofficeClient(array $extra = []): Client
     {
-        $guzzleOptions = $extra;
+        $guzzleOptions = array_merge([
+            'connect_timeout' => 5.0,
+            'timeout'         => 15.0,
+        ], $extra);
 
         $authMethod = strtolower((string)SettingsRepository::get('govpay', 'authentication_method', ''));
         if (in_array($authMethod, ['ssl', 'sslheader'], true)) {
@@ -62,8 +65,13 @@ class GovPayClientFactory
             $guzzleOptions['curl'] = ($guzzleOptions['curl'] ?? []) + $defaultCurlOptions;
         }
 
-        $handlerStack = new \GuzzleHttp\HandlerStack();
-        $handlerStack->setHandler(new \GuzzleHttp\Handler\CurlHandler());
+        $handlerStack = $guzzleOptions['handler'] ?? null;
+        if ($handlerStack === null) {
+            $handlerStack = new \GuzzleHttp\HandlerStack();
+            $handlerStack->setHandler(new \GuzzleHttp\Handler\CurlHandler());
+        } else {
+            unset($guzzleOptions['handler']);
+        }
 
         $handlerStack->push(Middleware::mapRequest(
             static function (HttpRequest $request): HttpRequest {
@@ -107,9 +115,82 @@ class GovPayClientFactory
             }
         ));
 
+        $handlerStack->push(self::circuitBreakerMiddleware(), 'circuit_breaker');
+
         $guzzleOptions['handler'] = $handlerStack;
 
         return new Client($guzzleOptions);
+    }
+
+    /**
+     * Middleware per Circuit Breaker su GovPay.
+     */
+    public static function circuitBreakerMiddleware(): \Closure
+    {
+        return static function (callable $handler) {
+            return static function (HttpRequest $request, array $options) use ($handler) {
+                $cbFile = sys_get_temp_dir() . '/govpay_circuit_breaker.json';
+                $cooloff = 30; // secondi
+                $maxFailures = 3;
+
+                if (file_exists($cbFile)) {
+                    $cbData = json_decode((string)@file_get_contents($cbFile), true);
+                    if (is_array($cbData) && ($cbData['status'] ?? '') === 'OPEN') {
+                        $lastFailure = (int)($cbData['last_failure_time'] ?? 0);
+                        if (time() - $lastFailure < $cooloff) {
+                            return \GuzzleHttp\Promise\Create::rejectionFor(
+                                new \GuzzleHttp\Exception\ConnectException(
+                                    'GovPay is offline (Circuit Breaker active)',
+                                    $request
+                                )
+                            );
+                        }
+                        $cbData['status'] = 'HALF-OPEN';
+                        @file_put_contents($cbFile, json_encode($cbData));
+                    }
+                }
+
+                return $handler($request, $options)->then(
+                    static function ($response) use ($cbFile) {
+                        if (file_exists($cbFile)) {
+                            @unlink($cbFile);
+                        }
+                        return $response;
+                    },
+                    static function ($reason) use ($cbFile, $request, $maxFailures) {
+                        $isNetworkError = false;
+                        if ($reason instanceof \GuzzleHttp\Exception\ConnectException) {
+                            $isNetworkError = true;
+                        } elseif ($reason instanceof RequestException && !$reason->hasResponse()) {
+                            $isNetworkError = true;
+                        }
+
+                        if ($isNetworkError) {
+                            $cbData = ['status' => 'CLOSED', 'failures' => 0, 'last_failure_time' => 0];
+                            if (file_exists($cbFile)) {
+                                $existing = json_decode((string)@file_get_contents($cbFile), true);
+                                if (is_array($existing)) {
+                                    $cbData = $existing;
+                                }
+                            }
+                            $cbData['failures'] = ($cbData['failures'] ?? 0) + 1;
+                            $cbData['last_failure_time'] = time();
+
+                            if ($cbData['failures'] >= $maxFailures) {
+                                $cbData['status'] = 'OPEN';
+                                Logger::error(sprintf(
+                                    'Connessione a GovPay fallita per %d volte. Circuit Breaker APERTO.',
+                                    $cbData['failures']
+                                ));
+                            }
+                            @file_put_contents($cbFile, json_encode($cbData));
+                        }
+
+                        return \GuzzleHttp\Promise\Create::rejectionFor($reason);
+                    }
+                );
+            };
+        };
     }
 
     /**

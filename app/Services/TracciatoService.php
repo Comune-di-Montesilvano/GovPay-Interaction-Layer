@@ -435,7 +435,7 @@ class TracciatoService
 
                 // Merge handler into guzzle options
                 $guzzleOptions['handler'] = $handlerStack;
-                $client = new Client($guzzleOptions);
+                $client = GovPayClientFactory::makeBackofficeClient($guzzleOptions);
                 $rawHttpClient = $client;
                 $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
                 if ($username !== '' && $password !== '') {

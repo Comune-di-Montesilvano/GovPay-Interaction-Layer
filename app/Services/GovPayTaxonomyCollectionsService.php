@@ -31,7 +31,7 @@ class GovPayTaxonomyCollectionsService
             $config->setPassword($password);
         }
 
-        $api = new RiscossioniApi(new Client($guzzleOptions), $config);
+        $api = new RiscossioniApi(GovPayClientFactory::makeBackofficeClient($guzzleOptions), $config);
 
         $idDominio = (string)($filters['idDominio'] ?? '');
         $dataDa = $filters['dataDa'] ?? null;

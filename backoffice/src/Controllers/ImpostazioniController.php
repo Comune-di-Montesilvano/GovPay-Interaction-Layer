@@ -1677,8 +1677,16 @@ class ImpostazioniController
             return $this->jsonResponse(['data' => ['keys' => []]]);
         }
 
+        // Filtra i parametri della chiave privata (d, p, q, dp, dq, qi, oth) per motivi di sicurezza
+        // e per consentire la corretta registrazione come JWKS pubblico.
+        $publicKeys = [];
+        foreach ($keys as $key) {
+            unset($key['d'], $key['p'], $key['q'], $key['dp'], $key['dq'], $key['qi'], $key['oth']);
+            $publicKeys[] = $key;
+        }
+
         return $this->jsonResponse([
-            'data' => ['keys' => $keys],
+            'data' => ['keys' => $publicKeys],
         ]);
     }
 
