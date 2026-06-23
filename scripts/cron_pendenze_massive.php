@@ -90,18 +90,10 @@ $controller = new PendenzeController($twigMock, null);
 
 /**
  * Estrae l'idPendenza reale (quello usato nell'URL PUT /pendenze/{idA2A}/{idPendenza}).
- *
- * Priorità:
- *  1. response_json['idPendenza']   — iniettato dal cron al salvataggio
- *  2. response_json['UUID']         — UUID restituito da GovPay (= idPendenza in alcuni casi)
- *  3. response_json['id']           — altro alias
- *
- * ESCLUSI intenzionalmente: numeroAvviso, iuv — non sono idPendenza e non
- * funzionano come chiave primaria nell'endpoint GET/PUT /pendenze/{idA2A}/{id}.
+ * NON include numeroAvviso/iuv: non sono chiavi primarie nell'endpoint GET/PUT.
  */
 $extractIdPendenza = static function (array $row): ?string {
-    // Chiavi valide come idPendenza nell'endpoint GovPay (ordine di priorità)
-    $idKeys     = ['idPendenza', 'id_pendenza', 'idpendenza', 'UUID', 'uuid', 'id'];
+    $idKeys = ['idPendenza', 'id_pendenza', 'idpendenza', 'UUID', 'uuid', 'id'];
 
     $resp = $row['response_json'] ? json_decode($row['response_json'], true) : null;
     if (is_array($resp)) {
@@ -109,18 +101,35 @@ $extractIdPendenza = static function (array $row): ?string {
             if (isset($resp[$k]) && is_string($resp[$k]) && trim($resp[$k]) !== '') {
                 return trim($resp[$k]);
             }
-            // Supporto struttura annidata {pendenza: {idPendenza: ...}}
             if (isset($resp['pendenza'][$k]) && is_string($resp['pendenza'][$k]) && trim($resp['pendenza'][$k]) !== '') {
                 return trim($resp['pendenza'][$k]);
             }
         }
     }
-    // Fallback: cerca nel payload originale (idPendenza esplicito nel CSV)
+    // Fallback: idPendenza esplicito nel payload originale (CSV)
     $payload = $row['payload_json'] ? json_decode($row['payload_json'], true) : null;
     if (is_array($payload)) {
         foreach (['idPendenza', 'id_pendenza', 'idpendenza'] as $k) {
             if (isset($payload[$k]) && is_string($payload[$k]) && trim($payload[$k]) !== '') {
                 return trim($payload[$k]);
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ * Estrae il numeroAvviso/IUV dal response_json (per ricerca per IUV come fallback).
+ */
+$extractNumeroAvviso = static function (array $row): ?string {
+    $resp = $row['response_json'] ? json_decode($row['response_json'], true) : null;
+    if (is_array($resp)) {
+        foreach (['numeroAvviso', 'numero_avviso', 'iuv', 'iuvPagamento'] as $k) {
+            if (isset($resp[$k]) && is_string($resp[$k]) && trim($resp[$k]) !== '') {
+                return trim($resp[$k]);
+            }
+            if (isset($resp['pendenza'][$k]) && is_string($resp['pendenza'][$k]) && trim($resp['pendenza'][$k]) !== '') {
+                return trim($resp['pendenza'][$k]);
             }
         }
     }
@@ -145,17 +154,34 @@ while (true) {
             $id         = (int)$row['id'];
             $batchId    = $row['file_batch_id'];
             $numeroRiga = (int)$row['riga'];
-            
+
             $log("  [$batchId:$numeroRiga] ID-$id Annullamento in corso...");
-            
+
             try {
                 $repo->setCancelProcessing($id);
+
+                // --- Passo 1: trova idPendenza direttamente ---
                 $idPendenza = $extractIdPendenza($row);
-                $log("  [$batchId:$numeroRiga] ID-$id Estratto idPendenza: " . ($idPendenza ?? 'NULL'));
-                
+
+                // --- Passo 2: fallback — cerca per numeroAvviso/IUV ---
+                if (!$idPendenza) {
+                    $numeroAvviso = $extractNumeroAvviso($row);
+                    if ($numeroAvviso) {
+                        $log("  [$batchId:$numeroRiga] ID-$id idPendenza non trovato, cerco per IUV: $numeroAvviso");
+                        $respData = $row['response_json'] ? json_decode($row['response_json'], true) : [];
+                        $idDominio = is_array($respData) ? ($respData['idDominio'] ?? '') : '';
+                        $trovata = $controller->fetchPendenzaByNumeroAvviso($numeroAvviso, $idDominio);
+                        if ($trovata && isset($trovata['idPendenza'])) {
+                            $idPendenza = (string)$trovata['idPendenza'];
+                            $log("  [$batchId:$numeroRiga] ID-$id Trovata via IUV: idPendenza=$idPendenza");
+                        }
+                    }
+                }
+
+                $log("  [$batchId:$numeroRiga] ID-$id idPendenza risolto: " . ($idPendenza ?? 'NULL'));
+
                 if ($idPendenza) {
                     $currentPendenza = $controller->fetchPendenzaById($idPendenza);
-                    $log("  [$batchId:$numeroRiga] ID-$id fetchPendenzaById risposta: " . json_encode($currentPendenza));
                     if ($currentPendenza) {
                         $statoGP = $currentPendenza['stato'] ?? '';
                         if ($statoGP === 'NON_ESEGUITA') {
@@ -180,14 +206,7 @@ while (true) {
                         $log("  [$batchId:$numeroRiga] ID-$id ERRORE (Impossibile recuperare stato)");
                     }
                 } else {
-                    // Log diagnostico: stampa response_json e payload_json per debug
-                    $log("  [$batchId:$numeroRiga] ID-$id DIAGNOSI response_json: " . ($row['response_json'] ?? 'NULL'));
-                    $log("  [$batchId:$numeroRiga] ID-$id DIAGNOSI payload_json keys: " . (
-                        $row['payload_json']
-                            ? implode(', ', array_keys(json_decode($row['payload_json'], true) ?? []))
-                            : 'NULL'
-                    ));
-                    $repo->updateRowStatus($id, 'SUCCESS', "ID Pendenza non trovato nei dati di risposta", true);
+                    $repo->updateRowStatus($id, 'SUCCESS', "ID Pendenza non trovato (né direttamente né per IUV)", true);
                     $log("  [$batchId:$numeroRiga] ID-$id ERRORE (ID Pendenza non trovato)");
                 }
             } catch (\Throwable $e) {
