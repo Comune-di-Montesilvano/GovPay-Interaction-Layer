@@ -44,7 +44,10 @@ class ReportTefaController
         $queryA  = $dataA !== '' ? $dataA : '2099-12-31';
 
         $repo   = new TefaRepository();
-        $counts = $repo->getCounts($idDominio);
+        $cacheKey = 'report_tefa_counts_' . $idDominio;
+        $counts = \App\Services\CacheService::get($cacheKey, 60, function() use ($repo, $idDominio) {
+            return $repo->getCounts($idDominio);
+        });
 
         $reportRows   = [];
         $totaliTefa   = 0.0;
@@ -57,7 +60,6 @@ class ReportTefaController
         $coverage = [];
         $mancantiPeriodi = [];
         if ($queryMade) {
-            $repo->fixNullDataPagamento($idDominio);
             $reportRows = $repo->getReport($queryDa, $queryA, $idDominio);
             foreach ($reportRows as $r) {
                 $totaliTefa   += (float)$r['totale_tefa'];
@@ -187,6 +189,8 @@ class ReportTefaController
         exec($cmd);
 
         $mode = $rangeMode ? 'range' : 'loop';
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, [
             'ok'   => true,
             'mode' => $mode,
@@ -207,6 +211,8 @@ class ReportTefaController
         }
 
         file_put_contents(self::SCANNER_STOP_FILE, '1');
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
     }
 
@@ -247,6 +253,7 @@ class ReportTefaController
         $repo      = new TefaRepository();
         $reset     = $repo->resetErrors($idDominio);
 
+        \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true, 'reset' => $reset]);
     }
 
@@ -262,6 +269,7 @@ class ReportTefaController
         $repo      = new TefaRepository();
         $fixed     = $repo->fixNullDataPagamento($idDominio);
 
+        \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true, 'fixed' => $fixed]);
     }
 
@@ -277,6 +285,7 @@ class ReportTefaController
         $repo      = new TefaRepository();
         $reset     = $repo->resetSkipped($idDominio);
 
+        \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true, 'reset' => $reset]);
     }
 
@@ -417,6 +426,7 @@ class ReportTefaController
         }
         try {
             (new TefaRepository())->overrideAnomalyRow($id, $idDominio, true);
+            \App\Services\CacheService::clearDomainCache($idDominio);
             return $this->jsonResponse($response, ['ok' => true]);
         } catch (\Throwable $e) {
             return $this->jsonResponse($response, ['ok' => false, 'error' => $e->getMessage()], 500);
@@ -436,6 +446,7 @@ class ReportTefaController
         }
         try {
             (new TefaRepository())->overrideAnomalyRow($id, $idDominio, false);
+            \App\Services\CacheService::clearDomainCache($idDominio);
             return $this->jsonResponse($response, ['ok' => true]);
         } catch (\Throwable $e) {
             return $this->jsonResponse($response, ['ok' => false, 'error' => $e->getMessage()], 500);
@@ -455,6 +466,9 @@ class ReportTefaController
         $cmd    = sprintf('php %s < /dev/null > /dev/null 2>&1 &', escapeshellarg($script));
         exec($cmd);
 
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        \App\Services\CacheService::clearDomainCache($idDominio);
+
         return $this->jsonResponse($response, [
             'ok'     => true,
             'result' => ['message' => 'Demone Biz avviato.'],
@@ -469,6 +483,8 @@ class ReportTefaController
         }
 
         file_put_contents(self::BIZ_SCANNER_STOP_FILE, '1');
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
     }
 

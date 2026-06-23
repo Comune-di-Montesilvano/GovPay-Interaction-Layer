@@ -60,19 +60,27 @@ class ReportRagioneriaController
         $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0];
         $govpayDebitore = ['total' => 0, 'scansionate' => 0, 'da_scansionare' => 0];
         if ($filters['idDominio'] !== '') {
-            try {
-                $bizCounts = (new BizRepository())->getCounts($filters['idDominio']);
-                $bizCounts['not_queued'] = 0;
-            } catch (\Throwable $_) {}
-            try {
-                $flussiRepo = new FlussiRendicontazioniRepository();
-                $scanDa = trim((string)\App\Config\SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
-                $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
-                $bizCounts['not_queued'] = $flussiRepo->countUnprocessedForBiz($filters['idDominio'], $minDate);
-                $govpayDebitore['da_scansionare'] = $flussiRepo->countUnprocessedGovPayForDebitore($filters['idDominio'], $minDate);
-                $govpayDebitore['total'] = $flussiRepo->countTotalGovPayWithPendenza($filters['idDominio'], $minDate);
-                $govpayDebitore['scansionate'] = max(0, $govpayDebitore['total'] - $govpayDebitore['da_scansionare']);
-            } catch (\Throwable $_) {}
+            $cacheKey = 'report_ragioneria_counts_' . $filters['idDominio'];
+            $cached = \App\Services\CacheService::get($cacheKey, 60, function() use ($filters) {
+                $bc = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0];
+                $gd = ['total' => 0, 'scansionate' => 0, 'da_scansionare' => 0];
+                try {
+                    $bc = (new BizRepository())->getCounts($filters['idDominio']);
+                    $bc['not_queued'] = 0;
+                } catch (\Throwable $_) {}
+                try {
+                    $flussiRepo = new FlussiRendicontazioniRepository();
+                    $scanDa = trim((string)\App\Config\SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+                    $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+                    $bc['not_queued'] = $flussiRepo->countUnprocessedForBiz($filters['idDominio'], $minDate);
+                    $gd['da_scansionare'] = $flussiRepo->countUnprocessedGovPayForDebitore($filters['idDominio'], $minDate);
+                    $gd['total'] = $flussiRepo->countTotalGovPayWithPendenza($filters['idDominio'], $minDate);
+                    $gd['scansionate'] = max(0, $gd['total'] - $gd['da_scansionare']);
+                } catch (\Throwable $_) {}
+                return ['bizCounts' => $bc, 'govpayDebitore' => $gd];
+            });
+            $bizCounts = $cached['bizCounts'];
+            $govpayDebitore = $cached['govpayDebitore'];
         }
 
         // Carica tipologie censite dal DB per il filtro
@@ -354,6 +362,7 @@ class ReportRagioneriaController
 
         if ($idDominio !== '') {
             $reset = (new BizRepository())->resetErrors($idDominio);
+            \App\Services\CacheService::clearDomainCache($idDominio);
         }
 
         $_SESSION['flash'][] = [

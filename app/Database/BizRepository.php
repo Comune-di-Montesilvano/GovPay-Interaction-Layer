@@ -428,11 +428,17 @@ class BizRepository
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_iur_dominio (iur, id_dominio),
   INDEX idx_stato_id (stato, id),
-  INDEX idx_dominio_anno_mese (id_dominio, anno, mese)
+  INDEX idx_dominio_anno_mese (id_dominio, anno, mese),
+  INDEX idx_dominio_stato (id_dominio, stato)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
             try {
                 $this->pdo->exec($sql);
             } catch (\Throwable $_ignore) {}
+            return;
         }
+
+        try {
+            $this->pdo->exec('ALTER TABLE biz_ricevute ADD INDEX idx_dominio_stato (id_dominio, stato)');
+        } catch (\Throwable $_ignore) {}
     }
 }
