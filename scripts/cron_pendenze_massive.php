@@ -90,14 +90,29 @@ $controller = new PendenzeController($twigMock, null);
 
 /**
  * Estrae l'idPendenza reale (quello usato nell'URL PUT /pendenze/{idA2A}/{idPendenza}).
- * NON include numeroAvviso/iuv: non sono chiavi primarie nell'endpoint GET/PUT.
+ *
+ * Priorità:
+ *  1. response_json['idPendenza']  — iniettato dal cron al salvataggio
+ *  2. response_json['numeroAvviso'] — per pendenze IUV-vincolato (es. AFFITTO_SALE):
+ *     il numeroAvviso È l'idPendenza usato nella PUT
+ *  3. payload_json['idPendenza']   — idPendenza esplicito nel CSV originale
+ *
+ * UUID escluso: è un identificativo interno GovPay diverso dall'idPendenza.
  */
 $extractIdPendenza = static function (array $row): ?string {
-    $idKeys = ['idPendenza', 'id_pendenza', 'idpendenza', 'UUID', 'uuid', 'id'];
-
     $resp = $row['response_json'] ? json_decode($row['response_json'], true) : null;
     if (is_array($resp)) {
-        foreach ($idKeys as $k) {
+        // Prima: idPendenza esplicito
+        foreach (['idPendenza', 'id_pendenza', 'idpendenza'] as $k) {
+            if (isset($resp[$k]) && is_string($resp[$k]) && trim($resp[$k]) !== '') {
+                return trim($resp[$k]);
+            }
+            if (isset($resp['pendenza'][$k]) && is_string($resp['pendenza'][$k]) && trim($resp['pendenza'][$k]) !== '') {
+                return trim($resp['pendenza'][$k]);
+            }
+        }
+        // Poi: numeroAvviso (= idPendenza per IUV vincolato)
+        foreach (['numeroAvviso', 'numero_avviso'] as $k) {
             if (isset($resp[$k]) && is_string($resp[$k]) && trim($resp[$k]) !== '') {
                 return trim($resp[$k]);
             }
