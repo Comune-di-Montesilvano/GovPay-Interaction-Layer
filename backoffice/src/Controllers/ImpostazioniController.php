@@ -148,6 +148,32 @@ class ImpostazioniController
                     $raw = \GovPay\Backoffice\ObjectSerializer::sanitizeForSerialization($result);
                     $arr = is_array($raw) ? $raw : (json_decode(json_encode($raw, JSON_UNESCAPED_SLASHES), true) ?: []);
                     $data['iban_list'] = is_array($arr['risultati'] ?? null) ? $arr['risultati'] : [];
+
+                    // Conteggio tipologie associate (primarie e secondarie)
+                    $primaryCounts = [];
+                    $secondaryCounts = [];
+                    try {
+                        $entrateRepo = new \App\Database\EntrateRepository();
+                        $tipologie = $entrateRepo->listByDominio($idDominio);
+                        foreach ($tipologie as $t) {
+                            $primaryIban = isset($t['iban_accredito']) ? strtoupper(trim((string)$t['iban_accredito'])) : '';
+                            if ($primaryIban !== '' && $primaryIban !== '-') {
+                                $primaryCounts[$primaryIban] = ($primaryCounts[$primaryIban] ?? 0) + 1;
+                            }
+                            $secondaryIban = isset($t['iban_appoggio']) ? strtoupper(trim((string)$t['iban_appoggio'])) : '';
+                            if ($secondaryIban !== '' && $secondaryIban !== '-') {
+                                $secondaryCounts[$secondaryIban] = ($secondaryCounts[$secondaryIban] ?? 0) + 1;
+                            }
+                        }
+                    } catch (\Throwable $_) {}
+
+                    foreach ($data['iban_list'] as &$row) {
+                        $iban = isset($row['iban']) ? strtoupper(trim((string)$row['iban'])) : '';
+                        $row['num_primarie'] = $primaryCounts[$iban] ?? 0;
+                        $row['num_secondarie'] = $secondaryCounts[$iban] ?? 0;
+                    }
+                    unset($row);
+
                     $data['iban_json'] = json_encode($arr, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 } catch (\GovPay\Backoffice\ApiException $e) {
                     $data['iban_error'] = 'GovPay HTTP ' . $e->getCode() . ': ' . $this->govpayErrorDetail($e->getResponseBody());

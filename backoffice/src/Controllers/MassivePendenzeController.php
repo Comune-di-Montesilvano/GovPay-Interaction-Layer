@@ -55,7 +55,7 @@ class MassivePendenzeController
         $headers = [
             'TIPO','CODICE_FISCALE_PIVA','COGNOME_ANAGRAFICA','NOME','CAUSALE','ANNO_RIFERIMENTO','IMPORTO','EMAIL','DATA_VALIDITA','DATA_SCADENZA','RATA','VOCE_1_IMPORTO','VOCE_1_CAUSALE','VOCE_2_IMPORTO','VOCE_2_CAUSALE'
         ];
-        $sample = ['F','RSSMRA80A01F205X','ROSSI','MARIO','TASSA ISCRIZIONE',date('Y'), '44.00','mario.rossi@example.com','', '', '', '44.00','Quota iscrizione','',''];
+        $sample = ['F','RSSMRA80A01F205X','ROSSI','MARIO','TASSA ISCRIZIONE',date('Y'), '44.00','mario.rossi@example.com',date('d/m/Y'), '31/12/' . date('Y'), '', '44.00','Quota iscrizione','',''];
         $csv = fopen('php://temp', 'w+');
     // separatore ; con enclosure ed escape espliciti per evitare deprecazioni PHP (fputcsv richiede $escape)
     fputcsv($csv, $headers, ';', '"', '\\');
@@ -415,7 +415,11 @@ class MassivePendenzeController
         // Identificativo
         if ($norm['tipo'] === 'F') {
             $res = ValidationService::validateCodiceFiscale($norm['identificativo'], $norm['nome'] ?: null, $norm['anagrafica'] ?: null);
-            if (!$res['format_ok'] || !$res['check_ok']) return $res['message'] ?: 'Codice fiscale non valido';
+            if (!$res['format_ok'] || !$res['check_ok']) {
+                return $res['message'] ?: 'Codice fiscale non valido';
+            } elseif (!$res['name_match']) {
+                return $res['message'] ?: 'Codice fiscale non coerente con nome e cognome indicati';
+            }
         } else {
             $res = ValidationService::validatePartitaIva($norm['identificativo']);
             if (!$res['valid']) return $res['message'] ?: 'Partita IVA non valida';

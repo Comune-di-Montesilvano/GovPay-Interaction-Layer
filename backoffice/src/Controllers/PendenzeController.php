@@ -4193,7 +4193,7 @@ class PendenzeController
      * @param array $notificationData Dati della notifica (timestamp, esito, destinatario, canale)
      * @return bool True se l'aggiornamento è riuscito
      */
-    private function extractIuvAndNumeroAvviso(array $response): array
+    public function extractIuvAndNumeroAvviso(array $response): array
     {
         $iuv = '';
         $numeroAvviso = '';
@@ -4568,7 +4568,7 @@ class PendenzeController
         string  $identificativo,
         string  $tipoSog,
         array   $pendenzaData,
-        Request $request
+        ?Request $request = null
     ): array {
         $result = ['email' => 'skipped', 'app_io' => 'skipped'];
 
