@@ -1582,7 +1582,7 @@ body.bo-sidebar-collapsed .bo-topbar {
   color: var(--ms-warning) !important;
   padding: 0.8rem 1.2rem !important;
   font-size: 0.88rem !important;
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   justify-content: space-between !important;
   flex-wrap: wrap !important;
