@@ -10,6 +10,8 @@
         "govpay/pagamenti-client": "dev-main",
         "govpay/pendenze-client": "dev-main",
         "govpay/ragioneria-client": "dev-main",
+        "guzzlehttp/guzzle": "^7.12",
+        "guzzlehttp/psr7": "^2.12",
         "nyholm/psr7": "^1.5",
         "onelogin/php-saml": "^4.2",
         "pagopa/gpd-client": "dev-main",

@@ -704,8 +704,8 @@ class TefaRepository
   iuv           VARCHAR(35),
   data_pagamento DATE,
   importo_tefa  DECIMAL(10,2),
-    is_govpay     TINYINT(1),
-    is_multibeneficiario TINYINT(1),
+  is_govpay     TINYINT(1),
+  is_multibeneficiario TINYINT(1),
   cf_comune     VARCHAR(20),
   denominazione_comune VARCHAR(255),
   importo_comune DECIMAL(10,2),
@@ -716,7 +716,9 @@ class TefaRepository
   updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_iur_dominio (iur, id_dominio),
   INDEX idx_stato_id (stato, id),
-  INDEX idx_dominio_anno_mese (id_dominio, anno, mese)
+  INDEX idx_dominio_anno_mese (id_dominio, anno, mese),
+  INDEX idx_dominio_stato_data (id_dominio, stato, data_pagamento),
+  INDEX idx_dominio_stato (id_dominio, stato)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
             try {
                 $this->pdo->exec($sql);
@@ -732,6 +734,16 @@ class TefaRepository
 
         try {
             $this->pdo->exec('ALTER TABLE tefa_ricevute ADD COLUMN is_multibeneficiario TINYINT(1) NULL AFTER is_govpay');
+        } catch (\Throwable $_ignore) {
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE tefa_ricevute ADD INDEX idx_dominio_stato_data (id_dominio, stato, data_pagamento)');
+        } catch (\Throwable $_ignore) {
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE tefa_ricevute ADD INDEX idx_dominio_stato (id_dominio, stato)');
         } catch (\Throwable $_ignore) {
         }
     }

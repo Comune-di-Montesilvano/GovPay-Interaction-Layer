@@ -855,14 +855,16 @@ class FlussiRendicontazioniRepository
   cod_entrata         VARCHAR(100),
   descrizione_entrata VARCHAR(500),
   id_pendenza         VARCHAR(100),
-    is_govpay           TINYINT(1) NULL,
-    is_multibeneficiario TINYINT(1) NULL,
+  is_govpay           TINYINT(1) NULL,
+  is_multibeneficiario TINYINT(1) NULL,
   synced_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_iur_dominio (iur, id_dominio, indice),
   INDEX idx_dominio_flusso (id_dominio, id_flusso),
   INDEX idx_dominio_data (id_dominio, data_pagamento),
   INDEX idx_dominio_anno_mese (id_dominio, anno, mese),
-  INDEX idx_dominio_entrata (id_dominio, cod_entrata)
+  INDEX idx_dominio_entrata (id_dominio, cod_entrata),
+  INDEX idx_dominio_govpay_vocab (id_dominio, is_govpay, vocab_stato),
+  INDEX idx_dominio_govpay_pendenza (id_dominio, is_govpay, id_pendenza)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
             try {
@@ -880,6 +882,16 @@ class FlussiRendicontazioniRepository
 
         try {
             $this->pdo->exec('ALTER TABLE flussi_rendicontazioni ADD COLUMN is_govpay TINYINT(1) NULL AFTER id_pendenza');
+        } catch (\Throwable $_ignore) {
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE flussi_rendicontazioni ADD INDEX idx_dominio_govpay_vocab (id_dominio, is_govpay, vocab_stato)');
+        } catch (\Throwable $_ignore) {
+        }
+
+        try {
+            $this->pdo->exec('ALTER TABLE flussi_rendicontazioni ADD INDEX idx_dominio_govpay_pendenza (id_dominio, is_govpay, id_pendenza)');
         } catch (\Throwable $_ignore) {
         }
     }
