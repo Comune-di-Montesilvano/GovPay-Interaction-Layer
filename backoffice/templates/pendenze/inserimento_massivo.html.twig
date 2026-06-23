@@ -82,7 +82,7 @@
               <button type="submit" class="btn btn-primary px-4" id="uploadSubmitBtn">
                 <i class="fas fa-upload me-2"></i>Carica &amp; Anteprima
               </button>
-              <div id="uploadSpinner" class="d-none d-flex align-items-center gap-2 text-muted small">
+              <div id="uploadSpinner" class="d-none align-items-center gap-2 text-muted small">
                 <div class="spinner-border spinner-border-sm text-primary" role="status">
                   <span class="visually-hidden">Caricamento...</span>
                 </div>
@@ -255,6 +255,7 @@
       fname.classList.remove('d-none');
       btn.classList.add('d-none');
       spi.classList.remove('d-none');
+      spi.classList.add('d-flex');
       form.submit();
     }
 
@@ -285,6 +286,7 @@
       form.addEventListener('submit', function () {
         btn.classList.add('d-none');
         spi.classList.remove('d-none');
+        spi.classList.add('d-flex');
       });
     }
   });

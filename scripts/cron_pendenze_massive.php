@@ -155,6 +155,35 @@ while (true) {
         if ($res['success'] === true) {
             $log("  [$batchId:$numeroRiga] ID-$id OK (Creato: " . ($res['idPendenza'] ?? 'sconosciuto') . ')');
             $repo->setResult($id, true, $res['response'] ?? null, null);
+
+            // Invia notifiche email ed App IO
+            $newId = $res['idPendenza'] ?? null;
+            if ($newId) {
+                try {
+                    $responsePayload = is_array($res['response'] ?? null) ? $res['response'] : [];
+                    [$iuvFromResponse, $numeroAvvisoFromResponse] = $controller->extractIuvAndNumeroAvviso($responsePayload);
+
+                    $notifResult = $controller->sendCreationNotifications(
+                        (string)$newId,
+                        (string)($payload['soggettoPagatore']['email'] ?? ''),
+                        (string)($payload['soggettoPagatore']['anagrafica'] ?? ''),
+                        (string)($payload['soggettoPagatore']['identificativo'] ?? ''),
+                        (string)($payload['soggettoPagatore']['tipo'] ?? 'F'),
+                        [
+                            'causale'         => $payload['causale'] ?? '',
+                            'importo'         => $payload['importo'] ?? 0.0,
+                            'iuv'             => $iuvFromResponse,
+                            'numeroAvviso'    => $numeroAvvisoFromResponse,
+                            'dataScadenza'    => $payload['dataScadenza'] ?? null,
+                            'idTipoPendenza'  => $payload['idTipoPendenza'] ?? '',
+                        ],
+                        null
+                    );
+                    $log("    Notifiche - Email: " . ($notifResult['email'] ?? 'skipped') . ", App IO: " . ($notifResult['app_io'] ?? 'skipped'));
+                } catch (\Throwable $e) {
+                    $log("    Errore invio notifiche: " . $e->getMessage());
+                }
+            }
         } else {
             $errorMsg = is_array($res['errors']) ? implode('; ', $res['errors']) : 'Errore sconosciuto';
             $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");

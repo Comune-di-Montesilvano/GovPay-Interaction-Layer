@@ -28,6 +28,7 @@
                 <th>BIC</th>
                 <th>Intestatario</th>
                 <th>Descrizione</th>
+                <th>Tipologie Associate</th>
                 <th class="text-center">Postale</th>
                 <th class="text-center">MyBank</th>
                 <th class="text-center">Stato</th>
@@ -41,6 +42,21 @@
                   <td class="font-monospace">{{ row.bic|default('—') }}</td>
                   <td>{{ row.intestatario|default('—') }}</td>
                   <td>{{ row.descrizione|default('—') }}</td>
+                  <td class="text-nowrap">
+                    {% if row.num_primarie|default(0) > 0 %}
+                      <span class="badge bg-success-subtle text-success border border-success-subtle me-1" title="Utilizzato come IBAN primario di accredito">
+                        {{ row.num_primarie }} {{ row.num_primarie == 1 ? 'Primaria' : 'Primarie' }}
+                      </span>
+                    {% endif %}
+                    {% if row.num_secondarie|default(0) > 0 %}
+                      <span class="badge bg-info-subtle text-info border border-info-subtle me-1" title="Utilizzato come IBAN secondario di appoggio">
+                        {{ row.num_secondarie }} {{ row.num_secondarie == 1 ? 'Secondaria' : 'Secondarie' }}
+                      </span>
+                    {% endif %}
+                    {% if row.num_primarie|default(0) == 0 and row.num_secondarie|default(0) == 0 %}
+                      <span class="text-muted small">—</span>
+                    {% endif %}
+                  </td>
                   <td class="text-center">
                     {% if row.postale is defined and row.postale %}
                       <span class="badge text-bg-success">Sì</span>
