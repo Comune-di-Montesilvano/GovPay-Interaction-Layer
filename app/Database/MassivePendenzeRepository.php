@@ -110,6 +110,22 @@ class MassivePendenzeRepository
     }
 
     /**
+     * Aggiorna lo stato ed eventualmente l'errore di una singola riga.
+     */
+    public function updateRowStatus(int $id, string $status, ?string $errore = null, bool $updateError = false): void
+    {
+        $sql = 'UPDATE pendenze_massive SET stato = :stato, updated_at = NOW()';
+        $params = [':stato' => $status, ':id' => $id];
+        if ($updateError) {
+            $sql .= ', errore = :err';
+            $params[':err'] = $errore;
+        }
+        $sql .= ' WHERE id = :id';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+    }
+
+    /**
      * Elimina tutte le pendenze di un lotto. 
      * Ritorna le righe eliminate.
      */
