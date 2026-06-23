@@ -89,25 +89,36 @@ $twigMock   = Twig::create(dirname(__DIR__) . '/backoffice/templates');
 $controller = new PendenzeController($twigMock, null);
 
 /**
- * Estrae l'identificativo della pendenza (idPendenza) in modo robusto da response o payload.
+ * Estrae l'idPendenza reale (quello usato nell'URL PUT /pendenze/{idA2A}/{idPendenza}).
+ *
+ * Priorità:
+ *  1. response_json['idPendenza']   — iniettato dal cron al salvataggio
+ *  2. response_json['UUID']         — UUID restituito da GovPay (= idPendenza in alcuni casi)
+ *  3. response_json['id']           — altro alias
+ *
+ * ESCLUSI intenzionalmente: numeroAvviso, iuv — non sono idPendenza e non
+ * funzionano come chiave primaria nell'endpoint GET/PUT /pendenze/{idA2A}/{id}.
  */
 $extractIdPendenza = static function (array $row): ?string {
+    // Chiavi valide come idPendenza nell'endpoint GovPay (ordine di priorità)
+    $idKeys     = ['idPendenza', 'id_pendenza', 'idpendenza', 'UUID', 'uuid', 'id'];
+
     $resp = $row['response_json'] ? json_decode($row['response_json'], true) : null;
     if (is_array($resp)) {
-        $keys = ['idPendenza', 'id_pendenza', 'idpendenza', 'id', 'numeroAvviso', 'numero_avviso', 'iuv', 'iuvPagamento'];
-        foreach ($keys as $k) {
+        foreach ($idKeys as $k) {
             if (isset($resp[$k]) && is_string($resp[$k]) && trim($resp[$k]) !== '') {
                 return trim($resp[$k]);
             }
+            // Supporto struttura annidata {pendenza: {idPendenza: ...}}
             if (isset($resp['pendenza'][$k]) && is_string($resp['pendenza'][$k]) && trim($resp['pendenza'][$k]) !== '') {
                 return trim($resp['pendenza'][$k]);
             }
         }
     }
+    // Fallback: cerca nel payload originale (idPendenza esplicito nel CSV)
     $payload = $row['payload_json'] ? json_decode($row['payload_json'], true) : null;
     if (is_array($payload)) {
-        $keys = ['idPendenza', 'id_pendenza', 'idpendenza', 'numeroAvviso', 'numero_avviso', 'iuv', 'iuvPagamento'];
-        foreach ($keys as $k) {
+        foreach (['idPendenza', 'id_pendenza', 'idpendenza'] as $k) {
             if (isset($payload[$k]) && is_string($payload[$k]) && trim($payload[$k]) !== '') {
                 return trim($payload[$k]);
             }
@@ -140,9 +151,11 @@ while (true) {
             try {
                 $repo->setCancelProcessing($id);
                 $idPendenza = $extractIdPendenza($row);
+                $log("  [$batchId:$numeroRiga] ID-$id Estratto idPendenza: " . ($idPendenza ?? 'NULL'));
                 
                 if ($idPendenza) {
                     $currentPendenza = $controller->fetchPendenzaById($idPendenza);
+                    $log("  [$batchId:$numeroRiga] ID-$id fetchPendenzaById risposta: " . json_encode($currentPendenza));
                     if ($currentPendenza) {
                         $statoGP = $currentPendenza['stato'] ?? '';
                         if ($statoGP === 'NON_ESEGUITA') {
