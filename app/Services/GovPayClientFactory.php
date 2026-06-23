@@ -55,9 +55,8 @@ class GovPayClientFactory
         if (defined('CURL_HTTP_VERSION_1_1')) {
             $guzzleOptions['version'] = '1.1';
         }
-        if (defined('CURLOPT_SSL_SESSIONID_CACHE')) {
-            $defaultCurlOptions[CURLOPT_SSL_SESSIONID_CACHE] = false;
-        }
+        // CURLOPT_SSL_SESSIONID_CACHE rimosso: deprecato da Guzzle 7.12+ e non
+        // necessario dato che CURLOPT_FORBID_REUSE già impedisce il riuso della connessione.
         if (defined('CURLOPT_FORBID_REUSE')) {
             $defaultCurlOptions[CURLOPT_FORBID_REUSE] = true;
         }
