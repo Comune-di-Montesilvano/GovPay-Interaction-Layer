@@ -3861,7 +3861,7 @@ class PendenzeController
     /**
      * Fallback: recupera la pendenza corrente, fonde i campi modificati dal form e invia un PUT completo.
      */
-    private function fallbackFullPutUpdate(string $idPendenza, array $params, string $operationName = 'Modifica'): array
+    public function fallbackFullPutUpdate(string $idPendenza, array $params, string $operationName = 'Modifica'): array
     {
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
@@ -4034,7 +4034,7 @@ class PendenzeController
         }
     }
 
-    private function updatePendenzaStatus(string $idPendenza, string $newStatus): array
+    public function updatePendenzaStatus(string $idPendenza, string $newStatus): array
     {
         $patchUrl = SettingsRepository::get('govpay', 'pendenze_patch_url', '') ?: SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');

@@ -274,27 +274,56 @@ class MassivePendenzeController
                     foreach ($rows as $r) {
                         try {
                             $respJson = json_decode((string)$r['response_json'], true);
-                            if ($respJson && isset($respJson['id_avviso'])) {
-                                $idA2A = $respJson['id_a2a'] ?? SettingsRepository::get('entity', 'id_a2a', '');
-                                $pendenzeCtrl->annullaPendenzaById($idA2A, $respJson['id_avviso']);
-                                $repo->updateBatchStatus($batchId, 'PROCESSING', 'CANCELLED');
-                                $successi++;
+                            $idPendenza = $respJson['idPendenza'] ?? null;
+                            if ($idPendenza) {
+                                // Verifica lo stato corrente su GovPay
+                                $currentPendenza = $pendenzeCtrl->fetchPendenzaById($idPendenza);
+                                if ($currentPendenza) {
+                                    $statoGP = $currentPendenza['stato'] ?? '';
+                                    if ($statoGP === 'NON_ESEGUITA') {
+                                        // 1) Aggiorna lo storico
+                                        $pendenzeCtrl->fallbackFullPutUpdate($idPendenza, [], 'Annullamento');
+                                        // 2) Aggiorna lo stato su GovPay
+                                        $result = $pendenzeCtrl->updatePendenzaStatus($idPendenza, 'ANNULLATA');
+                                        if ($result['success'] ?? false) {
+                                            $repo->updateRowStatus((int)$r['id'], 'CANCELLED', null, true);
+                                            $successi++;
+                                        } else {
+                                            $errori++;
+                                            $repo->updateRowStatus((int)$r['id'], 'SUCCESS', 'Errore API di Annullamento: ' . ($result['error'] ?? 'Errore sconosciuto'), true);
+                                        }
+                                    } elseif ($statoGP === 'ANNULLATA') {
+                                        // Già annullata su GovPay, allinea il database locale
+                                        $repo->updateRowStatus((int)$r['id'], 'CANCELLED', null, true);
+                                        $successi++;
+                                    } else {
+                                        // Es. PAGATA, DECORRENZA_TERMINI
+                                        $errori++;
+                                        $repo->updateRowStatus((int)$r['id'], 'SUCCESS', "Impossibile annullare: lo stato attuale su GovPay è '$statoGP'", true);
+                                    }
+                                } else {
+                                    $errori++;
+                                    $repo->updateRowStatus((int)$r['id'], 'SUCCESS', "Impossibile recuperare lo stato della pendenza da GovPay", true);
+                                }
+                            } else {
+                                $errori++;
+                                $repo->updateRowStatus((int)$r['id'], 'SUCCESS', "ID Pendenza non trovato nei dati di risposta", true);
                             }
                         } catch (\Throwable $e) {
                             $errori++;
-                            $repo->setResult((int)$r['id'], true, null, 'Errore API di Annullamento: ' . $e->getMessage()); 
+                            $repo->updateRowStatus((int)$r['id'], 'SUCCESS', 'Errore di Annullamento: ' . $e->getMessage(), true);
                         }
                     }
                     $msg = "Operazione annullamento terminata: $successi completati, $errori falliti.";
                     
-                    // Riporta in success quelli che erano falliti l'annullamento per non perdere la cronologia originale
+                    // Riporta in success quelli che erano in processing e non sono stati annullati
                     $pdo = \App\Database\Connection::getPDO();
                     $pdo->prepare('UPDATE pendenze_massive SET stato="SUCCESS" WHERE file_batch_id=? AND stato="PROCESSING"')->execute([$batchId]);
                 }
                 break;
         }
         
-        $_SESSION['flash'] = ['type' => $type, 'message' => $msg];
+        $_SESSION['flash'][] = ['type' => $type, 'text' => $msg];
         return $response->withHeader('Location', '/pendenze/massivo/storico')->withStatus(302);
     }
 
