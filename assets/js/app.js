@@ -241,10 +241,11 @@
     if (!form || !input || !badge) return;
 
     var TYPES = {
-      cf:     { label: 'CF',     cls: 'is-cf' },
-      piva:   { label: 'P.IVA',  cls: 'is-piva' },
-      iuv:    { label: 'IUV',    cls: 'is-iuv' },
-      flusso: { label: 'Flusso', cls: 'is-flusso' },
+      cf:       { label: 'CF',       cls: 'is-cf' },
+      piva:     { label: 'P.IVA',    cls: 'is-piva' },
+      iuv:      { label: 'IUV',      cls: 'is-iuv' },
+      pendenza: { label: 'Pendenza', cls: 'is-pendenza' },
+      flusso:   { label: 'Flusso',   cls: 'is-flusso' },
     };
 
     function detect(val) {
@@ -252,20 +253,22 @@
       if (!v) return null;
       if (/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/.test(v)) return 'cf';
       if (/^\d{11}$/.test(v)) return 'piva';
-      if (/^\d{15}$/.test(v)) return 'iuv';
+      if (/^\d{15,18}$/.test(v)) return 'iuv';
+      if (/^GIL-[\w\-]+$/i.test(v) || /^\d{4}-\d+$/.test(v)) return 'pendenza';
       if (v.length >= 5 && (/[^A-Z0-9]/.test(v) || v.length > 16)) return 'flusso';
       return null;
     }
 
     function buildUrl(type, val) {
       var trimmed = val.trim();
-      var encoded = (type === 'flusso')
+      var encoded = (type === 'flusso' || type === 'pendenza')
         ? encodeURIComponent(trimmed)
         : encodeURIComponent(trimmed.toUpperCase());
       var map = {
         cf:     '/pendenze/ricerca?q=1&idDebitore=' + encoded,
         piva:   '/pendenze/ricerca?q=1&idDebitore=' + encoded,
         iuv:    '/pendenze/ricerca?q=1&iuv=' + encoded,
+        pendenza: '/pendenze/ricerca?q=1&idPendenza=' + encoded,
         flusso: '/pagamenti/ricerca-flussi?q=1&idFlusso=' + encoded,
       };
       return map[type] || null;

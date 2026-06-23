@@ -319,6 +319,11 @@ body.bo-shell {
   color: #1e40af;
 }
 
+.bo-search-badge.is-pendenza {
+  background: #f3e8ff;
+  color: #5b21b6;
+}
+
 .bo-search-badge.is-flusso {
   background: #fef3c7;
   color: #92400e;

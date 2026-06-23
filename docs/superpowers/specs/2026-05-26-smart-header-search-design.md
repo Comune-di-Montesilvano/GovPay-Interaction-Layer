@@ -22,7 +22,8 @@ Nessuna modifica backend, nessuna nuova route.
 |------|---------|--------------|-------|
 | Codice Fiscale | `/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/i` (16 char) | `/pendenze/ricerca` | `idDebitore` |
 | Partita IVA | `/^\d{11}$/` | `/pendenze/ricerca` | `idDebitore` |
-| IUV | `/^\d{15}$/` | `/pendenze/ricerca` | `iuv` |
+| IUV | `/^\d{15,18}$/` | `/pendenze/ricerca` | `iuv` |
+| ID Pendenza | `/^GIL-[\w\-]+$/i` o `/^\d{4}-\d+$/` | `/pendenze/ricerca` | `idPendenza` |
 | ID Flusso | fallback se ≥ 5 char e nessun match sopra | `/pagamenti/ricerca-flussi` | `idFlusso` |
 | Non riconosciuto | < 5 char o vuoto | — (submit bloccato) | — |
 
@@ -41,11 +42,12 @@ Tutti gli URL di destinazione includono `q=1` per attivare la query nella pagina
 Elemento `<span id="bo-search-badge">` posizionato dentro `.bo-topbar-search`, visibile solo quando c'è testo nell'input.
 
 Badge states:
-| Tipo | Label | Colore CSS var |
+| Tipo | Label | Colore CSS var / Hex |
 |------|-------|----------------|
 | Codice Fiscale | `CF` | `--bo-success` (verde) |
 | Partita IVA | `P.IVA` | `--bo-success` (verde) |
 | IUV | `IUV` | `--bo-info` (blu) |
+| ID Pendenza | `Pendenza` | Purple (#f3e8ff, #5b21b6) |
 | ID Flusso | `Flusso` | `--bo-warning` (arancio) |
 | Non riconosciuto / breve | `?` | `--bo-border-strong` (grigio) |
 
