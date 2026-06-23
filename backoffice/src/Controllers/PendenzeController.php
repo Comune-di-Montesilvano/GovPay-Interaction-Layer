@@ -4501,6 +4501,58 @@ class PendenzeController
         }
     }
 
+    /**
+     * Cerca una pendenza per IUV/numeroAvviso usando l'endpoint di lista GovPay.
+     * Restituisce il primo risultato trovato o null.
+     *
+     * Endpoint: GET /pendenze?idA2A={idA2A}&idDominio={idDominio}&iuv={iuv}
+     */
+    public function fetchPendenzaByNumeroAvviso(string $numeroAvviso, string $idDominio = ''): ?array
+    {
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A         = SettingsRepository::get('entity', 'id_a2a', '');
+        if ($backofficeUrl === '' || $idA2A === '' || $numeroAvviso === '') {
+            return null;
+        }
+        if ($idDominio === '') {
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        }
+
+        try {
+            $query = array_filter([
+                'idA2A'              => $idA2A,
+                'idDominio'          => $idDominio ?: null,
+                'iuv'                => $numeroAvviso,
+                'risultatiPerPagina' => 1,
+            ], static fn($v) => $v !== null && $v !== '');
+
+            $dataArr = $this->callBackofficeFindPendenze($query);
+
+            // La risposta può essere una lista diretta o wrappata in 'risultati'/'pendenze'
+            $items = null;
+            foreach (['risultati', 'pendenze', 'items', 'data'] as $key) {
+                if (isset($dataArr[$key]) && is_array($dataArr[$key])) {
+                    $items = $dataArr[$key];
+                    break;
+                }
+            }
+            // Alcuni endpoint restituiscono direttamente l'array di pendenze
+            if ($items === null && isset($dataArr[0])) {
+                $items = $dataArr;
+            }
+
+            if (is_array($items) && count($items) > 0) {
+                return $items[0];
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('fetchPendenzaByNumeroAvviso fallito', [
+                'numeroAvviso' => $numeroAvviso,
+                'error'        => $e->getMessage(),
+            ]);
+        }
+        return null;
+    }
+
     private function resolveEmbeddedLogoPath(): string
     {
         $logoSrc = trim((string)(SettingsRepository::get('ui', 'logo_src', '')));
