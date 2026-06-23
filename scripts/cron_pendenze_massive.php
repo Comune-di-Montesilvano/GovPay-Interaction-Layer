@@ -167,6 +167,13 @@ while (true) {
                         $log("  [$batchId:$numeroRiga] ID-$id ERRORE (Impossibile recuperare stato)");
                     }
                 } else {
+                    // Log diagnostico: stampa response_json e payload_json per debug
+                    $log("  [$batchId:$numeroRiga] ID-$id DIAGNOSI response_json: " . ($row['response_json'] ?? 'NULL'));
+                    $log("  [$batchId:$numeroRiga] ID-$id DIAGNOSI payload_json keys: " . (
+                        $row['payload_json']
+                            ? implode(', ', array_keys(json_decode($row['payload_json'], true) ?? []))
+                            : 'NULL'
+                    ));
                     $repo->updateRowStatus($id, 'SUCCESS', "ID Pendenza non trovato nei dati di risposta", true);
                     $log("  [$batchId:$numeroRiga] ID-$id ERRORE (ID Pendenza non trovato)");
                 }
