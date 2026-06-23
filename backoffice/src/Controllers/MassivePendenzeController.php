@@ -261,64 +261,13 @@ class MassivePendenzeController
                 }
                 break;
             case 'CANCEL':
-                // Annulla tutte le pendenze in stato SUCCESS
-                $rows = $repo->listByBatch($batchId, 'SUCCESS', 1, 9999);
-                if (empty($rows)) {
+                // Annulla tutte le pendenze in stato SUCCESS mettendole in coda per il demone
+                $mod = $repo->updateBatchStatus($batchId, 'SUCCESS', 'CANCEL_PENDING');
+                if ($mod === 0) {
                     $type = 'warning';
                     $msg = "Nessuna pendenza processata da annullare.";
                 } else {
-                    $successi = 0; $errori = 0;
-                    $pendenzeCtrl = new PendenzeController($this->twig);
-                    $repo->updateBatchStatus($batchId, 'SUCCESS', 'PROCESSING'); // Temporaneo per non inviare roba doppia
-                    
-                    foreach ($rows as $r) {
-                        try {
-                            $respJson = json_decode((string)$r['response_json'], true);
-                            $idPendenza = $respJson['idPendenza'] ?? null;
-                            if ($idPendenza) {
-                                // Verifica lo stato corrente su GovPay
-                                $currentPendenza = $pendenzeCtrl->fetchPendenzaById($idPendenza);
-                                if ($currentPendenza) {
-                                    $statoGP = $currentPendenza['stato'] ?? '';
-                                    if ($statoGP === 'NON_ESEGUITA') {
-                                        // 1) Aggiorna lo storico
-                                        $pendenzeCtrl->fallbackFullPutUpdate($idPendenza, [], 'Annullamento');
-                                        // 2) Aggiorna lo stato su GovPay
-                                        $result = $pendenzeCtrl->updatePendenzaStatus($idPendenza, 'ANNULLATA');
-                                        if ($result['success'] ?? false) {
-                                            $repo->updateRowStatus((int)$r['id'], 'CANCELLED', null, true);
-                                            $successi++;
-                                        } else {
-                                            $errori++;
-                                            $repo->updateRowStatus((int)$r['id'], 'SUCCESS', 'Errore API di Annullamento: ' . ($result['error'] ?? 'Errore sconosciuto'), true);
-                                        }
-                                    } elseif ($statoGP === 'ANNULLATA') {
-                                        // Già annullata su GovPay, allinea il database locale
-                                        $repo->updateRowStatus((int)$r['id'], 'CANCELLED', null, true);
-                                        $successi++;
-                                    } else {
-                                        // Es. PAGATA, DECORRENZA_TERMINI
-                                        $errori++;
-                                        $repo->updateRowStatus((int)$r['id'], 'SUCCESS', "Impossibile annullare: lo stato attuale su GovPay è '$statoGP'", true);
-                                    }
-                                } else {
-                                    $errori++;
-                                    $repo->updateRowStatus((int)$r['id'], 'SUCCESS', "Impossibile recuperare lo stato della pendenza da GovPay", true);
-                                }
-                            } else {
-                                $errori++;
-                                $repo->updateRowStatus((int)$r['id'], 'SUCCESS', "ID Pendenza non trovato nei dati di risposta", true);
-                            }
-                        } catch (\Throwable $e) {
-                            $errori++;
-                            $repo->updateRowStatus((int)$r['id'], 'SUCCESS', 'Errore di Annullamento: ' . $e->getMessage(), true);
-                        }
-                    }
-                    $msg = "Operazione annullamento terminata: $successi completati, $errori falliti.";
-                    
-                    // Riporta in success quelli che erano in processing e non sono stati annullati
-                    $pdo = \App\Database\Connection::getPDO();
-                    $pdo->prepare('UPDATE pendenze_massive SET stato="SUCCESS" WHERE file_batch_id=? AND stato="PROCESSING"')->execute([$batchId]);
+                    $msg = "Richiesta ricevuta: $mod pendenze messe in coda per l'annullamento in background.";
                 }
                 break;
         }

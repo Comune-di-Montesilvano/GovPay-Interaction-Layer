@@ -126,6 +126,28 @@ class MassivePendenzeRepository
     }
 
     /**
+     * Recupera le pendenze in coda per l'annullamento.
+     */
+    public function fetchCancelPending(int $limit = 50): array
+    {
+        $limit = max(1, $limit);
+        $sql = 'SELECT id, file_batch_id, riga, stato, payload_json, response_json FROM pendenze_massive WHERE stato = "CANCEL_PENDING" ORDER BY id ASC LIMIT :limit';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * Marca una riga in elaborazione per l'annullamento.
+     */
+    public function setCancelProcessing(int $id): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "CANCEL_PROCESSING", updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+    }
+
+    /**
      * Elimina tutte le pendenze di un lotto. 
      * Ritorna le righe eliminate.
      */
@@ -144,9 +166,9 @@ class MassivePendenzeRepository
     {
         try {
             $this->pdo->query('SELECT 1 FROM pendenze_massive LIMIT 1');
-            // Try to alter table safely (adds PAUSED and CANCELLED to enum if missing)
+            // Try to alter table safely (adds PAUSED, CANCELLED, CANCEL_PENDING, CANCEL_PROCESSING to enum if missing)
             try {
-                $this->pdo->exec("ALTER TABLE pendenze_massive MODIFY COLUMN stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED') NOT NULL DEFAULT 'PENDING'");
+                $this->pdo->exec("ALTER TABLE pendenze_massive MODIFY COLUMN stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED','CANCEL_PENDING','CANCEL_PROCESSING') NOT NULL DEFAULT 'PENDING'");
             } catch (\Throwable $e) {}
         } catch (\Throwable $e) {
             // Solo se table not found (42S02)
@@ -157,7 +179,7 @@ class MassivePendenzeRepository
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   file_batch_id VARCHAR(64) NOT NULL,
   riga INT UNSIGNED NOT NULL,
-  stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED') NOT NULL DEFAULT 'PENDING',
+  stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED','CANCEL_PENDING','CANCEL_PROCESSING') NOT NULL DEFAULT 'PENDING',
   errore TEXT NULL,
   payload_json JSON NULL,
   response_json JSON NULL,
