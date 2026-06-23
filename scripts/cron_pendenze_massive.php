@@ -98,10 +98,65 @@ while (true) {
         exit(0);
     }
 
+    // 1) Gestione annullamenti pendenti (CANCEL_PENDING)
+    $cancels = $repo->fetchCancelPending($batchSize);
+    if (count($cancels) > 0) {
+        $log('Elaboro batch di ' . count($cancels) . ' annullamenti...');
+        foreach ($cancels as $row) {
+            $id         = (int)$row['id'];
+            $batchId    = $row['file_batch_id'];
+            $numeroRiga = (int)$row['riga'];
+            
+            $log("  [$batchId:$numeroRiga] ID-$id Annullamento in corso...");
+            
+            try {
+                $repo->setCancelProcessing($id);
+                $respJson = $row['response_json'] ? json_decode($row['response_json'], true) : null;
+                $idPendenza = $respJson['idPendenza'] ?? null;
+                
+                if ($idPendenza) {
+                    $currentPendenza = $controller->fetchPendenzaById($idPendenza);
+                    if ($currentPendenza) {
+                        $statoGP = $currentPendenza['stato'] ?? '';
+                        if ($statoGP === 'NON_ESEGUITA') {
+                            $controller->fallbackFullPutUpdate($idPendenza, [], 'Annullamento');
+                            $result = $controller->updatePendenzaStatus($idPendenza, 'ANNULLATA');
+                            if ($result['success'] ?? false) {
+                                $repo->updateRowStatus($id, 'CANCELLED', null, true);
+                                $log("  [$batchId:$numeroRiga] ID-$id ANNULLATO OK");
+                            } else {
+                                $repo->updateRowStatus($id, 'SUCCESS', 'Errore API di Annullamento: ' . ($result['error'] ?? 'Errore sconosciuto'), true);
+                                $log("  [$batchId:$numeroRiga] ID-$id ERRORE API ANNULLAMENTO: " . ($result['error'] ?? 'Errore sconosciuto'));
+                            }
+                        } elseif ($statoGP === 'ANNULLATA') {
+                            $repo->updateRowStatus($id, 'CANCELLED', null, true);
+                            $log("  [$batchId:$numeroRiga] ID-$id GIA' ANNULLATA SU GOVPAY");
+                        } else {
+                            $repo->updateRowStatus($id, 'SUCCESS', "Impossibile annullare: lo stato attuale su GovPay è '$statoGP'", true);
+                            $log("  [$batchId:$numeroRiga] ID-$id SKIPPED (Stato GovPay: $statoGP)");
+                        }
+                    } else {
+                        $repo->updateRowStatus($id, 'SUCCESS', "Impossibile recuperare lo stato della pendenza da GovPay", true);
+                        $log("  [$batchId:$numeroRiga] ID-$id ERRORE (Impossibile recuperare stato)");
+                    }
+                } else {
+                    $repo->updateRowStatus($id, 'SUCCESS', "ID Pendenza non trovato nei dati di risposta", true);
+                    $log("  [$batchId:$numeroRiga] ID-$id ERRORE (ID Pendenza non trovato)");
+                }
+            } catch (\Throwable $e) {
+                $repo->updateRowStatus($id, 'SUCCESS', 'Errore di Annullamento: ' . $e->getMessage(), true);
+                $log("  [$batchId:$numeroRiga] ID-$id ECCEZIONE: " . $e->getMessage());
+            }
+        }
+        // Continua il loop per verificare altri elementi senza attendere $sleepSeconds
+        continue;
+    }
+
+    // 2) Gestione nuovi inserimenti (PENDING)
     $pending = $repo->fetchPending($batchSize);
 
     if (count($pending) === 0) {
-        $log("Nessuna pendenza PENDING. Attendo {$sleepSeconds}s...");
+        $log("Nessuna pendenza PENDING o CANCEL_PENDING. Attendo {$sleepSeconds}s...");
         sleep($sleepSeconds);
         continue;
     }
