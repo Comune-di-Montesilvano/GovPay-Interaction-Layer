@@ -88,6 +88,34 @@ $repo       = new MassivePendenzeRepository();
 $twigMock   = Twig::create(dirname(__DIR__) . '/backoffice/templates');
 $controller = new PendenzeController($twigMock, null);
 
+/**
+ * Estrae l'identificativo della pendenza (idPendenza) in modo robusto da response o payload.
+ */
+$extractIdPendenza = static function (array $row): ?string {
+    $resp = $row['response_json'] ? json_decode($row['response_json'], true) : null;
+    if (is_array($resp)) {
+        $keys = ['idPendenza', 'id_pendenza', 'idpendenza', 'id', 'numeroAvviso', 'numero_avviso', 'iuv', 'iuvPagamento'];
+        foreach ($keys as $k) {
+            if (isset($resp[$k]) && is_string($resp[$k]) && trim($resp[$k]) !== '') {
+                return trim($resp[$k]);
+            }
+            if (isset($resp['pendenza'][$k]) && is_string($resp['pendenza'][$k]) && trim($resp['pendenza'][$k]) !== '') {
+                return trim($resp['pendenza'][$k]);
+            }
+        }
+    }
+    $payload = $row['payload_json'] ? json_decode($row['payload_json'], true) : null;
+    if (is_array($payload)) {
+        $keys = ['idPendenza', 'id_pendenza', 'idpendenza', 'numeroAvviso', 'numero_avviso', 'iuv', 'iuvPagamento'];
+        foreach ($keys as $k) {
+            if (isset($payload[$k]) && is_string($payload[$k]) && trim($payload[$k]) !== '') {
+                return trim($payload[$k]);
+            }
+        }
+    }
+    return null;
+};
+
 $batchSize    = 50;
 $sleepSeconds = 30;
 
@@ -111,8 +139,7 @@ while (true) {
             
             try {
                 $repo->setCancelProcessing($id);
-                $respJson = $row['response_json'] ? json_decode($row['response_json'], true) : null;
-                $idPendenza = $respJson['idPendenza'] ?? null;
+                $idPendenza = $extractIdPendenza($row);
                 
                 if ($idPendenza) {
                     $currentPendenza = $controller->fetchPendenzaById($idPendenza);
@@ -209,7 +236,11 @@ while (true) {
 
         if ($res['success'] === true) {
             $log("  [$batchId:$numeroRiga] ID-$id OK (Creato: " . ($res['idPendenza'] ?? 'sconosciuto') . ')');
-            $repo->setResult($id, true, $res['response'] ?? null, null);
+            $respData = is_array($res['response'] ?? null) ? $res['response'] : [];
+            if (!isset($respData['idPendenza']) && isset($res['idPendenza'])) {
+                $respData['idPendenza'] = $res['idPendenza'];
+            }
+            $repo->setResult($id, true, $respData, null);
 
             // Invia notifiche email ed App IO
             $newId = $res['idPendenza'] ?? null;

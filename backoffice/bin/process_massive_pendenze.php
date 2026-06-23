@@ -157,7 +157,11 @@ while (true) {
             $repo->setProcessing($id);
             $res = sendOne($payload);
             if ($res['success'] ?? false) {
-                $repo->setResult($id, true, $res['response'] ?? null, null);
+                $respData = is_array($res['response'] ?? null) ? $res['response'] : [];
+                if (!isset($respData['idPendenza']) && isset($res['idPendenza'])) {
+                    $respData['idPendenza'] = $res['idPendenza'];
+                }
+                $repo->setResult($id, true, $respData, null);
             } else {
                 $repo->setResult($id, false, $res['response'] ?? null, implode('; ', $res['errors'] ?? []));
             }
