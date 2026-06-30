@@ -237,7 +237,7 @@
 
         <div class="table-toolbar">
           <div style="font-size:13px;color:var(--fg-3);">
-            {{ 'Pagina'|trans }} {{ pagination.pagina }} {{ 'di'|trans }} {{ pagination.total_pages|default(1) }}
+            {{ 'Pagina'|trans }} {{ pagination.pagina }}{% if pagination.total_pages is not null %} {{ 'di'|trans }} {{ pagination.total_pages }}{% endif %}
           </div>
           <div style="display:flex;gap:var(--sp-2);">
             <a
@@ -246,9 +246,9 @@
               {% if pagination.pagina <= 1 %}aria-disabled="true" tabindex="-1"{% endif %}
             >{{ 'Precedente'|trans }}</a>
             <a
-              class="btn btn-sm btn-ghost {% if pagination.pagina >= (pagination.total_pages|default(1)) %}disabled{% endif %}"
+              class="btn btn-sm btn-ghost {% if not pagination.has_next %}disabled{% endif %}"
               href="?page={{ pagination.pagina + 1 }}&per_page={{ pagination.risultati_per_pagina }}{% if filters.stato %}&stato={{ filters.stato }}{% endif %}{% if filters.tipologia %}&tipologia={{ filters.tipologia }}{% endif %}"
-              {% if pagination.pagina >= (pagination.total_pages|default(1)) %}aria-disabled="true" tabindex="-1"{% endif %}
+              {% if not pagination.has_next %}aria-disabled="true" tabindex="-1"{% endif %}
             >{{ 'Successiva'|trans }}</a>
           </div>
         </div>

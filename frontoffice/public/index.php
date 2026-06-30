@@ -4922,26 +4922,85 @@ $routes = [
                     'tipologia' => $idTipoPendenza,
                 ],
                 'pagination' => (static function () use ($data, $page, $perPage, $rows): array {
-                    $meta       = is_array($data['metadatiPaginazione'] ?? null) ? $data['metadatiPaginazione'] : [];
-                    $numPag     = (int)($data['numPagine'] ?? $meta['numPagine'] ?? 0);
-                    $numRis     = (int)($data['numRisultati'] ?? $meta['numRisultati'] ?? $meta['num_risultati'] ?? 0);
-                    $rpp        = (int)($data['risultatiPerPagina'] ?? $meta['risultatiPerPagina'] ?? $perPage);
-                    $pag        = (int)($data['pagina'] ?? $meta['pagina'] ?? $page);
+                    // Helper identico a quello usato in PendenzeController::showIndex()
+                    // Risolve numPagine/numRisultati da tutti i percorsi noti nella risposta GovPay
+                    $extractInt = static function (array $source, array $paths): ?int {
+                        foreach ($paths as $path) {
+                            $cursor = $source;
+                            foreach (explode('.', $path) as $segment) {
+                                if (!is_array($cursor) || !array_key_exists($segment, $cursor)) {
+                                    continue 2;
+                                }
+                                $cursor = $cursor[$segment];
+                            }
+                            if ($cursor !== null && $cursor !== '') {
+                                return (int)$cursor;
+                            }
+                        }
+                        return null;
+                    };
+
+                    $numPag = $extractInt($data, [
+                        'numPagine',
+                        'num_pagine',
+                        'metaDatiPaginazione.numPagine',
+                        'metaDatiPaginazione.num_pagine',
+                        'metadatiPaginazione.numPagine',
+                        'metadatiPaginazione.num_pagine',
+                        'paginazione.numeroPagine',
+                        'paginazione.numPagine',
+                    ]);
+                    $numRis = $extractInt($data, [
+                        'numRisultati',
+                        'num_risultati',
+                        'metaDatiPaginazione.numRisultati',
+                        'metaDatiPaginazione.num_risultati',
+                        'metadatiPaginazione.numRisultati',
+                        'metadatiPaginazione.num_risultati',
+                        'paginazione.numeroRisultati',
+                        'paginazione.numRisultati',
+                    ]);
+                    $rpp = $extractInt($data, [
+                        'risultatiPerPagina',
+                        'risultati_per_pagina',
+                        'metaDatiPaginazione.risultatiPerPagina',
+                        'metadatiPaginazione.risultatiPerPagina',
+                    ]) ?? $perPage;
                     if ($rpp < 1) { $rpp = $perPage; }
-                    if ($numPag > 0) {
+                    $pag = $extractInt($data, [
+                        'pagina',
+                        'metaDatiPaginazione.pagina',
+                        'metadatiPaginazione.pagina',
+                        'paginazione.pagina',
+                    ]) ?? $page;
+
+                    // Calcolo numPagine da numRisultati se non disponibile direttamente
+                    if ($numPag === null && $numRis !== null && $rpp > 0) {
+                        $numPag = (int)ceil($numRis / $rpp);
+                    }
+
+                    if ($numPag !== null && $numPag > 0) {
+                        // GovPay ha restituito il numero esatto di pagine
                         $totalPages = $numPag;
-                    } elseif ($numRis > 0) {
-                        $totalPages = (int) max(1, (int) ceil($numRis / $rpp));
+                        $hasNext    = $pag < $numPag;
                     } else {
-                        $totalPages = count($rows) >= $rpp ? $pag + 1 : $pag;
+                        // GovPay non ha restituito il totale: non conosciamo il numero esatto
+                        // di pagine. Impostiamo total_pages a null per evitare di mostrare
+                        // un conteggio farlocco (che cresceva man mano che si sfogliava).
+                        $totalPages = null;
+                        // Usiamo prossimiRisultati come segnale aggiuntivo per has_next
+                        $nextLink = $data['prossimiRisultati'] ?? $data['prossimi_risultati'] ?? null;
+                        $hasNext  = (is_string($nextLink) && $nextLink !== '') || count($rows) >= $rpp;
                     }
                     return [
                         'pagina'               => $pag,
                         'risultati_per_pagina' => $rpp,
-                        'num_risultati'        => $numRis,
+                        'num_risultati'        => $numRis ?? 0,
                         'total_pages'          => $totalPages,
+                        'has_next'             => $hasNext,
                     ];
                 })(),
+
             ],
         ];
     },

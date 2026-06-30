@@ -171,7 +171,7 @@ class FrontofficeApiController
             'iuv'                => $numeroAvviso ?: null,
             'stato'              => $stato ?: null,
             'idTipoPendenza'     => $idTipoPendenza ?: null,
-            'metadatiPaginazione'=> true,
+            'metadatiPaginazione'=> 'true',
         ], static fn ($v) => $v !== null && $v !== '');
 
         try {
