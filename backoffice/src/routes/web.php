@@ -126,6 +126,9 @@ return function (App $app, Twig $twig): void {
         $group->post('/rate-limit/check', function (Request $request, Response $response) use ($twig): Response {
             return (new FrontofficeApiController($twig))->rateLimitCheck($request, $response);
         });
+        $group->get('/govpay-status', function (Request $request, Response $response) use ($twig): Response {
+            return (new FrontofficeApiController($twig))->getGovpayStatus($request, $response);
+        });
     })->add(new \App\Middleware\BearerTokenMiddleware(false));
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -249,6 +252,16 @@ return function (App $app, Twig $twig): void {
     $app->get('/api/dashboard/stats', function(Request $request, Response $response) use ($twig): Response {
         $controller = new HomeController($twig);
         return $controller->apiStats($request, $response);
+    });
+
+    // GovPay Status check per backoffice badge (AJAX)
+    $app->get('/api/govpay/status', function(Request $request, Response $response) use ($twig): Response {
+        $isOnline = \App\Services\GovPayClientFactory::checkGovPayStatusCached(30);
+        $response->getBody()->write(json_encode([
+            'success' => true,
+            'status'  => $isOnline ? 'online' : 'offline',
+        ], JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json');
     });
 
     // Statistiche

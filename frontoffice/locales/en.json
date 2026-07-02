@@ -455,5 +455,6 @@
     "QR non disponibile. Usa il numero avviso sopra.": "QR not available. Use the notice number above.",
     "Consulta lo stato, scarica l'avviso e (quando disponibile) la ricevuta di pagamento.": "Check the status, download the notice and (when available) the payment receipt.",
     "Ricevuta digitale immediata": "Instant digital receipt",
-    "L'importo per questo servizio è prefissato e non può essere modificato.": "The amount for this service is preset and cannot be modified."
+    "L'importo per questo servizio è prefissato e non può essere modificato.": "The amount for this service is preset and cannot be modified.",
+    "Attenzione: Il collegamento con il sistema di pagamento pagoPA è temporaneamente interrotto. Alcune operazioni di pagamento o download delle ricevute potrebbero non essere disponibili.": "Warning: The connection with the pagoPA payment system is temporarily interrupted. Some payment operations or receipt downloads might not be available."
 }

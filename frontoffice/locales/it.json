@@ -455,5 +455,6 @@
     "QR non disponibile. Usa il numero avviso sopra.": "QR non disponibile. Usa il numero avviso sopra.",
     "Consulta lo stato, scarica l'avviso e (quando disponibile) la ricevuta di pagamento.": "Consulta lo stato, scarica l'avviso e (quando disponibile) la ricevuta di pagamento.",
     "Ricevuta digitale immediata": "Ricevuta digitale immediata",
-    "L'importo per questo servizio è prefissato e non può essere modificato.": "L'importo per questo servizio è prefissato e non può essere modificato."
+    "L'importo per questo servizio è prefissato e non può essere modificato.": "L'importo per questo servizio è prefissato e non può essere modificato.",
+    "Attenzione: Il collegamento con il sistema di pagamento pagoPA è temporaneamente interrotto. Alcune operazioni di pagamento o download delle ricevute potrebbero non essere disponibili.": "Attenzione: Il collegamento con il sistema di pagamento pagoPA è temporaneamente interrotto. Alcune operazioni di pagamento o download delle ricevute potrebbero non essere disponibili."
 }

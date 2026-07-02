@@ -228,4 +228,60 @@ class GovPayClientFactory
         $pass = (string)SettingsRepository::get('govpay', 'password', '');
         return ($user !== '' && $pass !== '') ? ['auth' => [$user, $pass]] : [];
     }
+
+    /**
+     * Esegue una verifica veloce della connettività con GovPay.
+     * Ritorna true se online, false altrimenti.
+     */
+    public static function checkGovPayStatus(): bool
+    {
+        $url = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
+        if ($url === '') {
+            return false;
+        }
+
+        try {
+            $config = new \GovPay\Backoffice\Configuration();
+            $config->setHost($url);
+            self::applyCredentials($config);
+
+            // Usiamo timeout molto bassi per non bloccare
+            $client = self::makeBackofficeClient([
+                'connect_timeout' => 2.0,
+                'timeout'         => 3.0,
+            ]);
+
+            $api = new \GovPay\Backoffice\Api\InfoApi($client, $config);
+            $api->getInfo();
+            return true;
+        } catch (\Throwable $e) {
+            Logger::error('GovPay check status failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Esegue la verifica connettività a GovPay cacheando il risultato per N secondi.
+     */
+    public static function checkGovPayStatusCached(int $ttlSeconds = 30): bool
+    {
+        $cacheFile = sys_get_temp_dir() . '/govpay_status_cache.json';
+        if (file_exists($cacheFile)) {
+            $data = json_decode((string)@file_get_contents($cacheFile), true);
+            if (is_array($data) && isset($data['status'], $data['time'])) {
+                if (time() - $data['time'] < $ttlSeconds) {
+                    return $data['status'] === 'online';
+                }
+            }
+        }
+
+        $isOnline = self::checkGovPayStatus();
+        @file_put_contents($cacheFile, json_encode([
+            'status' => $isOnline ? 'online' : 'offline',
+            'time'   => time(),
+        ]));
+
+        return $isOnline;
+    }
 }
+
