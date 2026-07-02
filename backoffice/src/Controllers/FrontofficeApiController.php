@@ -939,10 +939,11 @@ class FrontofficeApiController
      */
     public function getGovpayStatus(Request $request, Response $response): Response
     {
-        $isOnline = GovPayClientFactory::checkGovPayStatusCached(30);
+        $res = GovPayClientFactory::checkGovPayStatusCached(30);
         return $this->jsonResponse([
             'success' => true,
-            'status'  => $isOnline ? 'online' : 'offline',
+            'status'  => $res['online'] ? 'online' : 'offline',
+            'error'   => $res['error'],
         ]);
     }
 }

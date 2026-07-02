@@ -256,10 +256,11 @@ return function (App $app, Twig $twig): void {
 
     // GovPay Status check per backoffice badge (AJAX)
     $app->get('/api/govpay/status', function(Request $request, Response $response) use ($twig): Response {
-        $isOnline = \App\Services\GovPayClientFactory::checkGovPayStatusCached(30);
+        $res = \App\Services\GovPayClientFactory::checkGovPayStatusCached(30);
         $response->getBody()->write(json_encode([
             'success' => true,
-            'status'  => $isOnline ? 'online' : 'offline',
+            'status'  => $res['online'] ? 'online' : 'offline',
+            'error'   => $res['error'],
         ], JSON_UNESCAPED_UNICODE));
         return $response->withHeader('Content-Type', 'application/json');
     });
