@@ -380,6 +380,8 @@ if (!function_exists('frontoffice_load_service_options')) {
             }
             $externalUrl      = trim((string)($row['external_url'] ?? '')) ?: null;
             $descrizioneEstesa = trim((string)($row['descrizione_estesa'] ?? ''));
+            $importoPrefissato = isset($row['importo_prefissato']) ? (float)$row['importo_prefissato'] : null;
+            $importoBloccato   = isset($row['importo_bloccato']) ? (bool)$row['importo_bloccato'] : false;
             $internalOptions[] = [
                 'id'                => $id,
                 'label'             => $label,
@@ -387,6 +389,8 @@ if (!function_exists('frontoffice_load_service_options')) {
                 'type'              => $externalUrl ? 'external' : 'internal',
                 'external_url'      => $externalUrl,
                 'descrizione_estesa'=> $descrizioneEstesa !== '' ? $descrizioneEstesa : null,
+                'importo_prefissato'=> $importoPrefissato,
+                'importo_bloccato'  => $importoBloccato,
             ];
         }
 
@@ -2942,6 +2946,15 @@ if (!function_exists('frontoffice_process_spontaneous_request')) {
         $importo = frontoffice_normalize_amount($data['importo'] ?? null);
         if ($importo <= 0) {
             $errors[] = 'Inserisci un importo valido (maggiore di zero).';
+        } else {
+            if ($idTipo !== '' && isset($serviceMap[$idTipo])) {
+                $selectedOption = $serviceMap[$idTipo];
+                $importoPrefissato = isset($selectedOption['importo_prefissato']) ? (float)$selectedOption['importo_prefissato'] : null;
+                $importoBloccato   = isset($selectedOption['importo_bloccato']) ? (bool)$selectedOption['importo_bloccato'] : false;
+                if ($importoBloccato && $importoPrefissato !== null && abs($importo - $importoPrefissato) > 0.001) {
+                    $errors[] = sprintf('L\'importo per questo servizio è bloccato a %s €.', number_format($importoPrefissato, 2, ',', '.'));
+                }
+            }
         }
 
         $defaultYear = (int)date('Y');

@@ -492,6 +492,16 @@ section.block .section-sub { font-size: 16px; color: var(--fg-2); margin: 0 0 va
 .input:hover, .select:hover, .textarea:hover { border-color: var(--ms-slate-400); }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--border-focus); box-shadow: var(--shadow-focus); }
 .input.mono { font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; }
+.input[readonly] {
+  background-color: var(--bg-2);
+  color: var(--fg-3);
+  cursor: not-allowed;
+  border-color: var(--border-2);
+}
+.input[readonly]:hover, .input[readonly]:focus {
+  border-color: var(--border-2);
+  box-shadow: none;
+}
 .input.error-state, .select.error-state { border-color: var(--ms-danger); }
 .textarea { min-height: 96px; resize: vertical; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }

@@ -265,14 +265,19 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
         $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4";
         try {
           $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+          sort($files);
           foreach($files as $f) {
             echo "Eseguo PHP $f\n";
-            $sql = file_get_contents($f);
-            $pdo->exec($sql);
+            try {
+              $sql = file_get_contents($f);
+              $pdo->exec($sql);
+            } catch (Throwable $e) {
+              echo "⚠️ Importazione fallita per $f via PHP: ". $e->getMessage() ."; proseguo.\n";
+            }
           }
         } catch (Throwable $e) {
-          echo "⚠️ PHP migration fallback failed: ". $e->getMessage() ."\n";
-          echo "⚠️ Il DB potrebbe non essere ancora pronto. Continuo avvio (setup in corso?).\n";
+          echo "⚠️ Connessione DB fallita: ". $e->getMessage() ."\n";
+          echo "⚠️ Il DB potrebbe non essere ancora pronto. Continuo avvio.\n";
           exit(0);
         }
       '

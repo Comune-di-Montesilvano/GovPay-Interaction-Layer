@@ -260,6 +260,8 @@
               {% set descrEstesaMap = entrate._descr_estesa_map|default({}) %}
               {% set descrEffMap = entrate._descr_eff_map|default({}) %}
               {% set iuvPrefixMap = entrate._iuv_prefix_map|default({}) %}
+              {% set importoPrefissatoMap = entrate._importo_prefissato_map|default({}) %}
+              {% set importoBloccatoMap = entrate._importo_bloccato_map|default({}) %}
               {% set descrBackoffice = e.tipoEntrata.descrizione|default(idEnt|default('Tipologia')) %}
               {% set descrLocale = descrLocaleMap[idEnt]|default(null) %}
               {% set descrEstesa = descrEstesaMap[idEnt]|default('') %}
@@ -274,6 +276,8 @@
               {% set ovr = ovrMap[idEnt]|default(null) %}
               {% set urlVal = urlMap[idEnt]|default('') %}
               {% set iuvPrefixVal = iuvPrefixMap[idEnt]|default('') %}
+              {% set importoPrefissatoVal = importoPrefissatoMap[idEnt]|default('') %}
+              {% set importoBloccatoVal = importoBloccatoMap[idEnt]|default(false) %}
               <div class="accordion-item">
                 <h2 class="accordion-header" id="heading_{{ eid }}">
                   <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_{{ eid }}" aria-expanded="false" aria-controls="collapse_{{ eid }}">
@@ -431,6 +435,24 @@
                             <label for="iuvprefix_{{ eid }}" class="text-muted">Prefisso IUV vincolato</label>
                             <input id="iuvprefix_{{ eid }}" name="iuv_prefix" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="form-control form-control-sm" style="max-width:120px" placeholder="Es. 300122" value="{{ iuvPrefixVal }}">
                             <div class="form-text">Solo cifre, max 6. Se impostato, il numero avviso pagoPA sarà <code>{prefisso}{anno}{giorno}{ora}{minuto}{random}</code> = 18 cifre totali. Lascia vuoto per il formato standard <code>GIL-xxxx</code>.</div>
+                          </div>
+                        </div>
+                        {# Importo prefissato e blocco #}
+                        <div class="row g-2 small mt-2">
+                          <div class="col-md-6">
+                            <label for="importoprefissato_{{ eid }}" class="text-muted">Importo prefissato (€)</label>
+                            <input id="importoprefissato_{{ eid }}" name="importo_prefissato" type="number" step="0.01" min="0.01" class="form-control form-control-sm" style="max-width:150px" placeholder="Es. 27.00" value="{{ importoPrefissatoVal }}">
+                            <div class="form-text">Se impostato, definisce l'importo predefinito nel frontoffice.</div>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="text-muted d-block">Blocco importo</label>
+                            <div class="form-check mt-1">
+                              <input class="form-check-input" type="checkbox" name="importo_bloccato" id="importobloccato_{{ eid }}" value="1" {% if importoBloccatoVal %}checked{% endif %}>
+                              <label class="form-check-label" for="importobloccato_{{ eid }}">
+                                Blocca importo in frontoffice
+                              </label>
+                            </div>
+                            <div class="form-text">Se attivo, impedisce al cittadino di modificare l'importo prefissato.</div>
                           </div>
                         </div>
                       </form>
