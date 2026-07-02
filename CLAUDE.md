@@ -4,7 +4,7 @@ Guida per Claude Code (claude.ai/code) su questo repository.
 
 # GovPay Interaction Layer (GIL)
 
-Piattaforma containerizzata per pagamenti pagoPA, sviluppata per Comune di Montesilvano. Integra GovPay, pagoPA Checkout, App IO, SPID/CIE.
+Piattaforma containerizzata per pagamenti pagoPA, sviluppata per Comune di Montesilvano. Integra GovPay, pagoPA Checkout, App IO, autenticazione OIDC esterna (opzionale).
 
 ## Architettura
 
@@ -15,10 +15,6 @@ Multi-container Docker. Container principali:
 | `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute. **Unico container che chiama GovPay/pagoPA API.** |
 | `gil-frontoffice` | `frontoffice` | PHP 8.5 + Apache | Portale cittadino (sidecar del backoffice). Non chiama GovPay/pagoPA direttamente: usa API interne backoffice via MASTER_TOKEN. |
 | `gil-db` | `db` | MariaDB 11 | DB condiviso. Backoffice (RW). Frontoffice (RO solo tabella `settings` per config). |
-| `gil-auth-proxy` | `auth-proxy` | Python SATOSA | Proxy SPID/CIE: legge config da backoffice, gestisce SATOSA |
-| `gil-auth-proxy-nginx` | `auth-proxy-nginx` | Nginx | Reverse proxy per SATOSA, serve metadata e disco SPID |
-| `gil-auth-proxy-db` | `auth-proxy-db` | MongoDB 7 | Backend CIE OIDC (usato da SATOSA) |
-| `gil-metadata-builder` | `metadata-builder` | Bash + OpenSSL | Generazione certificati e metadata SPID/CIE (setup iniziale) |
 
 Le chiamate interne tra servizi usano Bearer token (`MASTER_TOKEN`). Segreti sensibili cifrati in DB con `APP_ENCRYPTION_KEY` (esattamente 32 caratteri — `Crypto::getKey()` lancia eccezione se < 32).
 
@@ -65,9 +61,6 @@ docker compose up -d --build
 # Produzione (immagini pre-built da GHCR)
 docker compose pull && docker compose up -d
 
-# Tutti i servizi (backoffice, frontoffice, auth-proxy, db, metadata-builder)
-# partono sempre. SPID/CIE si abilita via Backoffice → Impostazioni → Login Proxy.
-
 # Esegui test PHP
 docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build --abort-on-container-exit
 
@@ -95,7 +88,6 @@ docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
 app/            Librerie PHP condivise (Config, Database, Security, Services)
 backoffice/     Applicazione backoffice (src/, templates/, public/)
 frontoffice/    Applicazione frontoffice (locales/, templates/, public/)
-auth-proxy/     Proxy SATOSA per SPID/CIE
 docker/db/      Dockerfile MariaDB + schema iniziale
 migrations/     Migrazioni SQL
 scripts/        Script batch/cron PHP
@@ -103,7 +95,6 @@ govpay-clients/ Client API GovPay generati
 pagopa-clients/ Client API pagoPA generati
 ssl/            Certificati TLS server
 certificate/    Certificati mTLS client GovPay
-metadata/       Metadata SPID/CIE
 ```
 
 ## Configurazione
@@ -127,7 +118,7 @@ openssl rand -hex 32   # FRONTOFFICE_LINK_SIGNING_KEY
 
 ### Configurazione applicativa (DB → UI)
 
-Tutto il resto (GovPay, pagoPA, SPID/CIE, entità, App IO, mail, branding) si configura via **Backoffice → Impostazioni**, salvato in tabella `settings`. Nessuna variabile `.env` aggiuntiva.
+Tutto il resto (GovPay, pagoPA, OIDC esterno, entità, App IO, mail, branding) si configura via **Backoffice → Impostazioni**, salvato in tabella `settings`. Nessuna variabile `.env` aggiuntiva.
 
 Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsRepository`) → `config.json` → default.
 
@@ -157,13 +148,8 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **`app_debug` Twig global**: nei template backoffice usare `{% if app_debug %}`, NON `{% if app.debug == 'true' %}`. Il global è registrato in `web.php` come `$twig->addGlobal('app_debug', $displayErrorDetails)`.
 - **Pattern tab Impostazioni GovPay-side**: dati che vivono in GovPay (non in `settings` DB) vengono fetchati in `ImpostazioniController::index()` quando `$tab === 'X'` e passati a Twig. Bottoni di aggiornamento sono AJAX su endpoint dedicati. Non usare `SettingsRepository` per dati GovPay.
 - **Pattern sidecar frontoffice**: il frontoffice NON chiama GovPay/pagoPA direttamente. Ogni operazione GovPay/pagoPA/DB-business va in `FrontofficeApiController` (backoffice) e chiamata con `frontoffice_backoffice_api()`. Le API sidecar seguono il pattern `jsonOk/jsonError` esistente (HTTP 200 + `success` bool). Eccezione: streaming PDF usa risposta binaria diretta. Non aggiungere credenziali GovPay alle env del container frontoffice.
-- **SPID/CIE rotto dopo `docker compose up --build`**: se login SPID/CIE smette di funzionare con `connect() failed (111: Connection refused)` nei log di `auth-proxy-nginx`, fare `docker compose restart auth-proxy-nginx`. Il container nginx cachea la risoluzione DNS dell'upstream `auth-proxy:10000`; dopo un rebuild il container `auth-proxy` ottiene un nuovo IP e nginx non si aggiorna finché non viene riavviato.
-- **`support_location` nei template frontoffice**: usare `{{ support_location|nl2br }}`, mai `|raw`. Il valore è inserito da operatori via Impostazioni — `|raw` consentirebbe stored XSS su tutti i cittadini.
-- **Link firmati HMAC**: ogni chiamata a `frontoffice_sign_link()` / `buildSignedLinkParams()` deve includere `'type' => '<nome-route>'` nel payload. I route handler verificano che il tipo corrisponda (`avviso`/`ricevuta`/`checkout`/`documento`). Link senza `type` sono accettati per retrocompatibilità ma i nuovi devono sempre includerlo.
-- **`frontoffice_satosa_idp_metadata()` SSRF**: valida il host dell'URL metadata contro una allowlist (`auth-proxy-nginx`, `localhost`, `127.0.0.1`, host di `IAM_PROXY_PUBLIC_BASE_URL`, host di `SPID_PROXY_PUBLIC_BASE_URL`). Se si aggiunge una nuova sorgente metadata IdP il cui host non è in queste variabili, la funzione ritornerà `null` silenziosamente — aggiungere il host all'allowlist o usare `IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL` con host interno.
-- **`frontoffice_spid_proxy_insecure_ssl()`**: ritorna già `true` per host interni (`auth-proxy-nginx`, `localhost`, `127.0.0.1`). Non aggiungere `str_starts_with($url, 'https://')` come condizione per disabilitare SSL — disabiliterebbe la verifica su qualsiasi host HTTPS esterno.
-- **`session_regenerate_id(true)` post-login**: chiamato dopo aver scritto `$_SESSION['frontoffice_user']` in entrambi i path SPID (SAML e TOKEN). Non rimuovere — previene session fixation.
-- **Chiave di firma checkout**: `frontoffice_checkout_token_secret()` usa `FRONTOFFICE_LINK_SIGNING_KEY` (non `APP_ENCRYPTION_KEY`). Mantenere separazione: `APP_ENCRYPTION_KEY` = cifratura simmetrica DB, `FRONTOFFICE_LINK_SIGNING_KEY` = HMAC link/token.
+- **Autenticazione frontoffice cittadini**: OIDC esterno via Authorization Code + PKCE. Configurabile da Backoffice → Impostazioni → Frontoffice. Tipo `none` = accesso libero senza login.
+- **`session_regenerate_id(true)` post-login**: chiamato dopo aver scritto `$_SESSION['frontoffice_user']` nel path OIDC callback. Non rimuovere — previene session fixation.
 
 ## Integrazioni esterne
 
@@ -175,7 +161,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 | @e.bollo (pagoPA) | Acquisto e validazione Marca da Bollo Telematica |
 | pagoPA GPD | Gestione posizioni debitorie |
 | App IO | Notifiche e pagamenti cittadini |
-| SPID / CIE | Autenticazione federata cittadini |
+| OIDC Esterno | Autenticazione opzionale cittadini (Authorization Code + PKCE) |
 
 ## Nuove Funzionalità Chiave (Maggio 2026)
 
@@ -189,7 +175,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 2. **Ottimizzazione Mobile & UI Frontoffice**:
    - Hamburger menu a scomparsa per i link principali e selettore lingua compresso in `<select>` nativo su mobile.
    - Rimozione di qualsiasi overflow orizzontale (gap bianchi fissati con `overflow-x: hidden`).
-   - Pulsanti SPID e primari isolati graficamente da override dei colori di link, garantendo testo bianco ad alto contrasto (#ffffff) in tutti gli stati (`:hover`, `:focus`, `:active`).
+   - Pulsanti primari isolati graficamente da override dei colori di link, garantendo testo bianco ad alto contrasto (#ffffff) in tutti gli stati (`:hover`, `:focus`, `:active`).
    - Allineamento ed uniformazione della pagina "Paga un avviso" (`avviso.html.twig`) al design system, eliminando clipping di layout.
    - Percorsi di checkout errore/annullamento arricchiti con pulsante "Vai al carrello" e restrizione dell'area personale solo ad utenti loggati.
 
@@ -210,7 +196,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 ## Configurazione: DB vs .env
 
 `App\Config\Config::get('ENV_KEY')` punto unico di lettura. Priorità:
-1. Tabella `settings` in DB (sezioni: `entity`, `backoffice`, `frontoffice`, `govpay`, `pagopa`, `iam_proxy`, `ui`) — valori sensibili cifrati con `APP_ENCRYPTION_KEY` via `App\Security\Crypto`
+1. Tabella `settings` in DB (sezioni: `entity`, `backoffice`, `frontoffice`, `govpay`, `pagopa`, `ui`) — valori sensibili cifrati con `APP_ENCRYPTION_KEY` via `App\Security\Crypto`
 2. `config.json` (bootstrap keys, letto da `ConfigLoader`)
 3. Default come secondo argomento
 
@@ -239,7 +225,7 @@ index.php → bootstrap/app.php → Slim App
   → Route → Controller → GovPay/pagoPA client (via vendor/)
 ```
 
-`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da `auth-proxy`, `metadata-builder` e **frontoffice** (sidecar).
+`/api/*` pubblico (autenticazione Bearer `MASTER_TOKEN`) per chiamate interne da **frontoffice** (sidecar).
 
 ## Flusso request frontoffice (sidecar)
 
@@ -254,7 +240,7 @@ Cittadino → Apache → frontoffice/public/index.php
   → GovPay API / pagoPA API / DB
 ```
 
-Il frontoffice gestisce autonomamente: sessione PHP, autenticazione SAML SPID/CIE, CSRF, whitelist sessione per il carrello, validazione form (CF, importo, bollo), generazione token firmati HMAC per link pubblici. Tutto il resto passa dal backoffice.
+Il frontoffice gestisce autonomamente: sessione PHP, autenticazione OIDC esterna (Authorization Code + PKCE), CSRF, whitelist sessione per il carrello, validazione form (CF, importo, bollo), generazione token firmati HMAC per link pubblici. Tutto il resto passa dal backoffice.
 
 ## Migrazioni DB
 
@@ -335,7 +321,7 @@ Non modificare questa logica senza aggiornare anche la soglia e il rendering UI 
 
 ## Sviluppo locale con override
 
-`docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` in locale (non usare in produzione). Aggiunge volume mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice, e forza il build locale di tutti i servizi (incluso auth-proxy e metadata-builder) invece delle immagini GHCR. La directory `debug/` è ignorata da git.
+`docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` in locale (non usare in produzione). Aggiunge volume mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice. La directory `debug/` è ignorata da git.
 
 ## Asset frontend (`assets/`)
 

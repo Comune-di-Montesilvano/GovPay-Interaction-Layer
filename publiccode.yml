@@ -26,17 +26,14 @@ description:
       sviluppata dal Comune di Montesilvano per migliorare il flusso di lavoro
       degli enti locali che utilizzano GovPay come soluzione PagoPA. Include un
       backoffice per operatori (gestione pendenze, flussi di rendicontazione,
-      ricevute pagoPA on-demand), un frontoffice per cittadini e sportello, e un
-      proxy SPID/CIE opzionale configurabile tramite interfaccia web. Si integra
-      con GovPay, pagoPA Checkout, pagoPA Biz Events e App IO. Il deployment è
-      gestito tramite Docker Compose o Portainer con immagini pubblicate su
-      GitHub Container Registry. L'autenticazione federata SPID/CIE è basata su
-      SATOSA (IAM Proxy Italia).
+      ricevute pagoPA on-demand) e un frontoffice per cittadini e sportello. Si
+      integra con GovPay, pagoPA Checkout, pagoPA Biz Events e App IO. Il
+      deployment è gestito tramite Docker Compose o Portainer con immagini
+      pubblicate su GitHub Container Registry.
     features:
       - Backoffice per la gestione delle pendenze pagoPA
       - Flussi di rendicontazione con ricevute on-demand via Biz Events
-      - Frontoffice cittadini con autenticazione SPID/CIE (opzionale)
-      - Proxy SPID/CIE integrato basato su SATOSA (IAM Proxy Italia)
+      - Frontoffice cittadini con autenticazione OIDC (opzionale)
       - Integrazione con App IO per l'invio di avvisi di pagamento
       - Dashboard in tempo reale con grafici Chart.js e statistiche per tipologia
       - Inserimento massivo pendenze tramite lotti

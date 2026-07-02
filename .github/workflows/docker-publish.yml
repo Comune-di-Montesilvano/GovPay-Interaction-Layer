@@ -153,26 +153,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: auth-proxy-italia
-            context: .
-            file: auth-proxy/Dockerfile
-            scope: auth-proxy-italia
-            cache_mode: max
-          - image: auth-proxy-nginx
-            context: auth-proxy/nginx
-            file: ""
-            scope: auth-proxy-nginx
-            cache_mode: max
           - image: db
             context: docker
             file: docker/db/Dockerfile
             scope: db
             cache_mode: min
-          - image: metadata-builder
-            context: .
-            file: metadata/builder/Dockerfile
-            scope: metadata-builder
-            cache_mode: max
 
     steps:
       - uses: actions/checkout@v6

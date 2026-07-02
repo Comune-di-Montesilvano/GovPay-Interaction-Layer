@@ -128,13 +128,6 @@ return function (App $app, Twig $twig): void {
         });
     })->add(new \App\Middleware\BearerTokenMiddleware(false));
 
-    $app->get('/api/auth-proxy/env', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getIamProxyEnv($request, $response);
-    })->add(new \App\Middleware\BearerTokenMiddleware(false));
-
-    $app->get('/api/auth-proxy/status', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getAuthProxyStatus($request, $response);
-    })->add(new \App\Middleware\BearerTokenMiddleware(true));
     // ─────────────────────────────────────────────────────────────────────────────
 
     // ── Impostazioni (nuovo config panel, richiede auth) ──────────────────────────
@@ -174,12 +167,7 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/sicurezza/show-encryption-key', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->showEncryptionKey($request, $response);
     });
-    $app->post('/impostazioni/login-proxy/save', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->saveLoginProxy($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/restart', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->restartAuthProxy($request, $response);
-    });
+
     $app->get('/impostazioni/govpay/test-connection', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testGovpayConnection($request, $response);
     });
@@ -213,70 +201,7 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/backoffice/test-email', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->testEmail($request, $response);
     });
-    $app->get('/impostazioni/login-proxy/spid-certs/info', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getSpidCertInfo($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/cie-keys/info', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getCieKeyDetails($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/cie-keys/jwks', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getCieKeysAsJwks($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/backup/restore', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->restoreBackupZip($request, $response);
-    });
-    // SPID metadata
-    $app->get('/impostazioni/login-proxy/spid-metadata/info', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getSpidMetadataInfo($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/spid-metadata/export', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->exportSpidMetadata($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/spid-metadata/download', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->downloadSpidMetadata($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/spid-metadata/restore', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->restoreSpidMetadata($request, $response);
-    });
-    // CIE metadata
-    $app->get('/impostazioni/login-proxy/cie-metadata/info', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getCieMetadataInfo($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/cie-metadata/download', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->downloadCieMetadata($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/cie-metadata/restore', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->restoreCieMetadata($request, $response);
-    });
-    // Generazione SPID / CIE
-    $app->post('/impostazioni/login-proxy/spid-certs/genera', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->generaSpidCerts($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/cie-keys/genera', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->generaCieKeys($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/cie-metadata/export', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->exportCieOidc($request, $response);
-    });
-    // Backup globale IAM proxy
-    $app->get('/impostazioni/login-proxy/status', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getAuthProxyStatus($request, $response);
-    });
-    $app->get('/impostazioni/login-proxy/backup/status', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->getBackupStatus($request, $response);
-    });
-    $app->post('/impostazioni/login-proxy/backup/export', function (Request $request, Response $response) use ($twig): Response {
-        return (new ImpostazioniController($twig))->exportBackupZip($request, $response);
-    });
+
     $app->post('/impostazioni/logo/upload', function (Request $request, Response $response) use ($twig): Response {
         return (new ImpostazioniController($twig))->uploadLogo($request, $response);
     });

@@ -175,14 +175,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
   mkdir -p /var/www/cache
   chown www-data:www-data /var/www/cache 2>/dev/null || true
   chmod 775 /var/www/cache 2>/dev/null || true
-  mkdir -p /var/www/html/spid-certs
-  chown www-data:www-data /var/www/html/spid-certs 2>/dev/null || true
-  chmod 777 /var/www/html/spid-certs 2>/dev/null || true
-  # Rendi leggibili i certificati SPID dai container auth-proxy e auth-proxy-nginx
-  find /var/www/html/spid-certs -name "*.pem" -type f -exec chmod 644 {} \; 2>/dev/null || true
-  mkdir -p /var/www/html/cieoidc-keys /var/www/html/metadata-cieoidc /var/www/html/metadata-agid
-  chown www-data:www-data /var/www/html/cieoidc-keys /var/www/html/metadata-cieoidc /var/www/html/metadata-agid 2>/dev/null || true
-  chmod 775 /var/www/html/cieoidc-keys /var/www/html/metadata-cieoidc /var/www/html/metadata-agid 2>/dev/null || true
+
 fi
 
 echo "--- Setup completato. Eseguo controllo first-run DB ---"

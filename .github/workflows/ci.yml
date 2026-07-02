@@ -29,32 +29,6 @@ jobs:
           DB_PASSWORD=apppass
           EOF
 
-          # In docker-compose.yml si usa .auth-proxy.env per SATOSA.
-          # Nel CI non usiamo SPID, ma il file deve esistere per non fallire l'up.
-          cat > .auth-proxy.env <<'EOF'
-          IAM_PROXY_PUBLIC_BASE_URL=https://localhost:9445
-          IAM_PROXY_SAML2_IDP_METADATA_URL=https://satosa-nginx:9445/Saml2IDP/metadata
-          IAM_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=https://auth-proxy-nginx:80/Saml2IDP/metadata
-          IAM_PROXY_HOSTNAME=auth-proxy-nginx
-          IAM_PROXY_HTTPS_PORT=9445
-          IAM_PROXY_DEBUG=false
-
-          SATOSA_SALT=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
-          SATOSA_STATE_ENCRYPTION_KEY=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
-          SATOSA_ENCRYPTION_KEY=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
-          SATOSA_USER_ID_HASH_SALT=CHANGE_THIS_RANDOM_STRING_32_CHARS_LONG
-          SATOSA_UNKNOW_ERROR_REDIRECT_PAGE=https://localhost:9445
-
-          ENABLE_SPID=true
-          ENABLE_CIE=false
-          ENABLE_CIE_OIDC=false
-          ENABLE_IT_WALLET=false
-          ENABLE_IDEM=false
-          ENABLE_EIDAS=false
-
-          MONGODB_USERNAME=satosa_user
-          MONGODB_PASSWORD=satosa_password
-          EOF
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -95,7 +69,6 @@ jobs:
 
       - name: Avvia servizi con Docker Compose
         run: |
-          docker volume create govpay_spid_certs
           docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db
 
       - name: Run tests
