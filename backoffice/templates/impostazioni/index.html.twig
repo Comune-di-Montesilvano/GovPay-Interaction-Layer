@@ -67,9 +67,7 @@
       <a class="nav-link {{ active_tab == 'frontoffice' ? 'active' : '' }}" href="/impostazioni?tab=frontoffice">
         <i class="fas fa-desktop me-2"></i>Frontoffice
       </a>
-      <a class="nav-link {{ active_tab == 'login-proxy' ? 'active' : '' }}" href="/impostazioni?tab=login-proxy">
-        <i class="fas fa-shield-alt me-2"></i>Login frontoffice
-      </a>
+
 
       <span class="imp-section-title">GovPay</span>
       <a class="nav-link {{ active_tab == 'govpay' ? 'active' : '' }}" href="/impostazioni?tab=govpay">
@@ -184,8 +182,7 @@
       {% include 'impostazioni/tab-backoffice.html.twig' %}
     {% elseif active_tab == 'frontoffice' %}
       {% include 'impostazioni/tab-frontoffice.html.twig' %}
-    {% elseif active_tab == 'login-proxy' %}
-      {% include 'impostazioni/tab-login-proxy.html.twig' %}
+
     {% elseif active_tab == 'debug' %}
       {% include 'impostazioni/tab-debug.html.twig' %}
 
@@ -301,9 +298,7 @@
 
     // Indice statico completo: tutte le label e titoli estratti da tutte le tab
     const searchIndex = [
-        // Opzioni avanzate Login Proxy
-        { tab: 'login-proxy', section: 'Login frontoffice', label: 'Demo SPID IdP' },
-        { tab: 'login-proxy', section: 'Login frontoffice', label: 'SPID Validator (AgID)' },
+
       // GENERALE
       { tab: 'generale', section: 'Generale', label: 'Codice IPA' },
       { tab: 'generale', section: 'Generale', label: 'Nome ente' },
@@ -342,48 +337,7 @@
       { tab: 'govpay', section: 'GovPay', label: 'Password' },
       { tab: 'govpay', section: 'GovPay', label: 'Certificato client (.pem / .cer)' },
       { tab: 'govpay', section: 'GovPay', label: 'Chiave privata (.pem / .key)' },
-      // LOGIN PROXY
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL pubblico del proxy' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'SPID' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'CIE OIDC' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'IDEM' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'eIDAS' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Organization ID' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Entity ID' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Key size (bit)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Validità (giorni)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Ambiente CIE OIDC' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Client Name' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'E-mail di contatto' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Organization Display Name (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Organization Identifier' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Codice IPA contatto' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Codice fiscale ente' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'E-mail contatto tecnico' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Telefono contatto' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Nome contatto (dato ente)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Comune (municipality)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Organization URL (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Organization Display Name (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Organization URL (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Display Name (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Display Name (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Descrizione (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Descrizione (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Informazioni (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Informazioni (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Privacy (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Privacy (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Note legali (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Note legali (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Accessibilità (IT)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'URL Accessibilità (EN)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Larghezza logo (px)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Altezza logo (px)' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Salt' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'State Encryption Key' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'Encryption Key' },
-      { tab: 'login-proxy', section: 'Login frontoffice', label: 'User ID Hash Salt' },
+
       // API CHECKOUT
       { tab: 'api-checkout', section: 'pagoPA Checkout', label: 'Checkout EC Base URL' },
       { tab: 'api-checkout', section: 'pagoPA Checkout', label: 'Subscription Key' },
@@ -436,7 +390,7 @@
       { tab: 'smtp', section: 'Tab', label: 'SMTP' },
       { tab: 'backoffice', section: 'Tab', label: 'Backoffice' },
       { tab: 'frontoffice', section: 'Tab', label: 'Frontoffice' },
-      { tab: 'login-proxy', section: 'Tab', label: 'Login frontoffice' },
+
       { tab: 'govpay', section: 'Tab', label: 'GovPay' },
       { tab: 'dominio', section: 'Tab', label: 'Dati dominio' },
       { tab: 'applicazioni', section: 'Tab', label: 'Applicazioni' },

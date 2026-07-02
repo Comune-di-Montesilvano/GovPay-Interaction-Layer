@@ -15,21 +15,6 @@ services:
     volumes:
       - ./debug:/var/www/html/public/debug
 
-  auth-proxy:
-    build:
-      context: .
-      dockerfile: auth-proxy/Dockerfile
-      args:
-        IAM_PROXY_REF: ${IAM_PROXY_REF:-v3.3}
-
-  auth-proxy-nginx:
-    build:
-      context: ./auth-proxy/nginx
-
-  metadata-builder:
-    build:
-      context: .
-      dockerfile: metadata/builder/Dockerfile
 
   db:
     build:

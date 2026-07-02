@@ -5,16 +5,4 @@ services:
         target: /var/lib/mysql
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
 
-  # In CI i container auth-proxy e SP metadata non servono e causano
-  # --abort-on-container-exit quando escono. Il profilo ci-only li esclude
-  # perché COMPOSE_PROFILES non lo include in CI.
-  auth-proxy:
-    profiles: [ci-only]
-  auth-proxy-nginx:
-    profiles: [ci-only]
-  auth-proxy-db:
-    profiles: [ci-only]
-  init-frontoffice-sp-metadata:
-    profiles: [ci-only]
-  refresh-frontoffice-sp-metadata:
-    profiles: [ci-only]
+

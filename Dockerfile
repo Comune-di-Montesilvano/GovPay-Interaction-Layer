@@ -206,8 +206,4 @@ FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs \
     && chown www-data:www-data /var/www/html/frontoffice/storage/logs
-
-# Script per generazione/rinnovo metadata SP SAML
-RUN mkdir -p /scripts
-COPY --link metadata/ensure-sp-metadata.sh /scripts/ensure-sp-metadata.sh
-RUN chmod +x /scripts/ensure-sp-metadata.sh
+

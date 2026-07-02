@@ -12,23 +12,10 @@ services:
       context: .
       target: runtime-frontoffice
 
-  auth-proxy:
-    build:
-      context: .
-      dockerfile: auth-proxy/Dockerfile
-      args:
-        IAM_PROXY_REF: ${IAM_PROXY_REF:-v3.3}
-
-  auth-proxy-nginx:
-    build:
-      context: ./auth-proxy/nginx
 
   db:
     build:
       context: ./docker
       dockerfile: db/Dockerfile
 
-  metadata-builder:
-    build:
-      context: .
-      dockerfile: metadata/builder/Dockerfile
+

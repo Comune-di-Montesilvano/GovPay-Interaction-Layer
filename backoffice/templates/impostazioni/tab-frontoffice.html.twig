@@ -27,13 +27,9 @@
         <div class="col-md-5">
           <label class="form-label">Tipo auth proxy</label>
           <select class="form-select" name="auth_proxy_type" {{ not is_superadmin ? 'disabled' : '' }}>
-            <option value="none" {{ frontoffice.auth_proxy_type|default('none') == 'none' ? 'selected' : '' }}>Nessuno (accesso libero)</option>
-            <option value="spid" {{ frontoffice.auth_proxy_type|default('') == 'spid' ? 'selected' : '' }}>SPID</option>
-            <option value="cie" {{ frontoffice.auth_proxy_type|default('') == 'cie' ? 'selected' : '' }}>CIE</option>
-            <option value="spid_cie" {{ frontoffice.auth_proxy_type|default('') == 'spid_cie' ? 'selected' : '' }}>SPID + CIE</option>
-            <option value="external" {{ frontoffice.auth_proxy_type|default('') == 'external' ? 'selected' : '' }}>Esterno (OIDC Proxy)</option>
-          </select>
-          <div class="form-text">Configurazione dettagliata nella sezione <a href="/impostazioni?tab=login-proxy">Login Proxy</a>.</div>
+             <option value="none" {{ frontoffice.auth_proxy_type|default('none') == 'none' ? 'selected' : '' }}>Nessuno (accesso libero)</option>
+             <option value="external" {{ frontoffice.auth_proxy_type|default('') == 'external' ? 'selected' : '' }}>Esterno (OIDC Proxy)</option>
+           </select>
         </div>
       </div>
 

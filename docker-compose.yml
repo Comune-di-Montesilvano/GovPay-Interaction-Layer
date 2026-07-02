@@ -5,18 +5,10 @@ services:
     ports:
       - "${BACKOFFICE_HTTP_PORT:-8443}:80"
     volumes:
-      - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
-      - frontoffice_sp_metadata:/metadata/sp:ro
       - cache:/var/www/cache
       - gil_certs:/var/www/certificate
       - gil_images:/var/www/html/public/img
       - gil_backups:/backups
-      # Volumi per operazioni locali di backup/ripristino
-      - gil_ssl_certs:/var/www/html/ssl-certs
-      - spid_certs:/var/www/html/spid-certs
-      - gil_cieoidc_keys:/var/www/html/cieoidc-keys
-      - gil_metadata_cieoidc:/var/www/html/metadata-cieoidc
-      - gil_metadata_agid:/var/www/html/metadata-agid
     environment:
       - APP_SUITE=backoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
@@ -31,9 +23,8 @@ services:
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
-      # Token per autenticare le chiamate Bearer provenienti da auth-proxy/startup.sh
+      # Token per autenticare le chiamate Bearer
       - MASTER_TOKEN=${MASTER_TOKEN}
-      - METADATA_BUILDER_INTERNAL_URL=${METADATA_BUILDER_INTERNAL_URL:-http://metadata-builder:8081}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     healthcheck:
@@ -51,9 +42,6 @@ services:
     ports:
       - "${FRONTOFFICE_HTTP_PORT:-8444}:80"
     volumes:
-      - frontoffice_sp_metadata:/var/www/html/metadata-sp:ro
-      - frontoffice_sp_metadata:/metadata/sp:ro
-      - spid_certs:/var/www/html/spid-certs:ro
       # gil_certs rimosso: frontoffice sidecar non chiama GovPay direttamente
       - gil_images:/var/www/html/public/img:ro
     environment:
@@ -68,7 +56,6 @@ services:
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
-      - AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL=${AUTH_PROXY_SAML2_IDP_METADATA_URL_INTERNAL:-http://auth-proxy-nginx:80/Saml2IDP/metadata}
       - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
       # DB — solo per lettura config (settings table). Non contiene credenziali GovPay.
       - DB_HOST=db
@@ -85,79 +72,7 @@ services:
     networks:
       - govpay-network
 
-  auth-proxy:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-italia:${APP_VERSION:-latest}
-    container_name: gil-auth-proxy
-    command: ["/bin/bash", "/builder/startup.sh"]
-    volumes:
-      # Chiavi JWK CIE OIDC (per-deployment, generate da backoffice UI o metadata-builder setup-cieoidc)
-      - gil_cieoidc_keys:/cieoidc-keys:ro
-      # SP metadata del frontoffice (rw: auth-proxy genera e scrive il metadata in startup.sh)
-      - frontoffice_sp_metadata:/frontoffice-sp
-      # Certificati SPID (per-deployment)
-      - spid_certs:/satosa_proxy/pki
-      # Immagini pubbliche ente (logo, favicon) — RO: copiate in static/ da startup.sh
-      - gil_images:/gil-images:ro
-      # File statici condivisi con auth-proxy-nginx (popolati da startup.sh)
-      - iam_proxy_static:/satosa-static
-    environment:
-      # Variabili infrastrutturali del container (non provengono dal DB)
-      - SATOSA_BY_DOCKER=1
-      - SATOSA_PRIVATE_KEY=${SATOSA_PRIVATE_KEY:-./pki/privkey.pem}
-      - SATOSA_PUBLIC_KEY=${SATOSA_PUBLIC_KEY:-./pki/cert.pem}
-      # Tuning params SP metadata (intervalli di check/validità — non configurabili da UI)
-      - FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS=${FRONTOFFICE_SAML_SP_METADATA_VALIDITY_DAYS:-730}
-      - FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS=${FRONTOFFICE_SAML_SP_METADATA_CACHE_DURATION_SECONDS:-604800}
-      - FRONTOFFICE_SP_METADATA_FILE=${FRONTOFFICE_SP_METADATA_FILE:-/satosa_proxy/metadata/sp/frontoffice_sp.xml}
-      - FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS=${FRONTOFFICE_SP_METADATA_WARN_WINDOW_SECONDS:-604800}
-      - FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS=${FRONTOFFICE_SP_METADATA_CHECK_INTERVAL_SECONDS:-21600}
-      # MongoDB — credenziali infrastrutturali container-to-container
-      - MONGODB_USERNAME=${MONGODB_USERNAME:-satosa_user}
-      - MONGODB_PASSWORD=${MONGODB_PASSWORD:-satosa_password}
-      - MONGODB_HOST=${MONGODB_HOST:-auth-proxy-db}
-      - MONGODB_PORT=${MONGODB_PORT:-27017}
-      - MONGODB_DB=${MONGODB_DB:-satosa}
-      # Tutte le variabili SATOSA/CIE OIDC/ENABLE_* vengono lette dal DB backoffice
-      # tramite GET ${BACKOFFICE_INTERNAL_URL:-<derivato da SSL>}/api/auth-proxy/env all'avvio.
-      - SSL=${SSL:-off}
-      - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-}
-      - MASTER_TOKEN=${MASTER_TOKEN}
-      # Watchdog: intervallo polling config backoffice (secondi, default 60)
-      - AUTH_PROXY_WATCHDOG_INTERVAL=${AUTH_PROXY_WATCHDOG_INTERVAL:-60}
-    restart: always
-    healthcheck:
-      test: ["CMD", "test", "-f", "/satosa_proxy/entrypoint.sh"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
-      start_period: 30s
-    networks:
-      - govpay-network
 
-  auth-proxy-nginx:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-auth-proxy-nginx:${APP_VERSION:-latest}
-    container_name: gil-auth-proxy-nginx
-    depends_on:
-      auth-proxy:
-        condition: service_healthy
-    ports:
-      - "${AUTH_PROXY_PORT:-9445}:80"
-    environment:
-      # Variabili di rete/routing nginx (infrastrutturali)
-      - SSL=${SSL:-off}
-      - AUTH_PROXY_PORT=${AUTH_PROXY_PORT:-9445}
-      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
-      - NGINX_DNS_RESOLVER=${NGINX_DNS_RESOLVER:-127.0.0.11}
-      # I flag ENABLE_* non sono usati in nginx.conf: il disco.html viene già generato
-      # con il contenuto corretto da auth-proxy/startup.sh (che li legge dal DB).
-    volumes:
-      # File statici SATOSA (disco.html, wallets, etc.) popolati da auth-proxy/startup.sh
-      - iam_proxy_static:/satosa-project/static:ro
-      # Certificati TLS server per-dominio
-      - gil_ssl_certs:/etc/nginx/certs
-    restart: 'no'
-    networks:
-      - govpay-network
 
   db:
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
@@ -175,38 +90,7 @@ services:
     networks:
       - govpay-network
 
-  auth-proxy-db:
-    image: mongo:7
-    container_name: gil-auth-proxy-db
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USERNAME:-satosa_user}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD:-satosa_password}
-      - MONGO_INITDB_DATABASE=${MONGODB_DB:-satosa}
-    volumes:
-      - satosa_mongo_data:/data/db
-    restart: 'no'
-    networks:
-      - govpay-network
 
-  metadata-builder:
-    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-metadata-builder:${APP_VERSION:-latest}
-    container_name: gil-metadata-builder
-    command: ["server"]
-    volumes:
-      - spid_certs:/certs
-      - frontoffice_sp_metadata:/sp-metadata
-      - gil_cieoidc_keys:/output/cieoidc-keys
-      - gil_metadata_agid:/output/agid
-      - gil_metadata_cieoidc:/output/cieoidc
-      - gil_backups:/backup
-    environment:
-      - MASTER_TOKEN=${MASTER_TOKEN}
-      - SATOSA_INTERNAL_HOSTNAME=${SATOSA_INTERNAL_HOSTNAME:-auth-proxy-nginx}
-      - SATOSA_NGINX_HOSTNAME=${SATOSA_NGINX_HOSTNAME:-auth-proxy-nginx}
-      - SATOSA_HOSTNAME=${SATOSA_HOSTNAME:-auth-proxy-nginx}
-      - SSL=${SSL:-off}
-    networks:
-      - govpay-network
 
 networks:
   govpay-network:
@@ -215,22 +99,9 @@ networks:
 volumes:
   cache:
   db_data:
-  satosa_mongo_data:
-  frontoffice_sp_metadata:
-  iam_proxy_static:
-  spid_certs:
-    name: ${SPID_CERTS_DOCKER_VOLUME:-govpay_spid_certs}
-  # Archivi di backup — accessibili a backoffice e metadata-builder
+  # Archivi di backup — accessibili a backoffice
   gil_backups:
   # Certificati GovPay (mTLS client cert+key) — usati solo dal backoffice
   gil_certs:
   # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:
-  # Certificati TLS server per auth-proxy-nginx (RW backoffice e auth-proxy-nginx per bootstrap)
-  gil_ssl_certs:
-  # Chiavi JWK CIE OIDC private per-deployment (generate da backoffice UI o metadata-builder setup-cieoidc)
-  gil_cieoidc_keys:
-  # Artefatti export AgID (metadata SPID pubblico)
-  gil_metadata_agid:
-  # Artefatti export CIE OIDC (entity configuration, JWKS)
-  gil_metadata_cieoidc:
