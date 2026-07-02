@@ -329,9 +329,10 @@ if (!function_exists('frontoffice_is_govpay_down')) {
 
         $res = frontoffice_backoffice_api('GET', '/api/frontoffice/govpay-status');
         $down = false; // Di default assumiamo UP
-        if (isset($res['success']) && $res['success'] && isset($res['status'])) {
-            $down = ($res['status'] !== 'online');
-        } elseif (isset($res['error_status'])) {
+        $raw = $res['_raw'] ?? [];
+        if (isset($res['success']) && $res['success'] && isset($raw['status'])) {
+            $down = ($raw['status'] !== 'online');
+        } elseif (!isset($res['success']) || !$res['success'] || (int)($res['error_status'] ?? 0) >= 400) {
             // Se c'è un errore di connessione con il backoffice o timeout, consideralo down
             $down = true;
         }
