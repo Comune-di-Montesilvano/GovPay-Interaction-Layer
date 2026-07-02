@@ -932,4 +932,18 @@ class FrontofficeApiController
         $updated = $this->pendenzeController()->addNotificationToPendenza($idPendenza, $notificationData);
         return $this->jsonOk($updated ? 'Notifica aggiunta' : 'Notifica non salvata', ['updated' => $updated]);
     }
+
+    /**
+     * GET /api/frontoffice/govpay-status
+     * Controlla la connettività con GovPay (con cache di 30 secondi).
+     */
+    public function getGovpayStatus(Request $request, Response $response): Response
+    {
+        $isOnline = GovPayClientFactory::checkGovPayStatusCached(30);
+        return $this->jsonResponse([
+            'success' => true,
+            'status'  => $isOnline ? 'online' : 'offline',
+        ]);
+    }
 }
+

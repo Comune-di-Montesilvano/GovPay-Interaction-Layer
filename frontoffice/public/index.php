@@ -306,6 +306,41 @@ if (!function_exists('frontoffice_backoffice_api_stream')) {
     }
 }
 
+if (!function_exists('frontoffice_is_govpay_down')) {
+    /**
+     * Ritorna true se il collegamento con GovPay è interrotto.
+     * Cachea il risultato localmente per 60 secondi per evitare chiamate frequenti.
+     */
+    function frontoffice_is_govpay_down(): bool
+    {
+        $cacheDir = '/var/cache/frontoffice';
+        if (!is_dir($cacheDir) || !is_writable($cacheDir)) {
+            $cacheDir = sys_get_temp_dir();
+        }
+        $cacheFile = $cacheDir . '/frontoffice_govpay_status_cache.json';
+        $cacheTtl  = 60; // 1 minuto
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
+            $cached = json_decode((string)@file_get_contents($cacheFile), true);
+            if (is_array($cached) && isset($cached['down'])) {
+                return (bool)$cached['down'];
+            }
+        }
+
+        $res = frontoffice_backoffice_api('GET', '/api/frontoffice/govpay-status');
+        $down = false; // Di default assumiamo UP
+        if (isset($res['success']) && $res['success'] && isset($res['status'])) {
+            $down = ($res['status'] !== 'online');
+        } elseif (isset($res['error_status'])) {
+            // Se c'è un errore di connessione con il backoffice o timeout, consideralo down
+            $down = true;
+        }
+
+        @file_put_contents($cacheFile, json_encode(['down' => $down]));
+        return $down;
+    }
+}
+
 if (!function_exists('frontoffice_load_pem_value')) {
     function frontoffice_load_pem_value(string $value): string
     {
@@ -5542,6 +5577,7 @@ foreach ((array)($tipologieResp['_raw']['tipologie'] ?? []) as $_row) {
 $baseContext = [
     'csrf_token' => frontoffice_csrf_token(),
     'bollot_attivo' => $bollotAttivo,
+    'govpay_down' => frontoffice_is_govpay_down(),
     'app_entity' => [
         'name' => $entityName,
         'suffix' => $entitySuffix,

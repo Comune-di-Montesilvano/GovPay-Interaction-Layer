@@ -144,9 +144,61 @@
     </form>
 
     <div class="bo-topbar-actions">
+      <!-- Badge Stato GovPay -->
+      <div id="bo-govpay-status-badge" class="bo-govpay-status" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 6px 14px; border-radius: 16px; background: var(--bg-3); border: 1px solid var(--border-1); margin-right: 12px; transition: border-color 0.3s, background 0.3s;">
+        <span class="bo-govpay-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; display: inline-block; transition: background 0.3s, box-shadow 0.3s;"></span>
+        <span class="bo-govpay-status-text" style="color: var(--fg-2);">GovPay: ...</span>
+      </div>
+
       <a href="/guida" class="bo-topbar-icon-btn" aria-label="Apri guida">
         <i class="fas fa-question-circle" aria-hidden="true"></i>
       </a>
+
+      <style>
+      @keyframes boPulse {
+          0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7); }
+          70% { box-shadow: 0 0 0 8px rgba(225, 29, 72, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+      }
+      </style>
+
+      <script>
+      document.addEventListener('DOMContentLoaded', function() {
+          var badge = document.getElementById('bo-govpay-status-badge');
+          var dot = badge ? badge.querySelector('.bo-govpay-status-dot') : null;
+          var text = badge ? badge.querySelector('.bo-govpay-status-text') : null;
+          if (badge && dot && text) {
+              fetch('/api/govpay/status')
+                  .then(function(res) { return res.json(); })
+                  .then(function(data) {
+                      if (data.status === 'online') {
+                          dot.style.background = '#30ba6f';
+                          dot.style.boxShadow = '0 0 0 3px rgba(48, 186, 111, 0.2)';
+                          text.textContent = 'GovPay: Online';
+                      } else {
+                          // Offline ad alta visibilità: rosso pieno, testo bianco e animazione pulse
+                          badge.style.background = '#e11d48';
+                          badge.style.borderColor = '#be123c';
+                          text.style.color = '#ffffff';
+                          dot.style.background = '#ffffff';
+                          dot.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.4)';
+                          text.textContent = 'GovPay: Offline';
+                          badge.style.animation = 'boPulse 1.5s infinite';
+                      }
+                  })
+                  .catch(function() {
+                      // Stato di errore ad alta visibilità
+                      badge.style.background = '#e11d48';
+                      badge.style.borderColor = '#be123c';
+                      text.style.color = '#ffffff';
+                      dot.style.background = '#ffffff';
+                      dot.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.4)';
+                      text.textContent = 'GovPay: Error';
+                      badge.style.animation = 'boPulse 1.5s infinite';
+                  });
+          }
+      });
+      </script>
 
       <details class="bo-user-menu">
         <summary aria-label="Apri menu utente">

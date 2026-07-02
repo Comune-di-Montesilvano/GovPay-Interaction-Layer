@@ -453,6 +453,6 @@
     "tramite il circuito ufficiale pagoPA.": "über das offizielle pagoPA-Netzwerk.",
     "Conserva la ricevuta di pagamento come prova dell'avvenuto versamento.": "Bewahren Sie die Zahlungsquittung als Zahlungsnachweis auf.",
     "QR non disponibile. Usa il numero avviso sopra.": "QR nicht verfügbar. Verwenden Sie die obige Bescheidnummer.",
-    "Consulta lo stato, scarica l'avviso e (quando disponibile) la ricevuta di pagamento.": "Überprüfen Sie den Status, laden Sie den Bescheid und (wenn verfügbar) die Zahlungsquittung herunter.",
-    "Ricevuta digitale immediata": "Sofortige digitale Quittung"
+    "Ricevuta digitale immediata": "Sofortige digitale Quittung",
+    "Attenzione: Il collegamento con il sistema di pagamento pagoPA è temporaneamente interrotto. Alcune operazioni di pagamento o download delle ricevute potrebbero non essere disponibili.": "Warnung: Die Verbindung mit dem pagoPA-Zahlungssystem ist vorübergehend unterbrochen. Einige Zahlungsvorgänge oder Beleg-Downloads sind möglicherweise nicht verfügbar."
 }
