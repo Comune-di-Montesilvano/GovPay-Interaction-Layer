@@ -19,12 +19,11 @@ use App\Logger;
 use App\Controllers\ConfigurazioneController;
 
 /**
- * Gestisce il pannello Impostazioni (/impostazioni) con 5 sezioni:
+ * Gestisce il pannello Impostazioni (/impostazioni) con le sezioni:
  *   - GovPay API
  *   - API Esterne (pagoPA, BizEvents)
  *   - Backoffice (mail, dati ente, supporto)
- *   - Frontoffice (URL, auth proxy, logo/favicon)
- *   - Login Proxy (SATOSA/SPID/CIE)
+ *   - Frontoffice (URL, auth proxy OIDC esterno, logo/favicon)
  *
  * Accesso: superadmin e admin (solo lettura per admin, scrittura per superadmin).
  */
@@ -41,6 +40,90 @@ class ImpostazioniController
 
     public function __construct(private readonly Twig $twig)
     {
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // FRONTOFFICE CONFIG API (sidecar)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /api/frontoffice/config
+     *
+     * Restituisce le variabili di configurazione necessarie al frontoffice
+     * (che non ha accesso diretto al DB). Il frontoffice le inietta in $_ENV
+     * al bootstrap e le legge via frontoffice_env_value().
+     *
+     * Endpoint pubblico (auth: Bearer MASTER_TOKEN).
+     */
+    public function getFrontofficeConfig(Request $request, Response $response): Response
+    {
+        $cfg = \App\Config\Config::class;
+
+        // Legge tutte le sezioni rilevanti dal DB una volta sola
+        $fo      = SettingsRepository::getSection('frontoffice');
+        $entity  = SettingsRepository::getSection('entity');
+        $govpay  = SettingsRepository::getSection('govpay');
+        $pagopa  = SettingsRepository::getSection('pagopa');
+        $bo      = SettingsRepository::getSection('backoffice');
+        $ui      = SettingsRepository::getSection('ui');
+
+        // Helper: legge un valore decifrato dalla sezione se necessario
+        $plain = static function (mixed $v): string {
+            if (is_array($v) && isset($v['value'])) {
+                return (string)$v['value'];
+            }
+            return (string)($v ?? '');
+        };
+
+        $authProxyType = strtolower(trim($plain($fo['auth_proxy_type'] ?? 'none')));
+
+        $config = [
+            // Auth
+            'FRONTOFFICE_AUTH_PROXY_TYPE'       => $authProxyType,
+            'EXTERNAL_OIDC_ISSUER'              => $plain($fo['external_oidc_issuer'] ?? ''),
+            'EXTERNAL_OIDC_CLIENT_ID'           => $plain($fo['external_oidc_client_id'] ?? ''),
+            'EXTERNAL_OIDC_CLIENT_SECRET'       => $plain($fo['external_oidc_client_secret'] ?? ''),
+            'EXTERNAL_OIDC_LOGOUT_URL'          => $plain($fo['external_oidc_logout_url'] ?? ''),
+
+            // Entity
+            'ID_DOMINIO'                        => $plain($entity['id_dominio'] ?? ''),
+            'APP_ENTITY_NAME'                   => $plain($entity['name'] ?? ''),
+            'APP_ENTITY_SUFFIX'                 => $plain($entity['suffix'] ?? ''),
+
+            // GovPay
+            'GOVPAY_BACKOFFICE_URL'             => $plain($govpay['backoffice_url'] ?? ''),
+            'GOVPAY_CHECKOUT_URL'               => $plain($govpay['checkout_url'] ?? ''),
+            'GOVPAY_CHECKOUT_ENABLED'           => ($plain($govpay['checkout_enabled'] ?? '0') === '1') ? '1' : '0',
+            'AUTHENTICATION_GOVPAY'             => $plain($govpay['authentication_method'] ?? 'none'),
+
+            // pagoPA
+            'PAGOPA_CHECKOUT_EC_BASE_URL'       => $plain($pagopa['checkout_ec_base_url'] ?? ''),
+            'PAGOPA_CHECKOUT_SUBSCRIPTION_KEY'  => $plain($pagopa['checkout_subscription_key'] ?? ''),
+            'PAGOPA_CHECKOUT_COMPANY_NAME'      => $plain($pagopa['checkout_company_name'] ?? ''),
+            'PAGOPA_CHECKOUT_RETURN_OK_URL'     => $plain($pagopa['checkout_return_ok_url'] ?? ''),
+            'PAGOPA_CHECKOUT_RETURN_CANCEL_URL' => $plain($pagopa['checkout_return_cancel_url'] ?? ''),
+            'PAGOPA_CHECKOUT_RETURN_ERROR_URL'  => $plain($pagopa['checkout_return_error_url'] ?? ''),
+            'PAGOPA_CHECKOUT_CONFIGURED'        => ($plain($pagopa['checkout_configured'] ?? '0') === '1') ? '1' : '0',
+            'PAGOPA_EBOLLO_ENABLED'             => ($plain($pagopa['ebollo_enabled'] ?? '0') === '1') ? '1' : '0',
+            'PAGOPA_EBOLLO_MODE'                => $plain($pagopa['ebollo_mode'] ?? 'legacy'),
+            'BIZ_EVENTS_HOST'                   => $plain($pagopa['biz_events_host'] ?? ''),
+            'BIZ_EVENTS_API_KEY'                => $plain($pagopa['biz_events_api_key'] ?? ''),
+
+            // Frontoffice
+            'FRONTOFFICE_PUBLIC_BASE_URL'       => $plain($fo['public_base_url'] ?? ''),
+            'FEATURED_SERVICES'                 => $plain($fo['featured_services'] ?? '[]'),
+            'SUPPORT_LOCATION'                  => $plain($bo['support_location'] ?? ''),
+            'BOLLO_TIPO_PENDENZA'               => $plain($ui['bollo_tipo_pendenza'] ?? 'BOLLOT'),
+            'AUX_DIGIT'                         => $plain($entity['aux_digit'] ?? ''),
+            'TRUSTED_PROXIES'                   => $plain($bo['trusted_proxies'] ?? ''),
+        ];
+
+        // Rimuovi valori vuoti per non sovrascrivere variabili già presenti in $_ENV nel container
+        $config = array_filter($config, static fn($v) => $v !== '');
+
+        $body = json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $response->getBody()->write((string)$body);
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
 
     // ──────────────────────────────────────────────────────────────────────
