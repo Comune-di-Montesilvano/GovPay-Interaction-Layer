@@ -235,9 +235,18 @@ class GovPayClientFactory
      */
     public static function checkGovPayStatus(): bool
     {
+        $res = self::checkGovPayStatusDetails();
+        return $res['online'];
+    }
+
+    /**
+     * Esegue una verifica veloce della connettività con GovPay con dettagli dell'errore.
+     */
+    public static function checkGovPayStatusDetails(): array
+    {
         $url = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
         if ($url === '') {
-            return false;
+            return ['online' => false, 'error' => 'GovPay Backoffice URL non configurato nel database.'];
         }
 
         try {
@@ -253,35 +262,41 @@ class GovPayClientFactory
 
             $api = new \GovPay\Backoffice\Api\InfoApi($client, $config);
             $api->getInfo();
-            return true;
+            return ['online' => true, 'error' => null];
         } catch (\Throwable $e) {
-            Logger::error('GovPay check status failed: ' . $e->getMessage());
-            return false;
+            $msg = $e->getMessage();
+            Logger::error('GovPay check status failed: ' . $msg);
+            return ['online' => false, 'error' => $msg];
         }
     }
 
     /**
      * Esegue la verifica connettività a GovPay cacheando il risultato per N secondi.
+     * Ritorna un array ['online' => bool, 'error' => ?string]
      */
-    public static function checkGovPayStatusCached(int $ttlSeconds = 30): bool
+    public static function checkGovPayStatusCached(int $ttlSeconds = 30): array
     {
         $cacheFile = sys_get_temp_dir() . '/govpay_status_cache.json';
         if (file_exists($cacheFile)) {
             $data = json_decode((string)@file_get_contents($cacheFile), true);
             if (is_array($data) && isset($data['status'], $data['time'])) {
                 if (time() - $data['time'] < $ttlSeconds) {
-                    return $data['status'] === 'online';
+                    return [
+                        'online' => $data['status'] === 'online',
+                        'error'  => $data['error'] ?? null,
+                    ];
                 }
             }
         }
 
-        $isOnline = self::checkGovPayStatus();
+        $res = self::checkGovPayStatusDetails();
         @file_put_contents($cacheFile, json_encode([
-            'status' => $isOnline ? 'online' : 'offline',
+            'status' => $res['online'] ? 'online' : 'offline',
+            'error'  => $res['error'],
             'time'   => time(),
         ]));
 
-        return $isOnline;
+        return $res;
     }
 }
 

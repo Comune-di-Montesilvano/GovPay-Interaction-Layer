@@ -116,8 +116,8 @@
     </nav>
 
     <div class="bo-sidebar-meta">
-      <span class="bo-sidebar-status-dot" aria-hidden="true"></span>
-      <span>Online</span>
+      <span class="bo-sidebar-status-dot" id="bo-sidebar-status-dot" aria-hidden="true" style="transition: background 0.3s, box-shadow 0.3s;"></span>
+      <span id="bo-sidebar-status-text">Online</span>
       {% if app_ref_url %}
         <a class="bo-sidebar-version" href="{{ app_ref_url }}" target="_blank" rel="noopener noreferrer" title="Vai al repository GitHub ({{ app_version_label }})">
           <i class="fab fa-github me-1" aria-hidden="true"></i>{{ app_version_label }}
@@ -167,7 +167,27 @@
           var badge = document.getElementById('bo-govpay-status-badge');
           var dot = badge ? badge.querySelector('.bo-govpay-status-dot') : null;
           var text = badge ? badge.querySelector('.bo-govpay-status-text') : null;
+
+          var sidebarDot = document.getElementById('bo-sidebar-status-dot');
+          var sidebarText = document.getElementById('bo-sidebar-status-text');
+
           if (badge && dot && text) {
+              var handleAlert = function() {
+                  if (badge.style.cursor === 'help' && badge.title) {
+                      alert(badge.title);
+                  }
+              };
+
+              badge.addEventListener('click', handleAlert);
+              if (sidebarDot) {
+                  sidebarDot.addEventListener('click', handleAlert);
+                  sidebarDot.style.cursor = 'pointer';
+              }
+              if (sidebarText) {
+                  sidebarText.addEventListener('click', handleAlert);
+                  sidebarText.style.cursor = 'pointer';
+              }
+
               fetch('/api/govpay/status')
                   .then(function(res) { return res.json(); })
                   .then(function(data) {
@@ -175,6 +195,19 @@
                           dot.style.background = '#30ba6f';
                           dot.style.boxShadow = '0 0 0 3px rgba(48, 186, 111, 0.2)';
                           text.textContent = 'GovPay: Online';
+                          badge.title = 'Collegamento con GovPay funzionante';
+                          badge.style.cursor = 'default';
+
+                          if (sidebarDot) {
+                              sidebarDot.style.background = '#30ba6f';
+                              sidebarDot.style.boxShadow = '0 0 0 3px rgba(48, 186, 111, 0.2)';
+                              sidebarDot.title = 'Collegamento con GovPay funzionante';
+                              sidebarDot.style.cursor = 'default';
+                          }
+                          if (sidebarText) {
+                              sidebarText.textContent = 'Online';
+                              sidebarText.style.color = '';
+                          }
                       } else {
                           // Offline ad alta visibilità: rosso pieno, testo bianco e animazione pulse
                           badge.style.background = '#e11d48';
@@ -184,9 +217,23 @@
                           dot.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.4)';
                           text.textContent = 'GovPay: Offline';
                           badge.style.animation = 'boPulse 1.5s infinite';
+                          badge.title = 'Errore di connessione a GovPay:\n' + (data.error || 'Server non raggiungibile');
+                          badge.style.cursor = 'help';
+
+                          if (sidebarDot) {
+                              sidebarDot.style.background = '#e11d48';
+                              sidebarDot.style.boxShadow = '0 0 0 3px rgba(225, 29, 72, 0.4)';
+                              sidebarDot.style.animation = 'boPulse 1.5s infinite';
+                              sidebarDot.title = 'Errore di connessione a GovPay:\n' + (data.error || 'Server non raggiungibile');
+                              sidebarDot.style.cursor = 'help';
+                          }
+                          if (sidebarText) {
+                              sidebarText.textContent = 'GovPay offline';
+                              sidebarText.style.color = '#e11d48';
+                          }
                       }
                   })
-                  .catch(function() {
+                  .catch(function(err) {
                       // Stato di errore ad alta visibilità
                       badge.style.background = '#e11d48';
                       badge.style.borderColor = '#be123c';
@@ -195,6 +242,20 @@
                       dot.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.4)';
                       text.textContent = 'GovPay: Error';
                       badge.style.animation = 'boPulse 1.5s infinite';
+                      badge.title = 'Errore imprevisto nel recupero dello stato di connessione.';
+                      badge.style.cursor = 'help';
+
+                      if (sidebarDot) {
+                          sidebarDot.style.background = '#e11d48';
+                          sidebarDot.style.boxShadow = '0 0 0 3px rgba(225, 29, 72, 0.4)';
+                          sidebarDot.style.animation = 'boPulse 1.5s infinite';
+                          sidebarDot.title = 'Errore imprevisto nel recupero dello stato di connessione.';
+                          sidebarDot.style.cursor = 'help';
+                      }
+                      if (sidebarText) {
+                          sidebarText.textContent = 'Errore sistema';
+                          sidebarText.style.color = '#e11d48';
+                      }
                   });
           }
       });
