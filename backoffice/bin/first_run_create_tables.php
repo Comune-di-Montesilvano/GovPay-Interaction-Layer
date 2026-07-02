@@ -38,6 +38,8 @@ $statements = [
         id_dominio VARCHAR(64) NOT NULL,
     id_entrata VARCHAR(128) NOT NULL,
     iuv_prefix VARCHAR(10) NULL,
+    importo_prefissato DECIMAL(10,2) NULL,
+    importo_bloccato TINYINT(1) NOT NULL DEFAULT 0,
     descrizione VARCHAR(255) NULL,
     descrizione_locale VARCHAR(255) NULL,
     descrizione_estesa TEXT NULL,

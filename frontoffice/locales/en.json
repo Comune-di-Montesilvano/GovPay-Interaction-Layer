@@ -454,5 +454,6 @@
     "Conserva la ricevuta di pagamento come prova dell'avvenuto versamento.": "Keep the payment receipt as proof of payment.",
     "QR non disponibile. Usa il numero avviso sopra.": "QR not available. Use the notice number above.",
     "Consulta lo stato, scarica l'avviso e (quando disponibile) la ricevuta di pagamento.": "Check the status, download the notice and (when available) the payment receipt.",
-    "Ricevuta digitale immediata": "Instant digital receipt"
+    "Ricevuta digitale immediata": "Instant digital receipt",
+    "L'importo per questo servizio è prefissato e non può essere modificato.": "The amount for this service is preset and cannot be modified."
 }

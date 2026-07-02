@@ -178,7 +178,7 @@ class EntrateRepository
      */
     public function findDetails(string $idDominio, string $idEntrata): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id_entrata, iuv_prefix, descrizione, descrizione_locale, descrizione_estesa, iban_accredito, iban_appoggio, codice_contabilita, tipo_bollo, tipo_contabilita, abilitato_backoffice, override_locale, external_url, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva FROM entrate_tipologie WHERE id_dominio = :dom AND id_entrata = :ent LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id_entrata, iuv_prefix, descrizione, descrizione_locale, descrizione_estesa, iban_accredito, iban_appoggio, codice_contabilita, tipo_bollo, tipo_contabilita, abilitato_backoffice, override_locale, external_url, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva, importo_prefissato, importo_bloccato FROM entrate_tipologie WHERE id_dominio = :dom AND id_entrata = :ent LIMIT 1');
         $stmt->execute([':dom' => $idDominio, ':ent' => $idEntrata]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -190,7 +190,7 @@ class EntrateRepository
      */
     public function listByDominio(string $idDominio): array
     {
-    $stmt = $this->pdo->prepare('SELECT id_entrata, iuv_prefix, descrizione, descrizione_locale, descrizione_estesa, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva, iban_accredito, iban_appoggio, codice_contabilita, tipo_contabilita, abilitato_backoffice, override_locale, external_url FROM entrate_tipologie WHERE id_dominio = :id ORDER BY id_entrata ASC');
+    $stmt = $this->pdo->prepare('SELECT id_entrata, iuv_prefix, descrizione, descrizione_locale, descrizione_estesa, COALESCE(descrizione_locale, descrizione) AS descrizione_effettiva, iban_accredito, iban_appoggio, codice_contabilita, tipo_contabilita, abilitato_backoffice, override_locale, external_url, importo_prefissato, importo_bloccato FROM entrate_tipologie WHERE id_dominio = :id ORDER BY id_entrata ASC');
         $stmt->execute([':id' => $idDominio]);
         return $stmt->fetchAll();
     }
@@ -328,7 +328,7 @@ class EntrateRepository
     public function listLocalOverrides(string $idDominio): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id_entrata, iuv_prefix, descrizione_locale, descrizione_estesa, override_locale, external_url, abilitato_backoffice
+            'SELECT id_entrata, iuv_prefix, descrizione_locale, descrizione_estesa, override_locale, external_url, abilitato_backoffice, importo_prefissato, importo_bloccato
              FROM entrate_tipologie WHERE id_dominio = :dom ORDER BY id_entrata ASC'
         );
         $stmt->execute([':dom' => $idDominio]);
@@ -348,7 +348,8 @@ class EntrateRepository
         $this->pdo->prepare(
             'UPDATE entrate_tipologie
              SET descrizione_locale = NULL, descrizione_estesa = NULL,
-                 override_locale = NULL, external_url = NULL, iuv_prefix = NULL, updated_at = :now
+                 override_locale = NULL, external_url = NULL, iuv_prefix = NULL,
+                 importo_prefissato = NULL, importo_bloccato = 0, updated_at = :now
              WHERE id_dominio = :dom'
         )->execute([':now' => $now, ':dom' => $idDominio]);
 
@@ -361,6 +362,7 @@ class EntrateRepository
              SET descrizione_locale = :dl, descrizione_estesa = :de,
                  override_locale = :ol, external_url = :eu,
                  iuv_prefix = :iuv_prefix,
+                 importo_prefissato = :ip, importo_bloccato = :ib,
                  abilitato_backoffice = :ab, updated_at = :now
              WHERE id_dominio = :dom AND id_entrata = :ent'
         );
@@ -372,6 +374,8 @@ class EntrateRepository
                 ':ol'  => isset($row['override_locale']) ? (int)$row['override_locale'] : null,
                 ':eu'  => $row['external_url'] ?? null,
                 ':iuv_prefix' => $row['iuv_prefix'] ?? null,
+                ':ip'  => isset($row['importo_prefissato']) ? (float)$row['importo_prefissato'] : null,
+                ':ib'  => isset($row['importo_bloccato']) ? (int)$row['importo_bloccato'] : 0,
                 ':ab'  => isset($row['abilitato_backoffice']) ? (int)$row['abilitato_backoffice'] : 1,
                 ':now' => $now,
                 ':dom' => $idDominio,
@@ -393,6 +397,32 @@ class EntrateRepository
             ':now'    => date('Y-m-d H:i:s'),
             ':dom'    => $idDominio,
             ':ent'    => $idEntrata,
+        ]);
+    }
+
+    /** Imposta (o azzera) l'importo prefissato per una tipologia. */
+    public function setImportoPrefissato(string $idDominio, string $idEntrata, ?float $importo): void
+    {
+        $sql = 'UPDATE entrate_tipologie SET importo_prefissato = :importo, updated_at = :now WHERE id_dominio = :dom AND id_entrata = :ent';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            ':importo' => $importo,
+            ':now'     => date('Y-m-d H:i:s'),
+            ':dom'     => $idDominio,
+            ':ent'     => $idEntrata,
+        ]);
+    }
+
+    /** Imposta il flag di blocco importo per una tipologia. */
+    public function setImportoBloccato(string $idDominio, string $idEntrata, bool $bloccato): void
+    {
+        $sql = 'UPDATE entrate_tipologie SET importo_bloccato = :bloccato, updated_at = :now WHERE id_dominio = :dom AND id_entrata = :ent';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            ':bloccato' => $bloccato ? 1 : 0,
+            ':now'      => date('Y-m-d H:i:s'),
+            ':dom'      => $idDominio,
+            ':ent'      => $idEntrata,
         ]);
     }
 
