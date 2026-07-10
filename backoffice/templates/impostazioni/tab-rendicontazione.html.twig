@@ -1,0 +1,96 @@
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-3">
+    <h2 class="h5 mb-0"><i class="fas fa-scale-balanced me-2 text-primary"></i>Rendicontazione GovPay</h2>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/impostazioni/rendicontazione/salva" class="row g-3 mb-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-md-3">
+        <label class="form-label">Prefisso IUV GIL</label>
+        <input type="text" name="iuv_prefix_gil" class="form-control" value="{{ iuv_prefix_gil }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Intervallo scansione (min)</label>
+        <input type="number" min="1" name="scan_interval_minuti" class="form-control" value="{{ scan_interval_minuti }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Soglia scansioni di quiete</label>
+        <input type="number" min="1" name="scansioni_quiete_soglia" class="form-control" value="{{ scansioni_quiete_soglia }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Giorni massimi di retry</label>
+        <input type="number" min="1" name="max_giorni_retry" class="form-control" value="{{ max_giorni_retry }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="notifica_admin_auto" id="notificaAdminAuto" {% if notifica_admin_auto == 'true' %}checked{% endif %} {{ not is_superadmin ? 'disabled' : '' }}>
+          <label class="form-check-label" for="notificaAdminAuto">Notifica admin pagamenti auto-gestiti</label>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Email amministratore (separate da ;)</label>
+        <input type="text" name="admin_emails" class="form-control" value="{{ admin_emails }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">URL ponte legacy</label>
+        <input type="url" name="bridge_url" class="form-control" value="{{ bridge_url }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Token ponte legacy</label>
+        <input type="password" name="bridge_token" class="form-control" placeholder="Lascia vuoto per non modificare" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
+      {% if is_superadmin %}
+      <div class="col-12 text-end">
+        <button type="submit" class="btn btn-primary">Salva</button>
+      </div>
+      {% endif %}
+    </form>
+
+    <h3 class="h6">Regole riconoscimento gestionali esterni</h3>
+    {% if is_superadmin %}
+    <form method="post" action="/impostazioni/rendicontazione/regole/add" class="row g-2 mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-md-3">
+        <select name="pattern_tipo" class="form-select form-select-sm">
+          <option value="IUV_PREFIX">Prefisso IUV</option>
+          <option value="ID_APP_AGID">Cifra id_app_agid</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <input type="text" name="pattern_valore" class="form-control form-control-sm" placeholder="es. 301" required>
+      </div>
+      <div class="col-md-3">
+        <select name="handler" class="form-select form-select-sm">
+          <option value="GERI">GERI</option>
+          <option value="DILAZIONE">DILAZIONE</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-sm btn-primary w-100">Aggiungi</button>
+      </div>
+    </form>
+    {% endif %}
+
+    <table class="table table-sm table-striped">
+      <thead><tr><th>Pattern</th><th>Tipo</th><th>Handler</th><th>Attivo</th><th></th></tr></thead>
+      <tbody>
+        {% for r in regole_esterne %}
+          <tr>
+            <td class="font-monospace">{{ r.pattern_valore }}</td>
+            <td>{{ r.pattern_tipo }}</td>
+            <td>{{ r.handler }}</td>
+            <td>{{ r.attivo ? 'Sì' : 'No' }}</td>
+            <td>
+              {% if is_superadmin %}
+              <form method="post" action="/impostazioni/rendicontazione/regole/{{ r.id }}/delete" class="d-inline" onsubmit="return confirm('Eliminare la regola?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

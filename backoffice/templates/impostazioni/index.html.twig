@@ -139,6 +139,11 @@
         <i class="fas fa-building-columns me-2"></i>TEFA
       </a>
 
+      <span class="imp-section-title">Rendicontazione</span>
+      <a class="nav-link {{ active_tab == 'rendicontazione' ? 'active' : '' }}" href="/impostazioni?tab=rendicontazione">
+        <i class="fas fa-scale-balanced me-2"></i>Rendicontazione GovPay
+      </a>
+
       <span class="imp-section-title">Backup e ripristino</span>
       <a class="nav-link {{ active_tab == 'backup' ? 'active' : '' }}" href="/impostazioni?tab=backup">
         <i class="fas fa-database me-2"></i>Backup
@@ -190,6 +195,8 @@
       {% include 'impostazioni/tab-tefa.html.twig' %}
     {% elseif active_tab == 'backup' %}
       {% include 'impostazioni/tab-backup.html.twig' %}
+    {% elseif active_tab == 'rendicontazione' %}
+      {% include 'impostazioni/tab-rendicontazione.html.twig' %}
     {% elseif active_tab == 'info-gil' %}
       {% include 'impostazioni/tab-info-gil.html.twig' %}
     {% elseif active_tab == 'iban' %}
@@ -414,6 +421,7 @@
       { tab: 'api-tassonomie', section: 'Tab', label: 'Tassonomie API' },
       { tab: 'servizi_io', section: 'Tab', label: 'App IO' },
       { tab: 'backup', section: 'Tab', label: 'Backup' },
+      { tab: 'rendicontazione', section: 'Tab', label: 'Rendicontazione GovPay' },
       { tab: 'debug', section: 'Tab', label: 'Debug' },
       { tab: 'info', section: 'Tab', label: 'Info GovPay' },
       { tab: 'info-gil', section: 'Tab', label: 'Info GIL' },
