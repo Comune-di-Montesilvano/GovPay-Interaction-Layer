@@ -133,8 +133,33 @@ class RendicontazioneEngineService
         }
     }
 
+    /**
+     * Guardia di idempotenza: rilegge lo stato FRESCO da DB (non il valore in $riga, che puo'
+     * essere stale se passato da un fetch precedente nella stessa richiesta) e salta l'invio se
+     * la riga e' gia' stata processata con esito reale (INVIATO = notifica gia' recapitata al
+     * cittadino, NON_APPLICABILE = gia' determinato che non si applica). PENDING (nuovo default,
+     * vedi migrations/030) e' l'unico stato che significa "mai tentato" -> procede con l'invio.
+     * ERRORE non blocca: un tentativo fallito non ha mai raggiunto il cittadino, quindi il retry
+     * non e' una duplicazione.
+     *
+     * Necessaria perche' RendicontazioneRepository::confermaRigheScoped() puo' ri-restituire nel
+     * report-back id gia' GESTITO/notificati in un batch precedente dello stesso operatore (es.
+     * submit doppio/stale da tab sovrapposte) -> RendicontazioneController::conferma() richiama
+     * tentaNotificaAppIoPerRiga() piu' volte per la stessa riga.
+     */
+    private function appioGiaProcessata(int $rigaId): bool
+    {
+        $fresh = $this->repo->findById($rigaId);
+        $statoFresco = (string)($fresh['rendicontazione_appio_stato'] ?? '');
+        return in_array($statoFresco, ['INVIATO', 'NON_APPLICABILE'], true);
+    }
+
     private function tentaNotificaAppIo(int $rigaId, array $pendenza, array $riga): void
     {
+        if ($this->appioGiaProcessata($rigaId)) {
+            return;
+        }
+
         $tipoSoggetto = (string)($pendenza['soggettoPagatore']['tipo'] ?? '');
         $cf = (string)($pendenza['soggettoPagatore']['identificativo'] ?? '');
         if ($tipoSoggetto !== 'F' || $cf === '') {
