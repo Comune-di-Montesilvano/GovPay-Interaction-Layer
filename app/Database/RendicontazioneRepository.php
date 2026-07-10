@@ -126,16 +126,36 @@ class RendicontazioneRepository
         if (empty($idEntrate)) {
             return [];
         }
-        $placeholders = implode(',', array_fill(0, count($idEntrate), '?'));
+
+        // Build named placeholders for the IN clause
+        $placeholders = [];
+        $params = [':dom' => $idDominio];
+        foreach ($idEntrate as $i => $entrata) {
+            $key = ':ent' . $i;
+            $placeholders[] = $key;
+            $params[$key] = $entrata;
+        }
+        $inClause = implode(',', $placeholders);
+
         $offset = max(0, ($page - 1) * $perPage);
+        $limit = max(1, $perPage);
+
         $stmt = $this->pdo->prepare(
             "SELECT * FROM flussi_rendicontazioni
-             WHERE id_dominio = ? AND is_govpay = 1 AND rendicontazione_stato = 'IN_ATTESA_CONFERMA'
-               AND cod_entrata IN ($placeholders)
+             WHERE id_dominio = :dom AND is_govpay = 1 AND rendicontazione_stato = 'IN_ATTESA_CONFERMA'
+               AND cod_entrata IN ($inClause)
              ORDER BY cod_entrata ASC, id_flusso ASC, iur ASC
-             LIMIT $perPage OFFSET $offset"
+             LIMIT :limit OFFSET :offset"
         );
-        $stmt->execute(array_merge([$idDominio], $idEntrate));
+
+        // Bind all parameters
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+
+        $stmt->execute();
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
