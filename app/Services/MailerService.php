@@ -787,10 +787,11 @@ HTML;
             $handler = htmlspecialchars((string)($r['rendicontazione_handler'] ?? ''), ENT_QUOTES, 'UTF-8');
             $stato = (string)($r['rendicontazione_stato'] ?? '');
             $color = $stato === 'ERRORE' ? '#dc3545' : '#333';
+            $statoSafe = htmlspecialchars($stato, ENT_QUOTES, 'UTF-8');
             $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
             $rows .= "<tr style=\"color:{$color};\"><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
                    . "<td style=\"padding:6px 8px;\">{$handler}</td>"
-                   . "<td style=\"padding:6px 8px;\">{$stato}</td>"
+                   . "<td style=\"padding:6px 8px;\">{$statoSafe}</td>"
                    . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td></tr>\n";
         }
 
