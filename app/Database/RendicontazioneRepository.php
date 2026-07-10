@@ -52,11 +52,35 @@ class RendicontazioneRepository
         )->execute([':id' => $id, ':note' => $note]);
     }
 
+    /**
+     * Come markErrore() ma incrementa anche rendicontazione_tentativi_geri.
+     * Solo per fallimenti del bridge GERI (il connettore legacy non ha segnale
+     * affidabile di successo/fallimento: si limita il retry per evitare doppie
+     * registrazioni, cfr. migrations/029_rendicontazione_tentativi.sql).
+     */
+    public function markErroreGeri(int $id, string $note): void
+    {
+        $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni
+             SET rendicontazione_stato = \'ERRORE\', rendicontazione_note = :note,
+                 rendicontazione_tentativi_geri = rendicontazione_tentativi_geri + 1
+             WHERE id = :id'
+        )->execute([':id' => $id, ':note' => $note]);
+    }
+
     public function markAppioEsito(int $id, string $stato): void
     {
         $this->pdo->prepare(
             'UPDATE flussi_rendicontazioni SET rendicontazione_appio_stato = :stato WHERE id = :id'
         )->execute([':id' => $id, ':stato' => $stato]);
+    }
+
+    public function findById(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM flussi_rendicontazioni WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
     }
 
     /** @return array<int,array{pattern_tipo:string,pattern_valore:string,handler:string}> */
@@ -222,11 +246,11 @@ class RendicontazioneRepository
         return $stmt->rowCount();
     }
 
-    /** @param int[] $ids @param string[] $idEntrate @return int righe aggiornate */
-    public function confermaRigheScoped(array $ids, array $idEntrate, int $userId): int
+    /** @param int[] $ids @param string[] $idEntrate @return int[] id delle righe effettivamente confermate */
+    public function confermaRigheScoped(array $ids, array $idEntrate, int $userId): array
     {
         if (empty($ids) || empty($idEntrate)) {
-            return 0;
+            return [];
         }
 
         $idPlaceholders = [];
@@ -246,7 +270,13 @@ class RendicontazioneRepository
         }
         $entInClause = implode(',', $entPlaceholders);
 
-        $stmt = $this->pdo->prepare(
+        // La UPDATE resta la fonte di verita' atomica (WHERE ri-verifica lo stato al momento della
+        // scrittura, cosi' due operatori che confermano righe sovrapposte restano serializzati
+        // correttamente dal DB). La SELECT successiva serve solo a "leggere" quali id sono stati
+        // davvero toccati da QUESTA richiesta (confermato_da = questo utente), per poter innescare
+        // la notifica App IO per riga (cfr. RendicontazioneController::conferma()) — non e' usata
+        // come input di un'altra mutazione, quindi non introduce una finestra di race.
+        $updateStmt = $this->pdo->prepare(
             "UPDATE flussi_rendicontazioni
              SET rendicontazione_stato = 'GESTITO', rendicontazione_handler = 'GIL_MANUALE',
                  rendicontazione_confermato_da = :user_id, rendicontazione_confermato_at = NOW()
@@ -254,16 +284,31 @@ class RendicontazioneRepository
                AND cod_entrata IN ($entInClause)"
         );
         foreach ($params as $key => $value) {
-            if ($key === ':user_id') {
-                $stmt->bindValue($key, $value, \PDO::PARAM_INT);
-            } elseif (str_starts_with($key, ':id')) {
-                $stmt->bindValue($key, $value, \PDO::PARAM_INT);
+            if ($key === ':user_id' || str_starts_with($key, ':id')) {
+                $updateStmt->bindValue($key, $value, \PDO::PARAM_INT);
             } else {
-                $stmt->bindValue($key, $value);
+                $updateStmt->bindValue($key, $value);
             }
         }
-        $stmt->execute();
-        return $stmt->rowCount();
+        $updateStmt->execute();
+
+        if ($updateStmt->rowCount() === 0) {
+            return [];
+        }
+
+        $selectStmt = $this->pdo->prepare(
+            "SELECT id FROM flussi_rendicontazioni
+             WHERE id IN ($idInClause) AND rendicontazione_confermato_da = :user_id
+               AND rendicontazione_stato = 'GESTITO'"
+        );
+        // Solo i placeholder :user_id e :idN compaiono in questa query (niente :entN).
+        $selectStmt->bindValue(':user_id', $userId, \PDO::PARAM_INT);
+        foreach ($ids as $i => $id) {
+            $selectStmt->bindValue(':id' . $i, (int)$id, \PDO::PARAM_INT);
+        }
+        $selectStmt->execute();
+
+        return array_map('intval', array_column($selectStmt->fetchAll(\PDO::FETCH_ASSOC), 'id'));
     }
 
     public function isFlussoRendicontato(string $idDominio, string $idFlusso): bool
