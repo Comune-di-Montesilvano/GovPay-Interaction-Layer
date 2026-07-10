@@ -22,7 +22,7 @@ function rispondi(bool $esito, string $messaggio): void
 }
 
 $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-if ($authHeader !== 'Bearer ' . BRIDGE_TOKEN) {
+if (!hash_equals('Bearer ' . BRIDGE_TOKEN, $authHeader)) {
     http_response_code(401);
     rispondi(false, 'Token non valido');
 }
