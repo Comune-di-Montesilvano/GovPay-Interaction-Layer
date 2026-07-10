@@ -828,6 +828,10 @@ return function (App $app, Twig $twig): void {
         $controller = new ConfigurazioneController($twig);
         return $controller->setGroupTemplates($request, $response, $args);
     });
+    $app->post('/configurazione/gruppi/{id}/set-rendicontazione', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setGroupRendicontazione($request, $response, $args);
+    });
 
     // Endpoint per attivare/disattivare la tipologia direttamente su GovPay (solo superadmin)
     $app->post('/configurazione/tipologie/{idEntrata}/govpay', function($request, $response, $args) use ($twig) {

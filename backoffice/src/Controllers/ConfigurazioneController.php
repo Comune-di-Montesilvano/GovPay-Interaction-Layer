@@ -1406,6 +1406,9 @@ class ConfigurazioneController
                     $grp['member_ids']    = $groupRepo->getMemberIds((int)$grp['id']);
                     $grp['tipologie_ids'] = $idDominioEnv ? $groupRepo->getTipologie((int)$grp['id'], $idDominioEnv) : [];
                     $grp['template_ids']  = $groupRepo->getTemplateIds((int)$grp['id']);
+                    $grp['rendicontazione_tipologie'] = $idDominioEnv
+                        ? $groupRepo->getRendicontazioneTipologie((int)$grp['id'], $idDominioEnv)
+                        : [];
                 }
                 unset($grp);
                 $allUsersForGroups = $this->userRepository->listAll();
@@ -3178,6 +3181,35 @@ class ConfigurazioneController
         try {
             (new \App\Database\UserGroupRepository())->setTemplates($id, $templateIds);
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Template gruppo aggiornati'];
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
+        }
+        return $this->redirectToTab($response, 'gruppi-utenti');
+    }
+
+    public function setGroupRendicontazione(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrAbove()) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato'];
+            return $this->redirectToTab($response, 'gruppi-utenti');
+        }
+        $id = (int)($args['id'] ?? 0);
+        $data = (array)($request->getParsedBody() ?? []);
+        $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+        $idEntrate = (array)($data['rendicontazione_entrate'] ?? []);
+        $modalitaMap = (array)($data['rendicontazione_modalita'] ?? []);
+
+        $assegnazioni = [];
+        foreach ($idEntrate as $ent) {
+            $assegnazioni[] = [
+                'id_entrata' => $ent,
+                'modalita'   => $modalitaMap[$ent] ?? 'NOTIFICA_E_SMARCATURA',
+            ];
+        }
+
+        try {
+            (new \App\Database\UserGroupRepository())->setRendicontazioneTipologie($id, $idDominio, $assegnazioni);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Rendicontazione gruppo aggiornata'];
         } catch (\Throwable $e) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: ' . $e->getMessage()];
         }
