@@ -645,6 +645,181 @@ HTML;
         }
     }
 
+    /** @param string[] $destinatari @param array<int,array> $righeDaConfermare @param array<int,array> $righeInformative */
+    public function sendRendicontazioneOperatoreDigest(
+        array  $destinatari,
+        string $gruppoNome,
+        array  $righeDaConfermare,
+        array  $righeInformative,
+        string $baseUrlVista,
+        string $appName = ''
+    ): array {
+        if (empty($destinatari) || (empty($righeDaConfermare) && empty($righeInformative))) {
+            return ['esito' => 'SKIPPED'];
+        }
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $html = $this->renderRendicontazioneOperatoreTemplate($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista, $appName);
+        $text = $this->renderRendicontazioneOperatorePlain($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista);
+
+        foreach ($destinatari as $to) {
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($to))
+                ->subject("Nuovi pagamenti — {$gruppoNome}")
+                ->html($html)
+                ->text($text);
+            $this->mailer->send($email);
+        }
+
+        return ['esito' => 'OK'];
+    }
+
+    /** @param string[] $destinatari @param array<int,array> $righeGestite */
+    public function sendRendicontazioneAdminDigest(array $destinatari, array $righeGestite, string $appName = ''): array
+    {
+        if (empty($destinatari) || empty($righeGestite)) {
+            return ['esito' => 'SKIPPED'];
+        }
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $html = $this->renderRendicontazioneAdminTemplate($righeGestite, $appName);
+        $text = $this->renderRendicontazioneAdminPlain($righeGestite);
+        $oggi = date('d/m/Y');
+
+        foreach ($destinatari as $to) {
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($to))
+                ->subject("Riepilogo rendicontazione automatica GovPay — {$oggi}")
+                ->html($html)
+                ->text($text);
+            $this->mailer->send($email);
+        }
+
+        return ['esito' => 'OK'];
+    }
+
+    private function renderRendicontazioneOperatoreTemplate(
+        string $gruppoNome,
+        array  $righeDaConfermare,
+        array  $righeInformative,
+        string $baseUrlVista,
+        string $appName
+    ): string {
+        $safeApp = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $safeGruppo = htmlspecialchars($gruppoNome, ENT_QUOTES, 'UTF-8');
+
+        $rowsHtml = static function (array $righe): string {
+            $out = '';
+            foreach ($righe as $r) {
+                $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+                $data = htmlspecialchars((string)($r['data_pagamento'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $out .= "<tr><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
+                      . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td>"
+                      . "<td style=\"padding:6px 8px;\">{$data}</td></tr>\n";
+            }
+            return $out;
+        };
+
+        $sezioneDaConfermare = '';
+        if (!empty($righeDaConfermare)) {
+            $safeUrl = htmlspecialchars($baseUrlVista, ENT_QUOTES, 'UTF-8');
+            $sezioneDaConfermare = '<h3 style="font-size:16px;margin:24px 0 8px;">Da confermare</h3>'
+                . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rowsHtml($righeDaConfermare) . '</table>'
+                . "<p style=\"margin-top:16px;\"><a href=\"{$safeUrl}\" style=\"display:inline-block;padding:10px 24px;background:#0b3d91;color:#fff;text-decoration:none;border-radius:4px;\">Vai alla vista</a></p>";
+        }
+
+        $sezioneInformativa = '';
+        if (!empty($righeInformative)) {
+            $sezioneInformativa = '<h3 style="font-size:16px;margin:24px 0 8px;">Registrati automaticamente</h3>'
+                . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rowsHtml($righeInformative) . '</table>';
+        }
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="it">
+        <head><meta charset="UTF-8"></head>
+        <body style="margin:0;padding:0;background:#f4f7fa;font-family:Helvetica,Arial,sans-serif;color:#333;">
+          <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+            <div style="background:#0b3d91;padding:24px 32px;"><h1 style="margin:0;color:#fff;font-size:18px;">{$safeApp} — {$safeGruppo}</h1></div>
+            <div style="padding:24px 32px;">
+              {$sezioneDaConfermare}
+              {$sezioneInformativa}
+            </div>
+          </div>
+        </body>
+        </html>
+        HTML;
+    }
+
+    private function renderRendicontazioneOperatorePlain(string $gruppoNome, array $righeDaConfermare, array $righeInformative, string $baseUrlVista): string
+    {
+        $lines = ["Nuovi pagamenti — {$gruppoNome}", ''];
+        if (!empty($righeDaConfermare)) {
+            $lines[] = 'Da confermare:';
+            foreach ($righeDaConfermare as $r) {
+                $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . ($r['data_pagamento'] ?? '') . ')';
+            }
+            $lines[] = 'Vai alla vista: ' . $baseUrlVista;
+            $lines[] = '';
+        }
+        if (!empty($righeInformative)) {
+            $lines[] = 'Registrati automaticamente:';
+            foreach ($righeInformative as $r) {
+                $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . ($r['data_pagamento'] ?? '') . ')';
+            }
+        }
+        return implode("\n", $lines);
+    }
+
+    private function renderRendicontazioneAdminTemplate(array $righeGestite, string $appName): string
+    {
+        $safeApp = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $rows = '';
+        foreach ($righeGestite as $r) {
+            $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $handler = htmlspecialchars((string)($r['rendicontazione_handler'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $stato = (string)($r['rendicontazione_stato'] ?? '');
+            $color = $stato === 'ERRORE' ? '#dc3545' : '#333';
+            $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+            $rows .= "<tr style=\"color:{$color};\"><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
+                   . "<td style=\"padding:6px 8px;\">{$handler}</td>"
+                   . "<td style=\"padding:6px 8px;\">{$stato}</td>"
+                   . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td></tr>\n";
+        }
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="it">
+        <head><meta charset="UTF-8"></head>
+        <body style="margin:0;padding:0;background:#f4f7fa;font-family:Helvetica,Arial,sans-serif;color:#333;">
+          <div style="max-width:640px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+            <div style="background:#0b3d91;padding:24px 32px;"><h1 style="margin:0;color:#fff;font-size:18px;">{$safeApp} — Riepilogo rendicontazione automatica</h1></div>
+            <div style="padding:24px 32px;">
+              <table style="width:100%;border-collapse:collapse;font-size:13px;">{$rows}</table>
+            </div>
+          </div>
+        </body>
+        </html>
+        HTML;
+    }
+
+    private function renderRendicontazioneAdminPlain(array $righeGestite): string
+    {
+        $lines = ['Riepilogo rendicontazione automatica GovPay', ''];
+        foreach ($righeGestite as $r) {
+            $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' handler=' . ($r['rendicontazione_handler'] ?? '')
+                . ' stato=' . ($r['rendicontazione_stato'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+        }
+        return implode("\n", $lines);
+    }
+
     // -------------------------------------------------------------------------
     // Template notifica rateizzazione (HTML + testo)
     // -------------------------------------------------------------------------
