@@ -332,6 +332,16 @@ return function (App $app, Twig $twig): void {
         return $controller->deleteCustomTipologia($request, $response);
     });
 
+    // Rendicontazione GovPay — vista Da confermare
+    $app->get('/rendicontazione/da-confermare', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->daConfermare($request, $response);
+    });
+    $app->post('/rendicontazione/conferma', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->conferma($request, $response);
+    });
+
     // Pendenze
     $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);
