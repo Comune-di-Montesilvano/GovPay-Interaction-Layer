@@ -71,6 +71,36 @@ class RendicontazioneRepository
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
+    public function getRegoleEsterne(string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM rendicontazione_regole_esterne WHERE id_dominio = :dom ORDER BY id DESC'
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function addRegolaEsterna(string $idDominio, string $patternTipo, string $patternValore, string $handler): int
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO rendicontazione_regole_esterne (id_dominio, pattern_tipo, pattern_valore, handler)
+             VALUES (:dom, :tipo, :val, :handler)'
+        );
+        $stmt->execute([':dom' => $idDominio, ':tipo' => $patternTipo, ':val' => $patternValore, ':handler' => $handler]);
+        return (int)$this->pdo->lastInsertId();
+    }
+
+    public function toggleRegolaEsterna(int $id, bool $attivo): void
+    {
+        $this->pdo->prepare('UPDATE rendicontazione_regole_esterne SET attivo = :a WHERE id = :id')
+                   ->execute([':a' => $attivo ? 1 : 0, ':id' => $id]);
+    }
+
+    public function deleteRegolaEsterna(int $id): void
+    {
+        $this->pdo->prepare('DELETE FROM rendicontazione_regole_esterne WHERE id = :id')->execute([':id' => $id]);
+    }
+
     public function getGruppoTipologia(string $idDominio, string $idEntrata): ?array
     {
         $stmt = $this->pdo->prepare(

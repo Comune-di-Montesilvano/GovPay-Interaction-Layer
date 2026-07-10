@@ -70,6 +70,95 @@ class RendicontazioneController
         return $response->withHeader('Location', '/rendicontazione/da-confermare')->withStatus(302);
     }
 
+    public function impostazioniTab(Request $request, Response $response): Response
+    {
+        $user = $this->requireAuth();
+        $this->requireAdminOrAbove($user);
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $repo = new RendicontazioneRepository();
+
+        return $this->twig->render($response, 'impostazioni/tab-rendicontazione.html.twig', [
+            'iuv_prefix_gil'          => SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL'),
+            'scan_interval_minuti'    => SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'),
+            'scansioni_quiete_soglia' => SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'),
+            'max_giorni_retry'       => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'),
+            'notifica_admin_auto'    => SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false'),
+            'admin_emails'           => SettingsRepository::get('rendicontazione', 'admin_emails', ''),
+            'bridge_url'             => SettingsRepository::get('rendicontazione', 'bridge_url', ''),
+            'regole_esterne'         => $repo->getRegoleEsterne($idDominio),
+            'csrf_token'             => $this->generateCsrf(),
+            'is_superadmin'          => (($user['role'] ?? '') === 'superadmin'),
+        ]);
+    }
+
+    public function salvaImpostazioni(Request $request, Response $response): Response
+    {
+        $user = $this->requireAuth();
+        $this->requireSuperadmin($user);
+
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/impostazioni?tab=rendicontazione')->withStatus(302);
+        }
+
+        $data = (array)($request->getParsedBody() ?? []);
+
+        SettingsRepository::set('rendicontazione', 'iuv_prefix_gil', trim((string)($data['iuv_prefix_gil'] ?? 'GIL')) ?: 'GIL', false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'scan_interval_minuti', (string)max(1, (int)($data['scan_interval_minuti'] ?? 15)), false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'scansioni_quiete_soglia', (string)max(1, (int)($data['scansioni_quiete_soglia'] ?? 3)), false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'max_giorni_retry', (string)max(1, (int)($data['max_giorni_retry'] ?? 7)), false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'notifica_admin_auto', !empty($data['notifica_admin_auto']) ? 'true' : 'false', false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'admin_emails', trim((string)($data['admin_emails'] ?? '')), false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'bridge_url', trim((string)($data['bridge_url'] ?? '')), false, (string)$user['id']);
+        if (!empty($data['bridge_token'])) {
+            SettingsRepository::set('rendicontazione', 'bridge_token', (string)$data['bridge_token'], true, (string)$user['id']);
+        }
+
+        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Impostazioni rendicontazione salvate'];
+        return $response->withHeader('Location', '/impostazioni?tab=rendicontazione')->withStatus(302);
+    }
+
+    public function aggiungiRegolaEsterna(Request $request, Response $response): Response
+    {
+        $user = $this->requireAuth();
+        $this->requireSuperadmin($user);
+
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/impostazioni?tab=rendicontazione')->withStatus(302);
+        }
+
+        $data = (array)($request->getParsedBody() ?? []);
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $patternTipo = in_array($data['pattern_tipo'] ?? '', ['IUV_PREFIX', 'ID_APP_AGID'], true) ? $data['pattern_tipo'] : 'IUV_PREFIX';
+        $handler = in_array($data['handler'] ?? '', ['GERI', 'DILAZIONE'], true) ? $data['handler'] : 'GERI';
+        $patternValore = trim((string)($data['pattern_valore'] ?? ''));
+
+        if ($patternValore !== '') {
+            (new RendicontazioneRepository())->addRegolaEsterna($idDominio, $patternTipo, $patternValore, $handler);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Regola aggiunta'];
+        } else {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Pattern obbligatorio'];
+        }
+
+        return $response->withHeader('Location', '/impostazioni?tab=rendicontazione')->withStatus(302);
+    }
+
+    public function eliminaRegolaEsterna(Request $request, Response $response, array $args): Response
+    {
+        $user = $this->requireAuth();
+        $this->requireSuperadmin($user);
+
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/impostazioni?tab=rendicontazione')->withStatus(302);
+        }
+
+        (new RendicontazioneRepository())->deleteRegolaEsterna((int)($args['id'] ?? 0));
+        $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Regola eliminata'];
+        return $response->withHeader('Location', '/impostazioni?tab=rendicontazione')->withStatus(302);
+    }
+
     /** @return string[] */
     private function getAuthorizedIdEntrate(array $user, string $idDominio): array
     {
@@ -105,6 +194,25 @@ class RendicontazioneController
             exit;
         }
         return $user;
+    }
+
+    private function requireSuperadmin(array $user): void
+    {
+        if (($user['role'] ?? '') !== 'superadmin') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso riservato al superadmin.'];
+            header('Location: /impostazioni?tab=rendicontazione');
+            exit;
+        }
+    }
+
+    private function requireAdminOrAbove(array $user): void
+    {
+        $role = $user['role'] ?? '';
+        if (!in_array($role, ['admin', 'superadmin'], true)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato: permessi insufficienti'];
+            header('Location: /');
+            exit;
+        }
     }
 
     private function generateCsrf(): string
