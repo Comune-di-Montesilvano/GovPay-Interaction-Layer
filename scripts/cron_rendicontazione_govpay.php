@@ -125,6 +125,7 @@ while (true) {
     $soglia        = max(1, (int)SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'));
     $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'));
     $minDataPagamento = date('Y-m-d', strtotime("-{$maxGiorniRetry} days"));
+    $geriMaxTentativi = max(1, (int)SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'));
 
     if ($backofficeUrl === '') {
         $log('govpay.backoffice_url non configurato. Riprovo tra ' . $scanInterval . ' minuti...');
@@ -138,7 +139,7 @@ while (true) {
     try {
         $govPayClient = buildGovPayClientForRendicontazione();
         $engine = new RendicontazioneEngineService($repo, $bridge, $govPayClient);
-        $result = $engine->processaCiclo($idDominio, $idA2A, $backofficeUrl, 200, $minDataPagamento);
+        $result = $engine->processaCiclo($idDominio, $idA2A, $backofficeUrl, 200, $minDataPagamento, $geriMaxTentativi);
         $log(sprintf('Ciclo: processate=%d nuove=%d', $result['processate'], $result['nuove']));
 
         if ($result['nuove'] > 0) {
@@ -161,14 +162,11 @@ while (true) {
                 $gestite      = array_values(array_filter($nonNotificate, static fn($r) => $r['rendicontazione_stato'] !== 'IN_ATTESA_CONFERMA'));
 
                 $righeOperatoreInviate = 0;
-                $tipologieViste = [];
-                foreach ($nonNotificate as $r) {
-                    $cod = (string)($r['cod_entrata'] ?? '');
-                    if ($cod === '' || isset($tipologieViste[$cod])) {
-                        continue;
-                    }
-                    $tipologieViste[$cod] = true;
-                }
+                // Id delle righe effettivamente incluse in un digest INVIATO (operatore o admin).
+                // Solo queste vengono marcate rendicontazione_notificato=1: una riga il cui
+                // cod_entrata non matcha alcun gruppo (o GESTITO con notifica_admin_auto=false)
+                // resta non marcata e ricompare a ogni ciclo finche' la configurazione non la copre.
+                $idsNotificati = [];
 
                 $baseUrlVista = rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/') . '/rendicontazione/da-confermare';
 
@@ -194,14 +192,19 @@ while (true) {
 
                     $emails = $groupRepo->getMemberEmails($groupId);
                     $groupInfo = $groupRepo->findById($groupId);
-                    $mailer->sendRendicontazioneOperatoreDigest(
+                    $esitoOperatore = $mailer->sendRendicontazioneOperatoreDigest(
                         $emails,
                         (string)($groupInfo['nome'] ?? "Gruppo {$groupId}"),
                         $righeDaConfermareGruppo,
                         $righeInformativeGruppo,
                         $baseUrlVista
                     );
-                    $righeOperatoreInviate += count($righeDaConfermareGruppo) + count($righeInformativeGruppo);
+                    if (($esitoOperatore['esito'] ?? '') === 'OK') {
+                        $righeOperatoreInviate += count($righeDaConfermareGruppo) + count($righeInformativeGruppo);
+                        foreach (array_merge($righeDaConfermareGruppo, $righeInformativeGruppo) as $r) {
+                            $idsNotificati[(int)$r['id']] = true;
+                        }
+                    }
                 }
 
                 $notificaAdmin = (string)SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false') === 'true';
@@ -209,12 +212,17 @@ while (true) {
                 if ($notificaAdmin) {
                     $adminEmails = array_filter(array_map('trim', explode(';', (string)SettingsRepository::get('rendicontazione', 'admin_emails', ''))));
                     if (!empty($adminEmails) && !empty($gestite)) {
-                        $mailer->sendRendicontazioneAdminDigest(array_values($adminEmails), $gestite);
-                        $righeAdminInviate = count($gestite);
+                        $esitoAdmin = $mailer->sendRendicontazioneAdminDigest(array_values($adminEmails), $gestite);
+                        if (($esitoAdmin['esito'] ?? '') === 'OK') {
+                            $righeAdminInviate = count($gestite);
+                            foreach ($gestite as $r) {
+                                $idsNotificati[(int)$r['id']] = true;
+                            }
+                        }
                     }
                 }
 
-                $repo->marcaNotificate(array_column($nonNotificate, 'id'));
+                $repo->marcaNotificate(array_keys($idsNotificati));
                 $pdo->prepare(
                     'INSERT INTO rendicontazione_digest_log (righe_operatore, righe_admin) VALUES (:ro, :ra)'
                 )->execute([':ro' => $righeOperatoreInviate, ':ra' => $righeAdminInviate]);

@@ -18,7 +18,7 @@ class RendicontazioneEngineService
     }
 
     /** @return array{processate:int, nuove:int} */
-    public function processaCiclo(string $idDominio, string $idA2A, string $backofficeUrl, int $limit, string $minDataPagamento): array
+    public function processaCiclo(string $idDominio, string $idA2A, string $backofficeUrl, int $limit, string $minDataPagamento, int $geriMaxTentativi = 3): array
     {
         $iuvPrefixGil = (string)SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
         $regoleEsterne = $this->repo->getRegoleEsterneAttive($idDominio);
@@ -61,6 +61,11 @@ class RendicontazioneEngineService
             }
 
             if ($decision->handler === 'GERI' || $decision->handler === 'DILAZIONE') {
+                if ($decision->handler === 'GERI' && (int)($riga['rendicontazione_tentativi_geri'] ?? 0) >= $geriMaxTentativi) {
+                    $this->repo->markErrore((int)$riga['id'], 'Cap tentativi Geri raggiunto, richiede intervento manuale');
+                    continue;
+                }
+
                 $idAtto = (string)($pendenza['documento']['identificativo'] ?? '');
                 $dataPagamento = (string)($pendenza['dataPagamento'] ?? '');
                 $importo = (float)($pendenza['importo'] ?? 0);
@@ -68,7 +73,11 @@ class RendicontazioneEngineService
 
                 $esito = $this->bridge->invia($decision->handler, $iuv, $idAtto, $dataPagamento, $importo, $rata);
                 if (!$esito['esito']) {
-                    $this->repo->markErrore((int)$riga['id'], "Bridge {$decision->handler}: " . $esito['messaggio']);
+                    if ($decision->handler === 'GERI') {
+                        $this->repo->markErroreGeri((int)$riga['id'], "Bridge GERI: " . $esito['messaggio']);
+                    } else {
+                        $this->repo->markErrore((int)$riga['id'], "Bridge DILAZIONE: " . $esito['messaggio']);
+                    }
                     continue;
                 }
                 $this->repo->markGestito((int)$riga['id'], $decision->handler, $esito['messaggio']);
@@ -80,6 +89,48 @@ class RendicontazioneEngineService
         }
 
         return ['processate' => count($righe), 'nuove' => $nuove];
+    }
+
+    /**
+     * Tenta la notifica App IO per una riga gia' passata a GESTITO al di fuori del ciclo
+     * automatico (es. conferma manuale operatore in RendicontazioneController::conferma()).
+     * Best-effort: fa fetch della pendenza da GovPay e riusa la stessa logica di
+     * tentaNotificaAppIo() usata da processaCiclo(). Non lancia mai eccezioni verso il chiamante.
+     */
+    public function tentaNotificaAppIoPerRiga(int $rigaId): void
+    {
+        try {
+            $riga = $this->repo->findById($rigaId);
+            if ($riga === null) {
+                return;
+            }
+
+            $idPendenza = (string)($riga['id_pendenza'] ?? '');
+            $iuv = (string)($riga['iuv'] ?? '');
+            if ($idPendenza === '' || $iuv === '') {
+                return;
+            }
+
+            $idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
+            $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
+            if ($idA2A === '' || $backofficeUrl === '') {
+                return;
+            }
+
+            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+            $response = $this->govPayClient->request('GET', $url);
+            $pendenza = json_decode((string)$response->getBody(), true);
+            if (!is_array($pendenza)) {
+                return;
+            }
+
+            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('Errore notifica App IO rendicontazione (conferma manuale)', [
+                'riga_id' => $rigaId,
+                'error'   => $e->getMessage(),
+            ]);
+        }
     }
 
     private function tentaNotificaAppIo(int $rigaId, array $pendenza, array $riga): void

@@ -6,6 +6,10 @@ namespace App\Controllers;
 use App\Config\SettingsRepository;
 use App\Database\RendicontazioneRepository;
 use App\Database\UserGroupRepository;
+use App\Logger;
+use App\Services\GovPayClientFactory;
+use App\Services\LegacyRendicontazioneBridgeClient;
+use App\Services\RendicontazioneEngineService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -61,13 +65,44 @@ class RendicontazioneController
         if (!empty($ids)) {
             $idEntrate = $this->getAuthorizedIdEntrate($user, $idDominio);
             $repo = new RendicontazioneRepository();
-            $confermate = empty($idEntrate) ? 0 : $repo->confermaRigheScoped($ids, $idEntrate, (int)$user['id']);
-            $_SESSION['flash'][] = ['type' => 'success', 'text' => "{$confermate} pagamenti confermati"];
+            $confermateIds = empty($idEntrate) ? [] : $repo->confermaRigheScoped($ids, $idEntrate, (int)$user['id']);
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => count($confermateIds) . ' pagamenti confermati'];
+
+            // Notifica App IO best-effort: mai deve impedire il completamento della conferma
+            // (gia' avvenuta sopra) ne' essere mostrata come errore all'operatore.
+            if (!empty($confermateIds)) {
+                try {
+                    $engine = new RendicontazioneEngineService(
+                        $repo,
+                        new LegacyRendicontazioneBridgeClient(),
+                        $this->buildGovPayClient()
+                    );
+                    foreach ($confermateIds as $confermataId) {
+                        $engine->tentaNotificaAppIoPerRiga((int)$confermataId);
+                    }
+                } catch (\Throwable $e) {
+                    Logger::getInstance()->warning('Errore notifica App IO su conferma manuale rendicontazione', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         } else {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Nessuna riga selezionata'];
         }
 
         return $response->withHeader('Location', '/rendicontazione/da-confermare')->withStatus(302);
+    }
+
+    /** Stessa costruzione client usata da scripts/cron_rendicontazione_govpay.php::buildGovPayClientForRendicontazione(). */
+    private function buildGovPayClient(): \GuzzleHttp\Client
+    {
+        $opts = ['headers' => ['Accept' => 'application/json'], 'connect_timeout' => 10, 'timeout' => 30];
+        $username = (string)SettingsRepository::get('govpay', 'user', '');
+        $password = (string)SettingsRepository::get('govpay', 'password', '');
+        if ($username !== '' && $password !== '') {
+            $opts['auth'] = [$username, $password];
+        }
+        return GovPayClientFactory::makeBackofficeClient($opts);
     }
 
     public function impostazioniTab(Request $request, Response $response): Response
@@ -82,6 +117,7 @@ class RendicontazioneController
             'scan_interval_minuti'    => SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'),
             'scansioni_quiete_soglia' => SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'),
             'max_giorni_retry'       => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'),
+            'geri_max_tentativi'     => SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'),
             'notifica_admin_auto'    => SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false'),
             'admin_emails'           => SettingsRepository::get('rendicontazione', 'admin_emails', ''),
             'bridge_url'             => SettingsRepository::get('rendicontazione', 'bridge_url', ''),
@@ -107,6 +143,7 @@ class RendicontazioneController
         SettingsRepository::set('rendicontazione', 'scan_interval_minuti', (string)max(1, (int)($data['scan_interval_minuti'] ?? 15)), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'scansioni_quiete_soglia', (string)max(1, (int)($data['scansioni_quiete_soglia'] ?? 3)), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'max_giorni_retry', (string)max(1, (int)($data['max_giorni_retry'] ?? 7)), false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'geri_max_tentativi', (string)max(1, (int)($data['geri_max_tentativi'] ?? 3)), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'notifica_admin_auto', !empty($data['notifica_admin_auto']) ? 'true' : 'false', false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'admin_emails', trim((string)($data['admin_emails'] ?? '')), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'bridge_url', trim((string)($data['bridge_url'] ?? '')), false, (string)$user['id']);

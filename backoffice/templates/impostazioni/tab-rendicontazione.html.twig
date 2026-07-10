@@ -21,6 +21,10 @@
         <label class="form-label">Giorni massimi di retry</label>
         <input type="number" min="1" name="max_giorni_retry" class="form-control" value="{{ max_giorni_retry }}" {{ not is_superadmin ? 'readonly' : '' }}>
       </div>
+      <div class="col-md-3">
+        <label class="form-label">Tentativi massimi Geri</label>
+        <input type="number" min="1" name="geri_max_tentativi" class="form-control" value="{{ geri_max_tentativi }}" {{ not is_superadmin ? 'readonly' : '' }}>
+      </div>
       <div class="col-md-3 d-flex align-items-end">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="notifica_admin_auto" id="notificaAdminAuto" {% if notifica_admin_auto == 'true' %}checked{% endif %} {{ not is_superadmin ? 'disabled' : '' }}>
