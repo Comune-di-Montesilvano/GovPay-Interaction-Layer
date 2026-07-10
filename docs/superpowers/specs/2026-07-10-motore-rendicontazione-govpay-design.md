@@ -68,6 +68,8 @@ ALTER TABLE flussi_rendicontazioni
   ADD COLUMN rendicontazione_confermato_da INT UNSIGNED NULL, -- FK users, valorizzato su conferma manuale
   ADD COLUMN rendicontazione_confermato_at DATETIME NULL,
   ADD COLUMN rendicontazione_notificato TINYINT(1) NOT NULL DEFAULT 0, -- incluso in un digest mail
+  ADD COLUMN rendicontazione_appio_stato ENUM('NON_APPLICABILE','INVIATO','ERRORE')
+      NOT NULL DEFAULT 'NON_APPLICABILE',                       -- esito notifica App IO cittadino (best-effort, non retry)
   ADD INDEX idx_dominio_rend_stato (id_dominio, rendicontazione_stato);
 ```
 
@@ -187,13 +189,27 @@ CRUD normale (dato GIL-proprio, non GovPay-side):
 
 Entrambe: HTML + variante plain-text, stesso stile branding esistente (logo comune, nessuna dipendenza esterna).
 
+## Notifica App IO al cittadino
+
+Quando una riga `is_govpay=1` raggiunge `GESTITO` (qualunque handler: GIL_MANUALE auto/manuale, GERI, DILAZIONE, AUTO_ESTERNO), si tenta una notifica App IO al cittadino, riusando la stessa logica già in uso in `PendenzeController` per la creazione pendenza:
+
+- Servizio App IO: `IoServiceRepository::getTipologiaService($idEntrata) ?? findDefault()` — stessa risoluzione servizio/tipologia già usata oggi, nessuna logica nuova.
+- Invio: `AppIoService::sendMessage()` con oggetto/markdown che riportano tipologia, importo, data pagamento.
+- Link nel messaggio: stesso meccanismo di `buildPdfDownloadUrl()` (link firmato HMAC via `buildSignedLinkParams`), ma verso `/link/ricevuta` invece di `/link/avviso` (endpoint già esistente lato frontoffice, vedi `GET /api/frontoffice/ricevuta/{idDominio}/{iuv}/{ccp}`).
+- Solo se soggetto pagatore è persona fisica (`tipo='F'`) con CF valorizzato — stesso vincolo già applicato altrove, nessun controllo di "registrazione App IO" preventivo (come per rateizzazioni: si chiama `sendMessage` e si legge l'esito OK/KO dalla risposta).
+- Tentativo one-shot alla transizione a `GESTITO` (non bloccante, non rientra nel retry loop del motore): esito tracciato su nuova colonna `rendicontazione_appio_stato ENUM('NON_APPLICABILE','INVIATO','ERRORE') NOT NULL DEFAULT 'NON_APPLICABILE'` su `flussi_rendicontazioni`, solo per dedup/audit — un fallimento qui non riporta la riga a `ERRORE` (il pagamento resta comunque rendicontato).
+
 ## Non-goal espliciti
 
-- Nessuna notifica App IO al cittadino in questo motore (il vecchio script lo faceva, non richiesto qui — eventuale step successivo).
 - Nessun supporto per gli handler legacy `gitt`, `sportello`, `massivi`, `test` — deprecati/superflui, solo Geri e Dilazione sono ancora rilevanti.
-- Nessuna UI configurabile per la logica interna degli handler Geri/Dilazione in questa fase (pattern di riconoscimento sì, via `rendicontazione_regole_esterne`; la logica di chiamata resta hardcoded per tipo handler).
+- Nessuna UI per modificare la logica interna degli handler Geri/Dilazione (resta hardcoded per tipo handler) — solo pattern di riconoscimento (`rendicontazione_regole_esterne`) e connessione al ponte (`bridge_url`/`bridge_token`) sono configurabili da UI.
+
+## Esito Geri lato bridge — approccio "best effort"
+
+Il vecchio codice (`geri.php`) ignora già oggi il valore di ritorno di `registra_versamento_geri()` (TODO mai risolto) — non esiste quindi un contratto noto per un esito affidabile lato Geri. Per questa fase: la chiamata dal bridge al connector Geri si considera riuscita se non ci sono errori di rete/HTTP (stesso livello di fiducia del vecchio sistema, "ci fidiamo sia stata registrata"). `DILAZIONE` invece ha un esito verificabile (update diretto sulla riga `rate`, righe affette > 0 = successo) e lo userà.
+
+Rafforzare l'esito Geri (es. verifica successiva via query di stato) è un miglioramento futuro possibile: il filesystem completo del server legacy è consultabile in `Y:\` per eventualmente costruire qualcosa di più solido lato `ws_portale.php`, ma non rientra in questa fase.
 
 ## Domande aperte per la fase di planning (non bloccanti per lo spec)
 
-- Formato esatto della risposta del webservice Geri interno (`registra_pagamento_geri`) per distinguere in modo affidabile successo/errore lato bridge (il vecchio codice ignora il valore di ritorno con un TODO) — va chiarito prima di scrivere `rendicontazione_bridge.php`.
 - Meccanismo di auth del bridge (token statico in header vs altro) e come/dove viene copiato in produzione sul server legacy — deploy manuale, da coordinare a parte dalla pipeline GIL.
