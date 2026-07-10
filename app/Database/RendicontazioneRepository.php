@@ -192,6 +192,50 @@ class RendicontazioneRepository
         return $stmt->rowCount();
     }
 
+    /** @param int[] $ids @param string[] $idEntrate @return int righe aggiornate */
+    public function confermaRigheScoped(array $ids, array $idEntrate, int $userId): int
+    {
+        if (empty($ids) || empty($idEntrate)) {
+            return 0;
+        }
+
+        $idPlaceholders = [];
+        $params = [':user_id' => $userId];
+        foreach ($ids as $i => $id) {
+            $key = ':id' . $i;
+            $idPlaceholders[] = $key;
+            $params[$key] = (int)$id;
+        }
+        $idInClause = implode(',', $idPlaceholders);
+
+        $entPlaceholders = [];
+        foreach ($idEntrate as $i => $entrata) {
+            $key = ':ent' . $i;
+            $entPlaceholders[] = $key;
+            $params[$key] = $entrata;
+        }
+        $entInClause = implode(',', $entPlaceholders);
+
+        $stmt = $this->pdo->prepare(
+            "UPDATE flussi_rendicontazioni
+             SET rendicontazione_stato = 'GESTITO', rendicontazione_handler = 'GIL_MANUALE',
+                 rendicontazione_confermato_da = :user_id, rendicontazione_confermato_at = NOW()
+             WHERE id IN ($idInClause) AND rendicontazione_stato = 'IN_ATTESA_CONFERMA'
+               AND cod_entrata IN ($entInClause)"
+        );
+        foreach ($params as $key => $value) {
+            if ($key === ':user_id') {
+                $stmt->bindValue($key, $value, \PDO::PARAM_INT);
+            } elseif (str_starts_with($key, ':id')) {
+                $stmt->bindValue($key, $value, \PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue($key, $value);
+            }
+        }
+        $stmt->execute();
+        return $stmt->rowCount();
+    }
+
     public function isFlussoRendicontato(string $idDominio, string $idFlusso): bool
     {
         $stmt = $this->pdo->prepare(

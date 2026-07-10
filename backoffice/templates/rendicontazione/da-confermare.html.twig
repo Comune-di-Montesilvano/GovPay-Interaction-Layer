@@ -11,6 +11,7 @@
     <div class="alert alert-info">Nessun pagamento in attesa di conferma.</div>
   {% else %}
     <form method="post" action="/rendicontazione/conferma">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="table-responsive">
         <table class="table table-sm table-striped align-middle">
           <thead>
