@@ -20,12 +20,40 @@ Determinata dal prefisso dello IUV:
   - riga con `modalita='NOTIFICA_E_SMARCATURA'` → stato `IN_ATTESA_CONFERMA` (serve smarcatura manuale in vista dedicata + mail digest al gruppo).
 - **IUV non inizia con `GIL`** → pendenza di un gestionale esterno legacy.
   - Match contro `rendicontazione_regole_esterne` (pattern su prefisso IUV o cifra id_app_agid, per dominio):
-    - match `GERI` → chiamata webservice legacy (`registra_pagamento_geri` via `http://10.0.117.253/utility/ws_portale.php`).
-    - match `DILAZIONE` → update diretto su DB legacy `definizione_agevolata.rate` (marca rata pagata).
+    - match `GERI` o `DILAZIONE` → chiamata HTTP al **ponte legacy** (unico punto di atterraggio, vedi sotto), che internamente smista verso il connector Geri o verso l'update diretto su `definizione_agevolata.rate` (entrambi locali a quel server, GIL non vi accede più direttamente).
     - esito ok → `GESTITO`; esito ko → `ERRORE` (ritentato ai cicli successivi).
   - Nessun match → si assume gestito autonomamente dal software esterno → `GESTITO` subito, handler `AUTO_ESTERNO`.
 
 Handler noti allo scope attuale: solo **Geri** e **Dilazione** (gli altri script legacy — gitt, sportello, massivi, test — sono deprecati o superflui in GIL, non vanno riportati).
+
+### Ponte legacy (unico punto di atterraggio)
+
+Il DB `definizione_agevolata` non è raggiungibile da GIL, e non ha senso avere due integrazioni dirette separate (Geri webservice + Dilazione DB). Si costruisce invece un unico bridge HTTP su `servizi.comune.montesilvano.pe.it` (stesso server/rete di entrambi i legacy), che espone un solo endpoint verso cui GIL parla come client.
+
+**Lato GIL (client, nel repo)**: `app/Services/LegacyRendicontazioneBridgeClient.php` — POST JSON verso `rendicontazione.bridge_url`, header auth con `rendicontazione.bridge_token` (cifrato in settings, come gli altri segreti). Un'unica chiamata sostituisce sia il vecchio webservice Geri sia l'accesso diretto al DB Dilazione.
+
+Contratto richiesta:
+```json
+{
+  "handler": "GERI" | "DILAZIONE",
+  "iuv": "...",
+  "id_atto": "...",            // documento->identificativo
+  "data_pagamento": "YYYY-MM-DD",
+  "importo": 123.45,
+  "rata": "1"                  // opzionale
+}
+```
+Contratto risposta:
+```json
+{ "esito": true, "messaggio": "" }
+```
+
+**Lato server legacy (script, fuori dal repo/build GIL)**: piccolo script PHP (`rendicontazione_bridge.php`) scritto come parte di questo lavoro ma **copiato a mano** sul server `servizi.comune.montesilvano.pe.it` (non fa parte della pipeline Docker/CI di GIL). Valida il token, poi:
+- `handler=GERI` → richiama `BackOffice::registra_versamento_geri()` (connector esistente, locale a quel server).
+- `handler=DILAZIONE` → update diretto locale su `definizione_agevolata.rate` (stessa logica di `dilazione.php` oggi, ma richiamata via HTTP invece che in-process dal vecchio script).
+- Risponde con `{esito, messaggio}`.
+
+Verrà tenuto nel repo GIL sotto `scripts/legacy-bridge/rendicontazione_bridge.php` per versionamento, ma il deploy su quel server resta manuale.
 
 ## Schema dati
 
@@ -83,7 +111,7 @@ CREATE TABLE rendicontazione_regole_esterne (
 
 Match longest-prefix-first quando più regole si applicano allo stesso dominio.
 
-Connessioni handler (URL Geri, credenziali DB legacy Dilazione) in `settings` (nuova sezione `rendicontazione`), cifrate con `Crypto` come gli altri segreti.
+Connessione al ponte legacy (`rendicontazione.bridge_url`, `rendicontazione.bridge_token`) in `settings` (nuova sezione `rendicontazione`), cifrata con `Crypto` come gli altri segreti — unica config di connessione, condivisa da entrambi gli handler GERI/DILAZIONE.
 
 ### `rendicontazione_digest_log` (audit, non anti-duplicazione)
 
@@ -143,7 +171,7 @@ CRUD normale (dato GIL-proprio, non GovPay-side):
 - `rendicontazione.scansioni_quiete_soglia` (default 3)
 - Toggle "invia mail amministratore per pagamenti auto-gestiti" (`rendicontazione.notifica_admin_auto`) + campo email/i amministratore (separate da `;` — non esiste oggi un flag utente dedicato tipo il vecchio `notifica_pagamenti`)
 - CRUD `rendicontazione_regole_esterne`: dominio, pattern (prefisso IUV o cifra id_app), handler (GERI/DILAZIONE), attivo/disattivo
-- Config connessione handler: URL webservice Geri, credenziali DB legacy Dilazione (host/user/pass/schema) — cifrate
+- Config ponte legacy: `rendicontazione.bridge_url`, `rendicontazione.bridge_token` — cifrato, unico per entrambi gli handler
 
 ## Template mail (`MailerService`, pattern `renderEmailBase` esistente)
 
@@ -167,5 +195,5 @@ Entrambe: HTML + variante plain-text, stesso stile branding esistente (logo comu
 
 ## Domande aperte per la fase di planning (non bloccanti per lo spec)
 
-- Credenziali/host esatti per la connessione DB legacy `definizione_agevolata` e conferma indirizzo/porta del webservice Geri (`10.0.117.253`) raggiungibili dal container GIL — da verificare in fase di implementazione.
-- Formato esatto della risposta del webservice Geri (`registra_pagamento_geri`) per distinguere in modo affidabile successo/errore (il vecchio codice ignora il valore di ritorno con un TODO).
+- Formato esatto della risposta del webservice Geri interno (`registra_pagamento_geri`) per distinguere in modo affidabile successo/errore lato bridge (il vecchio codice ignora il valore di ritorno con un TODO) — va chiarito prima di scrivere `rendicontazione_bridge.php`.
+- Meccanismo di auth del bridge (token statico in header vs altro) e come/dove viene copiato in produzione sul server legacy — deploy manuale, da coordinare a parte dalla pipeline GIL.
