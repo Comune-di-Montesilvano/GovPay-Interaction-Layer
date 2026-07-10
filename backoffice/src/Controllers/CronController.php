@@ -98,6 +98,17 @@ class CronController
             'stop_file'   => '/tmp/cron-stop-govpay-debitore',
             'pid_file'    => '/tmp/cron-govpay-debitore.pid',
         ],
+        'rendicontazione-govpay' => [
+            'label'       => 'Rendicontazione: motore GovPay',
+            'description' => 'Loop continuo: instrada le pendenze GovPay dei flussi non rendicontati (smarcatura automatica, manuale operatore, o handoff Geri/Dilazione via bridge legacy) e invia i digest mail.',
+            'script'      => 'scripts/cron_rendicontazione_govpay.php',
+            'args_tpl'    => '',
+            'params'      => [],
+            'icon'        => 'fa-scale-balanced',
+            'daemon'      => true,
+            'stop_file'   => '/tmp/cron-stop-rendicontazione-govpay',
+            'pid_file'    => '/tmp/cron-rendicontazione-govpay.pid',
+        ],
     ];
 
     public function __construct(private readonly Twig $twig) {}
