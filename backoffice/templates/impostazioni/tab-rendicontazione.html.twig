@@ -33,7 +33,7 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Email amministratore (separate da ;)</label>
-        <input type="text" name="admin_emails" class="form-control" value="{{ admin_emails }}" {{ not is_superadmin ? 'readonly' : '' }}>
+        <input type="text" name="admin_emails" class="form-control" value="{{ admin_emails }}" autocomplete="off" {{ not is_superadmin ? 'readonly' : '' }}>
       </div>
       <div class="col-md-6">
         <label class="form-label">URL ponte legacy</label>
@@ -41,7 +41,7 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Token ponte legacy</label>
-        <input type="password" name="bridge_token" class="form-control" placeholder="Lascia vuoto per non modificare" {{ not is_superadmin ? 'readonly' : '' }}>
+        <input type="password" name="bridge_token" class="form-control" placeholder="Lascia vuoto per non modificare" autocomplete="new-password" {{ not is_superadmin ? 'readonly' : '' }}>
       </div>
       {% if is_superadmin %}
       <div class="col-12 text-end">

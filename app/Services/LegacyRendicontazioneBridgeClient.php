@@ -9,6 +9,7 @@ use GuzzleHttp\Client;
 class LegacyRendicontazioneBridgeClient
 {
     private Client $client;
+    private string $bridgeUrl = '';
 
     public function __construct(?Client $client = null)
     {
@@ -17,11 +18,10 @@ class LegacyRendicontazioneBridgeClient
             return;
         }
 
-        $baseUrl = rtrim((string)SettingsRepository::get('rendicontazione', 'bridge_url', ''), '/');
-        $token   = (string)SettingsRepository::get('rendicontazione', 'bridge_token', '');
+        $this->bridgeUrl = trim((string)SettingsRepository::get('rendicontazione', 'bridge_url', ''));
+        $token           = (string)SettingsRepository::get('rendicontazione', 'bridge_token', '');
 
         $this->client = new Client([
-            'base_uri'        => $baseUrl !== '' ? $baseUrl . '/' : '',
             'connect_timeout' => 5.0,
             'timeout'         => 15.0,
             'headers'         => $token !== '' ? ['Authorization' => 'Bearer ' . $token] : [],
@@ -49,7 +49,7 @@ class LegacyRendicontazioneBridgeClient
         }
 
         try {
-            $response = $this->client->post('', ['json' => $payload]);
+            $response = $this->client->post($this->bridgeUrl, ['json' => $payload]);
             $data = json_decode((string)$response->getBody(), true);
             if (!is_array($data)) {
                 return ['esito' => false, 'messaggio' => 'Risposta non valida dal bridge'];

@@ -274,6 +274,7 @@ class ImpostazioniController
             $data['scan_interval_minuti']    = SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15');
             $data['scansioni_quiete_soglia'] = SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3');
             $data['max_giorni_retry']        = SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7');
+            $data['geri_max_tentativi']      = SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3');
             $data['notifica_admin_auto']     = SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false');
             $data['admin_emails']            = SettingsRepository::get('rendicontazione', 'admin_emails', '');
             $data['bridge_url']              = SettingsRepository::get('rendicontazione', 'bridge_url', '');
