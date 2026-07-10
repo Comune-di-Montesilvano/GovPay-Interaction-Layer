@@ -14,9 +14,10 @@ Le pendenze esterne (`is_govpay=0`) restano gestite dalla pipeline L1/L2 esisten
 
 Determinata dal prefisso dello IUV:
 
-- **IUV inizia con `GIL`** (prefisso configurabile, default `GIL`) → pendenza creata da GIL stesso, nessun gestionale esterno collegato.
-  - Se la tipologia (id_dominio + id_entrata) ha un gruppo operatori associato in `rendicontazione_gruppo_tipologie` → stato `IN_ATTESA_CONFERMA` (serve smarcatura manuale in vista dedicata + mail digest al gruppo).
-  - Se nessun gruppo associato → smarco automatico (`GESTITO`, handler `GIL_MANUALE`).
+- **IUV inizia con `GIL`** (prefisso configurabile, default `GIL`) → pendenza creata da GIL stesso, nessun gestionale esterno collegato. Cerca associazione in `rendicontazione_gruppo_tipologie` per (id_dominio, id_entrata):
+  - nessuna riga → smarco automatico (`GESTITO`, handler `GIL_MANUALE`), nessuna mail.
+  - riga con `modalita='SOLO_NOTIFICA'` → smarco automatico (`GESTITO`), ma la pendenza finisce comunque nel digest mail al gruppo (informativo, nessuna azione richiesta).
+  - riga con `modalita='NOTIFICA_E_SMARCATURA'` → stato `IN_ATTESA_CONFERMA` (serve smarcatura manuale in vista dedicata + mail digest al gruppo).
 - **IUV non inizia con `GIL`** → pendenza di un gestionale esterno legacy.
   - Match contro `rendicontazione_regole_esterne` (pattern su prefisso IUV o cifra id_app_agid, per dominio):
     - match `GERI` → chiamata webservice legacy (`registra_pagamento_geri` via `http://10.0.117.253/utility/ws_portale.php`).
@@ -53,14 +54,15 @@ CREATE TABLE rendicontazione_gruppo_tipologie (
   group_id   INT UNSIGNED NOT NULL,
   id_dominio VARCHAR(64)  NOT NULL,
   id_entrata VARCHAR(128) NOT NULL,
+  modalita   ENUM('SOLO_NOTIFICA','NOTIFICA_E_SMARCATURA') NOT NULL DEFAULT 'NOTIFICA_E_SMARCATURA',
   PRIMARY KEY (group_id, id_dominio, id_entrata),
   FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-Se una tipologia non ha nessun gruppo associato → smarco automatico, nessuna mail operatore.
+Se una tipologia non ha nessuna riga associata → smarco automatico, nessuna mail operatore. Se associata, la `modalita` decide se serve solo informare il gruppo (`SOLO_NOTIFICA`, smarco resta automatico) o se serve anche la conferma manuale in vista (`NOTIFICA_E_SMARCATURA`).
 
-**UI**: nessuno screen a parte. Nuova sezione/tab "Rendicontazione" dentro la schermata esistente "modifica gruppo" (accanto a Membri, Tipologie permesso pendenze, Template) — stesso componente checklist tipologie già usato altrove, un solo posto da aprire per gruppo.
+**UI**: nessuno screen a parte. Nuova sezione/tab "Rendicontazione" dentro la schermata esistente "modifica gruppo" (accanto a Membri, Tipologie permesso pendenze, Template) — stesso componente checklist tipologie già usato altrove, con in più un select modalità per ogni tipologia spuntata (uno stesso gruppo può avere Solo Notifica su una tipologia e Notifica+Smarcatura su un'altra). Un solo posto da aprire per gruppo.
 
 ### `rendicontazione_regole_esterne`
 
@@ -145,10 +147,10 @@ CRUD normale (dato GIL-proprio, non GovPay-side):
 
 ## Template mail (`MailerService`, pattern `renderEmailBase` esistente)
 
-**a) Digest operatore** — `sendRendicontazioneOperatoreDigest($righe, $destinatari, $gruppoNome)`
-- Oggetto: `Nuovi pagamenti da confermare — <tipologia/gruppo>`
-- Corpo: elenco pendenze passate a `IN_ATTESA_CONFERMA` non ancora notificate (IUV, soggetto, causale, importo, data pagamento) + link a `/rendicontazione/da-confermare`
-- Inviata solo se ci sono righe da notificare per quel gruppo
+**a) Digest operatore** — `sendRendicontazioneOperatoreDigest($righeDaConfermare, $righeInformative, $destinatari, $gruppoNome)`
+- Oggetto: `Nuovi pagamenti — <tipologia/gruppo>`
+- Corpo in due sezioni: "Da confermare" (righe `NOTIFICA_E_SMARCATURA` finite `IN_ATTESA_CONFERMA`, con link a `/rendicontazione/da-confermare`) e "Registrati automaticamente" (righe `SOLO_NOTIFICA`, già `GESTITO`, solo informative)
+- Inviata solo se almeno una delle due sezioni ha righe da notificare per quel gruppo
 
 **b) Digest amministratore** — `sendRendicontazioneAdminDigest($righeGestite, $destinatari)`
 - Oggetto: `Riepilogo rendicontazione automatica GovPay — <data>`
