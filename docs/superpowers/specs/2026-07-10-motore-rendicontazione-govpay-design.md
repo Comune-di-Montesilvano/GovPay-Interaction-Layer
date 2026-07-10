@@ -10,6 +10,8 @@ Obiettivo: motore che processa i flussi non rendicontati (solo righe `is_govpay=
 
 Le pendenze esterne (`is_govpay=0`) restano gestite dalla pipeline L1/L2 esistente (mapping_pendenze), non toccata da questo lavoro.
 
+**Scope temporale**: il motore processa/ritenta solo righe con `data_pagamento >= oggi - rendicontazione.max_giorni_retry` (default 7 giorni). Oltre questa finestra alcuni flussi restano semplicemente non rendicontabili (dato mancante/corrotto a monte, IUV non risolvibile) — il motore smette di ritentarli per non restare bloccato all'infinito su casi persi. Le righe fuori finestra restano visibili in stato `PENDING`/`ERRORE` per audit manuale, ma non entrano più nella coda del motore né nel conteggio "scansioni senza novità".
+
 ## Regola di instradamento
 
 Determinata dal prefisso dello IUV:
@@ -74,6 +76,8 @@ ALTER TABLE flussi_rendicontazioni
 ```
 
 Un `id_flusso` è "rendicontato" quando non esistono più righe `is_govpay=1` in stato `PENDING`/`IN_ATTESA_CONFERMA`/`ERRORE` per quel flusso — calcolato a runtime (query, nessun flag ridondante da mantenere in sync). Le righe `is_govpay=0` non entrano in questo conteggio.
+
+**Nota bug GovPay**: l'azione "rendiconta flusso" su GovPay a volte aggiorna correttamente le pendenze (PAGATO→INCASSATO) ma non il flag `rendicontato` del flusso stesso, che resta "no" — bug lato GovPay, non GIL. Il nostro completamento è calcolato esclusivamente sulle righe `flussi_rendicontazioni`/`rendicontazione_stato` (dato GIL-proprio), mai sul flag `rendicontato` di GovPay: il bug non blocca né falsa il motore. `cron_ragioneria.php` non legge/filtra su quel flag (verificato), quindi il ciclo di sync continua a portare gli aggiornamenti (es. INCASSATO) indipendentemente da esso.
 
 ### `rendicontazione_gruppo_tipologie`
 
@@ -171,6 +175,7 @@ CRUD normale (dato GIL-proprio, non GovPay-side):
 - `rendicontazione.iuv_prefix_gil` (default `GIL`)
 - `rendicontazione.scan_interval_minuti` (default 15)
 - `rendicontazione.scansioni_quiete_soglia` (default 3)
+- `rendicontazione.max_giorni_retry` (default 7) — finestra temporale oltre la quale il motore smette di ritentare una riga
 - Toggle "invia mail amministratore per pagamenti auto-gestiti" (`rendicontazione.notifica_admin_auto`) + campo email/i amministratore (separate da `;` — non esiste oggi un flag utente dedicato tipo il vecchio `notifica_pagamenti`)
 - CRUD `rendicontazione_regole_esterne`: dominio, pattern (prefisso IUV o cifra id_app), handler (GERI/DILAZIONE), attivo/disattivo
 - Config ponte legacy: `rendicontazione.bridge_url`, `rendicontazione.bridge_token` — cifrato, unico per entrambi gli handler
