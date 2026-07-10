@@ -183,18 +183,37 @@ class RendicontazioneEngineService
                 ? $this->buildRicevutaLink($frontofficeUrl, (string)$riga['iuv'], $iur)
                 : '';
 
+            $causale = (string)($pendenza['causale'] ?? '');
+            $tipologia = (string)($riga['descrizione_entrata'] ?? $riga['cod_entrata'] ?? '');
+            $anagrafica = (string)($pendenza['soggettoPagatore']['anagrafica'] ?? '');
+            $dataPagamentoRaw = (string)($pendenza['dataPagamento'] ?? '');
+            $dataPagamento = $dataPagamentoRaw !== '' ? date('d/m/Y', strtotime($dataPagamentoRaw)) : '';
+            $iuv = (string)($riga['iuv'] ?? '');
+
             $markdown = "## Pagamento registrato\n\n";
-            $markdown .= '**Causale**: ' . ($pendenza['causale'] ?? '') . "\n\n";
+            $markdown .= "Abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto";
+            $markdown .= $anagrafica !== '' ? ", intestata a **{$anagrafica}**.\n\n" : ".\n\n";
+            if ($tipologia !== '') {
+                $markdown .= "**Tipologia**: {$tipologia}\n\n";
+            }
+            $markdown .= "**Causale**: {$causale}\n\n";
+            if ($iuv !== '') {
+                $markdown .= "**IUV**: {$iuv}\n\n";
+            }
+            if ($dataPagamento !== '') {
+                $markdown .= "**Data pagamento**: {$dataPagamento}\n\n";
+            }
             $markdown .= '**Importo**: € ' . number_format((float)($pendenza['importo'] ?? 0), 2, ',', '.') . "\n\n";
             if ($link !== '') {
-                $markdown .= "[Scarica la ricevuta]({$link})\n\n";
+                $markdown .= "Può scaricare la ricevuta con tutti i dettagli da questo [link]({$link}).\n\n";
             }
 
             $ioSvc = new AppIoService();
+            $oggetto = 'Ricevuta pagamento PagoPA' . ($tipologia !== '' ? " - {$tipologia}" : '') . ($iuv !== '' ? " - {$iuv}" : '');
             $result = $ioSvc->sendMessage(
                 (string)$ioService['api_key_primaria'],
                 $cf,
-                'Ricevuta pagamento PagoPA - ' . substr((string)($pendenza['causale'] ?? ''), 0, 100),
+                substr($oggetto, 0, 120),
                 $markdown,
                 null,
                 null
