@@ -98,12 +98,6 @@
         "symfony/var-dumper": "^6.0"
     },
     "scripts": {
-        "start": "php -S 0.0.0.0:8080 -t backoffice/src/public",
-        "post-install-cmd": [
-            "@dump-autoload"
-        ],
-        "post-update-cmd": [
-            "@dump-autoload"
-        ]
+        "start": "php -S 0.0.0.0:8080 -t backoffice/src/public"
     }
 }
