@@ -263,11 +263,9 @@ class RendicontazioneEngineService
     {
         $url = rtrim($backofficeUrl, '/') . '/incassi/' . rawurlencode($idDominio);
         $payload = [
-            [
-                'importo'  => number_format($importo, 2, '.', ''),
-                'idFlusso' => $idFlusso,
-                'sct'      => $trn,
-            ]
+            'importo'  => (float)round($importo, 2),
+            'idFlusso' => $idFlusso,
+            'sct'      => $trn,
         ];
 
         try {
