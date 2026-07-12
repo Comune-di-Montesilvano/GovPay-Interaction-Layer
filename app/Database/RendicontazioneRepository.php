@@ -75,6 +75,17 @@ class RendicontazioneRepository
         )->execute([':id' => $id, ':stato' => $stato]);
     }
 
+    public function markAppioInviato(int $id, ?string $messageId): void
+    {
+        $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni
+             SET rendicontazione_appio_stato = \'INVIATO\',
+                 rendicontazione_appio_message_id = :msg,
+                 rendicontazione_appio_inviato_at = NOW()
+             WHERE id = :id'
+        )->execute([':id' => $id, ':msg' => $messageId]);
+    }
+
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM flussi_rendicontazioni WHERE id = :id');

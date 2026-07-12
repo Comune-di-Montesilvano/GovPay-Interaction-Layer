@@ -219,7 +219,11 @@ class RendicontazioneEngineService
                 null
             );
 
-            $this->repo->markAppioEsito($rigaId, ($result['esito'] ?? 'KO') === 'OK' ? 'INVIATO' : 'ERRORE');
+            if (($result['esito'] ?? 'KO') === 'OK') {
+                $this->repo->markAppioInviato($rigaId, isset($result['id']) ? (string)$result['id'] : null);
+            } else {
+                $this->repo->markAppioEsito($rigaId, 'ERRORE');
+            }
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('Errore notifica App IO rendicontazione', ['error' => $e->getMessage()]);
             $this->repo->markAppioEsito($rigaId, 'ERRORE');
