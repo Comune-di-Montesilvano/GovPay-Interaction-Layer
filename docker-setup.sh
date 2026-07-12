@@ -293,6 +293,7 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
       mapping)          script="scripts/cron_mapping_pendenze.php" ;;
       vocab)            script="scripts/cron_vocab_mapping.php" ;;
       govpay-debitore)  script="scripts/cron_govpay_debitore_scanner.php" ;;
+      rendicontazione-govpay) script="scripts/cron_rendicontazione_govpay.php" ;;
       *) continue ;;
     esac
     echo "ℹ️  Auto-avvio daemon: ${job}"

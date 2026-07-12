@@ -372,4 +372,31 @@ class RendicontazioneRepository
         );
         $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
     }
+
+    public function getFlussiDaRegolarizzare(string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT DISTINCT id_flusso FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso IS NOT NULL AND id_flusso != ''
+               AND rendicontazione_regolarizzato = 0
+               AND id_flusso NOT IN (
+                   SELECT DISTINCT id_flusso FROM flussi_rendicontazioni
+                   WHERE id_dominio = :dom AND id_flusso IS NOT NULL AND id_flusso != ''
+                     AND rendicontazione_stato IN ('PENDING', 'IN_ATTESA_CONFERMA', 'ERRORE')
+               )"
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        return array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_flusso');
+    }
+
+    public function getUnaRigaPerFlusso(string $idDominio, string $idFlusso): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, id_flusso FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso LIMIT 1'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
 }
