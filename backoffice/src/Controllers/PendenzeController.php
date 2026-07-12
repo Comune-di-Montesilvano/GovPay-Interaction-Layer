@@ -2969,14 +2969,20 @@ class PendenzeController
                     if (!isset($pendenza['datiAllegati']['notifiche']) || !is_array($pendenza['datiAllegati']['notifiche'])) {
                         $pendenza['datiAllegati']['notifiche'] = [];
                     }
-                    $timestampAppio = (string)($incassoRow['rendicontazione_confermato_at'] ?? $incassoRow['data_pagamento'] ?? '');
+                    $timestampAppio = (string)(
+                        $incassoRow['rendicontazione_appio_inviato_at']
+                        ?? $incassoRow['rendicontazione_confermato_at']
+                        ?? $incassoRow['data_pagamento']
+                        ?? ''
+                    );
+                    $messageIdAppio = $incassoRow['rendicontazione_appio_message_id'] ?? null;
                     $pendenza['datiAllegati']['notifiche'][] = [
                         'timestamp'    => $timestampAppio !== '' ? $timestampAppio : date('Y-m-d H:i:s'),
                         'tipo'         => 'notifica pagamento registrato',
                         'canale'       => 'app_io',
-                        'destinatario' => 'Cittadino (App IO)',
+                        'destinatario' => $messageIdAppio ?? 'N/A',
                         'esito'        => 'OK',
-                        'message_id'   => null,
+                        'message_id'   => $messageIdAppio,
                         'errore'       => null,
                     ];
                     break;
