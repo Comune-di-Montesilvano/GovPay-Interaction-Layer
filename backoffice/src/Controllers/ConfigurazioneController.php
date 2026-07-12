@@ -3224,7 +3224,7 @@ class ConfigurazioneController
         }
 
         $payload  = (array)($request->getParsedBody() ?? []);
-        $allowed  = ['tipologie', 'tipologie_esterne', 'templates', 'io_services', 'utenti', 'gruppi-utenti', 'mapping_tipologie_custom', 'mapping_pendenze'];
+        $allowed  = ['tipologie', 'tipologie_esterne', 'templates', 'io_services', 'utenti', 'gruppi-utenti', 'mapping_tipologie_custom', 'mapping_pendenze', 'rendicontazione'];
         $sections = is_array($payload['sections'] ?? null)
             ? array_values(array_intersect($payload['sections'], $allowed))
             : $allowed;
@@ -3279,7 +3279,7 @@ class ConfigurazioneController
         }
 
         $payload           = (array)($request->getParsedBody() ?? []);
-        $allowed           = ['tipologie', 'tipologie_esterne', 'templates', 'io_services', 'utenti', 'gruppi-utenti', 'mapping_tipologie_custom'];
+        $allowed           = ['tipologie', 'tipologie_esterne', 'templates', 'io_services', 'utenti', 'gruppi-utenti', 'mapping_tipologie_custom', 'rendicontazione'];
         $requestedSections = is_array($payload['sections'] ?? null)
             ? array_values(array_intersect($payload['sections'], $allowed))
             : [];
@@ -3350,6 +3350,7 @@ class ConfigurazioneController
                 $g['members']   = array_values(array_filter(array_map(fn($uid) => $idToEmail[$uid] ?? null, $groupRepo->getMemberIds($gid))));
                 $g['tipologie'] = $idDominio ? $groupRepo->getTipologie($gid, $idDominio) : [];
                 $g['templates'] = array_values(array_filter(array_map(fn($tid) => $idToTitle[$tid] ?? null, $groupRepo->getTemplateIds($gid))));
+                $g['rendicontazione_tipologie'] = $idDominio ? $groupRepo->getRendicontazioneTipologie($gid, $idDominio) : [];
                 unset($g['id'], $g['created_at'], $g['updated_at'], $g['member_count']);
             }
             unset($g);
@@ -3372,6 +3373,27 @@ class ConfigurazioneController
             $resultSections['mapping_pendenze'] = [
                 'patterns' => $pStmt->fetchAll(\PDO::FETCH_ASSOC),
                 'vocab'    => $vStmt->fetchAll(\PDO::FETCH_ASSOC),
+            ];
+        }
+        if (in_array('rendicontazione', $sections, true)) {
+            $regole = (new \App\Database\RendicontazioneRepository())->getRegoleEsterne($idDominio);
+            foreach ($regole as &$r) {
+                unset($r['id'], $r['id_dominio'], $r['created_at'], $r['updated_at']);
+            }
+            unset($r);
+            $resultSections['rendicontazione'] = [
+                'settings' => [
+                    'iuv_prefix_gil'          => SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL'),
+                    'scan_interval_minuti'    => SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'),
+                    'scansioni_quiete_soglia' => SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'),
+                    'max_giorni_retry'        => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'),
+                    'geri_max_tentativi'      => SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'),
+                    'notifica_admin_auto'     => SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false'),
+                    'admin_emails'            => SettingsRepository::get('rendicontazione', 'admin_emails', ''),
+                    'bridge_url'              => SettingsRepository::get('rendicontazione', 'bridge_url', ''),
+                    'bridge_token'            => SettingsRepository::get('rendicontazione', 'bridge_token', ''),
+                ],
+                'regole_esterne' => $regole,
             ];
         }
 
@@ -3478,8 +3500,35 @@ class ConfigurazioneController
                 }
                 $tplIds = array_values(array_filter(array_map(fn($title) => $titToId[strtolower((string) $title)] ?? null, $g['templates'] ?? [])));
                 $groupRepo->setTemplates($gid, $tplIds);
+                if ($idDominio) {
+                    $groupRepo->setRendicontazioneTipologie($gid, $idDominio, $g['rendicontazione_tipologie'] ?? []);
+                }
             }
             $stats['gruppi-utenti'] = count($sections['gruppi-utenti']);
+        }
+        if (in_array('rendicontazione', $requestedSections, true) && isset($sections['rendicontazione'])) {
+            $rendData = $sections['rendicontazione'];
+            $by       = (string) ($_SESSION['user']['id'] ?? 'system');
+            if (isset($rendData['settings']) && is_array($rendData['settings'])) {
+                foreach (['iuv_prefix_gil', 'scan_interval_minuti', 'scansioni_quiete_soglia', 'max_giorni_retry', 'geri_max_tentativi', 'notifica_admin_auto', 'admin_emails', 'bridge_url'] as $key) {
+                    if (isset($rendData['settings'][$key])) {
+                        SettingsRepository::set('rendicontazione', $key, (string) $rendData['settings'][$key], false, $by);
+                    }
+                }
+                if (!empty($rendData['settings']['bridge_token'])) {
+                    SettingsRepository::set('rendicontazione', 'bridge_token', (string) $rendData['settings']['bridge_token'], true, $by);
+                }
+            }
+            $rendRepo = new \App\Database\RendicontazioneRepository();
+            $pdo->prepare('DELETE FROM rendicontazione_regole_esterne WHERE id_dominio = ?')->execute([$idDominio]);
+            $regoleCount = 0;
+            foreach ($rendData['regole_esterne'] ?? [] as $regola) {
+                if (!empty($regola['pattern_tipo']) && !empty($regola['pattern_valore']) && !empty($regola['handler'])) {
+                    $rendRepo->addRegolaEsterna($idDominio, (string) $regola['pattern_tipo'], (string) $regola['pattern_valore'], (string) $regola['handler']);
+                    $regoleCount++;
+                }
+            }
+            $stats['rendicontazione'] = $regoleCount;
         }
         if (in_array('mapping_tipologie_custom', $requestedSections, true) && isset($sections['mapping_tipologie_custom'])) {
             $pdo->prepare('DELETE FROM mapping_tipologie_custom WHERE id_dominio = ?')->execute([$idDominio]);
