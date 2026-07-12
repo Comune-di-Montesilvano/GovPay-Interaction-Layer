@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use App\Auth\UserRepository;
 use App\Config\SettingsRepository;
 use App\Database\Connection;
 use App\Database\RendicontazioneRepository;
@@ -172,6 +173,9 @@ while (true) {
 
                 // Digest per gruppo: si assume una risoluzione gruppo->tipologie già a carico
                 // della UI (Task 9); qui si notificano tutti i destinatari via query diretta.
+                $userRepo = new UserRepository();
+                $globalEmails = $userRepo->getGlobalNotificationEmails();
+
                 $pdo = Connection::getPDO();
                 $stmtGruppi = $pdo->prepare(
                     'SELECT DISTINCT group_id FROM rendicontazione_gruppo_tipologie WHERE id_dominio = :dom'
@@ -191,6 +195,9 @@ while (true) {
                     }
 
                     $emails = $groupRepo->getMemberEmails($groupId);
+                    if (!empty($globalEmails)) {
+                        $emails = array_unique(array_merge($emails, $globalEmails));
+                    }
                     $groupInfo = $groupRepo->findById($groupId);
                     $esitoOperatore = $mailer->sendRendicontazioneOperatoreDigest(
                         $emails,

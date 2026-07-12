@@ -19,7 +19,7 @@ class UserRepository
 
     public function findByEmail(string $email): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id, email, password_hash, role, first_name, last_name, is_disabled, disabled_at, last_login_at, last_password_change_at, created_at, updated_at FROM users WHERE email = :email LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, email, password_hash, role, first_name, last_name, is_disabled, disabled_at, last_login_at, last_password_change_at, created_at, updated_at, notifica_tutte_rendicontazioni FROM users WHERE email = :email LIMIT 1');
         $stmt->execute([':email' => $email]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -55,7 +55,7 @@ class UserRepository
 
     public function findById(int $id): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id, email, password_hash, role, first_name, last_name, is_disabled, disabled_at, last_login_at, last_password_change_at, created_at, updated_at, default_id_entrata FROM users WHERE id = :id LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, email, password_hash, role, first_name, last_name, is_disabled, disabled_at, last_login_at, last_password_change_at, created_at, updated_at, default_id_entrata, notifica_tutte_rendicontazioni FROM users WHERE id = :id LIMIT 1');
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -97,10 +97,23 @@ class UserRepository
         return ($row !== false && isset($row['session_token'])) ? $row['session_token'] : null;
     }
 
-    public function updateUser(int $id, string $email, string $role, string $firstName = '', string $lastName = ''): void
+    public function updateUser(int $id, string $email, string $role, string $firstName = '', string $lastName = '', int $notificaTutteRendicontazioni = 0): void
     {
-        $stmt = $this->pdo->prepare('UPDATE users SET email = :email, role = :role, first_name = :first_name, last_name = :last_name, updated_at = NOW() WHERE id = :id');
-        $stmt->execute([':email' => $email, ':role' => $role, ':first_name' => $firstName, ':last_name' => $lastName, ':id' => $id]);
+        $stmt = $this->pdo->prepare('UPDATE users SET email = :email, role = :role, first_name = :first_name, last_name = :last_name, notifica_tutte_rendicontazioni = :notifica, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':email' => $email, ':role' => $role, ':first_name' => $firstName, ':last_name' => $lastName, ':notifica' => $notificaTutteRendicontazioni, ':id' => $id]);
+    }
+
+    public function updateNotificationPreferences(int $id, int $notificaTutteRendicontazioni): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET notifica_tutte_rendicontazioni = :notifica, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':notifica' => $notificaTutteRendicontazioni, ':id' => $id]);
+    }
+
+    /** @return string[] */
+    public function getGlobalNotificationEmails(): array
+    {
+        $stmt = $this->pdo->query("SELECT email FROM users WHERE notifica_tutte_rendicontazioni = 1 AND is_disabled = 0 AND email IS NOT NULL AND email != ''");
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'email');
     }
 
     public function setDisabled(int $id, bool $disabled): void

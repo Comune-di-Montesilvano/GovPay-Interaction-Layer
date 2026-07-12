@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 // Crea le tabelle base se non esistono. Idempotente.
-require __DIR__ . '/../vendor/autoload.php';
+if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    require __DIR__ . '/../vendor/autoload.php';
+} else {
+    require __DIR__ . '/../../vendor/autoload.php';
+}
 
 use App\Database\Connection;
 
@@ -300,6 +304,26 @@ try {
     if (!$stmt || !$stmt->fetch()) {
         $pdo->exec("ALTER TABLE users ADD COLUMN session_token VARCHAR(64) NULL DEFAULT NULL AFTER last_password_change_at");
         echo "Added column session_token to users\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'notifica_tutte_rendicontazioni'");
+    if (!$stmt || !$stmt->fetch()) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN notifica_tutte_rendicontazioni TINYINT(1) UNSIGNED NOT NULL DEFAULT 0 AFTER default_id_entrata");
+        echo "Added column notifica_tutte_rendicontazioni to users\n";
+    }
+} catch (Throwable $e) {
+    // non fatale
+}
+
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM flussi_rendicontazioni LIKE 'rendicontazione_regolarizzato'");
+    if (!$stmt || !$stmt->fetch()) {
+        $pdo->exec("ALTER TABLE flussi_rendicontazioni ADD COLUMN rendicontazione_regolarizzato TINYINT(1) UNSIGNED NOT NULL DEFAULT 0 AFTER rendicontazione_appio_stato");
+        echo "Added column rendicontazione_regolarizzato to flussi_rendicontazioni\n";
     }
 } catch (Throwable $e) {
     // non fatale

@@ -85,6 +85,8 @@ class RendicontazioneEngineService
                 $this->repo->markGestito((int)$riga['id'], (string)$decision->handler);
             }
 
+            $this->controllaERegolarizzaFlussoPerRiga($idDominio, (int)$riga['id'], $backofficeUrl);
+
             $this->tentaNotificaAppIo((int)$riga['id'], $pendenza, $riga);
         }
 
@@ -255,5 +257,75 @@ class RendicontazioneEngineService
         $payload = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
         $params['sig'] = hash_hmac('sha256', $payload, $signingKey);
         return rtrim($frontofficeBaseUrl, '/') . '/link/ricevuta?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    public function regolarizzaIncasso(string $idDominio, string $idFlusso, float $importo, string $trn, string $backofficeUrl): bool
+    {
+        $url = rtrim($backofficeUrl, '/') . '/incassi/' . rawurlencode($idDominio);
+        $payload = [
+            [
+                'importo'  => number_format($importo, 2, '.', ''),
+                'idFlusso' => $idFlusso,
+                'sct'      => $trn,
+            ]
+        ];
+
+        try {
+            $response = $this->govPayClient->request('POST', $url, [
+                'json' => $payload
+            ]);
+            $statusCode = $response->getStatusCode();
+            if ($statusCode >= 200 && $statusCode < 300) {
+                Logger::getInstance()->info("Regolarizzazione incasso flusso {$idFlusso} completata con successo.");
+                return true;
+            }
+            Logger::getInstance()->error("Errore regolarizzazione incasso flusso {$idFlusso}: status code {$statusCode}");
+            return false;
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error("Eccezione durante regolarizzazione incasso flusso {$idFlusso}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function controllaERegolarizzaFlussoPerRiga(string $idDominio, int $rigaId, string $backofficeUrl): void
+    {
+        try {
+            $riga = $this->repo->findById($rigaId);
+            if (!$riga) {
+                return;
+            }
+            $idFlusso = $riga['id_flusso'] ?? '';
+            if ($idFlusso === '') {
+                return;
+            }
+
+            // 1. Controlla se tutti gli elementi del flusso sono in stato GESTITO
+            if (!$this->repo->isFlussoRendicontato($idDominio, $idFlusso)) {
+                return;
+            }
+
+            // 2. Controlla se il flusso è già stato regolarizzato
+            if ($this->repo->isFlussoRegolarizzato($idDominio, $idFlusso)) {
+                return;
+            }
+
+            // 3. Recupera dati aggregati per il flusso (importo totale e TRN/SCT)
+            $datiFlusso = $this->repo->getDatiAggregatiFlusso($idDominio, $idFlusso);
+            if (!$datiFlusso) {
+                return;
+            }
+
+            $importo = (float)($datiFlusso['importo_totale'] ?? 0.0);
+            $trn = (string)($datiFlusso['trn'] ?? '');
+
+            // 4. Esegue la chiamata a GovPay
+            $success = $this->regolarizzaIncasso($idDominio, $idFlusso, $importo, $trn, $backofficeUrl);
+            if ($success) {
+                // 5. Marca il flusso come regolarizzato nel DB locale
+                $this->repo->marcaFlussoRegolarizzato($idDominio, $idFlusso);
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error("Errore durante controllaERegolarizzaFlussoPerRiga per riga {$rigaId}: " . $e->getMessage());
+        }
     }
 }

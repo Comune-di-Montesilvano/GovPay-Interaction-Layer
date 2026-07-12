@@ -3,13 +3,17 @@ declare(strict_types=1);
 
 use App\Database\Connection;
 
-require __DIR__ . '/../vendor/autoload.php';
+if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
+	require __DIR__ . '/../vendor/autoload.php';
+} else {
+	require __DIR__ . '/../../vendor/autoload.php';
+}
 
 echo "Esecuzione migrazioni SQL...\n";
 
-$dir = realpath(__DIR__ . '/../migrations') ?: (__DIR__ . '/../migrations');
-if (!is_dir($dir)) {
-	echo "Nessuna directory migrazioni trovata: {$dir}\n";
+$dir = realpath(__DIR__ . '/../migrations') ?: realpath(__DIR__ . '/../../migrations');
+if (!$dir || !is_dir($dir)) {
+	echo "Nessuna directory migrazioni trovata.\n";
 	exit(0);
 }
 

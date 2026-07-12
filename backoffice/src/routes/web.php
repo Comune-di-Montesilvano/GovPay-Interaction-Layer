@@ -618,6 +618,36 @@ return function (App $app, Twig $twig): void {
         return $response->withHeader('Location', '/profile?tab=templates')->withStatus(302);
     });
 
+    $app->post('/profile/preferences', function($request, $response) {
+        $sessionUser = $_SESSION['user'] ?? null;
+        if (!$sessionUser) {
+            return $response->withHeader('Location', '/login')->withStatus(302);
+        }
+        $userId = (int)($sessionUser['id'] ?? 0);
+        if ($userId > 0) {
+            $data = (array)($request->getParsedBody() ?? []);
+            $val = !empty($data['notifica_tutte_rendicontazioni']) ? 1 : 0;
+            $userRepo = new \App\Auth\UserRepository();
+            $userRepo->updateNotificationPreferences($userId, $val);
+            
+            // Refresh session
+            $fresh = $userRepo->findById($userId);
+            if ($fresh) {
+                $_SESSION['user'] = [
+                    'id' => $fresh['id'],
+                    'email' => $fresh['email'],
+                    'role' => $fresh['role'],
+                    'first_name' => $fresh['first_name'] ?? '',
+                    'last_name' => $fresh['last_name'] ?? '',
+                    'is_disabled' => !empty($fresh['is_disabled']),
+                    'notifica_tutte_rendicontazioni' => (int)($fresh['notifica_tutte_rendicontazioni'] ?? 0),
+                ];
+            }
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Preferenze notifiche salvate'];
+        }
+        return $response->withHeader('Location', '/profile?tab=info')->withStatus(302);
+    });
+
     $app->post('/profile/templates/create', function($request, $response) {
         $sessionUser = $_SESSION['user'] ?? null;
         if (!$sessionUser) {
@@ -1136,6 +1166,7 @@ return function (App $app, Twig $twig): void {
                 'first_name' => $user['first_name'] ?? '',
                 'last_name' => $user['last_name'] ?? '',
                 'is_disabled' => !empty($user['is_disabled']),
+                'notifica_tutte_rendicontazioni' => (int)($user['notifica_tutte_rendicontazioni'] ?? 0),
             ];
             $_SESSION['session_token'] = $sessionToken;
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Accesso effettuato'];
@@ -1286,6 +1317,7 @@ return function (App $app, Twig $twig): void {
                     'role' => $user['role'],
                     'first_name' => $user['first_name'] ?? '',
                     'last_name' => $user['last_name'] ?? '',
+                    'notifica_tutte_rendicontazioni' => (int)($user['notifica_tutte_rendicontazioni'] ?? 0),
                 ];
                 $response->getBody()->write('<p>Logged in as admin. <a href="/">Go to home</a></p>');
                 return $response;

@@ -66,6 +66,17 @@
         <div class="form-text">Pre-selezionata nei form di creazione pendenze.</div>
       </div>
       {% endif %}
+
+      <div class="col-12 mt-2">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="notifica_tutte_rendicontazioni" name="notifica_tutte_rendicontazioni" value="1"
+                 {% if edit_user.notifica_tutte_rendicontazioni %}checked{% endif %}>
+          <label class="form-check-label" for="notifica_tutte_rendicontazioni">
+            <strong>Ricevi tutte le notifiche di rendicontazione</strong>
+          </label>
+          <div class="form-text">Se abilitato, riceverai via email tutti i digest inviati agli operatori per tutti i gruppi.</div>
+        </div>
+      </div>
     </div>
 
     <div class="row g-3 mb-4">

@@ -152,12 +152,13 @@ class UsersController
             $role = $submittedRole;
         }
         $password = trim($data['password'] ?? '');
+        $notificaTutteRendicontazioni = !empty($data['notifica_tutte_rendicontazioni']) ? 1 : 0;
         if ($email === '') {
             $user = $this->users->findById($id);
             return $request->withAttribute('error', 'Email obbligatoria')
                            ->withAttribute('edit_user', $user);
         }
-        $this->users->updateUser($id, $email, $role, $firstName, $lastName);
+        $this->users->updateUser($id, $email, $role, $firstName, $lastName, $notificaTutteRendicontazioni);
         if ($password !== '') {
             $this->users->updatePasswordById($id, $password);
         }
@@ -172,6 +173,7 @@ class UsersController
                     'first_name' => $fresh['first_name'] ?? '',
                     'last_name' => $fresh['last_name'] ?? '',
                     'is_disabled' => !empty($fresh['is_disabled']),
+                    'notifica_tutte_rendicontazioni' => (int)($fresh['notifica_tutte_rendicontazioni'] ?? 0),
                 ];
             }
         }
