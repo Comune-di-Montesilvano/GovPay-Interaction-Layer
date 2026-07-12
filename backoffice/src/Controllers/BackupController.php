@@ -41,6 +41,7 @@ class BackupController
         'gruppi-utenti',
         'mapping_tipologie_custom',
         'mapping_pendenze',
+        'rendicontazione',
     ];
 
     public function __construct(private readonly Twig $twig)
@@ -625,6 +626,10 @@ class BackupController
                     // templates by titolo
                     $tplIds = array_values(array_filter(array_map(fn($title) => $titToId[strtolower((string)$title)] ?? null, $g['templates'] ?? [])));
                     $groupRepo->setTemplates($gid, $tplIds);
+                    // tipologie rendicontazione (id_entrata + modalita)
+                    if ($idDominio) {
+                        $groupRepo->setRendicontazioneTipologie($gid, $idDominio, $g['rendicontazione_tipologie'] ?? []);
+                    }
                 }
                 $stats['govpay_sections']++;
             }
@@ -673,6 +678,28 @@ class BackupController
                         continue;
                     }
                     $insV->execute([$v['pattern_iuv'], $idDominio, $v['keyword'], $v['cod_entrata'], (int)($v['priorita'] ?? 10)]);
+                }
+                $stats['govpay_sections']++;
+            }
+            if (isset($sections['rendicontazione'])) {
+                $rendData = $sections['rendicontazione'];
+                $by       = (string)($_SESSION['user']['id'] ?? 'system');
+                if (isset($rendData['settings']) && is_array($rendData['settings'])) {
+                    foreach (['iuv_prefix_gil', 'scan_interval_minuti', 'scansioni_quiete_soglia', 'max_giorni_retry', 'geri_max_tentativi', 'notifica_admin_auto', 'admin_emails', 'bridge_url'] as $key) {
+                        if (isset($rendData['settings'][$key])) {
+                            SettingsRepository::set('rendicontazione', $key, (string)$rendData['settings'][$key], false, $by);
+                        }
+                    }
+                    if (!empty($rendData['settings']['bridge_token'])) {
+                        SettingsRepository::set('rendicontazione', 'bridge_token', (string)$rendData['settings']['bridge_token'], true, $by);
+                    }
+                }
+                $rendRepo = new \App\Database\RendicontazioneRepository();
+                $pdo->prepare('DELETE FROM rendicontazione_regole_esterne WHERE id_dominio = ?')->execute([$idDominio]);
+                foreach ($rendData['regole_esterne'] ?? [] as $regola) {
+                    if (!empty($regola['pattern_tipo']) && !empty($regola['pattern_valore']) && !empty($regola['handler'])) {
+                        $rendRepo->addRegolaEsterna($idDominio, (string)$regola['pattern_tipo'], (string)$regola['pattern_valore'], (string)$regola['handler']);
+                    }
                 }
                 $stats['govpay_sections']++;
             }
@@ -944,6 +971,7 @@ class BackupController
                 $g['tipologie'] = $idDominio ? $groupRepo->getTipologie($gid, $idDominio) : [];
                 $tplIds = $groupRepo->getTemplateIds($gid);
                 $g['templates'] = array_values(array_filter(array_map(fn($tid) => $idToTitle[$tid] ?? null, $tplIds)));
+                $g['rendicontazione_tipologie'] = $idDominio ? $groupRepo->getRendicontazioneTipologie($gid, $idDominio) : [];
                 unset($g['id'], $g['created_at'], $g['updated_at'], $g['member_count']);
             }
             unset($g);
@@ -968,6 +996,28 @@ class BackupController
             $resultSections['mapping_pendenze'] = [
                 'patterns' => $pStmt->fetchAll(\PDO::FETCH_ASSOC),
                 'vocab'    => $vStmt->fetchAll(\PDO::FETCH_ASSOC),
+            ];
+        }
+
+        if (in_array('rendicontazione', $sections, true)) {
+            $regole = (new \App\Database\RendicontazioneRepository())->getRegoleEsterne($idDominio);
+            foreach ($regole as &$r) {
+                unset($r['id'], $r['id_dominio'], $r['created_at'], $r['updated_at']);
+            }
+            unset($r);
+            $resultSections['rendicontazione'] = [
+                'settings' => [
+                    'iuv_prefix_gil'          => SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL'),
+                    'scan_interval_minuti'    => SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'),
+                    'scansioni_quiete_soglia' => SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'),
+                    'max_giorni_retry'        => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'),
+                    'geri_max_tentativi'      => SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'),
+                    'notifica_admin_auto'     => SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false'),
+                    'admin_emails'            => SettingsRepository::get('rendicontazione', 'admin_emails', ''),
+                    'bridge_url'              => SettingsRepository::get('rendicontazione', 'bridge_url', ''),
+                    'bridge_token'            => SettingsRepository::get('rendicontazione', 'bridge_token', ''),
+                ],
+                'regole_esterne' => $regole,
             ];
         }
 
