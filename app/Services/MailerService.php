@@ -645,6 +645,182 @@ HTML;
         }
     }
 
+    /** @param string[] $destinatari @param array<int,array> $righeDaConfermare @param array<int,array> $righeInformative */
+    public function sendRendicontazioneOperatoreDigest(
+        array  $destinatari,
+        string $gruppoNome,
+        array  $righeDaConfermare,
+        array  $righeInformative,
+        string $baseUrlVista,
+        string $appName = ''
+    ): array {
+        if (empty($destinatari) || (empty($righeDaConfermare) && empty($righeInformative))) {
+            return ['esito' => 'SKIPPED'];
+        }
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $logoPath = $this->resolveLogoPath();
+        $hasLogo  = ($logoPath !== '' && is_file($logoPath));
+        $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
+
+        $html = $this->renderRendicontazioneOperatoreTemplate($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista, $appName, $hasLogo, $logoSrc);
+        $text = $this->renderRendicontazioneOperatorePlain($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista);
+
+        foreach ($destinatari as $to) {
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($to))
+                ->subject("Nuovi pagamenti — {$gruppoNome} (PagoPA GIL)")
+                ->html($html)
+                ->text($text);
+            if ($hasLogo) {
+                $email->embedFromPath($logoPath, 'logo');
+            }
+            $this->mailer->send($email);
+        }
+
+        return ['esito' => 'OK'];
+    }
+
+    /** @param string[] $destinatari @param array<int,array> $righeGestite */
+    public function sendRendicontazioneAdminDigest(array $destinatari, array $righeGestite, string $appName = ''): array
+    {
+        if (empty($destinatari) || empty($righeGestite)) {
+            return ['esito' => 'SKIPPED'];
+        }
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $logoPath = $this->resolveLogoPath();
+        $hasLogo  = ($logoPath !== '' && is_file($logoPath));
+        $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
+
+        $html = $this->renderRendicontazioneAdminTemplate($righeGestite, $appName, $hasLogo, $logoSrc);
+        $text = $this->renderRendicontazioneAdminPlain($righeGestite);
+        $oggi = date('d/m/Y');
+
+        foreach ($destinatari as $to) {
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($to))
+                ->subject("Riepilogo rendicontazione automatica GovPay — {$oggi} (PagoPA GIL)")
+                ->html($html)
+                ->text($text);
+            if ($hasLogo) {
+                $email->embedFromPath($logoPath, 'logo');
+            }
+            $this->mailer->send($email);
+        }
+
+        return ['esito' => 'OK'];
+    }
+
+    private function renderRendicontazioneOperatoreTemplate(
+        string $gruppoNome,
+        array  $righeDaConfermare,
+        array  $righeInformative,
+        string $baseUrlVista,
+        string $appName,
+        bool   $hasLogo = false,
+        string $logoSrc = ''
+    ): string {
+        $safeGruppo = htmlspecialchars($gruppoNome, ENT_QUOTES, 'UTF-8');
+
+        $rowsHtml = static function (array $righe): string {
+            $out = '';
+            foreach ($righe as $r) {
+                $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+                $dataRaw = (string)($r['data_pagamento'] ?? '');
+                $data = $dataRaw !== '' ? htmlspecialchars(date('d/m/Y', strtotime($dataRaw)), ENT_QUOTES, 'UTF-8') : '';
+                $out .= "<tr><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
+                      . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td>"
+                      . "<td style=\"padding:6px 8px;\">{$data}</td></tr>\n";
+            }
+            return $out;
+        };
+
+        $sezioneDaConfermare = '';
+        if (!empty($righeDaConfermare)) {
+            $safeUrl = htmlspecialchars($baseUrlVista, ENT_QUOTES, 'UTF-8');
+            $sezioneDaConfermare = '<h3 style="font-size:16px;margin:24px 0 8px;">Da confermare</h3>'
+                . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rowsHtml($righeDaConfermare) . '</table>'
+                . "<p style=\"margin-top:16px;\"><a href=\"{$safeUrl}\" style=\"display:inline-block;padding:10px 24px;background:#0b3d91;color:#fff;text-decoration:none;border-radius:4px;\">Vai alla vista</a></p>";
+        }
+
+        $sezioneInformativa = '';
+        if (!empty($righeInformative)) {
+            $sezioneInformativa = '<h3 style="font-size:16px;margin:24px 0 8px;">Registrati automaticamente</h3>'
+                . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rowsHtml($righeInformative) . '</table>';
+        }
+
+        $body = "<p style=\"margin:0 0 16px;font-size:13px;color:#718096;\">Comunicazione automatica dal modulo Rendicontazione PagoPA di GIL (GovPay Interaction Layer) — gruppo <strong>{$safeGruppo}</strong>.</p>"
+              . $sezioneDaConfermare
+              . $sezioneInformativa;
+
+        return $this->renderEmailBase($body, $appName, "Nuovi pagamenti — {$gruppoNome}", $hasLogo, $logoSrc);
+    }
+
+    private function renderRendicontazioneOperatorePlain(string $gruppoNome, array $righeDaConfermare, array $righeInformative, string $baseUrlVista): string
+    {
+        $lines = ["Nuovi pagamenti — {$gruppoNome}", ''];
+        if (!empty($righeDaConfermare)) {
+            $lines[] = 'Da confermare:';
+            foreach ($righeDaConfermare as $r) {
+                $dataRaw = (string)($r['data_pagamento'] ?? '');
+                $data = $dataRaw !== '' ? date('d/m/Y', strtotime($dataRaw)) : '';
+                $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . $data . ')';
+            }
+            $lines[] = 'Vai alla vista: ' . $baseUrlVista;
+            $lines[] = '';
+        }
+        if (!empty($righeInformative)) {
+            $lines[] = 'Registrati automaticamente:';
+            foreach ($righeInformative as $r) {
+                $dataRaw = (string)($r['data_pagamento'] ?? '');
+                $data = $dataRaw !== '' ? date('d/m/Y', strtotime($dataRaw)) : '';
+                $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . $data . ')';
+            }
+        }
+        return implode("\n", $lines);
+    }
+
+    private function renderRendicontazioneAdminTemplate(array $righeGestite, string $appName, bool $hasLogo = false, string $logoSrc = ''): string
+    {
+        $rows = '';
+        foreach ($righeGestite as $r) {
+            $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $handler = htmlspecialchars((string)($r['rendicontazione_handler'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $stato = (string)($r['rendicontazione_stato'] ?? '');
+            $color = $stato === 'ERRORE' ? '#dc3545' : '#333';
+            $statoSafe = htmlspecialchars($stato, ENT_QUOTES, 'UTF-8');
+            $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+            $rows .= "<tr style=\"color:{$color};\"><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
+                   . "<td style=\"padding:6px 8px;\">{$handler}</td>"
+                   . "<td style=\"padding:6px 8px;\">{$statoSafe}</td>"
+                   . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td></tr>\n";
+        }
+
+        $oggi = htmlspecialchars(date('d/m/Y'), ENT_QUOTES, 'UTF-8');
+        $body = "<p style=\"margin:0 0 16px;font-size:13px;color:#718096;\">Comunicazione automatica dal modulo Rendicontazione PagoPA di GIL (GovPay Interaction Layer) — riepilogo del {$oggi}.</p>"
+              . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rows . '</table>';
+
+        return $this->renderEmailBase($body, $appName, 'Riepilogo rendicontazione automatica', $hasLogo, $logoSrc);
+    }
+
+    private function renderRendicontazioneAdminPlain(array $righeGestite): string
+    {
+        $lines = ['Riepilogo rendicontazione automatica GovPay', ''];
+        foreach ($righeGestite as $r) {
+            $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' handler=' . ($r['rendicontazione_handler'] ?? '')
+                . ' stato=' . ($r['rendicontazione_stato'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+        }
+        return implode("\n", $lines);
+    }
+
     // -------------------------------------------------------------------------
     // Template notifica rateizzazione (HTML + testo)
     // -------------------------------------------------------------------------
