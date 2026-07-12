@@ -308,13 +308,42 @@ class RendicontazioneEngineService
             }
 
             // 3. Recupera dati aggregati per il flusso (importo totale e TRN/SCT)
-            $datiFlusso = $this->repo->getDatiAggregatiFlusso($idDominio, $idFlusso);
-            if (!$datiFlusso) {
-                return;
+            // Proviamo ad ottenere importoTotale e TRN/SCT reali direttamente da GovPay
+            $importo = 0.0;
+            $trn = '';
+
+            try {
+                $flussoUrl = rtrim($backofficeUrl, '/') . '/flussiRendicontazione?idFlusso=' . rawurlencode($idFlusso) . '&idDominio=' . rawurlencode($idDominio);
+                $flussoResponse = $this->govPayClient->request('GET', $flussoUrl);
+                $flussoData = json_decode((string)$flussoResponse->getBody(), true);
+                if (is_array($flussoData) && !empty($flussoData['risultati']) && is_array($flussoData['risultati'])) {
+                    foreach ($flussoData['risultati'] as $f) {
+                        if (($f['idFlusso'] ?? '') === $idFlusso) {
+                            $importo = (float)($f['importoTotale'] ?? 0.0);
+                            $trn = (string)($f['trn'] ?? '');
+                            break;
+                        }
+                    }
+                }
+            } catch (\Throwable $ex) {
+                Logger::getInstance()->warning("Impossibile recuperare dettagli flusso {$idFlusso} da GovPay, uso fallback locale: " . $ex->getMessage());
             }
 
-            $importo = (float)($datiFlusso['importo_totale'] ?? 0.0);
-            $trn = (string)($datiFlusso['trn'] ?? '');
+            // Fallback locale se non trovato o importo nullo
+            if ($importo <= 0.0) {
+                $datiFlusso = $this->repo->getDatiAggregatiFlusso($idDominio, $idFlusso);
+                if ($datiFlusso) {
+                    $importo = (float)($datiFlusso['importo_totale'] ?? 0.0);
+                    if ($trn === '') {
+                        $trn = (string)($datiFlusso['trn'] ?? '');
+                    }
+                }
+            }
+
+            if ($importo <= 0.0) {
+                Logger::getInstance()->warning("Flusso {$idFlusso} ha importo nullo o non valido, regolarizzazione saltata.");
+                return;
+            }
 
             // 4. Esegue la chiamata a GovPay
             $success = $this->regolarizzaIncasso($idDominio, $idFlusso, $importo, $trn, $backofficeUrl);
