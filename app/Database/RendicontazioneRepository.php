@@ -332,4 +332,44 @@ class RendicontazioneRepository
         $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
         return (int)$stmt->fetchColumn() === 0;
     }
+
+    public function isFlussoRegolarizzato(string $idDominio, string $idFlusso): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        $totale = (int)$stmt->fetchColumn();
+        if ($totale === 0) {
+            return false;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso AND rendicontazione_regolarizzato = 0'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        return (int)$stmt->fetchColumn() === 0;
+    }
+
+    public function getDatiAggregatiFlusso(string $idDominio, string $idFlusso): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT SUM(importo) as importo_totale, MAX(trn) as trn FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function marcaFlussoRegolarizzato(string $idDominio, string $idFlusso): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni SET rendicontazione_regolarizzato = 1
+             WHERE id_dominio = :dom AND id_flusso = :flusso'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+    }
 }

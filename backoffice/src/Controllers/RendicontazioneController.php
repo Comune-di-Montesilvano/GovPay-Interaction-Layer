@@ -77,11 +77,13 @@ class RendicontazioneController
                         new LegacyRendicontazioneBridgeClient(),
                         $this->buildGovPayClient()
                     );
+                    $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
                     foreach ($confermateIds as $confermataId) {
                         $engine->tentaNotificaAppIoPerRiga((int)$confermataId);
+                        $engine->controllaERegolarizzaFlussoPerRiga($idDominio, (int)$confermataId, $backofficeUrl);
                     }
                 } catch (\Throwable $e) {
-                    Logger::getInstance()->warning('Errore notifica App IO su conferma manuale rendicontazione', [
+                    Logger::getInstance()->warning('Errore notifica App IO/regolarizzazione su conferma manuale rendicontazione', [
                         'error' => $e->getMessage(),
                     ]);
                 }
