@@ -2955,6 +2955,35 @@ class PendenzeController
             Logger::getInstance()->warning('Errore lettura incasso ragioneria: ' . $e->getMessage());
         }
 
+        // Notifica App IO di rendicontazione: non può essere scritta su GovPay
+        // (rifiuta PUT su pendenza ESEGUITO, VER_003) — la mostriamo comunque nel
+        // timeline "Notifiche" del dettaglio come voce sintetica letta da
+        // flussi_rendicontazioni.rendicontazione_appio_stato, senza toccare i
+        // datiAllegati reali della pendenza.
+        if (is_array($pendenza) && !empty($pendenza)) {
+            foreach ($incassoRows as $incassoRow) {
+                if (($incassoRow['rendicontazione_appio_stato'] ?? '') === 'INVIATO') {
+                    if (!isset($pendenza['datiAllegati']) || !is_array($pendenza['datiAllegati'])) {
+                        $pendenza['datiAllegati'] = [];
+                    }
+                    if (!isset($pendenza['datiAllegati']['notifiche']) || !is_array($pendenza['datiAllegati']['notifiche'])) {
+                        $pendenza['datiAllegati']['notifiche'] = [];
+                    }
+                    $timestampAppio = (string)($incassoRow['rendicontazione_confermato_at'] ?? $incassoRow['data_pagamento'] ?? '');
+                    $pendenza['datiAllegati']['notifiche'][] = [
+                        'timestamp'    => $timestampAppio !== '' ? $timestampAppio : date('Y-m-d H:i:s'),
+                        'tipo'         => 'notifica pagamento registrato',
+                        'canale'       => 'app_io',
+                        'destinatario' => 'Cittadino (App IO)',
+                        'esito'        => 'OK',
+                        'message_id'   => null,
+                        'errore'       => null,
+                    ];
+                    break;
+                }
+            }
+        }
+
         return $this->twig->render($response, 'pendenze/dettaglio.html.twig', [
             'idPendenza' => $idPendenza,
             'return_url' => $returnUrl,
