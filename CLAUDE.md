@@ -150,6 +150,8 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **Pattern sidecar frontoffice**: il frontoffice NON chiama GovPay/pagoPA direttamente. Ogni operazione GovPay/pagoPA/DB-business va in `FrontofficeApiController` (backoffice) e chiamata con `frontoffice_backoffice_api()`. Le API sidecar seguono il pattern `jsonOk/jsonError` esistente (HTTP 200 + `success` bool). Eccezione: streaming PDF usa risposta binaria diretta. Non aggiungere credenziali GovPay alle env del container frontoffice.
 - **Autenticazione frontoffice cittadini**: OIDC esterno via Authorization Code + PKCE. Configurabile da Backoffice → Impostazioni → Frontoffice. Tipo `none` = accesso libero senza login.
 - **`session_regenerate_id(true)` post-login**: chiamato dopo aver scritto `$_SESSION['frontoffice_user']` nel path OIDC callback. Non rimuovere — previene session fixation.
+- **Single-session backoffice**: `AuthMiddleware` verifica `$_SESSION['session_token']` contro `users.session_token` in DB (`UserRepository::getSessionToken`/`updateSessionToken`) — login più recente invalida sessioni precedenti dello stesso utente. Una sessione PHP fabbricata a mano (es. per test/debug) deve settare entrambi i valori allineati, non solo `$_SESSION['user']`, altrimenti `AuthMiddleware` la considera "soppiantata" e redirige a `/login`.
+- **GovPay pendenza `stato=ESEGUITO`**: qualsiasi PUT di aggiornamento viene rifiutato con `VER_003` ("stato che non consente l'aggiornamento"), indipendentemente dai campi inviati. `PendenzeController::addNotificationToPendenza()` (allegare notifiche a `datiAllegati.notifiche`) funziona solo su pendenze non ancora pagate — non utilizzabile per annotare pendenze già riscosse.
 
 ## Integrazioni esterne
 
@@ -192,6 +194,14 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
    - Disabilita con `abilitato=false` — non esiste endpoint DELETE nell'API GovPay.
    - **Gotcha `ObjectSerializer::sanitizeForSerialization`**: ritorna `stdClass`, non array. Usare `json_decode(json_encode($raw), true)` prima di leggere le chiavi (come in `ConfigurazioneController`).
    - **Gotcha `app_debug` Twig**: nei template è globale `app_debug` (booleano/stringa da `web.php:1129`), NON `app.debug` dal settings array.
+
+5. **Motore Rendicontazione GovPay (Luglio 2026)**:
+   - Nuovo demone `cron_rendicontazione_govpay.php` processa i flussi bancari non rendicontati (`flussi_rendicontazioni`, solo `is_govpay=1`): instrada ogni pendenza GovPay verso smarcatura automatica (`GIL_MANUALE`/`AUTO_ESTERNO`), smarcatura manuale operatore (`IN_ATTESA_CONFERMA`), o handoff a gestionale legacy (`GERI`/`DILAZIONE`) via ponte HTTP esterno.
+   - Instradamento: IUV con prefisso configurabile (default `GIL`, `rendicontazione.iuv_prefix_gil`) = pendenza GIL — se la tipologia ha un gruppo assegnato in `rendicontazione_gruppo_tipologie` con modalità `NOTIFICA_E_SMARCATURA`, va in vista dedicata `/rendicontazione/da-confermare`; altrimenti auto. IUV non-GIL: match su `rendicontazione_regole_esterne` (pattern `IUV_PREFIX` o `ID_APP_AGID`, longest-match) verso i due handler legacy noti (Geri, Dilazione — gli altri script storici `gitt.php`/`sportello.php`/`massivi.php` sono deprecati, non riportati).
+   - Ponte legacy: `scripts/legacy-bridge/rendicontazione_bridge.php`, script standalone (nessuna dipendenza da `App\`) da copiare **a mano** sul server legacy (`servizi.comune.montesilvano.pe.it`) — non fa parte della pipeline Docker/CI di GIL. Token Bearer condiviso configurato in Impostazioni → Rendicontazione (`rendicontazione.bridge_url`/`bridge_token`, cifrato) e hardcoded nello script deployato.
+   - Esito GERI è best-effort (il connector legacy non ha un contratto di ritorno affidabile): si considera riuscita l'assenza di eccezioni, con cap tentativi configurabile (`rendicontazione.geri_max_tentativi`) per limitare il rischio di doppie registrazioni. DILAZIONE ha esito verificabile (righe SQL affette).
+   - Notifica App IO al cittadino tentata su ogni transizione a `GESTITO` (sia dal motore automatico che dalla conferma manuale via `RendicontazioneEngineService::tentaNotificaAppIoPerRiga()`), idempotente tramite `rendicontazione_appio_stato` (`PENDING`/`INVIATO`/`ERRORE`/`NON_APPLICABILE`).
+   - UI: tab "Rendicontazione" in Impostazioni (settings motore + CRUD regole esterne), sezione "Rendicontazione" nella schermata modifica-gruppo (tipologie + modalità per gruppo), vista dedicata `/rendicontazione/da-confermare` per gli operatori.
 
 ## Configurazione: DB vs .env
 
@@ -244,7 +254,7 @@ Il frontoffice gestisce autonomamente: sessione PHP, autenticazione OIDC esterna
 
 ## Migrazioni DB
 
-File SQL in `migrations/` (numerati `003_...sql` → `024_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
+File SQL in `migrations/` (numerati `003_...sql` → `030_...sql`). Nessun runner automatico — migrazioni applicate manualmente o via `docker/db-init/` al primo avvio del container MariaDB.
 
 ## Test
 
@@ -270,6 +280,7 @@ Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
 | Mapping L2 | `cron_vocab_mapping.php` | `/tmp/cron-vocab.pid` | `/tmp/cron-stop-vocab` | L1 |
 | Pendenze massive | `cron_pendenze_massive.php` | `/tmp/cron-pendenze-massive.pid` | `/tmp/cron-stop-pendenze-massive` | — |
 | GovPay debitore | `cron_govpay_debitore_scanner.php` | `/tmp/cron-govpay-debitore.pid` | `/tmp/cron-stop-govpay-debitore` | GovPay API |
+| Rendicontazione GovPay | `cron_rendicontazione_govpay.php` | `/tmp/cron-rendicontazione-govpay.pid` | `/tmp/cron-stop-rendicontazione-govpay` | GovPay API, ponte legacy |
 
 ### Dettaglio demoni
 
@@ -286,6 +297,8 @@ Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
 **`cron_pendenze_massive.php`** — Processa batch di 50 pendenze massive in stato `PENDING` (inserimento massivo da CSV/API). Pausa 30s quando coda vuota.
 
 **`cron_govpay_debitore_scanner.php`** — Per ogni IUR GovPay (`is_govpay=1`) in `flussi_rendicontazioni` senza entry in `biz_ricevute`: chiama GovPay Backoffice API `GET /pendenze/{id_a2a}/{id_pendenza}` e salva `soggettoPagatore.identificativo/anagrafica` + `causale` in `biz_ricevute` come `PROCESSED`. Consente al CSV ragioneria di includere CF/nominativo debitore anche per pendenze interne. Batch da 20 con 1s tra chiamate; 15 min di sleep quando coda vuota. Usa stessa autenticazione GovPay (Basic Auth + mTLS opzionale).
+
+**`cron_rendicontazione_govpay.php`** — Motore rendicontazione GovPay (vedi sezione dedicata sotto). Per ogni riga `is_govpay=1` in `PENDING`/`ERRORE` (finestra `rendicontazione.max_giorni_retry`): instrada verso smarcatura automatica, smarcatura manuale operatore, o handoff al ponte legacy (Geri/Dilazione). Digest email (operatore + admin) inviato dopo N cicli consecutivi senza righe nuove (`rendicontazione.scansioni_quiete_soglia`), non ad ogni ciclo.
 
 ## Mapping Pendenze Esterne (L1 + L2)
 
@@ -318,10 +331,13 @@ Non modificare questa logica senza aggiornare anche la soglia e il rendering UI 
 - **`BizScannerService`** / **`TefaScannerService`** — logica core dei demoni omonimi.
 - **`TracciatoService`** — generazione CSV ragioneria.
 - **`MailerService`** / **`AppIoService`** — notifiche cittadini.
+- **`RendicontazioneRouter`** — logica pura (no I/O) di instradamento pendenza GovPay: GIL-prefix + gruppo → smarcatura manuale, non-GIL + regola `rendicontazione_regole_esterne` → GERI/DILAZIONE, altrimenti auto.
+- **`RendicontazioneEngineService`** — orchestrazione motore rendicontazione: fetch pendenza GovPay, routing, chiamata ponte legacy, notifica App IO best-effort.
+- **`LegacyRendicontazioneBridgeClient`** — client HTTP verso il ponte legacy (script `scripts/legacy-bridge/rendicontazione_bridge.php`, deploy manuale su server esterno). **Gotcha**: POST diretto sull'URL completo configurato (`bridge_url`), NON usare `base_uri` + path relativo vuoto — se `bridge_url` termina con un file (es. `.php`), Guzzle appende comunque `/` e rompe la richiesta.
 
 ## Sviluppo locale con override
 
-`docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` in locale (non usare in produzione). Aggiunge volume mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice. La directory `debug/` è ignorata da git.
+`docker-compose.override.yml` viene caricato **automaticamente** da `docker compose` in locale (non usare in produzione). Aggiunge `build:` completo (context `.`, target `runtime-backoffice`/`runtime-frontoffice` dal `Dockerfile` root) per backoffice/frontoffice e build da `docker/db/Dockerfile` per il DB — `docker compose up -d --build` compila quindi le immagini dal sorgente locale, non usa quelle GHCR. Aggiunge anche volume mount `./debug:/var/www/html/public/debug` su backoffice e frontoffice. La directory `debug/` è ignorata da git.
 
 ## Asset frontend (`assets/`)
 
