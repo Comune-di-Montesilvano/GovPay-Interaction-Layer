@@ -581,12 +581,21 @@ class BackupController
                 $stats['govpay_sections']++;
             }
             if (!empty($sections['utenti'])) {
-                $upsert = $pdo->prepare('INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, created_at, updated_at) VALUES (:email, :role, :fn, :ln, :disabled, :hash, NOW(), NOW()) ON DUPLICATE KEY UPDATE role=VALUES(role), first_name=VALUES(first_name), last_name=VALUES(last_name), is_disabled=VALUES(is_disabled), password_hash=COALESCE(VALUES(password_hash), password_hash), updated_at=NOW()');
+                $upsert = $pdo->prepare('INSERT INTO users (email, role, first_name, last_name, is_disabled, password_hash, default_id_entrata, notifica_tutte_rendicontazioni, created_at, updated_at) VALUES (:email, :role, :fn, :ln, :disabled, :hash, :default_entrata, :notifica, NOW(), NOW()) ON DUPLICATE KEY UPDATE role=VALUES(role), first_name=VALUES(first_name), last_name=VALUES(last_name), is_disabled=VALUES(is_disabled), password_hash=COALESCE(VALUES(password_hash), password_hash), default_id_entrata=VALUES(default_id_entrata), notifica_tutte_rendicontazioni=VALUES(notifica_tutte_rendicontazioni), updated_at=NOW()');
                 foreach ($sections['utenti'] as $u) {
                     if (empty($u['email'])) {
                         continue;
                     }
-                    $upsert->execute([':email' => $u['email'], ':role' => $u['role'] ?? 'user', ':fn' => $u['first_name'] ?? '', ':ln' => $u['last_name'] ?? '', ':disabled' => empty($u['is_disabled']) ? 0 : 1, ':hash' => $u['password_hash'] ?? null]);
+                    $upsert->execute([
+                        ':email' => $u['email'],
+                        ':role' => $u['role'] ?? 'user',
+                        ':fn' => $u['first_name'] ?? '',
+                        ':ln' => $u['last_name'] ?? '',
+                        ':disabled' => empty($u['is_disabled']) ? 0 : 1,
+                        ':hash' => $u['password_hash'] ?? null,
+                        ':default_entrata' => !empty($u['default_id_entrata']) ? $u['default_id_entrata'] : null,
+                        ':notifica' => !empty($u['notifica_tutte_rendicontazioni']) ? 1 : 0
+                    ]);
                 }
                 $stats['govpay_sections']++;
             }
@@ -946,7 +955,7 @@ class BackupController
         }
 
         if (in_array('utenti', $sections, true)) {
-            $resultSections['utenti'] = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash FROM users ORDER BY email ASC')->fetchAll();
+            $resultSections['utenti'] = $pdo->query('SELECT email, role, first_name, last_name, is_disabled, password_hash, default_id_entrata, notifica_tutte_rendicontazioni FROM users ORDER BY email ASC')->fetchAll();
         }
 
         if (in_array('gruppi-utenti', $sections, true)) {
