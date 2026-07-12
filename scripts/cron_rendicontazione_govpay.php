@@ -143,6 +143,23 @@ while (true) {
         $result = $engine->processaCiclo($idDominio, $idA2A, $backofficeUrl, 200, $minDataPagamento, $geriMaxTentativi);
         $log(sprintf('Ciclo: processate=%d nuove=%d', $result['processate'], $result['nuove']));
 
+        // Sweep per tentare/ritentare la regolarizzazione di tutti i flussi completi non ancora regolarizzati
+        try {
+            $flussiDaRegolarizzare = $repo->getFlussiDaRegolarizzare($idDominio);
+            if (!empty($flussiDaRegolarizzare)) {
+                $log(sprintf('Trovati %d flussi completati da regolarizzare in sweep...', count($flussiDaRegolarizzare)));
+                foreach ($flussiDaRegolarizzare as $flussoId) {
+                    $checkStop();
+                    $rigaFlusso = $repo->getUnaRigaPerFlusso($idDominio, $flussoId);
+                    if ($rigaFlusso) {
+                        $engine->controllaERegolarizzaFlussoPerRiga($idDominio, (int)$rigaFlusso['id'], $backofficeUrl);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $log('ERRORE sweep regolarizzazione flussi: ' . $e->getMessage());
+        }
+
         if ($result['nuove'] > 0) {
             $scansioniSenzaNovita = 0;
         } else {
