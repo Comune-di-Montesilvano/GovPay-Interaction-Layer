@@ -800,7 +800,8 @@ class FlussiRendicontazioniRepository
             $stmt = $this->pdo->prepare(
                 'SELECT id_flusso, data_flusso, data_regolamento, iur, iuv, importo,
                         esito, stato_rend, data_pagamento, id_psp, ragione_psp, trn,
-                        cod_entrata, descrizione_entrata, is_govpay
+                        cod_entrata, descrizione_entrata, is_govpay,
+                        rendicontazione_appio_stato, rendicontazione_confermato_at
                  FROM flussi_rendicontazioni
                  WHERE id_dominio = :dom AND id_pendenza = :id
                  ORDER BY data_pagamento DESC, id DESC
@@ -813,7 +814,8 @@ class FlussiRendicontazioniRepository
             $stmt = $this->pdo->prepare(
                 'SELECT id_flusso, data_flusso, data_regolamento, iur, iuv, importo,
                         esito, stato_rend, data_pagamento, id_psp, ragione_psp, trn,
-                        cod_entrata, descrizione_entrata, is_govpay
+                        cod_entrata, descrizione_entrata, is_govpay,
+                        rendicontazione_appio_stato, rendicontazione_confermato_at
                  FROM flussi_rendicontazioni
                  WHERE id_dominio = :dom AND iuv = :iuv
                  ORDER BY data_pagamento DESC, id DESC
