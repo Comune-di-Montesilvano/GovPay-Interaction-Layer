@@ -101,6 +101,46 @@ class UserGroupRepository
         }
     }
 
+    /** @return array<int,array{id_entrata:string,modalita:string}> */
+    public function getRendicontazioneTipologie(int $groupId, string $idDominio): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id_entrata, modalita FROM rendicontazione_gruppo_tipologie
+             WHERE group_id = :gid AND id_dominio = :dom ORDER BY id_entrata'
+        );
+        $stmt->execute([':gid' => $groupId, ':dom' => $idDominio]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /** @param array<int,array{id_entrata:string,modalita:string}> $assegnazioni */
+    public function setRendicontazioneTipologie(int $groupId, string $idDominio, array $assegnazioni): void
+    {
+        $this->pdo->prepare(
+            'DELETE FROM rendicontazione_gruppo_tipologie WHERE group_id = :gid AND id_dominio = :dom'
+        )->execute([':gid' => $groupId, ':dom' => $idDominio]);
+        $ins = $this->pdo->prepare(
+            'INSERT INTO rendicontazione_gruppo_tipologie (group_id, id_dominio, id_entrata, modalita)
+             VALUES (:gid, :dom, :ent, :mod)'
+        );
+        foreach ($assegnazioni as $a) {
+            $modalita = in_array($a['modalita'] ?? '', ['SOLO_NOTIFICA', 'NOTIFICA_E_SMARCATURA'], true)
+                ? $a['modalita'] : 'NOTIFICA_E_SMARCATURA';
+            $ins->execute([':gid' => $groupId, ':dom' => $idDominio, ':ent' => $a['id_entrata'], ':mod' => $modalita]);
+        }
+    }
+
+    /** @return string[] */
+    public function getMemberEmails(int $groupId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT u.email FROM users u
+             JOIN user_group_members m ON m.user_id = u.id
+             WHERE m.group_id = :gid AND u.email IS NOT NULL AND u.email != \'\''
+        );
+        $stmt->execute([':gid' => $groupId]);
+        return array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'email');
+    }
+
     /** @return int[] */
     public function getTemplateIds(int $groupId): array
     {

@@ -266,6 +266,33 @@ class ImpostazioniController
             }
         }
 
+        // Tab Rendicontazione: impostazioni motore + regole riconoscimento gestionali esterni
+        if ($tab === 'rendicontazione') {
+            $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
+            $repo = new \App\Database\RendicontazioneRepository();
+            $data['iuv_prefix_gil']          = SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
+            $data['scan_interval_minuti']    = SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15');
+            $data['scansioni_quiete_soglia'] = SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3');
+            $data['max_giorni_retry']        = SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7');
+            $data['geri_max_tentativi']      = SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3');
+            $data['notifica_admin_auto']     = SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false');
+            $data['admin_emails']            = SettingsRepository::get('rendicontazione', 'admin_emails', '');
+            $data['bridge_url']              = SettingsRepository::get('rendicontazione', 'bridge_url', '');
+            $data['regole_esterne']          = $repo->getRegoleEsterne($idDominio);
+
+            // Il tab posta verso RendicontazioneController, che valida il CSRF contro
+            // $_SESSION['rendicontazione_csrf'] (non 'impostazioni_csrf'): il token esposto
+            // al template deve provenire dalla stessa sessione scoped, altrimenti la
+            // validazione fallisce sempre.
+            if (session_status() !== PHP_SESSION_ACTIVE) {
+                @session_start();
+            }
+            if (empty($_SESSION['rendicontazione_csrf'])) {
+                $_SESSION['rendicontazione_csrf'] = bin2hex(random_bytes(32));
+            }
+            $data['csrf_token'] = (string)$_SESSION['rendicontazione_csrf'];
+        }
+
         $data['ssl_on'] = (strtolower((string)(getenv('SSL') ?: 'off')) === 'on');
 
         return $this->twig->render($response, 'impostazioni/index.html.twig', $data);

@@ -332,6 +332,34 @@ return function (App $app, Twig $twig): void {
         return $controller->deleteCustomTipologia($request, $response);
     });
 
+    // Rendicontazione GovPay — vista Da confermare
+    $app->get('/rendicontazione/da-confermare', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->daConfermare($request, $response);
+    });
+    $app->post('/rendicontazione/conferma', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->conferma($request, $response);
+    });
+
+    // Rendicontazione GovPay — Impostazioni tab (settings + regole esterne CRUD)
+    $app->get('/impostazioni/rendicontazione', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->impostazioniTab($request, $response);
+    });
+    $app->post('/impostazioni/rendicontazione/salva', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->salvaImpostazioni($request, $response);
+    });
+    $app->post('/impostazioni/rendicontazione/regole/add', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->aggiungiRegolaEsterna($request, $response);
+    });
+    $app->post('/impostazioni/rendicontazione/regole/{id}/delete', function(Request $request, Response $response, array $args) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->eliminaRegolaEsterna($request, $response, $args);
+    });
+
     // Pendenze
     $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);
@@ -799,6 +827,10 @@ return function (App $app, Twig $twig): void {
     $app->post('/configurazione/gruppi/{id}/set-templates', function($request, $response, $args) use ($twig) {
         $controller = new ConfigurazioneController($twig);
         return $controller->setGroupTemplates($request, $response, $args);
+    });
+    $app->post('/configurazione/gruppi/{id}/set-rendicontazione', function($request, $response, $args) use ($twig) {
+        $controller = new ConfigurazioneController($twig);
+        return $controller->setGroupRendicontazione($request, $response, $args);
     });
 
     // Endpoint per attivare/disattivare la tipologia direttamente su GovPay (solo superadmin)
