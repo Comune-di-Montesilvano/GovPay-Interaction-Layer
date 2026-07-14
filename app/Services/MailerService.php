@@ -285,6 +285,63 @@ class MailerService
         }
     }
 
+    /**
+     * Invia l'email di notifica per la ricevuta di pagamento.
+     */
+    public function sendPendenzaReceiptNotification(
+        string $toEmail,
+        string $toName,
+        array  $pendenzaData,
+        string $iuv,
+        string $tipologia,
+        string $dataPagamento,
+        string $receiptUrl = '',
+        string $appName = '',
+        string $logoPath = ''
+    ): array {
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        $timestamp = date('Y-m-d H:i:s');
+
+        try {
+            $hasEmbeddedLogo = ($logoPath !== '' && file_exists($logoPath));
+            $logoSrc = SettingsRepository::get('ui', 'logo_src', '');
+            $htmlBody = $this->renderPendenzaReceiptTemplate($toName, $pendenzaData, $iuv, $tipologia, $dataPagamento, $appName, $receiptUrl, $hasEmbeddedLogo, $logoSrc);
+            $textBody = $this->renderPendenzaReceiptTemplatePlain($toName, $pendenzaData, $iuv, $tipologia, $dataPagamento, $appName, $receiptUrl);
+
+            $causale = $pendenzaData['causale'] ?? 'Ricevuta di pagamento';
+            $email = (new Email())
+                ->from($this->from)
+                ->to(new Address($toEmail, $toName))
+                ->subject("Ricevuta di pagamento PagoPA - \"$causale\"")
+                ->html($htmlBody)
+                ->text($textBody);
+            
+            if ($hasEmbeddedLogo) {
+                $email->embedFromPath($logoPath, 'logo');
+            }
+
+            $this->mailer->send($email);
+
+            return [
+                'timestamp' => $timestamp,
+                'esito' => 'OK',
+                'destinatario' => $toEmail,
+                'canale' => 'email',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'timestamp' => $timestamp,
+                'esito' => 'ERRORE',
+                'destinatario' => $toEmail,
+                'canale' => 'email',
+                'errore' => $e->getMessage(),
+            ];
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Template inline (HTML + testo)
     // -------------------------------------------------------------------------
@@ -582,6 +639,135 @@ HTML;
 
         -- {$appName}
         TEXT;
+    }
+
+    private function renderPendenzaReceiptTemplate(
+        string $toName,
+        array  $pendenzaData,
+        string $iuv,
+        string $tipologia,
+        string $dataPagamento,
+        string $appName,
+        string $receiptUrl,
+        bool   $hasEmbeddedLogo = false,
+        string $logoSrc = ''
+    ): string {
+        $safeToName  = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
+        $safeAppName = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
+        $causale     = htmlspecialchars($pendenzaData['causale'] ?? 'Ricevuta pagamento', ENT_QUOTES, 'UTF-8');
+        $importo     = number_format((float)($pendenzaData['importo'] ?? 0.0), 2, ',', '.');
+        $safeIuv     = htmlspecialchars($iuv, ENT_QUOTES, 'UTF-8');
+        $safeTipologia = htmlspecialchars($tipologia, ENT_QUOTES, 'UTF-8');
+        $safeDataPagamento = htmlspecialchars($dataPagamento, ENT_QUOTES, 'UTF-8');
+
+        $greeting = $safeToName !== '' ? 'Gentile <strong>' . $safeToName . '</strong>,' : 'Gentile Interessato,';
+
+        $actionButtons = '';
+        if ($receiptUrl !== '') {
+            $safeReceiptUrl = htmlspecialchars($receiptUrl, ENT_QUOTES, 'UTF-8');
+            $actionButtons = <<<HTML
+              <p style="text-align:center; margin:24px 0;">
+                <a href="{$safeReceiptUrl}" class="btn" style="background:#0b3d91; color:#fff; text-decoration:none; padding:14px 32px; border-radius:6px; font-weight:600; font-size:15px; display:inline-block;">Scarica Ricevuta</a>
+              </p>
+HTML;
+        }
+
+        $tipologiaInfo = $safeTipologia !== '' ? "<p><strong>Tipologia:</strong> {$safeTipologia}</p>" : '';
+        $iuvInfo = $safeIuv !== '' ? "<p><strong>IUV:</strong> {$safeIuv}</p>" : '';
+        $dataPagamentoInfo = $safeDataPagamento !== '' ? "<p><strong>Data pagamento:</strong> {$safeDataPagamento}</p>" : '';
+
+        $safeLogoSrc = htmlspecialchars($logoSrc, ENT_QUOTES, 'UTF-8');
+        if ($hasEmbeddedLogo) {
+          $logoHtml = '<img src="cid:logo" alt="Logo ente" style="max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto;">'
+            . '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        } elseif ($safeLogoSrc !== '') {
+          $logoHtml = '<img src="' . $safeLogoSrc . '" alt="Logo ente" style="max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto;">'
+            . '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        } else {
+          $logoHtml = '<h1 style="margin:0; color:#fff; font-size:20px; font-weight:600;">' . $safeAppName . '</h1>';
+        }
+
+        return <<<HTML
+        <!DOCTYPE html>
+        <html lang="it">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Ricevuta PagoPA - {$causale}</title>
+          <style>
+            body { margin:0; padding:0; background:#f4f7fa; font-family: 'Helvetica Neue', Arial, sans-serif; color:#333; }
+            .wrapper { max-width:560px; margin:40px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+            .header { background:#0b3d91; padding:28px 32px; text-align:center; }
+            .header h1 { margin:0; color:#fff; font-size:20px; font-weight:600; letter-spacing:.5px; }
+            .header img { max-width:120px; height:auto; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto; }
+            .body { padding:32px; }
+            .body p { line-height:1.6; margin:0 0 16px; }
+            .info-box { background:#f8f9fa; border-left:4px solid #0b3d91; padding:16px; margin:16px 0; border-radius:4px; }
+            .info-box p { margin:8px 0; }
+            .btn { display:inline-block; margin:8px 4px; padding:14px 32px; background:#0b3d91; color:#fff; text-decoration:none; border-radius:6px; font-weight:600; font-size:15px; }
+            .footer { background:#f4f7fa; padding:18px 32px; text-align:center; font-size:12px; color:#999; }
+          </style>
+        </head>
+        <body>
+          <div class="wrapper">
+            <div class="header">
+              {$logoHtml}
+            </div>
+            <div class="body">
+              <p>{$greeting}</p>
+              <p>abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto. Di seguito i dettagli della ricevuta:</p>
+              <div class="info-box">
+                <p><strong>Causale:</strong> {$causale}</p>
+                <p><strong>Importo:</strong> &euro; {$importo}</p>
+                {$tipologiaInfo}
+                {$iuvInfo}
+                {$dataPagamentoInfo}
+              </div>
+              {$actionButtons}
+              <p style="font-size:13px; color:#666;">Utilizza il pulsante qui sopra per scaricare la ricevuta di pagamento.</p>
+            </div>
+            <div class="footer">
+              &copy; {$safeAppName} · Email generata automaticamente, non rispondere.
+            </div>
+          </div>
+        </body>
+        </html>
+        HTML;
+    }
+
+    private function renderPendenzaReceiptTemplatePlain(
+        string $toName,
+        array  $pendenzaData,
+        string $iuv,
+        string $tipologia,
+        string $dataPagamento,
+        string $appName,
+        string $receiptUrl
+    ): string {
+        $causale = $pendenzaData['causale'] ?? 'Ricevuta pagamento';
+        $importo = number_format((float)($pendenzaData['importo'] ?? 0.0), 2, ',', '.');
+        $greeting = $toName !== '' ? "Gentile {$toName}," : "Gentile Interessato,";
+
+        $text = "{$greeting}\n\n";
+        $text .= "Ti confermiamo che abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto.\n\n";
+        $text .= "Dettagli:\n";
+        $text .= "- Causale: {$causale}\n";
+        $text .= "- Importo: € {$importo}\n";
+        if ($tipologia !== '') {
+            $text .= "- Tipologia: {$tipologia}\n";
+        }
+        if ($iuv !== '') {
+            $text .= "- IUV: {$iuv}\n";
+        }
+        if ($dataPagamento !== '') {
+            $text .= "- Data pagamento: {$dataPagamento}\n";
+        }
+        if ($receiptUrl !== '') {
+            $text .= "\nPuoi scaricare la ricevuta a questo link: {$receiptUrl}\n";
+        }
+        $text .= "\n---\n{$appName} - Email generata automaticamente, non rispondere.";
+
+        return $text;
     }
 
     /**

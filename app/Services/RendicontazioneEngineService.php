@@ -124,8 +124,10 @@ class RendicontazioneEngineService
 
         if (!$skipAppIo) {
             $this->tentaNotificaAppIo($rigaId, $pendenza, $riga);
+            $this->tentaNotificaEmail($rigaId, $pendenza, $riga);
         } else {
             $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
+            $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
         }
     }
 
@@ -163,8 +165,9 @@ class RendicontazioneEngineService
             }
 
             $this->tentaNotificaAppIo($rigaId, $pendenza, $riga);
+            $this->tentaNotificaEmail($rigaId, $pendenza, $riga);
         } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Errore notifica App IO rendicontazione (conferma manuale)', [
+            Logger::getInstance()->warning('Errore notifica App IO / Email rendicontazione (conferma manuale)', [
                 'riga_id' => $rigaId,
                 'error'   => $e->getMessage(),
             ]);
@@ -420,5 +423,98 @@ class RendicontazioneEngineService
         } catch (\Throwable $e) {
             Logger::getInstance()->error("Errore durante controllaERegolarizzaFlussoPerRiga per riga {$rigaId}: " . $e->getMessage());
         }
+    }
+
+    private function emailGiaProcessata(int $rigaId): bool
+    {
+        $fresh = $this->repo->findById($rigaId);
+        $statoFresco = (string)($fresh['rendicontazione_email_stato'] ?? '');
+        return in_array($statoFresco, ['INVIATO', 'NON_APPLICABILE'], true);
+    }
+
+    private function tentaNotificaEmail(int $rigaId, array $pendenza, array $riga): void
+    {
+        if ($this->emailGiaProcessata($rigaId)) {
+            return;
+        }
+
+        $toEmail = trim((string)($pendenza['soggettoPagatore']['email'] ?? ''));
+        if ($toEmail === '') {
+            $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
+            return;
+        }
+
+        // Salta l'invio della notifica se il pagamento o il flusso sono più vecchi di 14 giorni
+        $limiteGiorni = 14;
+        $dataPagamento = $riga['data_pagamento'] ?? null;
+        if ($dataPagamento) {
+            $diffSeconds = time() - strtotime($dataPagamento);
+            if ($diffSeconds > ($limiteGiorni * 86400)) {
+                $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
+                return;
+            }
+        }
+        $dataFlusso = $riga['data_flusso'] ?? null;
+        if ($dataFlusso) {
+            $diffSeconds = time() - strtotime($dataFlusso);
+            if ($diffSeconds > ($limiteGiorni * 86400)) {
+                $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
+                return;
+            }
+        }
+
+        try {
+            $frontofficeUrl = $this->resolveFrontofficeBaseUrl();
+            $iur = (string)($riga['iur'] ?? '');
+            $link = ($frontofficeUrl !== '' && $iur !== '')
+                ? $this->buildRicevutaLink($frontofficeUrl, (string)$riga['iuv'], $iur)
+                : '';
+
+            $toName = trim((string)($pendenza['soggettoPagatore']['anagrafica'] ?? ''));
+            $tipologia = (string)($riga['descrizione_entrata'] ?? $riga['cod_entrata'] ?? '');
+            $dataPagamentoRaw = (string)($pendenza['dataPagamento'] ?? '');
+            $dataPagamentoFormatted = $dataPagamentoRaw !== '' ? date('d/m/Y', strtotime($dataPagamentoRaw)) : '';
+            $iuv = (string)($riga['iuv'] ?? '');
+
+            $mailer = MailerService::forSuite('backoffice');
+            $logoPath = $this->resolveLogoPathForEmail();
+            $res = $mailer->sendPendenzaReceiptNotification(
+                $toEmail,
+                $toName,
+                $pendenza,
+                $iuv,
+                $tipologia,
+                $dataPagamentoFormatted,
+                $link,
+                '',
+                $logoPath
+            );
+
+            if (($res['esito'] ?? 'KO') === 'OK') {
+                $this->repo->markEmailInviata($rigaId);
+            } else {
+                $this->repo->markEmailEsito($rigaId, 'ERRORE');
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore notifica Email rendicontazione', [
+                'riga_id' => $rigaId,
+                'error'   => $e->getMessage(),
+            ]);
+            $this->repo->markEmailEsito($rigaId, 'ERRORE');
+        }
+    }
+
+    private function resolveLogoPathForEmail(): string
+    {
+        foreach ([
+            '/var/www/html/public/img/stemma_ente.png',
+            '/var/www/html/public/img/stemma_ente.jpg',
+            '/var/www/html/public/img/stemma_ente.jpeg',
+        ] as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+        return '';
     }
 }
