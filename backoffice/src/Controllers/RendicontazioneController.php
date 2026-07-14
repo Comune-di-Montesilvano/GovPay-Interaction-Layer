@@ -158,7 +158,7 @@ class RendicontazioneController
             'iuv_prefix_gil'          => SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL'),
             'scan_interval_minuti'    => SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'),
             'scansioni_quiete_soglia' => SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'),
-            'max_giorni_retry'       => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'),
+            'max_giorni_retry'       => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'),
             'geri_max_tentativi'     => SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'),
             'notifica_admin_auto'    => SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false'),
             'admin_emails'           => SettingsRepository::get('rendicontazione', 'admin_emails', ''),
@@ -184,7 +184,7 @@ class RendicontazioneController
         SettingsRepository::set('rendicontazione', 'iuv_prefix_gil', trim((string)($data['iuv_prefix_gil'] ?? 'GIL')) ?: 'GIL', false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'scan_interval_minuti', (string)max(1, (int)($data['scan_interval_minuti'] ?? 15)), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'scansioni_quiete_soglia', (string)max(1, (int)($data['scansioni_quiete_soglia'] ?? 3)), false, (string)$user['id']);
-        SettingsRepository::set('rendicontazione', 'max_giorni_retry', (string)max(1, (int)($data['max_giorni_retry'] ?? 7)), false, (string)$user['id']);
+        SettingsRepository::set('rendicontazione', 'max_giorni_retry', (string)max(1, (int)($data['max_giorni_retry'] ?? 14)), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'geri_max_tentativi', (string)max(1, (int)($data['geri_max_tentativi'] ?? 3)), false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'notifica_admin_auto', !empty($data['notifica_admin_auto']) ? 'true' : 'false', false, (string)$user['id']);
         SettingsRepository::set('rendicontazione', 'admin_emails', trim((string)($data['admin_emails'] ?? '')), false, (string)$user['id']);
