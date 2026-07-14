@@ -140,7 +140,7 @@ while (true) {
     try {
         $govPayClient = buildGovPayClientForRendicontazione();
         $engine = new RendicontazioneEngineService($repo, $bridge, $govPayClient);
-        $result = $engine->processaCiclo($idDominio, $idA2A, $backofficeUrl, 200, $minDataPagamento, $geriMaxTentativi);
+        $result = $engine->processaCiclo($idDominio, $idA2A, $backofficeUrl, 2000, $minDataPagamento, $geriMaxTentativi);
         $log(sprintf('Ciclo: processate=%d nuove=%d', $result['processate'], $result['nuove']));
 
         // Sweep per tentare/ritentare la regolarizzazione di tutti i flussi completi non ancora regolarizzati
