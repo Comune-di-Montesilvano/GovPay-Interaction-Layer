@@ -391,6 +391,16 @@ class RendicontazioneRepository
         return array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_flusso');
     }
 
+    public function hasGovPayPayments(string $idDominio, string $idFlusso): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso AND is_govpay = 1'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
     public function getUnaRigaPerFlusso(string $idDominio, string $idFlusso): ?array
     {
         $stmt = $this->pdo->prepare(
