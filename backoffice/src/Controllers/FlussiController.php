@@ -386,6 +386,7 @@ class FlussiController
         }
 
         $isRegolarizzato = false;
+        $hasGovPayPayments = false;
         if (!$errors && $flow && $idFlusso !== '') {
             $fiscalCode = $flow['idDominio']
                 ?? ($flow['dominio']['idDominio'] ?? null)
@@ -393,7 +394,9 @@ class FlussiController
                 ?? (string)\App\Config\SettingsRepository::get('entity', 'id_dominio', '');
             if ($fiscalCode !== '') {
                 try {
-                    $isRegolarizzato = (new \App\Database\RendicontazioneRepository())->isFlussoRegolarizzato($fiscalCode, $idFlusso);
+                    $repo = new \App\Database\RendicontazioneRepository();
+                    $isRegolarizzato = $repo->isFlussoRegolarizzato($fiscalCode, $idFlusso);
+                    $hasGovPayPayments = $repo->hasGovPayPayments($fiscalCode, $idFlusso);
                 } catch (\Throwable $_) {}
             }
         }
@@ -405,6 +408,7 @@ class FlussiController
             'return_url' => $return,
             'custom_tipologie_map' => $customTipologieMap,
             'is_regolarizzato' => $isRegolarizzato,
+            'has_govpay_payments' => $hasGovPayPayments,
         ]);
     }
 
@@ -575,6 +579,12 @@ class FlussiController
         $rigaFlusso = $repo->getUnaRigaPerFlusso($idDominio, $idFlusso);
         if (!$rigaFlusso) {
             $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Il flusso non è presente nel database locale della rendicontazione.'];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+        }
+
+        // 2.5 Verifica se il flusso contiene pendenze interne GovPay
+        if (!$repo->hasGovPayPayments($idDominio, $idFlusso)) {
+            $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Questo flusso contiene solo pendenze esterne (non GovPay) e non richiede regolarizzazione su GovPay.'];
             return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
         }
 
