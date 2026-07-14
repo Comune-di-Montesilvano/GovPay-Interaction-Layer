@@ -19,6 +19,7 @@ final class RendicontazioneRouter
      * @param array<int,array{pattern_tipo:string,pattern_valore:string,handler:string}> $regoleEsterne
      */
     public static function decide(
+        string $idPendenza,
         string $iuv,
         string $iuvPrefixGil,
         ?array $gruppoAssociato,
@@ -28,7 +29,7 @@ final class RendicontazioneRouter
             return new RendicontazioneDecision('IN_ATTESA_CONFERMA', null);
         }
 
-        if (str_starts_with($iuv, $iuvPrefixGil)) {
+        if (str_starts_with($idPendenza, $iuvPrefixGil) || str_starts_with($iuv, $iuvPrefixGil)) {
             return new RendicontazioneDecision('GESTITO', 'GIL_MANUALE');
         }
 
