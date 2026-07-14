@@ -412,4 +412,15 @@ class RendicontazioneRepository
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         return $row ?: null;
     }
+
+    public function getRigheRendicontazioneDaElaborare(string $idDominio, string $idFlusso): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso AND is_govpay = 1
+               AND rendicontazione_stato IN (\'PENDING\', \'ERRORE\')'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
 }

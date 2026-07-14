@@ -579,20 +579,15 @@ class FlussiController
             return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
         }
 
-        // 3. Verifica se tutti i pagamenti GovPay interni nel flusso sono in stato GESTITO
-        if (!$repo->isFlussoRendicontato($idDominio, $idFlusso)) {
-            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Il flusso non può essere regolarizzato perché ci sono pagamenti non ancora completati (in stato PENDING, IN_ATTESA_CONFERMA o ERRORE).'];
-            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
-        }
-
-        // 4. Esegui la regolarizzazione tramite RendicontazioneEngineService
+        // 3. Elabora eventuali pendenze GovPay interne in stato PENDING o ERRORE
         try {
-            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+            $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
             if ($backofficeUrl === '') {
                 throw new \RuntimeException('govpay.backoffice_url non configurato.');
             }
+            $idA2A = (string)SettingsRepository::get('govpay', 'id_a2a', '');
 
-            // Costruiamo il client HTTP per GovPay
+            // Costruiamo il client HTTP per GovPay ed il bridge
             $opts = [
                 'connect_timeout' => 5,
                 'timeout'         => 20,
@@ -606,6 +601,33 @@ class FlussiController
             $bridge = new \App\Services\LegacyRendicontazioneBridgeClient();
             $engine = new \App\Services\RendicontazioneEngineService($repo, $bridge, $govPayClient);
 
+            $daElaborare = $repo->getRigheRendicontazioneDaElaborare($idDominio, $idFlusso);
+            if (!empty($daElaborare)) {
+                if ($idA2A === '') {
+                    throw new \RuntimeException('govpay.id_a2a non configurato ma sono presenti pendenze interne da elaborare.');
+                }
+                foreach ($daElaborare as $riga) {
+                    $engine->processaRigaSpecifica($riga, $idDominio, $idA2A, $backofficeUrl, 3, true);
+
+                    $updatedRiga = $repo->findById((int)$riga['id']);
+                    if ($updatedRiga && $updatedRiga['rendicontazione_stato'] !== 'IN_ATTESA_CONFERMA') {
+                        $repo->marcaNotificate([(int)$riga['id']]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore durante l\'elaborazione preliminare delle pendenze: ' . $e->getMessage()];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+        }
+
+        // 4. Verifica se tutti i pagamenti GovPay interni nel flusso sono in stato GESTITO
+        if (!$repo->isFlussoRendicontato($idDominio, $idFlusso)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Il flusso non può essere regolarizzato perché ci sono pagamenti non ancora completati (in stato PENDING, IN_ATTESA_CONFERMA o ERRORE).'];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+        }
+
+        // 5. Esegui la regolarizzazione su GovPay
+        try {
             // Recuperiamo i dettagli reali da GovPay (importoTotale e TRN/SCT)
             $importo = 0.0;
             $trn = '';

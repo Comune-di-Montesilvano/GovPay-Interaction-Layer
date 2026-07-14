@@ -20,9 +20,6 @@ class RendicontazioneEngineService
     /** @return array{processate:int, nuove:int} */
     public function processaCiclo(string $idDominio, string $idA2A, string $backofficeUrl, int $limit, string $minDataPagamento, int $geriMaxTentativi = 3): array
     {
-        $iuvPrefixGil = (string)SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
-        $regoleEsterne = $this->repo->getRegoleEsterneAttive($idDominio);
-
         $righe = $this->repo->getPendingOrError($idDominio, $limit, $minDataPagamento);
         $nuove = 0;
 
@@ -30,67 +27,85 @@ class RendicontazioneEngineService
             if ($riga['rendicontazione_stato'] === 'PENDING') {
                 $nuove++;
             }
-
-            $idPendenza = (string)($riga['id_pendenza'] ?? '');
-            $iuv = (string)($riga['iuv'] ?? '');
-            if ($idPendenza === '' || $iuv === '') {
-                $this->repo->markErrore((int)$riga['id'], 'id_pendenza o iuv mancante sulla riga');
-                continue;
-            }
-
-            try {
-                $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-                $response = $this->govPayClient->request('GET', $url);
-                $pendenza = json_decode((string)$response->getBody(), true);
-                if (!is_array($pendenza)) {
-                    throw new \RuntimeException('Risposta GovPay non valida');
-                }
-            } catch (\Throwable $e) {
-                $this->repo->markErrore((int)$riga['id'], 'Errore fetch pendenza GovPay: ' . $e->getMessage());
-                continue;
-            }
-
-            $idEntrata = (string)($riga['cod_entrata'] ?? '');
-            $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
-
-            $decision = RendicontazioneRouter::decide($iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);
-
-            if ($decision->stato === 'IN_ATTESA_CONFERMA') {
-                $this->repo->markInAttesaConferma((int)$riga['id']);
-                continue;
-            }
-
-            if ($decision->handler === 'GERI' || $decision->handler === 'DILAZIONE') {
-                if ($decision->handler === 'GERI' && (int)($riga['rendicontazione_tentativi_geri'] ?? 0) >= $geriMaxTentativi) {
-                    $this->repo->markErrore((int)$riga['id'], 'Cap tentativi Geri raggiunto, richiede intervento manuale');
-                    continue;
-                }
-
-                $idAtto = (string)($pendenza['documento']['identificativo'] ?? '');
-                $dataPagamento = (string)($pendenza['dataPagamento'] ?? '');
-                $importo = (float)($pendenza['importo'] ?? 0);
-                $rata = isset($pendenza['documento']['rata']) ? (string)$pendenza['documento']['rata'] : null;
-
-                $esito = $this->bridge->invia($decision->handler, $iuv, $idAtto, $dataPagamento, $importo, $rata);
-                if (!$esito['esito']) {
-                    if ($decision->handler === 'GERI') {
-                        $this->repo->markErroreGeri((int)$riga['id'], "Bridge GERI: " . $esito['messaggio']);
-                    } else {
-                        $this->repo->markErrore((int)$riga['id'], "Bridge DILAZIONE: " . $esito['messaggio']);
-                    }
-                    continue;
-                }
-                $this->repo->markGestito((int)$riga['id'], $decision->handler, $esito['messaggio']);
-            } else {
-                $this->repo->markGestito((int)$riga['id'], (string)$decision->handler);
-            }
-
-            $this->controllaERegolarizzaFlussoPerRiga($idDominio, (int)$riga['id'], $backofficeUrl);
-
-            $this->tentaNotificaAppIo((int)$riga['id'], $pendenza, $riga);
+            $this->processaRigaSpecifica($riga, $idDominio, $idA2A, $backofficeUrl, $geriMaxTentativi, false);
         }
 
         return ['processate' => count($righe), 'nuove' => $nuove];
+    }
+
+    public function processaRigaSpecifica(
+        array  $riga,
+        string $idDominio,
+        string $idA2A,
+        string $backofficeUrl,
+        int    $geriMaxTentativi = 3,
+        bool   $skipAppIo = false
+    ): void {
+        $iuvPrefixGil = (string)SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
+        $regoleEsterne = $this->repo->getRegoleEsterneAttive($idDominio);
+
+        $rigaId = (int)$riga['id'];
+        $idPendenza = (string)($riga['id_pendenza'] ?? '');
+        $iuv = (string)($riga['iuv'] ?? '');
+        if ($idPendenza === '' || $iuv === '') {
+            $this->repo->markErrore($rigaId, 'id_pendenza o iuv mancante sulla riga');
+            return;
+        }
+
+        try {
+            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+            $response = $this->govPayClient->request('GET', $url);
+            $pendenza = json_decode((string)$response->getBody(), true);
+            if (!is_array($pendenza)) {
+                throw new \RuntimeException('Risposta GovPay non valida');
+            }
+        } catch (\Throwable $e) {
+            $this->repo->markErrore($rigaId, 'Errore fetch pendenza GovPay: ' . $e->getMessage());
+            return;
+        }
+
+        $idEntrata = (string)($riga['cod_entrata'] ?? '');
+        $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
+
+        $decision = RendicontazioneRouter::decide($iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);
+
+        if ($decision->stato === 'IN_ATTESA_CONFERMA') {
+            $this->repo->markInAttesaConferma($rigaId);
+            return;
+        }
+
+        if ($decision->handler === 'GERI' || $decision->handler === 'DILAZIONE') {
+            if ($decision->handler === 'GERI' && (int)($riga['rendicontazione_tentativi_geri'] ?? 0) >= $geriMaxTentativi) {
+                $this->repo->markErrore($rigaId, 'Cap tentativi Geri raggiunto, richiede intervento manuale');
+                return;
+            }
+
+            $idAtto = (string)($pendenza['documento']['identificativo'] ?? '');
+            $dataPagamento = (string)($pendenza['dataPagamento'] ?? '');
+            $importo = (float)($pendenza['importo'] ?? 0);
+            $rata = isset($pendenza['documento']['rata']) ? (string)$pendenza['documento']['rata'] : null;
+
+            $esito = $this->bridge->invia($decision->handler, $iuv, $idAtto, $dataPagamento, $importo, $rata);
+            if (!$esito['esito']) {
+                if ($decision->handler === 'GERI') {
+                    $this->repo->markErroreGeri($rigaId, "Bridge GERI: " . $esito['messaggio']);
+                } else {
+                    $this->repo->markErrore($rigaId, "Bridge DILAZIONE: " . $esito['messaggio']);
+                }
+                return;
+            }
+            $this->repo->markGestito($rigaId, $decision->handler, $esito['messaggio']);
+        } else {
+            $this->repo->markGestito($rigaId, (string)$decision->handler);
+        }
+
+        $this->controllaERegolarizzaFlussoPerRiga($idDominio, $rigaId, $backofficeUrl);
+
+        if (!$skipAppIo) {
+            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga);
+        } else {
+            $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
+        }
     }
 
     /**
