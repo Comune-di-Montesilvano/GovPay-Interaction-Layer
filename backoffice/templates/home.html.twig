@@ -45,6 +45,24 @@
     </div>
   </div>
 
+  {# 1b. Smarcature Pendenti Alert Bar #}
+  {% if da_confermare_count is defined and da_confermare_count > 0 %}
+    <div class="alert alert-warning d-flex justify-content-between align-items-center shadow-sm mb-4 border-start border-4 border-warning" style="background-color: var(--bs-warning-bg-subtle, #fff3cd); color: var(--bs-warning-text-emphasis, #664d03);">
+      <div class="d-flex align-items-center gap-3">
+        <div class="d-flex align-items-center justify-content-center rounded-circle" style="width: 42px; height: 42px; background-color: rgba(255, 193, 7, 0.25); color: #b07d00;">
+          <i class="fas fa-scale-balanced fa-lg" aria-hidden="true"></i>
+        </div>
+        <div>
+          <h4 class="alert-heading h6 mb-1 fw-bold">Smarcature manuali in attesa</h4>
+          <p class="mb-0 small opacity-85">Ci sono <strong>{{ da_confermare_count }}</strong> pagamenti che richiedono la tua smarcatura manuale.</p>
+        </div>
+      </div>
+      <a href="/rendicontazione/da-confermare" class="btn btn-warning btn-sm fw-semibold" style="background-color: #ffc107; border-color: #ffc107; color: #000;">
+        Vai alla smarcatura <i class="fas fa-arrow-right ms-1" aria-hidden="true"></i>
+      </a>
+    </div>
+  {% endif %}
+
   {# 2. Backlog Warning Bar #}
   <div class="bo-backlog-bar shadow-sm d-none" id="bo-backlog-bar" style="margin-bottom: 1.5rem;">
     <div class="d-flex align-items-center gap-2">
