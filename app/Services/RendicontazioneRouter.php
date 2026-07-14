@@ -25,11 +25,12 @@ final class RendicontazioneRouter
         ?array $gruppoAssociato,
         array $regoleEsterne
     ): RendicontazioneDecision {
-        if ($gruppoAssociato !== null && $gruppoAssociato['modalita'] === 'NOTIFICA_E_SMARCATURA') {
-            return new RendicontazioneDecision('IN_ATTESA_CONFERMA', null);
-        }
+        $isGil = str_starts_with($idPendenza, $iuvPrefixGil) || str_starts_with($iuv, $iuvPrefixGil);
 
-        if (str_starts_with($idPendenza, $iuvPrefixGil) || str_starts_with($iuv, $iuvPrefixGil)) {
+        if ($isGil) {
+            if ($gruppoAssociato !== null && $gruppoAssociato['modalita'] === 'NOTIFICA_E_SMARCATURA') {
+                return new RendicontazioneDecision('IN_ATTESA_CONFERMA', null);
+            }
             return new RendicontazioneDecision('GESTITO', 'GIL_MANUALE');
         }
 

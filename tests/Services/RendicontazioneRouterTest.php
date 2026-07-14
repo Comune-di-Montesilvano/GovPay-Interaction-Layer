@@ -76,7 +76,7 @@ final class RendicontazioneRouterTest extends TestCase
         $this->assertSame('GERI', $decision->handler);
     }
 
-    public function testNonGilConGruppoNotificaESmarcaturaVaInAttesa(): void
+    public function testNonGilConGruppoNotificaESmarcaturaVaInAutoEsterno(): void
     {
         $decision = RendicontazioneRouter::decide(
             '',
@@ -85,7 +85,7 @@ final class RendicontazioneRouterTest extends TestCase
             ['modalita' => 'NOTIFICA_E_SMARCATURA'],
             []
         );
-        $this->assertSame('IN_ATTESA_CONFERMA', $decision->stato);
-        $this->assertNull($decision->handler);
+        $this->assertSame('GESTITO', $decision->stato);
+        $this->assertSame('AUTO_ESTERNO', $decision->handler);
     }
 }
