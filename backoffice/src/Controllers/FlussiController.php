@@ -291,6 +291,21 @@ class FlussiController
                             ?? ($flow['dominio']['idDominio'] ?? null)
                             ?? ($flow['dominio']['id'] ?? null)
                             ?? (string)\App\Config\SettingsRepository::get('entity', 'id_dominio', '');
+
+                        $localRowsMap = [];
+                        if ($idFlusso !== '' && $fiscalCode !== '') {
+                            try {
+                                $repoTemp = new \App\Database\RendicontazioneRepository();
+                                $localRows = $repoTemp->getRighePerFlusso($fiscalCode, $idFlusso);
+                                foreach ($localRows as $lr) {
+                                    $key = !empty($lr['iur']) ? $lr['iur'] : $lr['iuv'];
+                                    if ($key !== '') {
+                                        $localRowsMap[$key] = $lr;
+                                    }
+                                }
+                            } catch (\Throwable $_) {}
+                        }
+
                         foreach ($flow[$paymentsKey] as $index => $payment) {
                             $risc = $payment['riscossione'] ?? null;
                             $hasVoce = !empty($payment['voce'])
@@ -301,6 +316,17 @@ class FlussiController
                             if (!$hasVoce && $iuv !== '' && $iur !== '') {
                                 $flow[$paymentsKey][$index]['is_orphan'] = true;
                                 $flow[$paymentsKey][$index]['_fc'] = $fiscalCode;
+                            }
+
+                            // Associate local rendicontazione data if available
+                            $localRow = null;
+                            if ($iur !== '' && isset($localRowsMap[$iur])) {
+                                $localRow = $localRowsMap[$iur];
+                            } elseif ($iuv !== '' && isset($localRowsMap[$iuv])) {
+                                $localRow = $localRowsMap[$iuv];
+                            }
+                            if ($localRow) {
+                                $flow[$paymentsKey][$index]['_local_rendicontazione'] = $localRow;
                             }
                         }
 
@@ -386,6 +412,7 @@ class FlussiController
         }
 
         $isRegolarizzato = false;
+        $isRendicontato = true;
         if (!$errors && $flow && $idFlusso !== '') {
             $fiscalCode = $flow['idDominio']
                 ?? ($flow['dominio']['idDominio'] ?? null)
@@ -395,6 +422,7 @@ class FlussiController
                 try {
                     $repo = new \App\Database\RendicontazioneRepository();
                     $isRegolarizzato = $repo->isFlussoRegolarizzato($fiscalCode, $idFlusso);
+                    $isRendicontato = $repo->isFlussoRendicontato($fiscalCode, $idFlusso);
                 } catch (\Throwable $_) {}
             }
         }
@@ -406,6 +434,7 @@ class FlussiController
             'return_url' => $return,
             'custom_tipologie_map' => $customTipologieMap,
             'is_regolarizzato' => $isRegolarizzato,
+            'is_rendicontato' => $isRendicontato,
         ]);
     }
 

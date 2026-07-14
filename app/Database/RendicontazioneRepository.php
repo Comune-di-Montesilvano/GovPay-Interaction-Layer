@@ -429,4 +429,14 @@ class RendicontazioneRepository
         $stmt = $this->pdo->prepare('UPDATE flussi_rendicontazioni SET cod_entrata = :cod WHERE id = :id');
         $stmt->execute([':cod' => $codEntrata, ':id' => $id]);
     }
+
+    public function getRighePerFlusso(string $idDominio, string $idFlusso): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND id_flusso = :flusso'
+        );
+        $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
 }
