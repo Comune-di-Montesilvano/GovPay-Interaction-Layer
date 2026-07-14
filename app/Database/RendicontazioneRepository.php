@@ -384,6 +384,7 @@ class RendicontazioneRepository
                AND id_flusso NOT IN (
                    SELECT DISTINCT id_flusso FROM flussi_rendicontazioni
                    WHERE id_dominio = :dom_sub AND id_flusso IS NOT NULL AND id_flusso != ''
+                     AND is_govpay = 1
                      AND rendicontazione_stato IN ('PENDING', 'IN_ATTESA_CONFERMA', 'ERRORE')
                )"
         );
