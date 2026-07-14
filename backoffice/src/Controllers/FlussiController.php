@@ -385,12 +385,26 @@ class FlussiController
             } catch (\Throwable $_) {}
         }
 
+        $isRegolarizzato = false;
+        if (!$errors && $flow && $idFlusso !== '') {
+            $fiscalCode = $flow['idDominio']
+                ?? ($flow['dominio']['idDominio'] ?? null)
+                ?? ($flow['dominio']['id'] ?? null)
+                ?? (string)\App\Config\SettingsRepository::get('entity', 'id_dominio', '');
+            if ($fiscalCode !== '') {
+                try {
+                    $isRegolarizzato = (new \App\Database\RendicontazioneRepository())->isFlussoRegolarizzato($fiscalCode, $idFlusso);
+                } catch (\Throwable $_) {}
+            }
+        }
+
         return $this->twig->render($response, 'pagamenti/dettaglio_flusso.html.twig', [
             'errors' => $errors,
             'flusso' => $flow,
             'id_flusso' => $idFlusso,
             'return_url' => $return,
             'custom_tipologie_map' => $customTipologieMap,
+            'is_regolarizzato' => $isRegolarizzato,
         ]);
     }
 
@@ -532,5 +546,122 @@ class FlussiController
             }
         }
         return new Client($guzzleOptions);
+    }
+
+    public function regularize(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->isAdminOrSuperadmin()) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Accesso negato. Operazione riservata agli amministratori.'];
+            return $response->withHeader('Location', '/login')->withStatus(302);
+        }
+
+        $idFlusso = isset($args['idFlusso']) ? (string)$args['idFlusso'] : '';
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+
+        if ($idFlusso === '' || $idDominio === '') {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Parametri mancanti per la regolarizzazione del flusso.'];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi')->withStatus(302);
+        }
+
+        $repo = new \App\Database\RendicontazioneRepository();
+
+        // 1. Verifica se già regolarizzato
+        if ($repo->isFlussoRegolarizzato($idDominio, $idFlusso)) {
+            $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'Il flusso è già stato regolarizzato.'];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+        }
+
+        // 2. Trova una riga per il flusso per ottenere informazioni di base
+        $rigaFlusso = $repo->getUnaRigaPerFlusso($idDominio, $idFlusso);
+        if (!$rigaFlusso) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Il flusso non è presente nel database locale della rendicontazione.'];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+        }
+
+        // 3. Verifica se tutti i pagamenti GovPay interni nel flusso sono in stato GESTITO
+        if (!$repo->isFlussoRendicontato($idDominio, $idFlusso)) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Il flusso non può essere regolarizzato perché ci sono pagamenti non ancora completati (in stato PENDING, IN_ATTESA_CONFERMA o ERRORE).'];
+            return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+        }
+
+        // 4. Esegui la regolarizzazione tramite RendicontazioneEngineService
+        try {
+            $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+            if ($backofficeUrl === '') {
+                throw new \RuntimeException('govpay.backoffice_url non configurato.');
+            }
+
+            // Costruiamo il client HTTP per GovPay
+            $opts = [
+                'connect_timeout' => 5,
+                'timeout'         => 20,
+            ];
+            $username = SettingsRepository::get('govpay', 'user', '');
+            $password = SettingsRepository::get('govpay', 'password', '');
+            if ($username !== '' && $password !== '') {
+                $opts['auth'] = [$username, $password];
+            }
+            $govPayClient = \App\Services\GovPayClientFactory::makeBackofficeClient($opts);
+            $bridge = new \App\Services\LegacyRendicontazioneBridgeClient();
+            $engine = new \App\Services\RendicontazioneEngineService($repo, $bridge, $govPayClient);
+
+            // Recuperiamo i dettagli reali da GovPay (importoTotale e TRN/SCT)
+            $importo = 0.0;
+            $trn = '';
+
+            try {
+                $flussoUrl = rtrim($backofficeUrl, '/') . '/flussiRendicontazione?idFlusso=' . rawurlencode($idFlusso) . '&idDominio=' . rawurlencode($idDominio);
+                $flussoResponse = $govPayClient->request('GET', $flussoUrl);
+                $flussoData = json_decode((string)$flussoResponse->getBody(), true);
+                if (is_array($flussoData) && !empty($flussoData['risultati']) && is_array($flussoData['risultati'])) {
+                    foreach ($flussoData['risultati'] as $f) {
+                        if (($f['idFlusso'] ?? '') === $idFlusso) {
+                            $importo = (float)($f['importoTotale'] ?? 0.0);
+                            $trn = (string)($f['trn'] ?? '');
+                            break;
+                        }
+                    }
+                }
+            } catch (\Throwable $ex) {
+                \App\Services\Logger::getInstance()->warning("Impossibile recuperare dettagli flusso {$idFlusso} da GovPay per regolarizzazione manuale: " . $ex->getMessage());
+            }
+
+            // Fallback locale se non trovato o nullo
+            if ($importo <= 0.0) {
+                $datiFlusso = $repo->getDatiAggregatiFlusso($idDominio, $idFlusso);
+                if ($datiFlusso) {
+                    $importo = (float)($datiFlusso['importo_totale'] ?? 0.0);
+                    if ($trn === '') {
+                        $trn = (string)($datiFlusso['trn'] ?? '');
+                    }
+                }
+            }
+
+            if ($importo <= 0.0) {
+                $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Impossibile regolarizzare il flusso: importo totale del flusso nullo o non valido.'];
+                return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+            }
+
+            $success = $engine->regolarizzaIncasso($idDominio, $idFlusso, $importo, $trn, $backofficeUrl);
+            if ($success) {
+                $repo->marcaFlussoRegolarizzato($idDominio, $idFlusso);
+                $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Regolarizzazione del flusso completata con successo su GovPay.'];
+            } else {
+                $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'La regolarizzazione del flusso è fallita su GovPay. Controlla i log dell\'applicazione.'];
+            }
+        } catch (\Throwable $e) {
+            $_SESSION['flash'][] = ['type' => 'danger', 'text' => 'Errore durante la regolarizzazione del flusso: ' . $e->getMessage()];
+        }
+
+        return $response->withHeader('Location', '/pagamenti/ricerca-flussi/dettaglio/' . rawurlencode($idFlusso))->withStatus(302);
+    }
+
+    private function isAdminOrSuperadmin(): bool
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        $role = $_SESSION['user']['role'] ?? '';
+        return in_array($role, ['admin', 'superadmin'], true);
     }
 }
