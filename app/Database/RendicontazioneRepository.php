@@ -86,6 +86,23 @@ class RendicontazioneRepository
         )->execute([':id' => $id, ':msg' => $messageId]);
     }
 
+    public function markEmailEsito(int $id, string $stato): void
+    {
+        $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni SET rendicontazione_email_stato = :stato WHERE id = :id'
+        )->execute([':id' => $id, ':stato' => $stato]);
+    }
+
+    public function markEmailInviata(int $id): void
+    {
+        $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni
+             SET rendicontazione_email_stato = \'INVIATO\',
+                 rendicontazione_email_inviata_at = NOW()
+             WHERE id = :id'
+        )->execute([':id' => $id]);
+    }
+
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM flussi_rendicontazioni WHERE id = :id');
