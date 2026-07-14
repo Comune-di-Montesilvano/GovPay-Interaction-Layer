@@ -67,7 +67,7 @@ class RendicontazioneEngineService
         $idEntrata = (string)($riga['cod_entrata'] ?? '');
         $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
 
-        $decision = RendicontazioneRouter::decide($iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);
+        $decision = RendicontazioneRouter::decide($idPendenza, $iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);
 
         if ($decision->stato === 'IN_ATTESA_CONFERMA') {
             $this->repo->markInAttesaConferma($rigaId);
