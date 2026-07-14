@@ -9,6 +9,7 @@
   {% if not from_flow and 'pagamenti/ricerca-flussi/dettaglio' in target_return %}
     {% set from_flow = true %}
   {% endif %}
+  {% set from_smarcatura = ('rendicontazione/da-confermare' in target_return) %}
   {% set is_bollo = pendenza is defined and pendenza and (
       (pendenza.tipoPendenza is defined and pendenza.tipoPendenza.idTipoPendenza is defined and pendenza.tipoPendenza.idTipoPendenza == 'BOLLOT')
       or (pendenza.voci is defined and pendenza.voci|length > 0 and pendenza.voci[0].tipoBollo is defined and pendenza.voci[0].tipoBollo is not null and pendenza.voci[0].tipoBollo != '')
@@ -45,7 +46,7 @@
       {% if came_from_insert %}
         <a class="btn btn-primary" href="/pendenze/inserimento">Inserisci nuova pendenza</a>
       {% else %}
-        <a class="btn btn-outline-secondary" href="{{ target_return }}">&laquo; {{ from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca' }}</a>
+        <a class="btn btn-outline-secondary" href="{{ target_return }}">&laquo; {{ from_smarcatura ? 'Torna alle smarcature' : (from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca') }}</a>
       {% endif %}
     </div>
 
@@ -979,7 +980,7 @@
     {% if came_from_insert %}
       <a class="btn btn-primary" href="/pendenze/inserimento">Inserisci nuova pendenza</a>
     {% else %}
-      <a class="btn btn-outline-secondary" href="{{ target_return }}">&laquo; {{ from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca' }}</a>
+      <a class="btn btn-outline-secondary" href="{{ target_return }}">&laquo; {{ from_smarcatura ? 'Torna alle smarcature' : (from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca') }}</a>
     {% endif %}
   </div>
 

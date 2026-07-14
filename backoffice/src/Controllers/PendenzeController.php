@@ -2673,7 +2673,7 @@ class PendenzeController
         $queryParams = (array)$request->getQueryParams();
         $returnCandidate = $queryParams['return'] ?? null;
 
-        $allowedReturnPrefixes = ['/pendenze/ricerca', '/pagamenti/ricerca-flussi', '/pagamenti/ricerca-flussi/dettaglio'];
+        $allowedReturnPrefixes = ['/pendenze/ricerca', '/pagamenti/ricerca-flussi', '/pagamenti/ricerca-flussi/dettaglio', '/rendicontazione/da-confermare'];
         $sanitizeReturn = static function ($candidate) use ($allowedReturnPrefixes): ?string {
             if (!is_string($candidate) || $candidate === '') {
                 return null;

@@ -18,7 +18,8 @@
             <tr>
               <th><input type="checkbox" onclick="document.querySelectorAll('.riga-check:not([disabled])').forEach(c=>c.checked=this.checked)"></th>
               <th>IUV</th>
-              <th>Soggetto</th>
+              <th>Debitore</th>
+              <th>Tipologia</th>
               <th>Causale</th>
               <th class="text-end">Importo</th>
               <th>Data pagamento</th>
@@ -34,8 +35,18 @@
                     <input class="form-check-input riga-check" type="checkbox" disabled title="Permessi insufficienti per smarcare questa tipologia">
                   {% endif %}
                 </td>
-                <td class="font-monospace small">{{ r.iuv }}</td>
-                <td>{{ r.cod_entrata }}</td>
+                <td class="font-monospace small">
+                  {% if r.id_pendenza %}
+                    <a href="/pendenze/dettaglio/{{ r.id_pendenza|url_encode }}?return={{ '/rendicontazione/da-confermare'|url_encode }}">{{ r.iuv_completo }}</a>
+                  {% else %}
+                    {{ r.iuv_completo }}
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="fw-semibold">{{ r.debitore_nome }}</div>
+                  <div class="small text-muted font-monospace">{{ r.debitore_cf }}</div>
+                </td>
+                <td><span class="badge bg-light text-dark border">{{ r.cod_entrata }}</span></td>
                 <td class="small text-muted">{{ r.descrizione_entrata }}</td>
                 <td class="text-end">&euro; {{ r.importo|number_format(2, ',', '.') }}</td>
                 <td>{{ r.data_pagamento }}</td>

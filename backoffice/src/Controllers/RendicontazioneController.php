@@ -36,6 +36,44 @@ class RendicontazioneController
         $righe = empty($idEntrateView) ? [] : $repo->getDaConfermarePerTipologie($idDominio, $idEntrateView, $page, $perPage);
         $totale = empty($idEntrateView) ? 0 : $repo->countDaConfermarePerTipologie($idDominio, $idEntrateView);
 
+        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
+        $client = $this->buildGovPayClient();
+
+        foreach ($righe as &$r) {
+            // Formatta lo IUV: se minore di 18 cifre, aggiunge zeri a sinistra e imposta il 3 come prima cifra
+            $r['iuv_completo'] = (strlen($r['iuv']) < 18) ? '3' . str_pad($r['iuv'], 17, '0', STR_PAD_LEFT) : $r['iuv'];
+
+            $r['debitore_nome'] = 'N/D';
+            $r['debitore_cf'] = 'N/D';
+
+            $idPendenza = $r['id_pendenza'] ?? '';
+            if ($r['is_govpay'] == 1 && $idPendenza !== '' && $backofficeUrl !== '' && $idA2A !== '') {
+                try {
+                    $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+                    $res = $client->request('GET', $url);
+                    $pendenza = json_decode((string)$res->getBody(), true);
+                    if (is_array($pendenza)) {
+                        $soggetto = $pendenza['soggettoPagatore'] ?? $pendenza['soggettoDebitore'] ?? null;
+                        if ($soggetto) {
+                            $nome = trim(($soggetto['anagrafica'] ?? '') . ' ' . ($soggetto['cognome'] ?? '') . ' ' . ($soggetto['nome'] ?? ''));
+                            if ($nome === '') {
+                                $nome = $soggetto['denominazione'] ?? '';
+                            }
+                            $r['debitore_nome'] = $nome !== '' ? $nome : 'N/D';
+                            $r['debitore_cf'] = $soggetto['identificativoUnivoco'] ?? 'N/D';
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Logger::getInstance()->warning('Errore fetch debitore per smarcatura manuale', [
+                        'id_pendenza' => $idPendenza,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+        unset($r);
+
         $flash = $_SESSION['flash'] ?? [];
         unset($_SESSION['flash']);
 
