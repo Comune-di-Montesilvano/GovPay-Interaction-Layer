@@ -1401,6 +1401,11 @@ return function (App $app, Twig $twig): void {
         return $controller->detail($request, $response, $args);
     });
 
+    $app->post('/pagamenti/ricerca-flussi/dettaglio/{idFlusso}/regolarizza', function($request, $response, $args) use ($twig) {
+        $controller = new FlussiController($twig);
+        return $controller->regularize($request, $response, $args);
+    });
+
     // Funzioni Avanzate: Cron / Servizi
     $app->get('/funzioni-avanzate/cron', function (Request $request, Response $response) use ($twig): Response {
         return (new CronController($twig))->index($request, $response);
