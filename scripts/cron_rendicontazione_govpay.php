@@ -8,7 +8,7 @@ declare(strict_types=1);
  *
  * Ogni ciclo (rendicontazione.scan_interval_minuti, default 15) processa le righe
  * is_govpay=1 in PENDING/ERRORE con data_pagamento nella finestra
- * rendicontazione.max_giorni_retry (default 7 giorni: oltre non si ritenta piu',
+ * rendicontazione.max_giorni_retry (default 14 giorni: oltre non si ritenta piu',
  * evita retry infinito su flussi irrecuperabili) tramite RendicontazioneEngineService.
  * Il digest (mail operatori + admin) parte quando N cicli consecutivi non trovano
  * righe nuove PENDING (rendicontazione.scansioni_quiete_soglia, default 3).
@@ -124,7 +124,7 @@ while (true) {
     $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
     $scanInterval  = max(1, (int)SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'));
     $soglia        = max(1, (int)SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'));
-    $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'));
+    $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'));
     $minDataPagamento = date('Y-m-d', strtotime("-{$maxGiorniRetry} days"));
     $geriMaxTentativi = max(1, (int)SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'));
 

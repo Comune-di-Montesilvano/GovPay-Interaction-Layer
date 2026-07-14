@@ -1019,7 +1019,7 @@ class BackupController
                     'iuv_prefix_gil'          => SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL'),
                     'scan_interval_minuti'    => SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'),
                     'scansioni_quiete_soglia' => SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'),
-                    'max_giorni_retry'        => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '7'),
+                    'max_giorni_retry'        => SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'),
                     'geri_max_tentativi'      => SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'),
                     'notifica_admin_auto'     => SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false'),
                     'admin_emails'            => SettingsRepository::get('rendicontazione', 'admin_emails', ''),
