@@ -585,7 +585,7 @@ class FlussiController
             if ($backofficeUrl === '') {
                 throw new \RuntimeException('govpay.backoffice_url non configurato.');
             }
-            $idA2A = (string)SettingsRepository::get('govpay', 'id_a2a', '');
+            $idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
 
             // Costruiamo il client HTTP per GovPay ed il bridge
             $opts = [
