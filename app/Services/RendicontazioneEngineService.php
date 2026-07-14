@@ -65,6 +65,14 @@ class RendicontazioneEngineService
         }
 
         $idEntrata = (string)($riga['cod_entrata'] ?? '');
+        if ($idEntrata === '' && isset($pendenza['idTipoPendenza']) && (string)$pendenza['idTipoPendenza'] !== '') {
+            $idEntrata = (string)$pendenza['idTipoPendenza'];
+            try {
+                $this->repo->updateCodEntrata($rigaId, $idEntrata);
+            } catch (\Throwable $_) {
+                // ignore
+            }
+        }
         $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
 
         $decision = RendicontazioneRouter::decide($idPendenza, $iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);

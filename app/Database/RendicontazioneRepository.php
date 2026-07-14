@@ -423,4 +423,10 @@ class RendicontazioneRepository
         $stmt->execute([':dom' => $idDominio, ':flusso' => $idFlusso]);
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
+
+    public function updateCodEntrata(int $id, string $codEntrata): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE flussi_rendicontazioni SET cod_entrata = :cod WHERE id = :id');
+        $stmt->execute([':cod' => $codEntrata, ':id' => $id]);
+    }
 }
