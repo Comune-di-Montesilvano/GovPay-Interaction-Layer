@@ -270,7 +270,8 @@
                       <span class="text-muted">—</span>
                     {% endif %}
                     {% set local_state = p._local_rendicontazione.rendicontazione_stato|default(p._rendicontazione.rendicontazione_stato|default(null)) %}
-                    {% if local_state in ['PENDING', 'IN_ATTESA_CONFERMA', 'ERRORE'] %}
+                    {% set is_govpay = p._local_rendicontazione.is_govpay|default(p._rendicontazione.is_govpay|default(null)) %}
+                    {% if is_govpay == 1 and local_state in ['PENDING', 'IN_ATTESA_CONFERMA', 'ERRORE'] %}
                       <div class="mt-1">
                         {% if local_state == 'IN_ATTESA_CONFERMA' %}
                           <span class="badge bg-warning text-dark border border-warning-subtle" title="Questo pagamento richiede una smarcatura manuale"><i class="fas fa-user-edit me-1"></i>Da smarcare</span>
