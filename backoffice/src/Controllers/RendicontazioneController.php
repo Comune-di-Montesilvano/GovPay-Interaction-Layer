@@ -61,7 +61,7 @@ class RendicontazioneController
                                 $nome = $soggetto['denominazione'] ?? '';
                             }
                             $r['debitore_nome'] = $nome !== '' ? $nome : 'N/D';
-                            $r['debitore_cf'] = $soggetto['identificativoUnivoco'] ?? 'N/D';
+                            $r['debitore_cf'] = $soggetto['identificativo'] ?? 'N/D';
                         }
                     }
                 } catch (\Throwable $e) {
