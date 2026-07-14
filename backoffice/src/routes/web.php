@@ -1170,7 +1170,13 @@ return function (App $app, Twig $twig): void {
             ];
             $_SESSION['session_token'] = $sessionToken;
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Accesso effettuato'];
-            return $response->withHeader('Location', '/')->withStatus(302);
+            
+            $redirectTo = '/';
+            if (isset($_SESSION['redirect_to'])) {
+                $redirectTo = $_SESSION['redirect_to'];
+                unset($_SESSION['redirect_to']);
+            }
+            return $response->withHeader('Location', $redirectTo)->withStatus(302);
         }
         return $twig->render($response, 'login.html.twig', [
             'error' => 'Credenziali non valide',

@@ -152,11 +152,13 @@ class RendicontazioneRepository
     public function getNonNotificate(string $idDominio): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM flussi_rendicontazioni
-             WHERE id_dominio = :dom AND is_govpay = 1
-               AND rendicontazione_notificato = 0
-               AND rendicontazione_stato != \'PENDING\'
-             ORDER BY cod_entrata ASC, id_flusso ASC'
+            'SELECT f.*, b.descrizione AS causale, b.cf_debitore, b.nominativo_debitore
+             FROM flussi_rendicontazioni f
+             LEFT JOIN biz_ricevute b ON f.iur = b.iur AND f.id_dominio = b.id_dominio
+             WHERE f.id_dominio = :dom AND f.is_govpay = 1
+               AND f.rendicontazione_notificato = 0
+               AND f.rendicontazione_stato != \'PENDING\'
+             ORDER BY f.cod_entrata ASC, f.id_flusso ASC'
         );
         $stmt->execute([':dom' => $idDominio]);
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
