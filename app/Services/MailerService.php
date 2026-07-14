@@ -730,15 +730,38 @@ HTML;
         $safeGruppo = htmlspecialchars($gruppoNome, ENT_QUOTES, 'UTF-8');
 
         $rowsHtml = static function (array $righe): string {
+            $publicBaseUrl = rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/');
             $out = '';
             foreach ($righe as $r) {
                 $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
                 $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
                 $dataRaw = (string)($r['data_pagamento'] ?? '');
                 $data = $dataRaw !== '' ? htmlspecialchars(date('d/m/Y', strtotime($dataRaw)), ENT_QUOTES, 'UTF-8') : '';
-                $out .= "<tr><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
-                      . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td>"
-                      . "<td style=\"padding:6px 8px;\">{$data}</td></tr>\n";
+                
+                $causale = htmlspecialchars((string)($r['causale'] ?? $r['descrizione_entrata'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $nomDebitore = htmlspecialchars((string)($r['nominativo_debitore'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $cfDebitore = htmlspecialchars((string)($r['cf_debitore'] ?? ''), ENT_QUOTES, 'UTF-8');
+                
+                $debitoreHtml = '';
+                if ($nomDebitore !== '' || $cfDebitore !== '') {
+                    $debitoreHtml = "<br><span style=\"font-size:11px;color:#4a5568;\">Debitore: {$nomDebitore} ({$cfDebitore})</span>";
+                }
+                
+                $linkHtml = '';
+                if (!empty($r['id_pendenza']) && $publicBaseUrl !== '') {
+                    $detailUrl = $publicBaseUrl . '/pendenze/dettaglio/' . rawurlencode((string)$r['id_pendenza']);
+                    $linkHtml = " <a href=\"{$detailUrl}\" style=\"color:#0b3d91;text-decoration:underline;font-size:11px;\">Vedi dettaglio</a>";
+                }
+                
+                $out .= "<tr>"
+                      . "<td style=\"padding:6px 8px;font-family:monospace;font-size:12px;border-bottom:1px solid #e2e8f0;\">"
+                      . "IUV: {$iuv}{$linkHtml}"
+                      . "<br><span style=\"font-size:12px;color:#2d3748;\">{$causale}</span>"
+                      . $debitoreHtml
+                      . "</td>"
+                      . "<td style=\"padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;white-space:nowrap;\">&euro; {$importo}</td>"
+                      . "<td style=\"padding:6px 8px;border-bottom:1px solid #e2e8f0;white-space:nowrap;\">{$data}</td>"
+                      . "</tr>\n";
             }
             return $out;
         };
@@ -766,24 +789,41 @@ HTML;
 
     private function renderRendicontazioneOperatorePlain(string $gruppoNome, array $righeDaConfermare, array $righeInformative, string $baseUrlVista): string
     {
+        $publicBaseUrl = rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/');
         $lines = ["Nuovi pagamenti — {$gruppoNome}", ''];
-        if (!empty($righeDaConfermare)) {
-            $lines[] = 'Da confermare:';
-            foreach ($righeDaConfermare as $r) {
+        
+        $renderRighe = function(array $righe) use ($publicBaseUrl) {
+            $out = [];
+            foreach ($righe as $r) {
                 $dataRaw = (string)($r['data_pagamento'] ?? '');
                 $data = $dataRaw !== '' ? date('d/m/Y', strtotime($dataRaw)) : '';
-                $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . $data . ')';
+                $causale = (string)($r['causale'] ?? $r['descrizione_entrata'] ?? '');
+                $nom = (string)($r['nominativo_debitore'] ?? '');
+                $cf = (string)($r['cf_debitore'] ?? '');
+                $line = "- IUV " . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . $data . ')';
+                if ($causale !== '') {
+                    $line .= "\n  Causale: " . $causale;
+                }
+                if ($nom !== '' || $cf !== '') {
+                    $line .= "\n  Debitore: " . $nom . ' (' . $cf . ')';
+                }
+                if (!empty($r['id_pendenza']) && $publicBaseUrl !== '') {
+                    $line .= "\n  Dettaglio: " . $publicBaseUrl . '/pendenze/dettaglio/' . rawurlencode((string)$r['id_pendenza']);
+                }
+                $out[] = $line;
             }
+            return $out;
+        };
+
+        if (!empty($righeDaConfermare)) {
+            $lines[] = 'Da confermare:';
+            $lines = array_merge($lines, $renderRighe($righeDaConfermare));
             $lines[] = 'Vai alla vista: ' . $baseUrlVista;
             $lines[] = '';
         }
         if (!empty($righeInformative)) {
             $lines[] = 'Registrati automaticamente:';
-            foreach ($righeInformative as $r) {
-                $dataRaw = (string)($r['data_pagamento'] ?? '');
-                $data = $dataRaw !== '' ? date('d/m/Y', strtotime($dataRaw)) : '';
-                $lines[] = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . $data . ')';
-            }
+            $lines = array_merge($lines, $renderRighe($righeInformative));
         }
         return implode("\n", $lines);
     }

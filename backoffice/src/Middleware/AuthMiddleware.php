@@ -58,6 +58,15 @@ class AuthMiddleware implements MiddlewareInterface
         }
 
         // Redirect a /login
+        if ($request->getMethod() === 'GET') {
+            $uri = $request->getUri();
+            $target = $uri->getPath();
+            if ($uri->getQuery() !== '') {
+                $target .= '?' . $uri->getQuery();
+            }
+            $_SESSION['redirect_to'] = $target;
+        }
+
         $resp = new SlimResponse(302);
         return $resp->withHeader('Location', '/login');
     }
