@@ -65,12 +65,25 @@ class RendicontazioneEngineService
         }
 
         $idEntrata = (string)($riga['cod_entrata'] ?? '');
-        if ($idEntrata === '' && isset($pendenza['idTipoPendenza']) && (string)$pendenza['idTipoPendenza'] !== '') {
-            $idEntrata = (string)$pendenza['idTipoPendenza'];
-            try {
-                $this->repo->updateCodEntrata($rigaId, $idEntrata);
-            } catch (\Throwable $_) {
-                // ignore
+        if ($idEntrata === '') {
+            // tipoPendenza.idTipoPendenza (struttura standard GET /pendenze/{idA2A}/{idPendenza})
+            $idEntrata = (string)($pendenza['tipoPendenza']['idTipoPendenza'] ?? '');
+            // Fallback: voci[].codEntrata
+            if ($idEntrata === '' && isset($pendenza['voci']) && is_array($pendenza['voci'])) {
+                foreach ($pendenza['voci'] as $voce) {
+                    $cod = (string)($voce['codEntrata'] ?? '');
+                    if ($cod !== '') {
+                        $idEntrata = $cod;
+                        break;
+                    }
+                }
+            }
+            if ($idEntrata !== '') {
+                try {
+                    $this->repo->updateCodEntrata($rigaId, $idEntrata);
+                } catch (\Throwable $_) {
+                    // ignore
+                }
             }
         }
         $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
