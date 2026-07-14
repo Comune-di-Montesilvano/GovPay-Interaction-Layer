@@ -313,9 +313,20 @@ class RendicontazioneEngineService
                 Logger::getInstance()->info("Regolarizzazione incasso flusso {$idFlusso} completata con successo.");
                 return true;
             }
+            if ($statusCode === 422) {
+                Logger::getInstance()->warning("Bypass regolarizzazione incasso flusso {$idFlusso}: status code 422 (versamento non esistente su GovPay).");
+                return true;
+            }
             Logger::getInstance()->error("Errore regolarizzazione incasso flusso {$idFlusso}: status code {$statusCode}");
             return false;
         } catch (\Throwable $e) {
+            if ($e instanceof \GuzzleHttp\Exception\BadResponseException) {
+                $resp = $e->getResponse();
+                if ($resp && $resp->getStatusCode() === 422) {
+                    Logger::getInstance()->warning("Bypass regolarizzazione incasso flusso {$idFlusso} da eccezione: status code 422 (versamento non esistente su GovPay).");
+                    return true;
+                }
+            }
             Logger::getInstance()->error("Eccezione durante regolarizzazione incasso flusso {$idFlusso}: " . $e->getMessage());
             return false;
         }
