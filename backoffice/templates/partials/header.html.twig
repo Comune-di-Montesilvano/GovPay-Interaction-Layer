@@ -98,9 +98,14 @@
         <i class="fas fa-route" aria-hidden="true"></i>
         <span>Mapping pendenze est.</span>
       </a>
-      <a class="bo-nav-item {{ cp starts with '/rendicontazione' ? 'is-active' : '' }}" href="/rendicontazione/da-confermare">
-        <i class="fas fa-scale-balanced" aria-hidden="true"></i>
-        <span>Rendicontazione GovPay</span>
+      <a class="bo-nav-item {{ cp starts with '/rendicontazione' ? 'is-active' : '' }} d-flex align-items-center justify-content-between" href="/rendicontazione/da-confermare">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-scale-balanced" aria-hidden="true"></i>
+          <span>Rendicontazione GovPay</span>
+        </div>
+        {% if da_confermare_count is defined and da_confermare_count > 0 %}
+          <span class="badge bg-danger rounded-pill text-white" style="font-size: 0.72rem; padding: 0.25em 0.6em;">{{ da_confermare_count }}</span>
+        {% endif %}
       </a>
 
       <div class="bo-nav-section-title">Sistema</div>

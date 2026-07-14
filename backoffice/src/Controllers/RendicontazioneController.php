@@ -26,26 +26,28 @@ class RendicontazioneController
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
         $repo = new RendicontazioneRepository();
 
-        $idEntrate = $this->getAuthorizedIdEntrate($user, $idDominio);
+        $idEntrateView = $this->getAuthorizedIdEntrateForView($user, $idDominio);
+        $idEntrateAction = $this->getAuthorizedIdEntrateForAction($user, $idDominio);
 
         $params = $request->getQueryParams();
         $page = max(1, (int)($params['page'] ?? 1));
         $perPage = 25;
 
-        $righe = empty($idEntrate) ? [] : $repo->getDaConfermarePerTipologie($idDominio, $idEntrate, $page, $perPage);
-        $totale = empty($idEntrate) ? 0 : $repo->countDaConfermarePerTipologie($idDominio, $idEntrate);
+        $righe = empty($idEntrateView) ? [] : $repo->getDaConfermarePerTipologie($idDominio, $idEntrateView, $page, $perPage);
+        $totale = empty($idEntrateView) ? 0 : $repo->countDaConfermarePerTipologie($idDominio, $idEntrateView);
 
         $flash = $_SESSION['flash'] ?? [];
         unset($_SESSION['flash']);
 
         return $this->twig->render($response, 'rendicontazione/da-confermare.html.twig', [
-            'righe'       => $righe,
-            'totale'      => $totale,
-            'page'        => $page,
-            'per_page'    => $perPage,
-            'csrf_token'  => $this->generateCsrf(),
-            'flash'       => $flash,
-            'current_user'=> $user,
+            'righe'          => $righe,
+            'totale'         => $totale,
+            'page'           => $page,
+            'per_page'       => $perPage,
+            'csrf_token'     => $this->generateCsrf(),
+            'flash'          => $flash,
+            'current_user'   => $user,
+            'action_entrate' => $idEntrateAction,
         ]);
     }
 
@@ -63,7 +65,7 @@ class RendicontazioneController
         $ids = array_map('intval', (array)($data['riga_ids'] ?? []));
 
         if (!empty($ids)) {
-            $idEntrate = $this->getAuthorizedIdEntrate($user, $idDominio);
+            $idEntrate = $this->getAuthorizedIdEntrateForAction($user, $idDominio);
             $repo = new RendicontazioneRepository();
             $confermateIds = empty($idEntrate) ? [] : $repo->confermaRigheScoped($ids, $idEntrate, (int)$user['id']);
             $_SESSION['flash'][] = ['type' => 'success', 'text' => count($confermateIds) . ' pagamenti confermati'];
@@ -199,27 +201,58 @@ class RendicontazioneController
     }
 
     /** @return string[] */
-    private function getAuthorizedIdEntrate(array $user, string $idDominio): array
+    private function getAuthorizedIdEntrateForView(array $user, string $idDominio): array
     {
-        $isSuperadmin = ($user['role'] ?? '') === 'superadmin';
-        $idEntrate = [];
-        if (!$isSuperadmin) {
-            $groupRepo = new UserGroupRepository();
-            foreach ($groupRepo->getMemberGroupIds((int)$user['id']) as $groupId) {
-                foreach ($groupRepo->getRendicontazioneTipologie($groupId, $idDominio) as $t) {
-                    if ($t['modalita'] === 'NOTIFICA_E_SMARCATURA') {
-                        $idEntrate[] = $t['id_entrata'];
-                    }
-                }
-            }
-            $idEntrate = array_values(array_unique($idEntrate));
-        } else {
+        $isAdminOrSuper = in_array($user['role'] ?? '', ['admin', 'superadmin'], true);
+        if ($isAdminOrSuper) {
             $pdo = \App\Database\Connection::getPDO();
             $stmt = $pdo->prepare("SELECT id_entrata FROM entrate_tipologie WHERE id_dominio = :dom");
             $stmt->execute([':dom' => $idDominio]);
-            $idEntrate = array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_entrata');
+            return array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_entrata');
         }
-        return $idEntrate;
+
+        // Operatore vede solo le sue
+        $groupRepo = new UserGroupRepository();
+        $idEntrate = [];
+        foreach ($groupRepo->getMemberGroupIds((int)$user['id']) as $groupId) {
+            foreach ($groupRepo->getRendicontazioneTipologie($groupId, $idDominio) as $t) {
+                if ($t['modalita'] === 'NOTIFICA_E_SMARCATURA') {
+                    $idEntrate[] = $t['id_entrata'];
+                }
+            }
+        }
+        return array_values(array_unique($idEntrate));
+    }
+
+    /** @return string[] */
+    private function getAuthorizedIdEntrateForAction(array $user, string $idDominio): array
+    {
+        $role = $user['role'] ?? '';
+
+        // Superadmin può agire su tutto
+        if ($role === 'superadmin') {
+            $pdo = \App\Database\Connection::getPDO();
+            $stmt = $pdo->prepare("SELECT id_entrata FROM entrate_tipologie WHERE id_dominio = :dom");
+            $stmt->execute([':dom' => $idDominio]);
+            return array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_entrata');
+        }
+
+        // Admin non può agire su nulla per smarcatura manuale (solo visualizzazione)
+        if ($role === 'admin') {
+            return [];
+        }
+
+        // Operatore può agire solo su quelle dei suoi gruppi
+        $groupRepo = new UserGroupRepository();
+        $idEntrate = [];
+        foreach ($groupRepo->getMemberGroupIds((int)$user['id']) as $groupId) {
+            foreach ($groupRepo->getRendicontazioneTipologie($groupId, $idDominio) as $t) {
+                if ($t['modalita'] === 'NOTIFICA_E_SMARCATURA') {
+                    $idEntrate[] = $t['id_entrata'];
+                }
+            }
+        }
+        return array_values(array_unique($idEntrate));
     }
 
     private function requireAuth(): array

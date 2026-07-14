@@ -46,6 +46,41 @@ class CurrentPathMiddleware implements MiddlewareInterface
                 // ignore and fallback to session data
             }
             $this->twig->getEnvironment()->addGlobal('current_user', $sessionUser);
+
+            // Calcola il conteggio delle smarcature pendenti per l'operatore/superadmin
+            try {
+                $idDominio = (string)\App\Config\SettingsRepository::get('entity', 'id_dominio', '');
+                if ($idDominio !== '') {
+                    $idEntrate = [];
+                    $role = $sessionUser['role'] ?? '';
+                    $isAdminOrSuper = in_array($role, ['admin', 'superadmin'], true);
+                    if ($isAdminOrSuper) {
+                        $pdo = \App\Database\Connection::getPDO();
+                        $stmt = $pdo->prepare("SELECT id_entrata FROM entrate_tipologie WHERE id_dominio = :dom");
+                        $stmt->execute([':dom' => $idDominio]);
+                        $idEntrate = array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_entrata');
+                    } else {
+                        $groupRepo = new \App\Database\UserGroupRepository();
+                        foreach ($groupRepo->getMemberGroupIds((int)$sessionUser['id']) as $groupId) {
+                            foreach ($groupRepo->getRendicontazioneTipologie($groupId, $idDominio) as $t) {
+                                if ($t['modalita'] === 'NOTIFICA_E_SMARCATURA') {
+                                    $idEntrate[] = $t['id_entrata'];
+                                }
+                            }
+                        }
+                        $idEntrate = array_values(array_unique($idEntrate));
+                    }
+                    
+                    $count = 0;
+                    if ($role !== 'admin' && !empty($idEntrate)) {
+                        $repo = new \App\Database\RendicontazioneRepository();
+                        $count = $repo->countDaConfermarePerTipologie($idDominio, $idEntrate);
+                    }
+                    $this->twig->getEnvironment()->addGlobal('da_confermare_count', $count);
+                }
+            } catch (\Throwable $_) {
+                // ignore
+            }
         }
         $this->twig->getEnvironment()->addGlobal('current_path', $path);
         return $handler->handle($request);
