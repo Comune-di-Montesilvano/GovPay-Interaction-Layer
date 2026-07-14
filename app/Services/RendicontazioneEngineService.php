@@ -198,6 +198,25 @@ class RendicontazioneEngineService
             return;
         }
 
+        // Salta l'invio della notifica se il pagamento o il flusso sono più vecchi di 14 giorni
+        $limiteGiorni = 14;
+        $dataPagamento = $riga['data_pagamento'] ?? null;
+        if ($dataPagamento) {
+            $diffSeconds = time() - strtotime($dataPagamento);
+            if ($diffSeconds > ($limiteGiorni * 86400)) {
+                $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
+                return;
+            }
+        }
+        $dataFlusso = $riga['data_flusso'] ?? null;
+        if ($dataFlusso) {
+            $diffSeconds = time() - strtotime($dataFlusso);
+            if ($diffSeconds > ($limiteGiorni * 86400)) {
+                $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
+                return;
+            }
+        }
+
         $tipoSoggetto = (string)($pendenza['soggettoPagatore']['tipo'] ?? '');
         $cf = (string)($pendenza['soggettoPagatore']['identificativo'] ?? '');
         if ($tipoSoggetto !== 'F' || $cf === '') {
