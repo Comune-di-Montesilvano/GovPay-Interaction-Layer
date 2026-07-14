@@ -25,7 +25,7 @@ final class RendicontazioneRouter
         ?array $gruppoAssociato,
         array $regoleEsterne
     ): RendicontazioneDecision {
-        $isGil = str_starts_with($idPendenza, $iuvPrefixGil) || str_starts_with($iuv, $iuvPrefixGil);
+        $isGil = str_starts_with($idPendenza, $iuvPrefixGil);
 
         if ($isGil) {
             if ($gruppoAssociato !== null && $gruppoAssociato['modalita'] === 'NOTIFICA_E_SMARCATURA') {
