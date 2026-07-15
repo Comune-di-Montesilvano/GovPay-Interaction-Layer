@@ -906,15 +906,7 @@ HTML;
 
     private function getBackofficeBaseUrl(): string
     {
-        $baseUrl = trim((string)\App\Config\Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''));
-        if ($baseUrl === '') {
-            $serverName = trim((string)\App\Config\Config::get('APACHE_SERVER_NAME', 'localhost'));
-            $ssl = \App\Config\Config::get('SSL', 'off') === 'on' ? 'https' : 'http';
-            $port = trim((string)\App\Config\Config::get('BACKOFFICE_HTTP_PORT', ''));
-            $portSuffix = ($port !== '' && $port !== '80' && $port !== '443') ? ':' . $port : '';
-            $baseUrl = "{$ssl}://{$serverName}{$portSuffix}";
-        }
-        return rtrim($baseUrl, '/');
+        return rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/');
     }
 
     private function renderRendicontazioneOperatoreTemplate(
@@ -930,8 +922,8 @@ HTML;
 
         $backofficeBaseUrl = $this->getBackofficeBaseUrl();
 
-        // Ensure we have an absolute URL for the vista
-        if (empty($baseUrlVista) || (!str_starts_with($baseUrlVista, 'http://') && !str_starts_with($baseUrlVista, 'https://'))) {
+        // Se baseUrlVista non è assoluto, prefissa con il base URL del backoffice (se disponibile)
+        if ($backofficeBaseUrl !== '' && !str_starts_with($baseUrlVista, 'http://') && !str_starts_with($baseUrlVista, 'https://')) {
             $baseUrlVista = $backofficeBaseUrl . '/' . ltrim($baseUrlVista, '/');
         }
 

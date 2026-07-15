@@ -39,7 +39,6 @@ class Config
 
         // backoffice
         'BACKOFFICE_PUBLIC_BASE_URL'        => ['section' => 'backoffice', 'key' => 'public_base_url'],
-        'APACHE_SERVER_NAME'               => ['section' => 'backoffice', 'key' => 'apache_server_name'],
         'BACKOFFICE_MAILER_DSN'            => ['section' => 'backoffice', 'key' => 'mailer_dsn'],
         'BACKOFFICE_MAILER_FROM_ADDRESS'   => ['section' => 'backoffice', 'key' => 'mailer_from_address'],
         'BACKOFFICE_MAILER_FROM_NAME'      => ['section' => 'backoffice', 'key' => 'mailer_from_name'],

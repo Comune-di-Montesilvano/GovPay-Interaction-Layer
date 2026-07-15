@@ -12,7 +12,6 @@ services:
     environment:
       - APP_SUITE=backoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
-      - APACHE_SERVER_NAME=${APACHE_SERVER_NAME:-localhost}
       - SSL=${SSL:-off}
       - DB_HOST=db
       - DB_PORT=3306
@@ -47,7 +46,6 @@ services:
     environment:
       - APP_SUITE=frontoffice
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
-      - APACHE_SERVER_NAME=${APACHE_SERVER_NAME:-localhost}
       - SSL=${SSL:-off}
       # Sidecar: frontoffice chiama backoffice via API interna (Bearer MASTER_TOKEN).
       # Nessuna credenziale GovPay/pagoPA necessaria nel frontoffice.

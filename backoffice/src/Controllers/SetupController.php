@@ -457,7 +457,6 @@ class SetupController
 
         SettingsRepository::setSection('backoffice', [
             'public_base_url'      => $step2['backoffice_url'] ?? '',
-            'apache_server_name'   => $step2['apache_server_name'] ?? 'localhost',
             'mailer_dsn'           => ['value' => $step4['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
             'mailer_from_address'  => $step4['mailer_from_address'] ?? '',
             'mailer_from_name'     => $step4['mailer_from_name'] ?? '',

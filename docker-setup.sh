@@ -303,8 +303,6 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
 fi
 
 echo "--- Avvio Apache. ---"
-# Garantisce che APACHE_SERVER_NAME abbia sempre un valore (evita "ServerName takes one argument")
-export APACHE_SERVER_NAME="${APACHE_SERVER_NAME:-localhost}"
 
 # Se nessun comando passato, avvia apache2-foreground di default
 # Se è stato passato un comando custom (debug), eseguilo direttamente
