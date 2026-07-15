@@ -904,6 +904,19 @@ HTML;
         return ['esito' => 'OK'];
     }
 
+    private function getBackofficeBaseUrl(): string
+    {
+        $baseUrl = trim((string)\App\Config\Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''));
+        if ($baseUrl === '') {
+            $serverName = trim((string)\App\Config\Config::get('APACHE_SERVER_NAME', 'localhost'));
+            $ssl = \App\Config\Config::get('SSL', 'off') === 'on' ? 'https' : 'http';
+            $port = trim((string)\App\Config\Config::get('BACKOFFICE_HTTP_PORT', ''));
+            $portSuffix = ($port !== '' && $port !== '80' && $port !== '443') ? ':' . $port : '';
+            $baseUrl = "{$ssl}://{$serverName}{$portSuffix}";
+        }
+        return rtrim($baseUrl, '/');
+    }
+
     private function renderRendicontazioneOperatoreTemplate(
         string $gruppoNome,
         array  $righeDaConfermare,
@@ -915,8 +928,14 @@ HTML;
     ): string {
         $safeGruppo = htmlspecialchars($gruppoNome, ENT_QUOTES, 'UTF-8');
 
-        $rowsHtml = static function (array $righe): string {
-            $publicBaseUrl = rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/');
+        $backofficeBaseUrl = $this->getBackofficeBaseUrl();
+
+        // Ensure we have an absolute URL for the vista
+        if (empty($baseUrlVista) || (!str_starts_with($baseUrlVista, 'http://') && !str_starts_with($baseUrlVista, 'https://'))) {
+            $baseUrlVista = $backofficeBaseUrl . '/' . ltrim($baseUrlVista, '/');
+        }
+
+        $rowsHtml = function (array $righe) use ($backofficeBaseUrl): string {
             $out = '';
             foreach ($righe as $r) {
                 $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -930,23 +949,23 @@ HTML;
                 
                 $debitoreHtml = '';
                 if ($nomDebitore !== '' || $cfDebitore !== '') {
-                    $debitoreHtml = "<br><span style=\"font-size:11px;color:#4a5568;\">Debitore: {$nomDebitore} ({$cfDebitore})</span>";
+                    $debitoreHtml = "<div style=\"font-size:11px;color:#718096;margin-top:2px;\">Debitore: <strong style=\"color:#4a5568;\">{$nomDebitore}</strong> ({$cfDebitore})</div>";
                 }
                 
                 $linkHtml = '';
-                if (!empty($r['id_pendenza']) && $publicBaseUrl !== '') {
-                    $detailUrl = $publicBaseUrl . '/pendenze/dettaglio/' . rawurlencode((string)$r['id_pendenza']);
-                    $linkHtml = " <a href=\"{$detailUrl}\" style=\"color:#0b3d91;text-decoration:underline;font-size:11px;\">Vedi dettaglio</a>";
+                if (!empty($r['id_pendenza']) && $backofficeBaseUrl !== '') {
+                    $detailUrl = $backofficeBaseUrl . '/pendenze/dettaglio/' . rawurlencode((string)$r['id_pendenza']);
+                    $linkHtml = " <a href=\"{$detailUrl}\" style=\"color:#0066cc;text-decoration:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 6px;background:#ebf8ff;border-radius:4px;display:inline-block;\">Vedi dettaglio</a>";
                 }
                 
                 $out .= "<tr>"
-                      . "<td style=\"padding:6px 8px;font-family:monospace;font-size:12px;border-bottom:1px solid #e2e8f0;\">"
-                      . "IUV: {$iuv}{$linkHtml}"
-                      . "<br><span style=\"font-size:12px;color:#2d3748;\">{$causale}</span>"
+                      . "<td style=\"padding:12px 8px;border-bottom:1px solid #edf2f7;\">"
+                      . "<div style=\"font-size:13px;\">IUV: <strong style=\"font-family:Consolas,Monaco,monospace;color:#1a202c;letter-spacing:0.3px;\">{$iuv}</strong>{$linkHtml}</div>"
+                      . "<div style=\"font-size:12px;color:#2d3748;margin-top:4px;line-height:1.4;\">{$causale}</div>"
                       . $debitoreHtml
                       . "</td>"
-                      . "<td style=\"padding:6px 8px;text-align:right;border-bottom:1px solid #e2e8f0;white-space:nowrap;\">&euro; {$importo}</td>"
-                      . "<td style=\"padding:6px 8px;border-bottom:1px solid #e2e8f0;white-space:nowrap;\">{$data}</td>"
+                      . "<td style=\"padding:12px 8px;text-align:right;border-bottom:1px solid #edf2f7;font-weight:600;color:#1a202c;white-space:nowrap;font-size:13px;vertical-align:middle;\">&euro; {$importo}</td>"
+                      . "<td style=\"padding:12px 8px;text-align:center;border-bottom:1px solid #edf2f7;color:#4a5568;white-space:nowrap;font-size:12px;vertical-align:middle;\">{$data}</td>"
                       . "</tr>\n";
             }
             return $out;
@@ -955,18 +974,40 @@ HTML;
         $sezioneDaConfermare = '';
         if (!empty($righeDaConfermare)) {
             $safeUrl = htmlspecialchars($baseUrlVista, ENT_QUOTES, 'UTF-8');
-            $sezioneDaConfermare = '<h3 style="font-size:16px;margin:24px 0 8px;">Da confermare</h3>'
-                . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rowsHtml($righeDaConfermare) . '</table>'
-                . "<p style=\"margin-top:16px;\"><a href=\"{$safeUrl}\" style=\"display:inline-block;padding:10px 24px;background:#0b3d91;color:#fff;text-decoration:none;border-radius:4px;\">Vai alla vista</a></p>";
+            $sezioneDaConfermare = '<h3 style="font-size:15px;font-weight:700;color:#1a202c;margin:24px 0 12px;text-transform:uppercase;letter-spacing:0.5px;">Da confermare</h3>'
+                . '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-family:\'Helvetica Neue\',Arial,sans-serif;">'
+                . '<thead>'
+                . '<tr style="border-bottom:2px solid #e2e8f0;color:#718096;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">'
+                . '<th style="padding:10px 8px;text-align:left;font-weight:600;">Dettaglio / Debitore</th>'
+                . '<th style="padding:10px 8px;text-align:right;font-weight:600;width:100px;">Importo</th>'
+                . '<th style="padding:10px 8px;text-align:center;font-weight:600;width:90px;">Data</th>'
+                . '</tr>'
+                . '</thead>'
+                . '<tbody>' . $rowsHtml($righeDaConfermare) . '</tbody>'
+                . '</table>'
+                . "<p style=\"margin-top:20px;text-align:center;\"><a href=\"{$safeUrl}\" style=\"display:inline-block;padding:12px 28px;background:#0066cc;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;box-shadow:0 4px 6px rgba(0,102,204,0.15);\">Gestisci pendenze</a></p>";
         }
 
         $sezioneInformativa = '';
         if (!empty($righeInformative)) {
-            $sezioneInformativa = '<h3 style="font-size:16px;margin:24px 0 8px;">Registrati automaticamente</h3>'
-                . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rowsHtml($righeInformative) . '</table>';
+            $sezioneInformativa = '<h3 style="font-size:15px;font-weight:700;color:#1a202c;margin:24px 0 12px;text-transform:uppercase;letter-spacing:0.5px;">Registrati automaticamente</h3>'
+                . '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-family:\'Helvetica Neue\',Arial,sans-serif;">'
+                . '<thead>'
+                . '<tr style="border-bottom:2px solid #e2e8f0;color:#718096;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">'
+                . '<th style="padding:10px 8px;text-align:left;font-weight:600;">Dettaglio / Debitore</th>'
+                . '<th style="padding:10px 8px;text-align:right;font-weight:600;width:100px;">Importo</th>'
+                . '<th style="padding:10px 8px;text-align:center;font-weight:600;width:90px;">Data</th>'
+                . '</tr>'
+                . '</thead>'
+                . '<tbody>' . $rowsHtml($righeInformative) . '</tbody>'
+                . '</table>';
         }
 
-        $body = "<p style=\"margin:0 0 16px;font-size:13px;color:#718096;\">Comunicazione automatica dal modulo Rendicontazione PagoPA di GIL (GovPay Interaction Layer) — gruppo <strong>{$safeGruppo}</strong>.</p>"
+        $body = "<div style=\"background-color:#f7fafc;border-left:4px solid #0066cc;padding:16px;margin-bottom:24px;border-radius:4px;\">"
+              . "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#4a5568;\">"
+              . "Comunicazione automatica dal modulo <strong>Rendicontazione PagoPA</strong> di GIL (GovPay Interaction Layer) &mdash; gruppo <strong>{$safeGruppo}</strong>."
+              . "</p>"
+              . "</div>"
               . $sezioneDaConfermare
               . $sezioneInformativa;
 
@@ -975,7 +1016,7 @@ HTML;
 
     private function renderRendicontazioneOperatorePlain(string $gruppoNome, array $righeDaConfermare, array $righeInformative, string $baseUrlVista): string
     {
-        $publicBaseUrl = rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/');
+        $publicBaseUrl = $this->getBackofficeBaseUrl();
         $lines = ["Nuovi pagamenti — {$gruppoNome}", ''];
         
         $renderRighe = function(array $righe) use ($publicBaseUrl) {
@@ -1004,7 +1045,7 @@ HTML;
         if (!empty($righeDaConfermare)) {
             $lines[] = 'Da confermare:';
             $lines = array_merge($lines, $renderRighe($righeDaConfermare));
-            $lines[] = 'Vai alla vista: ' . $baseUrlVista;
+            $lines[] = 'Gestisci pendenze: ' . $baseUrlVista;
             $lines[] = '';
         }
         if (!empty($righeInformative)) {
@@ -1021,18 +1062,42 @@ HTML;
             $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
             $handler = htmlspecialchars((string)($r['rendicontazione_handler'] ?? ''), ENT_QUOTES, 'UTF-8');
             $stato = (string)($r['rendicontazione_stato'] ?? '');
-            $color = $stato === 'ERRORE' ? '#dc3545' : '#333';
+            $color = $stato === 'ERRORE' ? '#dc3545' : '#1a202c';
             $statoSafe = htmlspecialchars($stato, ENT_QUOTES, 'UTF-8');
             $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
-            $rows .= "<tr style=\"color:{$color};\"><td style=\"padding:6px 8px;font-family:monospace;font-size:12px;\">{$iuv}</td>"
-                   . "<td style=\"padding:6px 8px;\">{$handler}</td>"
-                   . "<td style=\"padding:6px 8px;\">{$statoSafe}</td>"
-                   . "<td style=\"padding:6px 8px;text-align:right;\">&euro; {$importo}</td></tr>\n";
+
+            $badgeStyle = '';
+            if ($stato === 'ERRORE') {
+                $badgeStyle = 'background:#fde8e8;color:#9b1c1c;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;display:inline-block;';
+            } else {
+                $badgeStyle = 'background:#def7ec;color:#03543f;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;display:inline-block;';
+            }
+
+            $rows .= "<tr>"
+                   . "<td style=\"padding:12px 8px;font-family:Consolas,Monaco,monospace;font-size:12px;border-bottom:1px solid #edf2f7;color:#1a202c;\">{$iuv}</td>"
+                   . "<td style=\"padding:12px 8px;border-bottom:1px solid #edf2f7;color:#4a5568;\">{$handler}</td>"
+                   . "<td style=\"padding:12px 8px;border-bottom:1px solid #edf2f7;\"><span style=\"{$badgeStyle}\">{$statoSafe}</span></td>"
+                   . "<td style=\"padding:12px 8px;text-align:right;border-bottom:1px solid #edf2f7;font-weight:600;color:#1a202c;white-space:nowrap;font-size:13px;vertical-align:middle;\">&euro; {$importo}</td>"
+                   . "</tr>\n";
         }
 
         $oggi = htmlspecialchars(date('d/m/Y'), ENT_QUOTES, 'UTF-8');
-        $body = "<p style=\"margin:0 0 16px;font-size:13px;color:#718096;\">Comunicazione automatica dal modulo Rendicontazione PagoPA di GIL (GovPay Interaction Layer) — riepilogo del {$oggi}.</p>"
-              . '<table style="width:100%;border-collapse:collapse;font-size:13px;">' . $rows . '</table>';
+        $body = "<div style=\"background-color:#f7fafc;border-left:4px solid #0066cc;padding:16px;margin-bottom:24px;border-radius:4px;\">"
+              . "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#4a5568;\">"
+              . "Comunicazione automatica dal modulo <strong>Rendicontazione PagoPA</strong> di GIL (GovPay Interaction Layer) &mdash; riepilogo del <strong>{$oggi}</strong>."
+              . "</p>"
+              . "</div>"
+              . '<table style="width:100%;border-collapse:collapse;font-family:\'Helvetica Neue\',Arial,sans-serif;font-size:13px;">'
+              . '<thead>'
+              . '<tr style="border-bottom:2px solid #e2e8f0;color:#718096;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">'
+              . '<th style="padding:10px 8px;text-align:left;font-weight:600;">IUV</th>'
+              . '<th style="padding:10px 8px;text-align:left;font-weight:600;">Handler</th>'
+              . '<th style="padding:10px 8px;text-align:left;font-weight:600;">Stato</th>'
+              . '<th style="padding:10px 8px;text-align:right;font-weight:600;width:100px;">Importo</th>'
+              . '</tr>'
+              . '</thead>'
+              . '<tbody>' . $rows . '</tbody>'
+              . '</table>';
 
         return $this->renderEmailBase($body, $appName, 'Riepilogo rendicontazione automatica', $hasLogo, $logoSrc);
     }
