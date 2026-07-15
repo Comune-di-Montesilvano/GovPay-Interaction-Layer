@@ -403,7 +403,6 @@ class ImpostazioniController
         $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
         SettingsRepository::setSection('backoffice', [
             'public_base_url'      => $publicBaseUrl,
-            'apache_server_name'   => $body['apache_server_name'] ?? '',
             'mailer_dsn'           => ['value' => $body['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
             'mailer_from_address'  => $body['mailer_from_address'] ?? '',
             'mailer_from_name'     => $body['mailer_from_name'] ?? '',

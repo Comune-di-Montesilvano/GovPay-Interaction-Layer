@@ -22,7 +22,6 @@ jobs:
       - name: Crea file .env per il CI
         run: |
           cat > .env <<'EOF'
-          APACHE_SERVER_NAME=localhost
           DB_ROOT_PASSWORD=rootsecret
           DB_NAME=appdb
           DB_USER=appuser
