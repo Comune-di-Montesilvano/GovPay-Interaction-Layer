@@ -186,7 +186,7 @@ while (true) {
                 // resta non marcata e ricompare a ogni ciclo finche' la configurazione non la copre.
                 $idsNotificati = [];
 
-                $baseUrlVista = rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/') . '/rendicontazione/da-confermare';
+                $baseUrlVista = rtrim((string)\App\Config\Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''), '/') . '/rendicontazione/da-confermare';
 
                 // Digest per gruppo: si assume una risoluzione gruppo->tipologie già a carico
                 // della UI (Task 9); qui si notificano tutti i destinatari via query diretta.
