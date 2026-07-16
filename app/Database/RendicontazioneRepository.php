@@ -225,10 +225,12 @@ class RendicontazioneRepository
         $limit = max(1, $perPage);
 
         $stmt = $this->pdo->prepare(
-            "SELECT * FROM flussi_rendicontazioni
-             WHERE id_dominio = :dom AND is_govpay = 1 AND rendicontazione_stato = 'IN_ATTESA_CONFERMA'
-               AND cod_entrata IN ($inClause)
-             ORDER BY cod_entrata ASC, id_flusso ASC, iur ASC
+            "SELECT f.*, COALESCE(e.descrizione_locale, e.descrizione) AS descrizione_tipologia
+             FROM flussi_rendicontazioni f
+             LEFT JOIN entrate_tipologie e ON f.cod_entrata = e.id_entrata AND f.id_dominio = e.id_dominio
+             WHERE f.id_dominio = :dom AND f.is_govpay = 1 AND f.rendicontazione_stato = 'IN_ATTESA_CONFERMA'
+               AND f.cod_entrata IN ($inClause)
+             ORDER BY f.cod_entrata ASC, f.id_flusso ASC, f.iur ASC
              LIMIT :limit OFFSET :offset"
         );
 
