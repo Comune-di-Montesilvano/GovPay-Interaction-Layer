@@ -28,8 +28,8 @@ use App\Services\MailerService;
 use App\Services\RendicontazioneEngineService;
 use Dotenv\Dotenv;
 
-if (file_exists(dirname(__DIR__) . '/.env')) {
-    $dotenv = Dotenv::createImmutable(dirname(__DIR__));
+if (class_exists(\Dotenv\Dotenv::class) && file_exists(dirname(__DIR__) . '/.env')) {
+    $dotenv = \Dotenv\Dotenv::createImmutable(dirname(__DIR__));
     $dotenv->load();
 }
 if (!getenv('DB_HOST')) {
