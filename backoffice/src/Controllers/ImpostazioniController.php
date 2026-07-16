@@ -1638,11 +1638,7 @@ class ImpostazioniController
     {
         $expected = (string) ($_SESSION['impostazioni_csrf'] ?? '');
         $provided = (string) ($body['csrf_token'] ?? '');
-        $valid = $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
-        if ($valid) {
-            unset($_SESSION['impostazioni_csrf']); // Invalida dopo uso
-        }
-        return $valid;
+        return $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
     }
 
     private function parseBody(Request $request): array
