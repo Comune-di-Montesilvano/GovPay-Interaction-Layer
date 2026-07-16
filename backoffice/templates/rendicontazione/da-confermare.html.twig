@@ -21,7 +21,7 @@
               <th>Debitore</th>
               <th>Tipologia</th>
               <th>Causale</th>
-              <th class="text-end">Importo</th>
+              <th class="text-end text-nowrap">Importo</th>
               <th>Data pagamento</th>
             </tr>
           </thead>
@@ -46,9 +46,9 @@
                   <div class="fw-semibold">{{ r.debitore_nome }}</div>
                   <div class="small text-muted font-monospace">{{ r.debitore_cf }}</div>
                 </td>
-                <td><span class="badge bg-light text-dark border">{{ r.cod_entrata }}</span></td>
+                <td><span class="badge bg-light text-dark border">{{ r.descrizione_tipologia ?: r.cod_entrata }}</span></td>
                 <td class="small text-muted">{{ r.descrizione_entrata }}</td>
-                <td class="text-end">&euro; {{ r.importo|number_format(2, ',', '.') }}</td>
+                <td class="text-end text-nowrap">&euro;&nbsp;{{ r.importo|number_format(2, ',', '.') }}</td>
                 <td>{{ r.data_pagamento ? r.data_pagamento|date('d-m-Y') : '' }}</td>
               </tr>
             {% endfor %}
