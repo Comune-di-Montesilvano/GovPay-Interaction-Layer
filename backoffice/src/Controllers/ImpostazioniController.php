@@ -400,13 +400,27 @@ class ImpostazioniController
         }
 
         $by = $this->currentUser();
-        $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
-        SettingsRepository::setSection('backoffice', [
-            'public_base_url'      => $publicBaseUrl,
-            'mailer_dsn'           => ['value' => $body['mailer_dsn'] ?? 'null://null', 'encrypted' => true],
-            'mailer_from_address'  => $body['mailer_from_address'] ?? '',
-            'mailer_from_name'     => $body['mailer_from_name'] ?? '',
-        ], $by);
+
+        // Merge parziale: aggiorna solo i campi presenti nella richiesta per evitare
+        // che il form Backoffice e il form SMTP si azzerino a vicenda.
+        if (array_key_exists('public_base_url', $body)) {
+            $publicBaseUrl = $this->normalizePublicBaseUrl((string)($body['public_base_url'] ?? ''));
+            SettingsRepository::set('backoffice', 'public_base_url', $publicBaseUrl, false, $by);
+        }
+        if (array_key_exists('mailer_dsn', $body)) {
+            $mailerDsn = trim((string)$body['mailer_dsn']);
+            if ($mailerDsn === '') {
+                $mailerDsn = 'null://null';
+            }
+            SettingsRepository::set('backoffice', 'mailer_dsn', $mailerDsn, true, $by);
+        }
+        if (array_key_exists('mailer_from_address', $body)) {
+            SettingsRepository::set('backoffice', 'mailer_from_address', trim((string)$body['mailer_from_address']), false, $by);
+        }
+        if (array_key_exists('mailer_from_name', $body)) {
+            SettingsRepository::set('backoffice', 'mailer_from_name', trim((string)$body['mailer_from_name']), false, $by);
+        }
+
         // Compatibilità: se il vecchio campo è ancora presente nel form, aggiorna il flag app.debug.
         if (array_key_exists('app_debug', $body)) {
             SettingsRepository::set('app', 'debug', $body['app_debug'] === 'true' ? 'true' : 'false', false, $by);
