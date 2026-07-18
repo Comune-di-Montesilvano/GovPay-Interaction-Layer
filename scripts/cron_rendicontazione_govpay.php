@@ -234,7 +234,8 @@ while (true) {
                 $notificaAdmin = (string)SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false') === 'true';
                 $righeAdminInviate = 0;
                 if ($notificaAdmin) {
-                    $adminEmails = array_filter(array_map('trim', explode(';', (string)SettingsRepository::get('rendicontazione', 'admin_emails', ''))));
+                    $rawAdminEmails = (string)SettingsRepository::get('rendicontazione', 'admin_emails', '');
+                    $adminEmails = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/', $rawAdminEmails))));
                     if (!empty($adminEmails) && !empty($gestite)) {
                         $esitoAdmin = $mailer->sendRendicontazioneAdminDigest(array_values($adminEmails), $gestite);
                         if (($esitoAdmin['esito'] ?? '') === 'OK') {
