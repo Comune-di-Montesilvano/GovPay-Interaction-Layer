@@ -72,4 +72,29 @@ final class MailerServiceRendicontazioneTest extends TestCase
         );
         $this->assertSame('OK', $result['esito']);
     }
+
+    public function testDigestOperatoreRitornaErroreConDestinatarioInvalido(): void
+    {
+        $mailer = MailerService::forSuite('backoffice');
+        $result = $mailer->sendRendicontazioneOperatoreDigest(
+            ['invalid-email-address-without-at-symbol'],
+            'Ufficio Tributi',
+            [['iuv' => '123', 'importo' => 10]],
+            [],
+            'http://x'
+        );
+        $this->assertSame('ERRORE', $result['esito']);
+        $this->assertNotEmpty($result['errore'] ?? '');
+    }
+
+    public function testDigestAdminRitornaErroreConDestinatarioInvalido(): void
+    {
+        $mailer = MailerService::forSuite('backoffice');
+        $result = $mailer->sendRendicontazioneAdminDigest(
+            ['invalid-email-address-without-at-symbol'],
+            [['iuv' => '123', 'importo' => 10, 'rendicontazione_handler' => 'OK', 'rendicontazione_stato' => 'OK']]
+        );
+        $this->assertSame('ERRORE', $result['esito']);
+        $this->assertNotEmpty($result['errore'] ?? '');
+    }
 }
