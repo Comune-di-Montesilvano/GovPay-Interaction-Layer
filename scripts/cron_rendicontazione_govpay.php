@@ -228,6 +228,8 @@ while (true) {
                         foreach (array_merge($righeDaConfermareGruppo, $righeInformativeGruppo) as $r) {
                             $idsNotificati[(int)$r['id']] = true;
                         }
+                    } else if (($esitoOperatore['esito'] ?? '') === 'ERRORE') {
+                        $log('ERRORE invio digest operatore: ' . ($esitoOperatore['errore'] ?? 'Errore sconosciuto'));
                     }
                 }
 
@@ -243,6 +245,8 @@ while (true) {
                             foreach ($gestite as $r) {
                                 $idsNotificati[(int)$r['id']] = true;
                             }
+                        } else if (($esitoAdmin['esito'] ?? '') === 'ERRORE') {
+                            $log('ERRORE invio digest admin: ' . ($esitoAdmin['errore'] ?? 'Errore sconosciuto'));
                         }
                     }
                 }

@@ -847,27 +847,34 @@ HTML;
             $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
         }
 
-        $logoPath = $this->resolveLogoPath();
-        $hasLogo  = ($logoPath !== '' && is_file($logoPath));
-        $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
+        try {
+            $logoPath = $this->resolveLogoPath();
+            $hasLogo  = ($logoPath !== '' && is_file($logoPath));
+            $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
 
-        $html = $this->renderRendicontazioneOperatoreTemplate($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista, $appName, $hasLogo, $logoSrc);
-        $text = $this->renderRendicontazioneOperatorePlain($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista);
+            $html = $this->renderRendicontazioneOperatoreTemplate($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista, $appName, $hasLogo, $logoSrc);
+            $text = $this->renderRendicontazioneOperatorePlain($gruppoNome, $righeDaConfermare, $righeInformative, $baseUrlVista);
 
-        foreach ($destinatari as $to) {
-            $email = (new Email())
-                ->from($this->from)
-                ->to(new Address($to))
-                ->subject("Nuovi pagamenti — {$gruppoNome} (PagoPA GIL)")
-                ->html($html)
-                ->text($text);
-            if ($hasLogo) {
-                $email->embedFromPath($logoPath, 'logo');
+            foreach ($destinatari as $to) {
+                $email = (new Email())
+                    ->from($this->from)
+                    ->to(new Address($to))
+                    ->subject("Nuovi pagamenti — {$gruppoNome} (PagoPA GIL)")
+                    ->html($html)
+                    ->text($text);
+                if ($hasLogo) {
+                    $email->embedFromPath($logoPath, 'logo');
+                }
+                $this->mailer->send($email);
             }
-            $this->mailer->send($email);
-        }
 
-        return ['esito' => 'OK'];
+            return ['esito' => 'OK'];
+        } catch (\Throwable $e) {
+            return [
+                'esito'  => 'ERRORE',
+                'errore' => $e->getMessage(),
+            ];
+        }
     }
 
     /** @param string[] $destinatari @param array<int,array> $righeGestite */
@@ -880,28 +887,35 @@ HTML;
             $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
         }
 
-        $logoPath = $this->resolveLogoPath();
-        $hasLogo  = ($logoPath !== '' && is_file($logoPath));
-        $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
+        try {
+            $logoPath = $this->resolveLogoPath();
+            $hasLogo  = ($logoPath !== '' && is_file($logoPath));
+            $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
 
-        $html = $this->renderRendicontazioneAdminTemplate($righeGestite, $appName, $hasLogo, $logoSrc);
-        $text = $this->renderRendicontazioneAdminPlain($righeGestite);
-        $oggi = date('d/m/Y');
+            $html = $this->renderRendicontazioneAdminTemplate($righeGestite, $appName, $hasLogo, $logoSrc);
+            $text = $this->renderRendicontazioneAdminPlain($righeGestite);
+            $oggi = date('d/m/Y');
 
-        foreach ($destinatari as $to) {
-            $email = (new Email())
-                ->from($this->from)
-                ->to(new Address($to))
-                ->subject("Riepilogo rendicontazione automatica GovPay — {$oggi} (PagoPA GIL)")
-                ->html($html)
-                ->text($text);
-            if ($hasLogo) {
-                $email->embedFromPath($logoPath, 'logo');
+            foreach ($destinatari as $to) {
+                $email = (new Email())
+                    ->from($this->from)
+                    ->to(new Address($to))
+                    ->subject("Riepilogo rendicontazione automatica GovPay — {$oggi} (PagoPA GIL)")
+                    ->html($html)
+                    ->text($text);
+                if ($hasLogo) {
+                    $email->embedFromPath($logoPath, 'logo');
+                }
+                $this->mailer->send($email);
             }
-            $this->mailer->send($email);
-        }
 
-        return ['esito' => 'OK'];
+            return ['esito' => 'OK'];
+        } catch (\Throwable $e) {
+            return [
+                'esito'  => 'ERRORE',
+                'errore' => $e->getMessage(),
+            ];
+        }
     }
 
     private function getBackofficeBaseUrl(): string
