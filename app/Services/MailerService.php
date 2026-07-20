@@ -388,7 +388,7 @@ class MailerService
               <p>{$greeting}</p>
               <p>abbiamo ricevuto una richiesta di reset password per il tuo account. Clicca il pulsante qui sotto per impostare una nuova password:</p>
               <p style="text-align:center;">
-                <a href="{$safeUrl}" class="btn">Reimposta password</a>
+                <a href="{$safeUrl}" class="btn" style="background:#0b3d91; color:#ffffff; text-decoration:none; padding:14px 32px; border-radius:6px; font-weight:600; font-size:15px; display:inline-block; margin:8px 0 24px;">Reimposta password</a>
               </p>
               <p>Se il pulsante non funziona, copia e incolla questo link nel browser:</p>
               <p style="word-break:break-all; font-size:13px; color:#555;">{$safeUrl}</p>
@@ -526,8 +526,8 @@ class MailerService
             $safePdfUrl = htmlspecialchars($pdfUrl, ENT_QUOTES, 'UTF-8');
             $safePaymentUrl = htmlspecialchars($paymentUrl, ENT_QUOTES, 'UTF-8');
 
-            $pdfButton = $pdfUrl !== '' ? "<a href=\"{$safePdfUrl}\" class=\"btn btn-secondary\" style=\"background:#6c757d; margin-right:8px;\">Scarica PDF avviso</a>" : '';
-            $payButton = $paymentUrl !== '' ? "<a href=\"{$safePaymentUrl}\" class=\"btn\">Paga ora</a>" : '';
+            $pdfButton = $pdfUrl !== '' ? "<a href=\"{$safePdfUrl}\" class=\"btn btn-secondary\" style=\"background:#6c757d; color:#ffffff; text-decoration:none; padding:14px 32px; border-radius:6px; font-weight:600; font-size:15px; display:inline-block; margin:8px 8px 8px 4px;\">Scarica PDF avviso</a>" : '';
+            $payButton = $paymentUrl !== '' ? "<a href=\"{$safePaymentUrl}\" class=\"btn\" style=\"background:#0b3d91; color:#ffffff; text-decoration:none; padding:14px 32px; border-radius:6px; font-weight:600; font-size:15px; display:inline-block; margin:8px 4px;\">Paga ora</a>" : '';
 
             $actionButtons = <<<HTML
               <p style="text-align:center; margin:24px 0;">
