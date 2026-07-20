@@ -143,11 +143,13 @@
       idLabel.textContent = 'Partita IVA';
       ident.placeholder = 'P.IVA';
       lblAnag.textContent = 'Ragione sociale';
+      if(anagraficaInput) anagraficaInput.placeholder = 'Ragione sociale';
       if(colNome) colNome.style.display = 'none';
     } else {
       idLabel.textContent = 'Codice fiscale';
       ident.placeholder = 'CF';
       lblAnag.textContent = 'Cognome';
+      if(anagraficaInput) anagraficaInput.placeholder = 'Cognome';
       if(colNome) colNome.style.display = '';
     }
   }
