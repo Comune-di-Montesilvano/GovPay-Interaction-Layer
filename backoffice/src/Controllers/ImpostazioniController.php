@@ -1582,6 +1582,33 @@ class ImpostazioniController
      */
     private function decryptValueForKeyRotation(string $value, string $oldKey): array
     {
+        // 1. Check for v2 (AES-256-GCM) prefix
+        if (str_starts_with($value, 'v2:')) {
+            $payload = substr($value, 3);
+            $decoded = base64_decode($payload, true);
+            if ($decoded === false) {
+                return ['ok' => false];
+            }
+            $ivLength = openssl_cipher_iv_length('aes-256-gcm');
+            $tagLength = 16;
+            if (strlen($decoded) <= ($ivLength + $tagLength)) {
+                return ['ok' => false];
+            }
+            $iv = substr($decoded, 0, $ivLength);
+            $tag = substr($decoded, $ivLength, $tagLength);
+            $ciphertext = substr($decoded, $ivLength + $tagLength);
+            $cleartext = openssl_decrypt($ciphertext, 'aes-256-gcm', $oldKey, OPENSSL_RAW_DATA, $iv, $tag);
+            if ($cleartext === false) {
+                return ['ok' => false];
+            }
+            return [
+                'ok' => true,
+                'plaintext' => $cleartext,
+                'source' => 'encrypted',
+            ];
+        }
+
+        // 2. Fallback to legacy AES-256-CBC
         $decoded = base64_decode($value, true);
         $ivLength = openssl_cipher_iv_length('aes-256-cbc');
 
@@ -1611,19 +1638,20 @@ class ImpostazioniController
 
     private function encryptValueForKeyRotation(string $plaintext, string $newKey): ?string
     {
-        $ivLength = openssl_cipher_iv_length('aes-256-cbc');
+        $ivLength = openssl_cipher_iv_length('aes-256-gcm');
         try {
             $iv = random_bytes($ivLength);
         } catch (\Throwable $e) {
             return null;
         }
 
-        $ciphertext = openssl_encrypt($plaintext, 'aes-256-cbc', $newKey, OPENSSL_RAW_DATA, $iv);
+        $tag = '';
+        $ciphertext = openssl_encrypt($plaintext, 'aes-256-gcm', $newKey, OPENSSL_RAW_DATA, $iv, $tag);
         if ($ciphertext === false) {
             return null;
         }
 
-        return base64_encode($iv . $ciphertext);
+        return 'v2:' . base64_encode($iv . $tag . $ciphertext);
     }
 
     private function generateCsrf(): string
