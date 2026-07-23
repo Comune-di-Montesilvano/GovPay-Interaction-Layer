@@ -1,8 +1,8 @@
 publiccodeYmlVersion: 0.5.0
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
-softwareVersion: 1.3.29
-releaseDate: 2026-06-23
+softwareVersion: 1.5.42
+releaseDate: 2026-07-23
 platforms:
   - web
 categories:
@@ -19,31 +19,36 @@ description:
   it:
     localisedName: GovPay Interaction Layer
     shortDescription: >
-      Piattaforma containerizzata per migliorare il flusso di lavoro degli enti
-      che utilizzano GovPay come soluzione PagoPA.
+      Piattaforma containerizzata per la gestione dei pagamenti PagoPA, rendicontazione, marca da bollo e integrazione GovPay per enti locali.
     longDescription: >
-      GovPay Interaction Layer (GIL) è una piattaforma containerizzata
-      sviluppata dal Comune di Montesilvano per migliorare il flusso di lavoro
-      degli enti locali che utilizzano GovPay come soluzione PagoPA. Include un
-      backoffice per operatori (gestione pendenze, flussi di rendicontazione,
-      ricevute pagoPA on-demand) e un frontoffice per cittadini e sportello. Si
-      integra con GovPay, pagoPA Checkout, pagoPA Biz Events e App IO. Il
-      deployment è gestito tramite Docker Compose o Portainer con immagini
-      pubblicate su GitHub Container Registry.
+      GovPay Interaction Layer (GIL) è una piattaforma containerizzata sviluppata
+      dal Comune di Montesilvano per potenziare ed estendere l'ecosistema GovPay e pagoPA
+      negli enti locali. Offre un Backoffice completo per operatori (gestione pendenze,
+      motore di rendicontazione avanzato con smarcamento automatico, gestione TEFA,
+      integrazione Biz Events e App IO, backup/disaster recovery e rotazione chiavi di cifratura)
+      e un Frontoffice per cittadini con supporto autenticazione OIDC (SPID/CIE).
+      Si integra nativamente con GovPay, pagoPA Checkout EC, pagoPA Biz Events, App IO
+      e servizi @e.bollo. Il deployment è ottimizzato per Docker Compose e Portainer Stack
+      con immagini pubblicate su GitHub Container Registry (GHCR).
     features:
-      - Backoffice per la gestione delle pendenze pagoPA
-      - Flussi di rendicontazione con ricevute on-demand via Biz Events
-      - Frontoffice cittadini con autenticazione OIDC (opzionale)
-      - Integrazione con App IO per l'invio di avvisi di pagamento
-      - Dashboard in tempo reale con grafici Chart.js e statistiche per tipologia
-      - Inserimento massivo pendenze tramite lotti
-      - Marca da Bollo Telematica (@e.bollo) con flusso integrato backoffice e frontoffice
-      - Gestione IBAN e conti di accredito direttamente dall'interfaccia
-      - Pipeline di mapping pendenze esterne tramite prefisso IUV e keyword vocab
-      - Deploy containerizzato tramite Docker Compose e Portainer
+      - Backoffice operativo per la gestione completa delle pendenze pagoPA (creazione, lotti, annullamenti, avvisi PDF)
+      - Motore di Rendicontazione avanzato con smarcamento automatico/manuale e regole per gestionali terzi
+      - Ricevute pagoPA on-demand e tracciamento eventi via pagoPA Biz Events
+      - Frontoffice cittadini e sportello per pagamenti spontanei e da avviso IUV
+      - Autenticazione OIDC con supporto SPID/CIE (integrabile tramite Login Proxy / SATOSA)
+      - Integrazione avanzata con App IO per avvisi di pagamento e notifiche di avvenuta regolarizzazione
+      - Marca da Bollo Telematica (@e.bollo SANP 3.12.0) con acquisto integrato backoffice e frontoffice
+      - Scanner TEFA per la gestione e ripartizione del tributo ambientale
+      - Dashboard analitica in tempo reale con grafici Chart.js e reportistiche per tipologia
+      - Gestione e sincronizzazione IBAN e conti di accredito da GovPay
+      - Sistema di Backup & Disaster Recovery (ZIP completo con dump DB/volumi ed export/import JSON)
+      - Cifratura forte dei dati nel DB (AES-256-GCM) con diagnostica e rotazione guidata di APP_ENCRYPTION_KEY
+      - Gestione ruoli e autorizzazioni granulari (ACL per operatore e tipologia di entrata)
+      - Scansioni pianificate (Cron) con invio automatico digest email per operatori ed amministratori
+      - Deploy containerizzato pronto all'uso tramite Docker Compose e Portainer (GHCR)
     screenshots:
-      - https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/blob/main/docs/images/FrontOffice.png
-      - https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/blob/main/docs/images/BackOffice.png
+      - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/FrontOffice.png
+      - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/BackOffice.png
 legal:
   license: EUPL-1.2
   mainCopyrightOwner: Comune di Montesilvano
