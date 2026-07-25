@@ -112,7 +112,10 @@ class ImpostazioniController
             // Frontoffice
             'FRONTOFFICE_PUBLIC_BASE_URL'       => $plain($fo['public_base_url'] ?? ''),
             'FEATURED_SERVICES'                 => $plain($fo['featured_services'] ?? '[]'),
-            'SUPPORT_LOCATION'                  => $plain($bo['support_location'] ?? ''),
+            'APP_SUPPORT_EMAIL'                 => $plain($entity['support_email'] ?? ''),
+            'APP_SUPPORT_PHONE'                 => $plain($entity['support_phone'] ?? ''),
+            'APP_SUPPORT_HOURS'                 => $plain($entity['support_hours'] ?? ''),
+            'APP_SUPPORT_LOCATION'              => $plain($entity['support_location'] ?? ''),
             'BOLLO_TIPO_PENDENZA'               => $plain($ui['bollo_tipo_pendenza'] ?? 'BOLLOT'),
             'AUX_DIGIT'                         => $plain($entity['aux_digit'] ?? ''),
             'TRUSTED_PROXIES'                   => $plain($bo['trusted_proxies'] ?? ''),
@@ -319,10 +322,6 @@ class ImpostazioniController
             'url'              => $body['entity_url'] ?? '',
             'id_dominio'       => $body['id_dominio'] ?? '',
             'id_a2a'           => $body['id_a2a'] ?? '',
-            'support_email'    => $body['support_email'] ?? '',
-            'support_phone'    => $body['support_phone'] ?? '',
-            'support_hours'    => $body['support_hours'] ?? '',
-            'support_location' => $body['support_location'] ?? '',
         ], $by);
 
         return $this->jsonOk('Dati ente salvati.');
@@ -479,6 +478,13 @@ class ImpostazioniController
         }
         
         SettingsRepository::setSection('frontoffice', $frontofficeData, $by);
+        
+        SettingsRepository::setSection('entity', [
+            'support_email'    => $body['support_email'] ?? '',
+            'support_phone'    => $body['support_phone'] ?? '',
+            'support_hours'    => $body['support_hours'] ?? '',
+            'support_location' => $body['support_location'] ?? '',
+        ], $by);
 
         return $this->jsonOk('Impostazioni Frontoffice salvate.');
     }

@@ -52,33 +52,7 @@
         </div>
       </div>
 
-      {# ─── Supporto ─────────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-headset me-1"></i>Info supporto
-      </h6>
-      <div class="row g-3 mb-4">
-        <div class="col-md-5">
-          <label class="form-label">E-mail supporto</label>
-          <input type="email" class="form-control" name="support_email"
-            value="{{ entity.support_email|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Telefono</label>
-          <input type="text" class="form-control" name="support_phone"
-            value="{{ entity.support_phone|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Orari</label>
-          <input type="text" class="form-control" name="support_hours"
-            value="{{ entity.support_hours|default('') }}" placeholder="Lun-Ven 9:00-17:00"
-            {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-        <div class="col-md-8">
-          <label class="form-label">Indirizzo</label>
-          <input type="text" class="form-control" name="support_location"
-            value="{{ entity.support_location|default('') }}" {{ not is_superadmin ? 'readonly' : '' }}>
-        </div>
-      </div>
+
 
       {% if is_superadmin %}
       <div class="d-flex justify-content-end border-top pt-3 mb-4">
