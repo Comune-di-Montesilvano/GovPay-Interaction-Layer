@@ -97,4 +97,21 @@ final class MailerServiceRendicontazioneTest extends TestCase
         $this->assertSame('ERRORE', $result['esito']);
         $this->assertNotEmpty($result['errore'] ?? '');
     }
+
+    public function testRenderPendenzaReceiptNotification(): void
+    {
+        $mailer = MailerService::forSuite('backoffice');
+        $result = $mailer->sendPendenzaReceiptNotification(
+            'test@example.com',
+            'Mario Rossi',
+            ['causale' => 'Riscaldamento scolastico', 'importo' => 120.50],
+            '00000000000479353',
+            'Tassa',
+            '2026-07-26',
+            'http://frontoffice/receipt/123',
+            'GIL',
+            ''
+        );
+        $this->assertSame('OK', $result['esito']);
+    }
 }
