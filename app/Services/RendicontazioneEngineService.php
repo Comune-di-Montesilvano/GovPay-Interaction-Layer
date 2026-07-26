@@ -123,8 +123,8 @@ class RendicontazioneEngineService
         $this->controllaERegolarizzaFlussoPerRiga($idDominio, $rigaId, $backofficeUrl);
 
         if (!$skipAppIo) {
-            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga);
-            $this->tentaNotificaEmail($rigaId, $pendenza, $riga);
+            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
+            $this->tentaNotificaEmail($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
         } else {
             $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
             $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
@@ -164,8 +164,8 @@ class RendicontazioneEngineService
                 return;
             }
 
-            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga);
-            $this->tentaNotificaEmail($rigaId, $pendenza, $riga);
+            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
+            $this->tentaNotificaEmail($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('Errore notifica App IO / Email rendicontazione (conferma manuale)', [
                 'riga_id' => $rigaId,
@@ -195,7 +195,7 @@ class RendicontazioneEngineService
         return in_array($statoFresco, ['INVIATO', 'NON_APPLICABILE'], true);
     }
 
-    private function tentaNotificaAppIo(int $rigaId, array $pendenza, array $riga): void
+    private function tentaNotificaAppIo(int $rigaId, array $pendenza, array $riga, string $idA2A, string $backofficeUrl): void
     {
         if ($this->appioGiaProcessata($rigaId)) {
             return;
@@ -279,7 +279,25 @@ class RendicontazioneEngineService
                 null
             );
 
-            if (($result['esito'] ?? 'KO') === 'OK') {
+            $esitoOk = (($result['esito'] ?? 'KO') === 'OK');
+            $ioNotification = [
+                'timestamp' => date('Y-m-d H:i:s'),
+                'tipo' => 'riscossione_pendenza',
+                'canale' => 'app_io',
+                'destinatario' => $cf,
+                'esito' => $esitoOk ? 'OK' : 'ERRORE',
+                'message_id' => $result['id'] ?? null,
+                'errore' => $result['errore'] ?? null,
+            ];
+            $this->addNotificaToPendenza(
+                (string)($pendenza['idPendenza'] ?? $riga['id_pendenza'] ?? ''),
+                $idA2A,
+                $backofficeUrl,
+                $pendenza,
+                $ioNotification
+            );
+
+            if ($esitoOk) {
                 $this->repo->markAppioInviato($rigaId, isset($result['id']) ? (string)$result['id'] : null);
             } else {
                 $this->repo->markAppioEsito($rigaId, 'ERRORE');
@@ -287,6 +305,23 @@ class RendicontazioneEngineService
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('Errore notifica App IO rendicontazione', ['error' => $e->getMessage()]);
             $this->repo->markAppioEsito($rigaId, 'ERRORE');
+
+            $ioNotification = [
+                'timestamp' => date('Y-m-d H:i:s'),
+                'tipo' => 'riscossione_pendenza',
+                'canale' => 'app_io',
+                'destinatario' => $cf ?? '',
+                'esito' => 'ERRORE',
+                'message_id' => null,
+                'errore' => $e->getMessage(),
+            ];
+            $this->addNotificaToPendenza(
+                (string)($pendenza['idPendenza'] ?? $riga['id_pendenza'] ?? ''),
+                $idA2A,
+                $backofficeUrl,
+                $pendenza,
+                $ioNotification
+            );
         }
     }
 
@@ -432,7 +467,7 @@ class RendicontazioneEngineService
         return in_array($statoFresco, ['INVIATO', 'NON_APPLICABILE'], true);
     }
 
-    private function tentaNotificaEmail(int $rigaId, array $pendenza, array $riga): void
+    private function tentaNotificaEmail(int $rigaId, array $pendenza, array $riga, string $idA2A, string $backofficeUrl): void
     {
         if ($this->emailGiaProcessata($rigaId)) {
             return;
@@ -490,7 +525,25 @@ class RendicontazioneEngineService
                 $logoPath
             );
 
-            if (($res['esito'] ?? 'KO') === 'OK') {
+            $esitoOk = (($res['esito'] ?? 'KO') === 'OK');
+            $emailNotification = [
+                'timestamp' => date('Y-m-d H:i:s'),
+                'tipo' => 'riscossione_pendenza',
+                'canale' => 'email',
+                'destinatario' => $toEmail,
+                'esito' => $esitoOk ? 'OK' : 'ERRORE',
+                'message_id' => null,
+                'errore' => $res['errore'] ?? null,
+            ];
+            $this->addNotificaToPendenza(
+                (string)($pendenza['idPendenza'] ?? $riga['id_pendenza'] ?? ''),
+                $idA2A,
+                $backofficeUrl,
+                $pendenza,
+                $emailNotification
+            );
+
+            if ($esitoOk) {
                 $this->repo->markEmailInviata($rigaId);
             } else {
                 $this->repo->markEmailEsito($rigaId, 'ERRORE');
@@ -501,6 +554,23 @@ class RendicontazioneEngineService
                 'error'   => $e->getMessage(),
             ]);
             $this->repo->markEmailEsito($rigaId, 'ERRORE');
+
+            $emailNotification = [
+                'timestamp' => date('Y-m-d H:i:s'),
+                'tipo' => 'riscossione_pendenza',
+                'canale' => 'email',
+                'destinatario' => $toEmail,
+                'esito' => 'ERRORE',
+                'message_id' => null,
+                'errore' => $e->getMessage(),
+            ];
+            $this->addNotificaToPendenza(
+                (string)($pendenza['idPendenza'] ?? $riga['id_pendenza'] ?? ''),
+                $idA2A,
+                $backofficeUrl,
+                $pendenza,
+                $emailNotification
+            );
         }
     }
 
@@ -516,5 +586,96 @@ class RendicontazioneEngineService
             }
         }
         return '';
+    }
+
+    private function addNotificaToPendenza(
+        string $idPendenza,
+        string $idA2A,
+        string $backofficeUrl,
+        array  $pendenza,
+        array  $notificationData
+    ): bool {
+        try {
+            $allowedKeys = [
+                'numeroAvviso','tassonomia','dataValidita','datiAllegati','tassonomiaAvviso','importo','dataScadenza',
+                'dataPromemoriaScadenza','idUnitaOperativa','idDominio','allegati','dataCaricamento','annoRiferimento',
+                'divisione','nome','causale','soggettoPagatore','dataNotificaAvviso','cartellaPagamento','documento',
+                'proprieta','direzione','idTipoPendenza','voci'
+            ];
+            $put = array_intersect_key($pendenza, array_flip($allowedKeys));
+
+            if (empty($put['idTipoPendenza']) && !empty($pendenza['tipoPendenza']['idTipoPendenza'])) {
+                $put['idTipoPendenza'] = (string)$pendenza['tipoPendenza']['idTipoPendenza'];
+            }
+
+            if (!empty($put['voci']) && is_array($put['voci'])) {
+                foreach ($put['voci'] as &$voce) {
+                    if (!is_array($voce)) {
+                        continue;
+                    }
+                    unset($voce['indice'], $voce['stato']);
+                    
+                    if (!empty($voce['tipoBollo']) || !empty($voce['hashDocumento']) || !empty($voce['provinciaResidenza'])) {
+                        $tipo = (string)($voce['tipoBollo'] ?? '');
+                        if ($tipo === '') {
+                            $tipo = '01';
+                        }
+                        if (strlen($tipo) === 1) {
+                            $tipo = '0' . $tipo;
+                        }
+                        $voce['tipoBollo'] = $tipo;
+
+                        if (empty($voce['hashDocumento'])) {
+                            $seed = (string)($voce['descrizione'] ?? '') . '|' . (string)($voce['idVocePendenza'] ?? uniqid('', true));
+                            $voce['hashDocumento'] = base64_encode(hash('sha256', $seed, true));
+                        }
+
+                        $prov = strtoupper(trim((string)($voce['provinciaResidenza'] ?? '')));
+                        if ($prov !== '') {
+                            $voce['provinciaResidenza'] = $prov;
+                        }
+                    }
+                }
+                unset($voce);
+            }
+
+            $put['datiAllegati'] = $put['datiAllegati'] ?? [];
+            if (!isset($put['datiAllegati']['notifiche']) || !is_array($put['datiAllegati']['notifiche'])) {
+                $put['datiAllegati']['notifiche'] = [];
+            }
+
+            $put['datiAllegati']['notifiche'][] = [
+                'timestamp' => $notificationData['timestamp'] ?? date('Y-m-d H:i:s'),
+                'tipo' => $notificationData['tipo'] ?? 'creazione_pendenza',
+                'canale' => $notificationData['canale'] ?? 'email',
+                'destinatario' => $notificationData['destinatario'] ?? '',
+                'esito' => $notificationData['esito'] ?? 'OK',
+                'message_id' => $notificationData['message_id'] ?? null,
+                'errore' => $notificationData['errore'] ?? null,
+            ];
+
+            if (empty($put['idDominio'])) {
+                $put['idDominio'] = (string)($pendenza['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', ''));
+            }
+
+            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+            $response = $this->govPayClient->request('PUT', $url, [
+                'json' => $put,
+                'headers' => [
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ]
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            return ($statusCode >= 200 && $statusCode < 300);
+
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore RendicontazioneEngineService::addNotificaToPendenza', [
+                'idPendenza' => $idPendenza,
+                'exception' => $e->getMessage()
+            ]);
+            return false;
+        }
     }
 }

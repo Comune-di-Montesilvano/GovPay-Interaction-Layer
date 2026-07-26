@@ -661,13 +661,14 @@ HTML;
         $safeDataPagamento = htmlspecialchars($dataPagamento, ENT_QUOTES, 'UTF-8');
 
         $greeting = $safeToName !== '' ? 'Gentile <strong>' . $safeToName . '</strong>,' : 'Gentile Interessato,';
+        $intestazione = $safeToName !== '' ? ', intestata a <strong>' . $safeToName . '</strong>' : '';
 
         $actionButtons = '';
         if ($receiptUrl !== '') {
             $safeReceiptUrl = htmlspecialchars($receiptUrl, ENT_QUOTES, 'UTF-8');
             $actionButtons = <<<HTML
               <p style="text-align:center; margin:24px 0;">
-                <a href="{$safeReceiptUrl}" class="btn" style="background:#0b3d91; color:#fff; text-decoration:none; padding:14px 32px; border-radius:6px; font-weight:600; font-size:15px; display:inline-block;">Scarica Ricevuta</a>
+                <a href="{$safeReceiptUrl}" class="btn" style="background:#0b3d91; color:#ffffff; text-decoration:none; padding:14px 32px; border-radius:6px; font-weight:600; font-size:15px; display:inline-block; margin:8px 4px;">Scarica Ricevuta</a>
               </p>
 HTML;
         }
@@ -715,7 +716,7 @@ HTML;
             </div>
             <div class="body">
               <p>{$greeting}</p>
-              <p>abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto. Di seguito i dettagli della ricevuta:</p>
+              <p>abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto{$intestazione}. Di seguito i dettagli della ricevuta:</p>
               <div class="info-box">
                 <p><strong>Causale:</strong> {$causale}</p>
                 <p><strong>Importo:</strong> &euro; {$importo}</p>
@@ -747,9 +748,10 @@ HTML;
         $causale = $pendenzaData['causale'] ?? 'Ricevuta pagamento';
         $importo = number_format((float)($pendenzaData['importo'] ?? 0.0), 2, ',', '.');
         $greeting = $toName !== '' ? "Gentile {$toName}," : "Gentile Interessato,";
+        $intestazione = $toName !== '' ? ", intestata a {$toName}" : "";
 
         $text = "{$greeting}\n\n";
-        $text .= "Ti confermiamo che abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto.\n\n";
+        $text .= "Ti confermiamo che abbiamo ricevuto e registrato il pagamento relativo alla pendenza in oggetto{$intestazione}.\n\n";
         $text .= "Dettagli:\n";
         $text .= "- Causale: {$causale}\n";
         $text .= "- Importo: € {$importo}\n";
