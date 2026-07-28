@@ -2955,11 +2955,11 @@ class PendenzeController
             Logger::getInstance()->warning('Errore lettura incasso ragioneria: ' . $e->getMessage());
         }
 
-        // Notifica App IO di rendicontazione: non può essere scritta su GovPay
-        // (rifiuta PUT su pendenza ESEGUITO, VER_003) — la mostriamo comunque nel
-        // timeline "Notifiche" del dettaglio come voce sintetica letta da
-        // flussi_rendicontazioni.rendicontazione_appio_stato, senza toccare i
-        // datiAllegati reali della pendenza.
+        // Notifiche App IO ed Email di rendicontazione: non possono essere scritte su GovPay
+        // (rifiuta PUT su pendenza ESEGUITO, VER_003) — le mostriamo comunque nel
+        // timeline "Notifiche" del dettaglio come voci sintetiche lette da
+        // flussi_rendicontazioni.rendicontazione_appio_stato e rendicontazione_email_stato,
+        // senza toccare i datiAllegati reali della pendenza.
         if (is_array($pendenza) && !empty($pendenza)) {
             foreach ($incassoRows as $incassoRow) {
                 if (($incassoRow['rendicontazione_appio_stato'] ?? '') === 'INVIATO') {
@@ -2985,7 +2985,36 @@ class PendenzeController
                         'message_id'   => $messageIdAppio,
                         'errore'       => null,
                     ];
-                    break;
+                }
+
+                if (($incassoRow['rendicontazione_email_stato'] ?? '') === 'INVIATO') {
+                    if (!isset($pendenza['datiAllegati']) || !is_array($pendenza['datiAllegati'])) {
+                        $pendenza['datiAllegati'] = [];
+                    }
+                    if (!isset($pendenza['datiAllegati']['notifiche']) || !is_array($pendenza['datiAllegati']['notifiche'])) {
+                        $pendenza['datiAllegati']['notifiche'] = [];
+                    }
+                    $timestampEmail = (string)(
+                        $incassoRow['rendicontazione_email_inviata_at']
+                        ?? $incassoRow['rendicontazione_confermato_at']
+                        ?? $incassoRow['data_pagamento']
+                        ?? ''
+                    );
+                    $destEmail = (string)(
+                        $pendenza['soggettoPagatore']['email']
+                        ?? $pendenza['proprieta']['email']
+                        ?? $pendenza['proprieta']['emailPagatore']
+                        ?? 'N/A'
+                    );
+                    $pendenza['datiAllegati']['notifiche'][] = [
+                        'timestamp'    => $timestampEmail !== '' ? $timestampEmail : date('Y-m-d H:i:s'),
+                        'tipo'         => 'notifica pagamento registrato',
+                        'canale'       => 'email',
+                        'destinatario' => $destEmail,
+                        'esito'        => 'OK',
+                        'message_id'   => null,
+                        'errore'       => null,
+                    ];
                 }
             }
         }
