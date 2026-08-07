@@ -40,4 +40,35 @@ class Connection
             throw $e;
         }
     }
+
+    /**
+     * Esegue $fn ritentando su deadlock InnoDB (SQLSTATE 40001 / errore MySQL 1213)
+     * e su lock wait timeout (1205). Transitori attesi quando piu' demoni fanno
+     * bulk UPDATE concorrenti sulle stesse tabelle (es. mapping L1/L2 su
+     * flussi_rendicontazioni). Backoff esponenziale con jitter, max $maxAttempts tentativi.
+     *
+     * @template T
+     * @param callable(): T $fn
+     * @return T
+     */
+    public static function retryOnDeadlock(callable $fn, int $maxAttempts = 5)
+    {
+        $attempt = 0;
+        while (true) {
+            $attempt++;
+            try {
+                return $fn();
+            } catch (PDOException $e) {
+                $sqlState = $e->errorInfo[0] ?? $e->getCode();
+                $driverCode = (int)($e->errorInfo[1] ?? 0);
+                $isDeadlock = $sqlState === '40001' || in_array($driverCode, [1213, 1205], true);
+                if (!$isDeadlock || $attempt >= $maxAttempts) {
+                    throw $e;
+                }
+                $baseDelayMs = 50 * (1 << ($attempt - 1));
+                $jitterMs    = random_int(0, 100);
+                usleep((int)min(2000, $baseDelayMs + $jitterMs) * 1000);
+            }
+        }
+    }
 }

@@ -679,14 +679,16 @@ class MappingPendenzeRepository
                                             AND f.iuv LIKE :prefix
                                             AND LOWER(COALESCE(b.descrizione, f.descrizione_entrata)) LIKE :kw";
                 }
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([
-            ':dom'    => $idDominio,
-            ':cod'    => $codEntrata,
-            ':prefix' => $prefix . '%',
-            ':kw'     => '%' . mb_strtolower($keyword) . '%',
-        ]);
-        return $stmt->rowCount();
+        return Connection::retryOnDeadlock(function () use ($sql, $idDominio, $codEntrata, $prefix, $keyword): int {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([
+                ':dom'    => $idDominio,
+                ':cod'    => $codEntrata,
+                ':prefix' => $prefix . '%',
+                ':kw'     => '%' . mb_strtolower($keyword) . '%',
+            ]);
+            return $stmt->rowCount();
+        });
     }
 
     /**
@@ -716,9 +718,11 @@ class MappingPendenzeRepository
                                             AND f.vocab_stato IN ('PENDING', 'NO_MATCH')
                                             AND f.iuv LIKE :prefix";
                 }
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':dom' => $idDominio, ':cod' => $codEntrata, ':prefix' => $prefix . '%']);
-        return $stmt->rowCount();
+        return Connection::retryOnDeadlock(function () use ($sql, $idDominio, $codEntrata, $prefix): int {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([':dom' => $idDominio, ':cod' => $codEntrata, ':prefix' => $prefix . '%']);
+            return $stmt->rowCount();
+        });
     }
 
     /**
@@ -742,9 +746,11 @@ class MappingPendenzeRepository
                                         WHERE f.id_dominio = :dom AND f.is_govpay = 0
                                             AND f.mapping_stato = 'PROCESSED' AND f.vocab_stato = 'PENDING'";
                 }
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':dom' => $idDominio]);
-        return $stmt->rowCount();
+        return Connection::retryOnDeadlock(function () use ($sql, $idDominio): int {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([':dom' => $idDominio]);
+            return $stmt->rowCount();
+        });
     }
 
     // ── Demone L1 ──────────────────────────────────────────────────────────
