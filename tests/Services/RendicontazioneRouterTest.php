@@ -88,4 +88,30 @@ final class RendicontazioneRouterTest extends TestCase
         $this->assertSame('GESTITO', $decision->stato);
         $this->assertSame('AUTO_ESTERNO', $decision->handler);
     }
+
+    public function testNonGilConRegolaRegexValida(): void
+    {
+        $decision = RendicontazioneRouter::decide(
+            '',
+            '3012024000000001',
+            'GIL',
+            null,
+            [['pattern_tipo' => 'REGEX', 'pattern_valore' => '^301', 'handler' => 'GERI']]
+        );
+        $this->assertSame('GESTITO', $decision->stato);
+        $this->assertSame('GERI', $decision->handler);
+    }
+
+    public function testNonGilConRegolaRegexInvalidaNonLanciaEccezione(): void
+    {
+        $decision = RendicontazioneRouter::decide(
+            '',
+            '3012024000000001',
+            'GIL',
+            null,
+            [['pattern_tipo' => 'REGEX', 'pattern_valore' => '301}', 'handler' => 'GERI']]
+        );
+        $this->assertSame('GESTITO', $decision->stato);
+        $this->assertSame('AUTO_ESTERNO', $decision->handler);
+    }
 }

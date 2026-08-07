@@ -1,8 +1,8 @@
 publiccodeYmlVersion: 0.5.0
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
-softwareVersion: 1.5.46
-releaseDate: 2026-07-28
+softwareVersion: 1.5.47
+releaseDate: 2026-08-07
 platforms:
   - web
 categories:
