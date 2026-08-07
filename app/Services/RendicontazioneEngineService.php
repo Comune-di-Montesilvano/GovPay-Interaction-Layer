@@ -41,93 +41,106 @@ class RendicontazioneEngineService
         int    $geriMaxTentativi = 3,
         bool   $skipAppIo = false
     ): void {
-        $iuvPrefixGil = (string)SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
-        $regoleEsterne = $this->repo->getRegoleEsterneAttive($idDominio);
-
-        $rigaId = (int)$riga['id'];
-        $idPendenza = (string)($riga['id_pendenza'] ?? '');
-        $iuv = (string)($riga['iuv'] ?? '');
-        if ($idPendenza === '' || $iuv === '') {
-            $this->repo->markErrore($rigaId, 'id_pendenza o iuv mancante sulla riga');
+        $rigaId = (int)($riga['id'] ?? 0);
+        if ($rigaId <= 0) {
             return;
         }
 
         try {
-            $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
-            $response = $this->govPayClient->request('GET', $url);
-            $pendenza = json_decode((string)$response->getBody(), true);
-            if (!is_array($pendenza)) {
-                throw new \RuntimeException('Risposta GovPay non valida');
-            }
-        } catch (\Throwable $e) {
-            $this->repo->markErrore($rigaId, 'Errore fetch pendenza GovPay: ' . $e->getMessage());
-            return;
-        }
+            $iuvPrefixGil = (string)SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
+            $regoleEsterne = $this->repo->getRegoleEsterneAttive($idDominio);
 
-        $idEntrata = (string)($riga['cod_entrata'] ?? '');
-        if ($idEntrata === '') {
-            // tipoPendenza.idTipoPendenza (struttura standard GET /pendenze/{idA2A}/{idPendenza})
-            $idEntrata = (string)($pendenza['tipoPendenza']['idTipoPendenza'] ?? '');
-            // Fallback: voci[].codEntrata
-            if ($idEntrata === '' && isset($pendenza['voci']) && is_array($pendenza['voci'])) {
-                foreach ($pendenza['voci'] as $voce) {
-                    $cod = (string)($voce['codEntrata'] ?? '');
-                    if ($cod !== '') {
-                        $idEntrata = $cod;
-                        break;
+            $idPendenza = (string)($riga['id_pendenza'] ?? '');
+            $iuv = (string)($riga['iuv'] ?? '');
+            if ($idPendenza === '' || $iuv === '') {
+                $this->repo->markErrore($rigaId, 'id_pendenza o iuv mancante sulla riga');
+                return;
+            }
+
+            try {
+                $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
+                $response = $this->govPayClient->request('GET', $url);
+                $pendenza = json_decode((string)$response->getBody(), true);
+                if (!is_array($pendenza)) {
+                    throw new \RuntimeException('Risposta GovPay non valida');
+                }
+            } catch (\Throwable $e) {
+                $this->repo->markErrore($rigaId, 'Errore fetch pendenza GovPay: ' . $e->getMessage());
+                return;
+            }
+
+            $idEntrata = (string)($riga['cod_entrata'] ?? '');
+            if ($idEntrata === '') {
+                // tipoPendenza.idTipoPendenza (struttura standard GET /pendenze/{idA2A}/{idPendenza})
+                $idEntrata = (string)($pendenza['tipoPendenza']['idTipoPendenza'] ?? '');
+                // Fallback: voci[].codEntrata
+                if ($idEntrata === '' && isset($pendenza['voci']) && is_array($pendenza['voci'])) {
+                    foreach ($pendenza['voci'] as $voce) {
+                        $cod = (string)($voce['codEntrata'] ?? '');
+                        if ($cod !== '') {
+                            $idEntrata = $cod;
+                            break;
+                        }
+                    }
+                }
+                if ($idEntrata !== '') {
+                    try {
+                        $this->repo->updateCodEntrata($rigaId, $idEntrata);
+                    } catch (\Throwable $_) {
+                        // ignore
                     }
                 }
             }
-            if ($idEntrata !== '') {
-                try {
-                    $this->repo->updateCodEntrata($rigaId, $idEntrata);
-                } catch (\Throwable $_) {
-                    // ignore
-                }
-            }
-        }
-        $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
+            $gruppo = $idEntrata !== '' ? $this->repo->getGruppoTipologia($idDominio, $idEntrata) : null;
 
-        $decision = RendicontazioneRouter::decide($idPendenza, $iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);
+            $decision = RendicontazioneRouter::decide($idPendenza, $iuv, $iuvPrefixGil, $gruppo, $regoleEsterne);
 
-        if ($decision->stato === 'IN_ATTESA_CONFERMA') {
-            $this->repo->markInAttesaConferma($rigaId);
-            return;
-        }
-
-        if ($decision->handler === 'GERI' || $decision->handler === 'DILAZIONE') {
-            if ($decision->handler === 'GERI' && (int)($riga['rendicontazione_tentativi_geri'] ?? 0) >= $geriMaxTentativi) {
-                $this->repo->markErrore($rigaId, 'Cap tentativi Geri raggiunto, richiede intervento manuale');
+            if ($decision->stato === 'IN_ATTESA_CONFERMA') {
+                $this->repo->markInAttesaConferma($rigaId);
                 return;
             }
 
-            $idAtto = (string)($pendenza['documento']['identificativo'] ?? '');
-            $dataPagamento = (string)($pendenza['dataPagamento'] ?? '');
-            $importo = (float)($pendenza['importo'] ?? 0);
-            $rata = isset($pendenza['documento']['rata']) ? (string)$pendenza['documento']['rata'] : null;
-
-            $esito = $this->bridge->invia($decision->handler, $iuv, $idAtto, $dataPagamento, $importo, $rata);
-            if (!$esito['esito']) {
-                if ($decision->handler === 'GERI') {
-                    $this->repo->markErroreGeri($rigaId, "Bridge GERI: " . $esito['messaggio']);
-                } else {
-                    $this->repo->markErrore($rigaId, "Bridge DILAZIONE: " . $esito['messaggio']);
+            if ($decision->handler === 'GERI' || $decision->handler === 'DILAZIONE') {
+                if ($decision->handler === 'GERI' && (int)($riga['rendicontazione_tentativi_geri'] ?? 0) >= $geriMaxTentativi) {
+                    $this->repo->markErrore($rigaId, 'Cap tentativi Geri raggiunto, richiede intervento manuale');
+                    return;
                 }
-                return;
+
+                $idAtto = (string)($pendenza['documento']['identificativo'] ?? '');
+                $dataPagamento = (string)($pendenza['dataPagamento'] ?? '');
+                $importo = (float)($pendenza['importo'] ?? 0);
+                $rata = isset($pendenza['documento']['rata']) ? (string)$pendenza['documento']['rata'] : null;
+
+                $esito = $this->bridge->invia($decision->handler, $iuv, $idAtto, $dataPagamento, $importo, $rata);
+                if (!$esito['esito']) {
+                    if ($decision->handler === 'GERI') {
+                        $this->repo->markErroreGeri($rigaId, "Bridge GERI: " . $esito['messaggio']);
+                    } else {
+                        $this->repo->markErrore($rigaId, "Bridge DILAZIONE: " . $esito['messaggio']);
+                    }
+                    return;
+                }
+                $this->repo->markGestito($rigaId, $decision->handler, $esito['messaggio']);
+            } else {
+                $this->repo->markGestito($rigaId, (string)$decision->handler);
             }
-            $this->repo->markGestito($rigaId, $decision->handler, $esito['messaggio']);
-        } else {
-            $this->repo->markGestito($rigaId, (string)$decision->handler);
-        }
 
-        $this->controllaERegolarizzaFlussoPerRiga($idDominio, $rigaId, $backofficeUrl);
+            $this->controllaERegolarizzaFlussoPerRiga($idDominio, $rigaId, $backofficeUrl);
 
-        if (!$skipAppIo) {
-            $this->tentaNotificaAppIo($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
-            $this->tentaNotificaEmail($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
-        } else {
-            $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
-            $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
+            if (!$skipAppIo) {
+                $this->tentaNotificaAppIo($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
+                $this->tentaNotificaEmail($rigaId, $pendenza, $riga, $idA2A, $backofficeUrl);
+            } else {
+                $this->repo->markAppioEsito($rigaId, 'NON_APPLICABILE');
+                $this->repo->markEmailEsito($rigaId, 'NON_APPLICABILE');
+            }
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error("Errore durante processaRigaSpecifica per riga {$rigaId}: " . $e->getMessage());
+            try {
+                $this->repo->markErrore($rigaId, 'Errore elaborazione riga: ' . $e->getMessage());
+            } catch (\Throwable $_) {
+                // ignore
+            }
         }
     }
 

@@ -36,22 +36,38 @@ final class RendicontazioneRouter
 
         $best = null;
         foreach ($regoleEsterne as $regola) {
-            if ($regola['pattern_tipo'] === 'IUV_PREFIX' && !str_starts_with($iuv, $regola['pattern_valore'])) {
+            $tipo = (string)($regola['pattern_tipo'] ?? '');
+            $valore = (string)($regola['pattern_valore'] ?? '');
+
+            if ($tipo === 'IUV_PREFIX' && !str_starts_with($iuv, $valore)) {
                 continue;
             }
-            if ($regola['pattern_tipo'] === 'ID_APP_AGID') {
+            if ($tipo === 'ID_APP_AGID') {
                 $idApp = strlen($iuv) > 3 ? substr($iuv, 3, 1) : '';
-                if ($idApp !== $regola['pattern_valore']) {
+                if ($idApp !== $valore) {
                     continue;
                 }
             }
-            if ($best === null || strlen($regola['pattern_valore']) > strlen($best['pattern_valore'])) {
+            if (in_array($tipo, ['REGEX', 'REGEXP'], true)) {
+                if ($valore === '') {
+                    continue;
+                }
+                try {
+                    $pattern = '/' . str_replace('/', '\/', $valore) . '/';
+                    if (@preg_match($pattern, $iuv) !== 1) {
+                        continue;
+                    }
+                } catch (\Throwable $_) {
+                    continue;
+                }
+            }
+            if ($best === null || strlen($valore) > strlen((string)($best['pattern_valore'] ?? ''))) {
                 $best = $regola;
             }
         }
 
         if ($best !== null) {
-            return new RendicontazioneDecision('GESTITO', $best['handler']);
+            return new RendicontazioneDecision('GESTITO', (string)($best['handler'] ?? 'AUTO_ESTERNO'));
         }
 
         return new RendicontazioneDecision('GESTITO', 'AUTO_ESTERNO');
