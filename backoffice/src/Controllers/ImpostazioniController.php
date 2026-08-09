@@ -103,7 +103,7 @@ class ImpostazioniController
             'PAGOPA_CHECKOUT_RETURN_OK_URL'     => $plain($pagopa['checkout_return_ok_url'] ?? ''),
             'PAGOPA_CHECKOUT_RETURN_CANCEL_URL' => $plain($pagopa['checkout_return_cancel_url'] ?? ''),
             'PAGOPA_CHECKOUT_RETURN_ERROR_URL'  => $plain($pagopa['checkout_return_error_url'] ?? ''),
-            'PAGOPA_CHECKOUT_CONFIGURED'        => ($plain($pagopa['checkout_configured'] ?? '0') === '1') ? '1' : '0',
+            'PAGOPA_CHECKOUT_CONFIGURED'        => ($plain($pagopa['checkout_ec_base_url'] ?? '') !== '' && $plain($pagopa['checkout_subscription_key'] ?? '') !== '') ? '1' : '0',
             'PAGOPA_EBOLLO_ENABLED'             => ($plain($pagopa['ebollo_enabled'] ?? '0') === '1') ? '1' : '0',
             'PAGOPA_EBOLLO_MODE'                => $plain($pagopa['ebollo_mode'] ?? 'legacy'),
             'BIZ_EVENTS_HOST'                   => $plain($pagopa['biz_events_host'] ?? ''),
