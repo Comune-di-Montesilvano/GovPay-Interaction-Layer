@@ -61,9 +61,17 @@ Chiamata `\App\Monitoring\SentryReporter::init(...)` aggiunta a:
 
 - **Backoffice**: `backoffice/src/routes/web.php:1249` (`setDefaultErrorHandler`, handler 500 generico Slim) — aggiunta `\Sentry\captureException($exception);` accanto all'`error_log` esistente. Unico punto, copre tutte le route.
 - **Frontoffice**: nessun handler globale oggi. Aggiunta `register_shutdown_function(fn() => \Sentry\captureLastError())` subito dopo `SentryReporter::init()` in `public/index.php` — cattura l'ultimo fatal error via `error_get_last()` internamente all'SDK, senza intercettare/cambiare il comportamento normale di visualizzazione errore.
-- **Demoni cron**: vedi Hook 2 (estensione `Logger::error/warning` con `$exception`).
+- **Demoni cron**: **correzione rispetto alla bozza precedente** — verificato in codice che gli 8 `cron_*.php` non usano `App\Logger`, ma una closure locale `$log()` (echo su stdout, catturato da `docker logs`). Non c'è quindi un punto Logger da estendere qui. Inoltre `cron_ragioneria.php` non ha nessun `catch(\Throwable)` nel loop principale — un'eccezione lì è oggi fatale (crash del processo, nessuna cattura). Per uniformità e per non perdere il crash-report in quel caso, si aggiunge in ciascuno degli 8 script, subito dopo `SentryReporter::init()`:
+  ```php
+  set_exception_handler(static function (\Throwable $e) use ($log): void {
+      \Sentry\captureException($e);
+      $log('ERRORE FATALE: ' . $e->getMessage());
+      exit(1);
+  });
+  ```
+  rete di sicurezza per qualunque eccezione non intercettata da nessun `catch` locale (comportamento di uscita invariato: prima un'eccezione non catturata terminava comunque il processo con errore fatale PHP).
 
-## Hook 2 — log applicativi
+## Hook 2 — log applicativi (backoffice + frontoffice)
 
 `app/Logger.php`, metodi `error()`/`warning()` estesi con parametro opzionale:
 
@@ -89,7 +97,7 @@ try {
 }
 ```
 
-**Call site cron**: nei loop dei demoni, i blocchi `catch (\Throwable $e)` che oggi chiamano `Logger::getInstance()->error($msg)` passano anche `$e` come terzo argomento, per preservare stack trace/grouping in Sentry invece di solo testo. Punti toccati: i catch generici a livello di iterazione principale in ciascuno degli 8 `cron_*.php` (non i retry/backoff interni già gestiti localmente, es. i 3 tentativi in `cron_biz_scanner.php:178`).
+**Call site cron**: nei loop dei demoni, ogni `catch (\Throwable $e)` il cui `$log(...)` esistente inizia col prefisso `'ERRORE'` (convenzione già in uso in tutti gli 8 script per segnalare fallimenti da non ignorare) riceve in testa `\Sentry\captureException($e);`, prima della riga `$log(...)` esistente. Esclusi i catch senza prefisso `ERRORE` — sono i catch per-record/per-retry già annidati in loop `foreach` (es. `cron_biz_scanner.php:170` per-IUR, `cron_biz_scanner.php:181` retry interno, `cron_mapping_pendenze.php:154` per-pattern, `cron_vocab_mapping.php:143/156` per-keyword, `cron_govpay_debitore_scanner.php:150` per-IUR, `cron_tefa_scanner.php:178` per-IUR, `cron_pendenze_massive.php:227/323` per-riga batch — quest'ultimi già tracciati come stato riga in DB via `updateRowStatus`, ridondante rialzarli anche a Sentry) — evita di saturare la quota GlitchTip con errori già isolati/gestiti a livello di singolo record.
 
 ## Standardizzazione pause demoni (scope collaterale)
 
