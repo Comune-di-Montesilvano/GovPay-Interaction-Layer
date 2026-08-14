@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+// Never output raw PHP errors/warnings to HTTP responses (prevents HTML leaking
+// into responses and, worse, poisoning headers/session_start() downstream).
+// Stesso motivo per cui backoffice/src/bootstrap/app.php lo fa in testa.
+ini_set('display_errors', '0');
+
 use App\Logger;
 use App\Services\ValidationService;
 use GuzzleHttp\Client;
