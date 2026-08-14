@@ -151,6 +151,11 @@ class ImpostazioniController
             'ui'           => SettingsRepository::getSection('ui'),
             'app'          => SettingsRepository::getSection('app'),
             'csrf_token'   => $this->generateCsrf(),
+            // Chiave di sessione dedicata (non 'impostazioni_csrf'): BackupController fa
+            // rotazione single-use del token dopo ogni uso, ImpostazioniController::validateCsrf()
+            // no — condividerli causava desync intermittente (GlitchTip GOVPAY-GIL-6, azioni
+            // BackupController invalidavano il token usato dalle altre form della pagina).
+            'backup_csrf_token' => $this->generateBackupCsrf(),
         ];
 
         // Tab che appartengono a /configurazione: carica i dati necessari
@@ -1666,6 +1671,18 @@ class ImpostazioniController
             $_SESSION['impostazioni_csrf'] = bin2hex(random_bytes(32));
         }
         return (string) $_SESSION['impostazioni_csrf'];
+    }
+
+    /**
+     * Token CSRF dedicato al tab Backup — vedi commento in index() sul perché
+     * non condivide 'impostazioni_csrf' con il resto della pagina.
+     */
+    private function generateBackupCsrf(): string
+    {
+        if (empty($_SESSION['backup_csrf'])) {
+            $_SESSION['backup_csrf'] = bin2hex(random_bytes(32));
+        }
+        return (string) $_SESSION['backup_csrf'];
     }
 
     private function validateCsrf(array $body): bool
