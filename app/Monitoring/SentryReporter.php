@@ -69,7 +69,9 @@ class SentryReporter
             'environment' => self::resolveEnvironment(getenv('SENTRY_ENVIRONMENT') ?: null),
             'traces_sample_rate' => 0,
             'send_default_pii' => false,
-            'error_types' => E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_NOTICE & ~E_STRICT,
+            // E_STRICT rimosso: deprecato/senza effetto da PHP 8.4, referenziarlo genera
+            // esso stesso un E_DEPRECATED (che questo mask esclude comunque).
+            'error_types' => E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_NOTICE,
             'before_send' => static function (Event $event): ?Event {
                 $extra = $event->getExtra();
                 if ($extra) {
