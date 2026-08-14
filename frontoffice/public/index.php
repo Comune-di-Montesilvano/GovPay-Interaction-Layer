@@ -10,6 +10,12 @@ use Twig\Loader\FilesystemLoader;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+// ─── Sentry initialization ────────────────────────────────────────────────────
+\App\Monitoring\SentryReporter::init();
+register_shutdown_function(static function (): void {
+    \Sentry\captureLastError();
+});
+
 // ─── Bootstrap config dal backoffice sidecar ─────────────────────────────────
 // Carica all'avvio le variabili di configurazione dall'endpoint /api/frontoffice/config
 // e le inietta in $_ENV. frontoffice_env_value() le troverà senza toccare il DB.
