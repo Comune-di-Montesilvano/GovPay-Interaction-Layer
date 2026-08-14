@@ -1,4 +1,9 @@
 <div id="backup-wrap">
+  {# Due token distinti sulla stessa pagina: backup_csrf_token per le azioni BackupController
+     (crea/elimina/ripristina backup — rotazione single-use), csrf_token per le azioni
+     ImpostazioniController condivise con il resto della pagina Impostazioni (rotate/show
+     encryption key — nessuna rotazione). Non unificare, vedi ImpostazioniController::index(). #}
+  <input type="hidden" name="backup_csrf_token" value="{{ backup_csrf_token }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
   {# ─── AVVISO CHIAVE CIFRATURA ────────────────────────────────────────────── #}
@@ -379,7 +384,7 @@
     btn.disabled = true;
     const orig = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creazione…';
-    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+    const csrf = document.querySelector('#backup-wrap input[name="backup_csrf_token"]')?.value || '';
     const form = document.getElementById('form-backup-sistema');
     const volumes = [...form.querySelectorAll('input[name="volumes[]"]:checked')].map(c => c.value);
     const govpaySections = [...form.querySelectorAll('input[name="govpay_sections[]"]:checked')].map(c => c.value);
@@ -495,7 +500,7 @@
     const CHUNK_SIZE  = 512 * 1024;
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     const uploadId    = crypto.randomUUID();
-    const csrf        = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+    const csrf        = document.querySelector('#backup-wrap input[name="backup_csrf_token"]')?.value || '';
 
     const orig = btn.innerHTML;
     btn.disabled = true;
@@ -617,7 +622,7 @@
 
   window.backupEliminaFile = async function (btn, filename) {
     if (!confirm(`Eliminare definitivamente "${filename}"?`)) return;
-    const csrf = document.querySelector('#backup-wrap input[name="csrf_token"]')?.value || '';
+    const csrf = document.querySelector('#backup-wrap input[name="backup_csrf_token"]')?.value || '';
     const origHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';

@@ -1097,11 +1097,14 @@ class BackupController
 
     private function validateImpostazioniCsrf(array $payload): bool
     {
-        $expected = (string)($_SESSION['impostazioni_csrf'] ?? '');
+        // Chiave dedicata 'backup_csrf', non condivisa con ImpostazioniController::validateCsrf()
+        // (quella non ruota il token dopo l'uso — condividerla causava desync intermittente
+        // tra le azioni backup e le altre form della pagina Impostazioni, GOVPAY-GIL-6).
+        $expected = (string)($_SESSION['backup_csrf'] ?? '');
         $provided = (string)($payload['csrf_token'] ?? '');
         $valid = $expected !== '' && $provided !== '' && hash_equals($expected, $provided);
         if ($valid) {
-            unset($_SESSION['impostazioni_csrf']); // Invalida dopo uso
+            unset($_SESSION['backup_csrf']); // Invalida dopo uso
         }
         return $valid;
     }
@@ -1168,10 +1171,13 @@ class BackupController
     private function jsonResponse(array $data, int $status = 200): Response
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
-            if (empty($_SESSION['impostazioni_csrf'])) {
-                $_SESSION['impostazioni_csrf'] = bin2hex(random_bytes(32));
+            if (empty($_SESSION['backup_csrf'])) {
+                $_SESSION['backup_csrf'] = bin2hex(random_bytes(32));
             }
-            $data['csrf_token'] = $_SESSION['impostazioni_csrf'];
+            // Chiave 'backup_csrf_token' distinta da 'csrf_token' usato dal resto della pagina
+            // Impostazioni — evita che l'interceptor globale (window.fetch override in
+            // impostazioni/index.html.twig) sovrascriva l'uno con l'altro tra le due sessioni token.
+            $data['backup_csrf_token'] = $_SESSION['backup_csrf'];
         }
         $resp = new SlimResponse($status);
         $resp->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
