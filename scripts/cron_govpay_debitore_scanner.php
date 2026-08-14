@@ -36,6 +36,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-govpay-debitore-scanner');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-govpay-debitore.pid';
 $stopFile = '/tmp/cron-stop-govpay-debitore';
 
@@ -121,6 +128,7 @@ while (true) {
     try {
         $batch = $service->getBatch($idDominio, BATCH_SIZE, $minDate);
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log('ERRORE getBatch: ' . $e->getMessage());
         sleep(30);
         continue;

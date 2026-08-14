@@ -114,6 +114,9 @@ FRONTOFFICE_LINK_SIGNING_KEY # chiave firma link pubblici (esadecimale 64 caratt
 openssl rand -hex 24   # MASTER_TOKEN
 openssl rand -hex 16   # APP_ENCRYPTION_KEY
 openssl rand -hex 32   # FRONTOFFICE_LINK_SIGNING_KEY
+
+SENTRY_DSN                   # opzionale — vuoto = error tracking disattivo
+SENTRY_ENVIRONMENT           # opzionale — tag ambiente/istanza per GlitchTip, default "production"
 ```
 
 ### Configurazione applicativa (DB → UI)
@@ -282,6 +285,8 @@ Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
 | GovPay debitore | `cron_govpay_debitore_scanner.php` | `/tmp/cron-govpay-debitore.pid` | `/tmp/cron-stop-govpay-debitore` | GovPay API |
 | Rendicontazione GovPay | `cron_rendicontazione_govpay.php` | `/tmp/cron-rendicontazione-govpay.pid` | `/tmp/cron-stop-rendicontazione-govpay` | GovPay API, ponte legacy |
 
+Pause "coda vuota" standardizzate a 15 minuti su tutti i demoni (eccetto ragioneria a 30 min e rendicontazione GovPay configurabile via `rendicontazione.scan_interval_minuti`, default 15).
+
 ### Dettaglio demoni
 
 **`cron_ragioneria.php`** — Sincronizza flussi rendicontazione da GovPay API → `flussi_rendicontazioni`. Prima iterazione: scan completo dalla data configurata (`backoffice.ragioneria_scan_da`); iterazioni successive: finestra scorrevole (ultimo sync − 3 giorni) per evitare scan completo ogni volta. Rescan forzato: creare `/tmp/cron-rescan-ragioneria`.
@@ -290,7 +295,7 @@ Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
 
 **`cron_tefa_scanner.php`** — Legge `biz_ricevute` (PROCESSED, non ancora in `tefa_ricevute`) e classifica ogni IUR come TEFA (`stato = 'PROCESSED'`) o non-TEFA (`stato = 'SKIPPED'`). Non chiama Biz Events — usa i dati già salvati dal demone Biz. Attivo solo se `tefa_enabled = true`.
 
-**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV a cascata 5→4→3 char ogni 60s, (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15s se nessuna assegnazione, 1s altrimenti.
+**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV a cascata 5→4→3 char ogni 60s, (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15 minuti se nessuna assegnazione, 1s altrimenti.
 
 **`cron_vocab_mapping.php`** — Demone L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`. Per ogni pendenza: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
 
@@ -324,8 +329,9 @@ Così `transazioni_count` riflette le righe **non coperte da prefissi più lungh
 
 Non modificare questa logica senza aggiornare anche la soglia e il rendering UI (filtri "5 char / 4 char / 3 char" in `mapping_pendenze.html.twig`).
 
-## Servizi chiave (`app/Services/`)
+## Servizi chiave (`app/Services/` e `app/Monitoring/`)
 
+- **`App\Monitoring\SentryReporter`** (`app/Monitoring/SentryReporter.php`) — punto unico init SDK Sentry/GlitchTip. No-op se `SENTRY_DSN` non configurato. `init(?string $suiteOverride = null)` chiamato da bootstrap backoffice/frontoffice e da ogni `scripts/cron_*.php` (slug demone come suite). `Logger::error()/warning()` forwardano automaticamente a Sentry; i demoni cron (che non usano `Logger`) capturano esplicitamente sui catch `'ERRORE...'` non per-record.
 - **`GovPayClientFactory`** — punto unico per tutti i client HTTP verso GovPay Backoffice v1. Gestisce: TLS v1.2 forzato, `Connection: close`, retry automatico su cURL 35 (backoff esponenziale con jitter, max 5 tentativi). Legge `authentication_method` da `SettingsRepository`: `basic` → Basic Auth, `ssl`/`sslheader` → mTLS con cert da `tls_cert_path`/`tls_key_path`. Tutti i controller backoffice che chiamano GovPay usano questa factory.
 - **`RateizzazioneService`** — logica calcolo rate (importi, scadenze, frequenze).
 - **`BizScannerService`** / **`TefaScannerService`** — logica core dei demoni omonimi.

@@ -1255,6 +1255,7 @@ return function (App $app, Twig $twig): void {
     ) use ($twig) : Response {
         // Log esteso per diagnosi (sempre) - evita leak in output se non in debug
         error_log('[APP ERROR] ' . $exception::class . ': ' . $exception->getMessage() . " in " . $exception->getFile() . ':' . $exception->getLine());
+        \Sentry\captureException($exception);
         foreach ($exception->getTrace() as $i => $t) {
             if ($i > 15) { break; }
             $fn = ($t['class'] ?? '') . ($t['type'] ?? '') . ($t['function'] ?? '');

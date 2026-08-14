@@ -43,6 +43,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-rendicontazione-govpay');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-rendicontazione-govpay.pid';
 $stopFile = '/tmp/cron-stop-rendicontazione-govpay';
 
@@ -157,6 +164,7 @@ while (true) {
                 }
             }
         } catch (\Throwable $e) {
+            \Sentry\captureException($e);
             $log('ERRORE sweep regolarizzazione flussi: ' . $e->getMessage());
         }
 
@@ -166,6 +174,7 @@ while (true) {
             $scansioniSenzaNovita++;
         }
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log('ERRORE ciclo processaCiclo: ' . $e->getMessage());
         $scansioniSenzaNovita++;
     }
@@ -259,6 +268,7 @@ while (true) {
                 $log(sprintf('Digest inviato: operatore=%d admin=%d', $righeOperatoreInviate, $righeAdminInviate));
             }
         } catch (\Throwable $e) {
+            \Sentry\captureException($e);
             $log('ERRORE invio digest: ' . $e->getMessage());
         }
         $scansioniSenzaNovita = 0;

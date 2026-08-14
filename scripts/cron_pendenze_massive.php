@@ -31,6 +31,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-pendenze-massive');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-pendenze-massive.pid';
 $stopFile = '/tmp/cron-stop-pendenze-massive';
 
@@ -152,7 +159,7 @@ $extractNumeroAvviso = static function (array $row): ?string {
 };
 
 $batchSize    = 50;
-$sleepSeconds = 30;
+$sleepSeconds = 900;
 
 while (true) {
     if (file_exists($stopFile)) {
@@ -238,7 +245,12 @@ while (true) {
 
     if (count($pending) === 0) {
         $log("Nessuna pendenza PENDING o CANCEL_PENDING. Attendo {$sleepSeconds}s...");
-        sleep($sleepSeconds);
+        for ($s = 0; $s < $sleepSeconds; $s += 10) {
+            if (file_exists($stopFile)) {
+                break;
+            }
+            sleep(10);
+        }
         continue;
     }
 

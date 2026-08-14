@@ -36,6 +36,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-tefa-scanner');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-tefa-scanner.pid';
 $stopFile = '/tmp/cron-stop-tefa';
 
@@ -110,6 +117,7 @@ try {
         $log("Allineamento retroattivo TEFA completato: aggiornate {$fixed} pendenze in flussi_rendicontazioni.");
     }
 } catch (\Throwable $e) {
+    \Sentry\captureException($e);
     $log("ERRORE allineamento retroattivo TEFA: " . $e->getMessage());
 }
 
@@ -137,6 +145,7 @@ while (true) {
             $queueResult['sample_flusso'] !== '' ? $queueResult['sample_flusso'] : '-'
         ));
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $queueResult = ['queued' => 0, 'from_cache' => 0, 'sample_iur' => '', 'sample_flusso' => '', 'min_date' => ''];
         $log('ERRORE queueFromCache: ' . $e->getMessage());
     }

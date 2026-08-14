@@ -24,6 +24,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-ragioneria');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile    = '/tmp/cron-ragioneria.pid';
 $stopFile   = '/tmp/cron-stop-ragioneria';
 $rescanFile = '/tmp/cron-rescan-ragioneria';
@@ -61,6 +68,7 @@ $checkRescan = static function () use ($rescanFile, $log, &$rollingFrom): bool {
         try {
             SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', null);
         } catch (Throwable $e) {
+            \Sentry\captureException($e);
             $log('Errore reset progress rolling from nel DB: ' . $e->getMessage());
         }
         $log('Segnale rescan ricevuto: prossimo ciclo scan completo da data configurazione.');
@@ -175,6 +183,7 @@ while (true) {
             $resp = $client->request('GET', $backofficeUrl . '/flussiRendicontazione', ['query' => $query]);
             $payload = json_decode((string)$resp->getBody(), true);
         } catch (Throwable $e) {
+            \Sentry\captureException($e);
             $log('Errore lista flussi pagina ' . $page . ': ' . $e->getMessage());
             break;
         }
