@@ -69,10 +69,17 @@ class SentryReporter
             'environment' => self::resolveEnvironment(getenv('SENTRY_ENVIRONMENT') ?: null),
             'traces_sample_rate' => 0,
             'send_default_pii' => false,
+            'error_types' => E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_NOTICE & ~E_STRICT,
             'before_send' => static function (Event $event): ?Event {
                 $extra = $event->getExtra();
                 if ($extra) {
                     $event->setExtra(self::scrubSensitiveKeys($extra));
+                }
+                $request = $event->getRequest();
+                if (isset($request['query_string']) && is_string($request['query_string'])) {
+                    parse_str($request['query_string'], $queryParams);
+                    $request['query_string'] = http_build_query(self::scrubSensitiveKeys($queryParams));
+                    $event->setRequest($request);
                 }
                 return $event;
             },

@@ -295,7 +295,7 @@ Pause "coda vuota" standardizzate a 15 minuti su tutti i demoni (eccetto ragione
 
 **`cron_tefa_scanner.php`** — Legge `biz_ricevute` (PROCESSED, non ancora in `tefa_ricevute`) e classifica ogni IUR come TEFA (`stato = 'PROCESSED'`) o non-TEFA (`stato = 'SKIPPED'`). Non chiama Biz Events — usa i dati già salvati dal demone Biz. Attivo solo se `tefa_enabled = true`.
 
-**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV a cascata 5→4→3 char ogni 60s, (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15s se nessuna assegnazione, 1s altrimenti.
+**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV a cascata 5→4→3 char ogni 60s, (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15 minuti se nessuna assegnazione, 1s altrimenti.
 
 **`cron_vocab_mapping.php`** — Demone L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`. Per ogni pendenza: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
 
