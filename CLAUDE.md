@@ -80,6 +80,12 @@ docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
 
 # Accesso DB diretto — backoffice user NON funziona da localhost dentro il container
 docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
+
+# composer non è un binario locale in questo ambiente — usa sempre via Docker
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd):/app" -w //app composer:2 install --prefer-dist --no-progress
+# Path repos (govpay-clients/, pagopa-clients/) fanno mirroring in vendor/, non symlink:
+# dopo aver editato i sorgenti generati, "composer install" da solo dice "Nothing to install"
+# — serve `rm -rf vendor/<vendor>` prima per forzare il re-mirror.
 ```
 
 ## Struttura directory
@@ -145,6 +151,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **Autenticazione operatori**: sessione PHP + token GovPay; `sslheader` come metodo auth alternativo
 - **Debug**: variabile `APP_DEBUG` nel `.env`; toggle disponibile nell'UI backoffice
 - **cURL PHP 8.5**: `curl_close()` deprecated — scrive notice su stdout e rompe `header()`. Usare `unset($ch)` invece.
+- **`E_STRICT` PHP 8.4+**: costante deprecata/senza effetto — referenziarla in bitmask (`error_types`, `error_reporting()`) genera essa stessa un `E_DEPRECATED`. Non usarla più in nuove maschere di errore.
 - **GovPay `tipo_bollo`**: API pagamenti ritorna `'Imposta di bollo'` (stringa), non `'01'` — client generato fallisce deserializzazione e fa raw fallback. Atteso, non bug GIL. `normalizeTipoBolloForBackoffice()` in `PendenzeController` converte; frontoffice usa sempre `'01'` hardcoded.
 - **MBT allegato XML**: pendenza pagata con `voci[].riscossioni[tipo='MBT']` contiene `allegato.testo` (base64 XML marca da bollo) — già nei dati della pagina, servire client-side via Blob API senza extra chiamata GovPay.
 - **`ObjectSerializer::sanitizeForSerialization`**: ritorna `stdClass`, non `array`. Prima di accedere a chiavi usare `$arr = is_array($raw) ? $raw : (json_decode(json_encode($raw, JSON_UNESCAPED_SLASHES), true) ?: [])`.
@@ -207,6 +214,12 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
    - Esito GERI è best-effort (il connector legacy non ha un contratto di ritorno affidabile): si considera riuscita l'assenza di eccezioni, con cap tentativi configurabile (`rendicontazione.geri_max_tentativi`) per limitare il rischio di doppie registrazioni. DILAZIONE ha esito verificabile (righe SQL affette).
    - Notifica App IO al cittadino tentata su ogni transizione a `GESTITO` (sia dal motore automatico che dalla conferma manuale via `RendicontazioneEngineService::tentaNotificaAppIoPerRiga()`), idempotente tramite `rendicontazione_appio_stato` (`PENDING`/`INVIATO`/`ERRORE`/`NON_APPLICABILE`).
    - UI: tab "Rendicontazione" in Impostazioni (settings motore + CRUD regole esterne), sezione "Rendicontazione" nella schermata modifica-gruppo (tipologie + modalità per gruppo), vista dedicata `/rendicontazione/da-confermare` per gli operatori.
+
+6. **Integrazione Sentry/GlitchTip (Agosto 2026)**:
+   - `App\Monitoring\SentryReporter::init(?suiteOverride)` — punto unico init SDK `sentry/sentry`. No-op se `SENTRY_DSN` vuoto/assente (bootstrap-only, in `.env`, non `SettingsRepository` — serve prima di ogni altra config). `SENTRY_ENVIRONMENT` distingue le istanze/deployment; tag `suite` (backoffice/frontoffice/cron-*) distingue il servizio nello stesso progetto GlitchTip.
+   - Hook: backoffice (`web.php` `setDefaultErrorHandler`), frontoffice (`captureLastError()` da shutdown function, MAI `set_exception_handler` — cambierebbe l'UX errore), 8 demoni cron (init + `set_exception_handler` di sicurezza + capture sui catch prefissati `'ERRORE'`/`'Errore'` non per-record). `App\Logger::error()/warning()` forwardano sempre a Sentry (nessun filtro per severità — vedi sotto).
+   - **Non sopprimere errori per severità/livello**: Sentry serve a vedere gli errori, non a nasconderli — solo i dati PII vanno nascosti (`scrubSensitiveKeys` su `extra`/query string, `request.data` POST rimosso del tutto perché `send_default_pii=false` non lo copre). Un filtro `error_types`/severità fu aggiunto e poi rimosso su richiesta esplicita in questa stessa sessione — non reintrodurlo.
+   - GlitchTip self-hosted (provincia di Pescara), API compatibile Sentry `/api/0/...`. MCP server community `@vitaliypanait/sentry-self-hosted-mcp` configurato per parlarci (scope user, non nel progetto).
 
 ## Configurazione: DB vs .env
 
@@ -358,7 +371,7 @@ Client PHP in `govpay-clients/` e `pagopa-clients/` sono **generati** (OpenAPI G
 
 **Post-processing automatico in `generate.sh`/`generate.ps1`** (dopo la generazione, prima della correzione `composer.json`):
 1. Sostituzione `\GuzzleHttp\Utils::jsonEncode(` → `json_encode(` nativo nell'output — il template openapi-generator PHP usa ancora `Utils::jsonEncode()` (fix storico per la deprecation precedente, `\GuzzleHttp\json_encode()`, risolta upstream in openapi-generator v6.3.0), ma Guzzle l'ha ri-deprecato dalla 7.15 e lo **rimuove** in 8.0 (rilasciato 2026-07-20, stabile). Bump a Guzzle 8 **bloccato** finché questo fix non è applicato/verificato su tutti i client — altrimenti fatal error immediato (metodo inesistente), non solo deprecation notice. **Lavoro grosso non ancora fatto**: bump `guzzlehttp/guzzle` a `^8.0` richiede anche `guzzlehttp/psr7 ^3.0`/`guzzlehttp/promises ^3.0` (bump maggiore, compatibilità da verificare con nyholm/psr7, slim/psr7 ecc.) — va pianificato come lavoro a sé.
-2. Verifica `php -l` su ogni file generato, fallisce l'intero script se un file non passa. Cattura un bug reale osservato: alcune spec (es. Biz Events pagoPA, proprietà `PaymentInfo.iur`) dichiarano una proprietà due volte con wire-name diverso — openapi-generator la riproduce come getter/setter PHP duplicati, `Fatal error: Cannot redeclare` al primo `class_exists()`/autoload (successo *in produzione*, non in fase di generazione: `class_exists()` autoload comunque). Se il gate fallisce, il fix è manuale: deduplicare gli array `openAPITypes`/`openAPIFormats`/`openAPINullables`/`attributeMap`/`setters`/`getters`, il costruttore, e il blocco metodi duplicato nel model — tenendo il wire-name corretto (verificare contro il formato realmente inviato dall'API, es. `IUR` maiuscolo per pagoPA Biz Events, non `iur`).
+2. Verifica `php -l` su ogni file generato, fallisce l'intero script se un file non passa. Cattura un bug reale osservato: alcune spec (es. Biz Events pagoPA, proprietà `PaymentInfo.iur`) dichiarano una proprietà due volte con wire-name diverso — openapi-generator la riproduce come getter/setter PHP duplicati, `Fatal error: Cannot redeclare` al primo `class_exists()`/autoload (successo *in produzione*, non in fase di generazione: `class_exists()` autoload comunque). Se il gate fallisce, il fix è manuale: deduplicare gli array `openAPITypes`/`openAPIFormats`/`openAPINullables`/`attributeMap`/`setters`/`getters`, il costruttore, e il blocco metodi duplicato nel model — tenendo il wire-name corretto (verificare contro il formato realmente inviato dall'API, es. `IUR` maiuscolo per pagoPA Biz Events, non `iur`). Comando per scansionare tutti i client generati alla ricerca dello stesso pattern (metodo `public function` duplicato nello stesso file): `find govpay-clients/generated-clients pagopa-clients/generated-clients -path "*/lib/*" -name "*.php" -print0 | xargs -0 grep -n "public function " | sed -E 's/^([^:]+):[0-9]+: *public function ([A-Za-z0-9_]+).*/\1 \2/' | sort | uniq -c | awk '$1>1'`
 
 ## Convenzioni comunicazione e commit
 
