@@ -86,16 +86,20 @@ class Logger
         $this->write('info', $message, $context);
     }
 
-    public function warning(string $message, array $context = [], ?\Throwable $exception = null): void
+    public function warning(string $message, array $context = [], ?\Throwable $exception = null, bool $reportToSentry = true): void
     {
         $this->write('warning', $message, $context);
-        $this->reportToSentry('warning', $message, $context, $exception);
+        if ($reportToSentry) {
+            $this->reportToSentry('warning', $message, $context, $exception);
+        }
     }
 
-    public function error(string $message, array $context = [], ?\Throwable $exception = null): void
+    public function error(string $message, array $context = [], ?\Throwable $exception = null, bool $reportToSentry = true): void
     {
         $this->write('error', $message, $context);
-        $this->reportToSentry('error', $message, $context, $exception);
+        if ($reportToSentry) {
+            $this->reportToSentry('error', $message, $context, $exception);
+        }
     }
 
     private function reportToSentry(string $level, string $message, array $context, ?\Throwable $exception): void
