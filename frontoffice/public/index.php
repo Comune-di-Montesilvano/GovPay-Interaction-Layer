@@ -4784,6 +4784,11 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
 
     if (!$cartResult['success']) {
         Logger::getInstance()->warning('Checkout avviso: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
+            return;
+        }
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
