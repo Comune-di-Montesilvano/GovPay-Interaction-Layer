@@ -22,6 +22,8 @@ services:
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
       # Token per autenticare le chiamate Bearer
       - MASTER_TOKEN=${MASTER_TOKEN}
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
@@ -54,6 +56,8 @@ services:
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
       - FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
       - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
       # DB — solo per lettura config (settings table). Non contiene credenziali GovPay.
       - DB_HOST=db
