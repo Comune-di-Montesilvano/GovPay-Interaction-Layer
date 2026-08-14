@@ -31,6 +31,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-pendenze-massive');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-pendenze-massive.pid';
 $stopFile = '/tmp/cron-stop-pendenze-massive';
 

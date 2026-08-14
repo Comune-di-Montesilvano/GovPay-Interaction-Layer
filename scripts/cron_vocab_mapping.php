@@ -42,6 +42,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-vocab-mapping');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-vocab.pid';
 $stopFile = '/tmp/cron-stop-vocab';
 
@@ -112,6 +119,7 @@ while (true) {
     try {
         $vocabIndex = $repo->getVocabRules((string)$idDominio);
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log("ERRORE caricamento vocab: " . $e->getMessage());
         sleep(10);
         continue;
@@ -166,12 +174,14 @@ while (true) {
             $log("{$noMatch} righe L1-processate senza keyword match → vocab NO_MATCH.");
         }
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log("ERRORE bulk vocab NO_MATCH: " . $e->getMessage());
     }
 
     try {
         $repo->refreshPatternDiagnostics((string)$idDominio);
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log("ERRORE refresh diagnostics: " . $e->getMessage());
     }
 

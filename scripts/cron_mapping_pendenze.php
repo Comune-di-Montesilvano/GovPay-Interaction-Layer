@@ -35,6 +35,13 @@ $log = static function (string $msg): void {
     flush();
 };
 
+\App\Monitoring\SentryReporter::init('cron-mapping-pendenze');
+set_exception_handler(static function (\Throwable $e) use ($log): void {
+    \Sentry\captureException($e);
+    $log('ERRORE FATALE: ' . $e->getMessage());
+    exit(1);
+});
+
 $pidFile  = '/tmp/cron-mapping.pid';
 $stopFile = '/tmp/cron-stop-mapping';
 
@@ -111,6 +118,7 @@ while (true) {
             $log("Discovery: {$discovered} prefissi IUV aggiornati. Coda PENDING: {$pending}.");
             $lastDiscoveryTime = $now;
         } catch (\Throwable $e) {
+            \Sentry\captureException($e);
             $log("ERRORE Discovery: " . $e->getMessage());
         }
 
@@ -118,6 +126,7 @@ while (true) {
             $repo->refreshPatternDiagnostics((string)$idDominio);
             $log('Diagnostics cache pattern aggiornata.');
         } catch (\Throwable $e) {
+            \Sentry\captureException($e);
             $log("ERRORE refresh diagnostics: " . $e->getMessage());
         }
     }
@@ -129,6 +138,7 @@ while (true) {
     try {
         $rules = $repo->getRules((string)$idDominio);
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log("ERRORE caricamento regole: " . $e->getMessage());
         sleep(10);
         continue;
@@ -163,6 +173,7 @@ while (true) {
             $log("{$noMatch} righe senza pattern corrispondente → NO_MATCH.");
         }
     } catch (\Throwable $e) {
+        \Sentry\captureException($e);
         $log("ERRORE bulk NO_MATCH: " . $e->getMessage());
     }
 
