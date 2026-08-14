@@ -5,6 +5,9 @@
  */
 namespace App;
 
+use Sentry\Severity;
+use Sentry\State\Scope;
+
 class Logger
 {
     private static ?Logger $instance = null;
@@ -83,14 +86,34 @@ class Logger
         $this->write('info', $message, $context);
     }
 
-    public function warning(string $message, array $context = []): void
+    public function warning(string $message, array $context = [], ?\Throwable $exception = null): void
     {
         $this->write('warning', $message, $context);
+        $this->reportToSentry('warning', $message, $context, $exception);
     }
 
-    public function error(string $message, array $context = []): void
+    public function error(string $message, array $context = [], ?\Throwable $exception = null): void
     {
         $this->write('error', $message, $context);
+        $this->reportToSentry('error', $message, $context, $exception);
+    }
+
+    private function reportToSentry(string $level, string $message, array $context, ?\Throwable $exception): void
+    {
+        try {
+            if ($exception !== null) {
+                \Sentry\captureException($exception);
+                return;
+            }
+            \Sentry\withScope(static function (Scope $scope) use ($message, $context, $level): void {
+                if ($context) {
+                    $scope->setExtra('context', $context);
+                }
+                \Sentry\captureMessage($message, $level === 'error' ? Severity::error() : Severity::warning());
+            });
+        } catch (\Throwable $_) {
+            // Il monitoring non deve mai interrompere il flusso applicativo.
+        }
     }
 
     public function debug(string $message, array $context = []): void
