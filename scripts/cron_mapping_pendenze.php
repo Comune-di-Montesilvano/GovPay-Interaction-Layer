@@ -178,10 +178,10 @@ while (true) {
     }
 
     if ($totalAssigned === 0) {
-        $log('Nessuna nuova pendenza. Pausa 15s...');
-        for ($s = 0; $s < 15; $s++) {
+        $log('Nessuna nuova pendenza. Pausa 15 minuti...');
+        for ($s = 0; $s < 900; $s += 10) {
             $checkStop();
-            sleep(1);
+            sleep(10);
         }
     } else {
         $log("Ciclo completato. Totale L1 assegnate: {$totalAssigned}.");
