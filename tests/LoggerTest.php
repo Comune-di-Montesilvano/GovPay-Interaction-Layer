@@ -44,7 +44,7 @@ final class LoggerTest extends TestCase
 
     public function testErrorWithReportToSentryFalseStillWritesLogFile(): void
     {
-        Logger::getInstance()->error('deprecation soppressa da sentry', [], null, false);
-        $this->assertStringContainsString('deprecation soppressa da sentry', (string)file_get_contents(self::$logFile));
+        Logger::getInstance()->error('errore solo su file, non su sentry', [], null, false);
+        $this->assertStringContainsString('errore solo su file, non su sentry', (string)file_get_contents(self::$logFile));
     }
 }

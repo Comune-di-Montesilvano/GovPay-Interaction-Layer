@@ -64,6 +64,35 @@ foreach ($api in $apis) {
     $dockerCmd2 = "docker run --rm -v `"${absWorkingDir}:/local`" openapitools/openapi-generator-cli generate -i `"/local/$bundledFile`" -g php -o `"/local/$clientDir`" --invoker-package `"$clientNamespace`" --additional-properties packageName=`"$clientNamespace`""
     Invoke-Expression $dockerCmd2
 
+    Write-Host "   > Correzione output: GuzzleHttp\Utils::jsonEncode() -> json_encode() nativo"
+    $clientDirPath = Join-Path $workingDir $clientDir
+    Get-ChildItem -Path $clientDirPath -Filter *.php -Recurse | ForEach-Object {
+        (Get-Content $_.FullName -Raw) -replace '\\GuzzleHttp\\Utils::jsonEncode\(', 'json_encode(' | Set-Content $_.FullName -NoNewline
+    }
+
+    # Validazione output: proprietà duplicate nello spec (es. PaymentInfo.iur nel Biz Events
+    # pagoPA) producono getter/setter duplicati -> PHP Fatal "Cannot redeclare" al primo
+    # autoload. Meglio fallire qui che scoprirlo in produzione.
+    $phpCmd = Get-Command php -ErrorAction SilentlyContinue
+    if ($phpCmd) {
+        Write-Host "   > Verifica sintattica (php -l) dei file generati..."
+        $lintFailed = $false
+        Get-ChildItem -Path $clientDirPath -Filter *.php -Recurse | ForEach-Object {
+            $lintOutput = & php -l $_.FullName 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "   > ERRORE DI SINTASSI in $($_.FullName):"
+                Write-Host $lintOutput
+                $lintFailed = $true
+            }
+        }
+        if ($lintFailed) {
+            Write-Error "Generazione client $apiName interrotta: uno o più file generati non passano php -l. Probabile causa: proprietà duplicata nello spec OpenAPI sorgente."
+            exit 1
+        }
+    } else {
+        Write-Host "   > 'php' non trovato in PATH, salto la verifica sintattica dei file generati."
+    }
+
     $composerFile = Join-Path $workingDir "$clientDir\composer.json"
     if (Test-Path $composerFile) {
         Write-Host "   > Correzione composer.json: iniezione name/autoload"

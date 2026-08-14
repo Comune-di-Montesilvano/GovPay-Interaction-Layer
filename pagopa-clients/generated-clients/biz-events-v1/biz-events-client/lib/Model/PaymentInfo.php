@@ -73,7 +73,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         'remittance_information' => 'string',
         'description' => 'string',
         'metadata' => '\PagoPA\BizEvents\Model\MapEntry[]',
-        'iur' => 'string',
         'iur' => 'string'
     ];
 
@@ -101,7 +100,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         'remittance_information' => null,
         'description' => null,
         'metadata' => null,
-        'iur' => null,
         'iur' => null
     ];
 
@@ -127,7 +125,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         'remittance_information' => false,
         'description' => false,
         'metadata' => false,
-        'iur' => false,
         'iur' => false
     ];
 
@@ -233,7 +230,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         'remittance_information' => 'remittanceInformation',
         'description' => 'description',
         'metadata' => 'metadata',
-        'iur' => 'iur',
         'iur' => 'IUR'
     ];
 
@@ -259,7 +255,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         'remittance_information' => 'setRemittanceInformation',
         'description' => 'setDescription',
         'metadata' => 'setMetadata',
-        'iur' => 'setIur',
         'iur' => 'setIur'
     ];
 
@@ -285,7 +280,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         'remittance_information' => 'getRemittanceInformation',
         'description' => 'getDescription',
         'metadata' => 'getMetadata',
-        'iur' => 'getIur',
         'iur' => 'getIur'
     ];
 
@@ -362,7 +356,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
         $this->setIfExists('remittance_information', $data ?? [], null);
         $this->setIfExists('description', $data ?? [], null);
         $this->setIfExists('metadata', $data ?? [], null);
-        $this->setIfExists('iur', $data ?? [], null);
         $this->setIfExists('iur', $data ?? [], null);
     }
 
@@ -836,33 +829,6 @@ class PaymentInfo implements ModelInterface, ArrayAccess, \JsonSerializable
             throw new \InvalidArgumentException('non-nullable metadata cannot be null');
         }
         $this->container['metadata'] = $metadata;
-
-        return $this;
-    }
-
-    /**
-     * Gets iur
-     *
-     * @return string|null
-     */
-    public function getIur()
-    {
-        return $this->container['iur'];
-    }
-
-    /**
-     * Sets iur
-     *
-     * @param string|null $iur iur
-     *
-     * @return self
-     */
-    public function setIur($iur)
-    {
-        if (is_null($iur)) {
-            throw new \InvalidArgumentException('non-nullable iur cannot be null');
-        }
-        $this->container['iur'] = $iur;
 
         return $this;
     }
