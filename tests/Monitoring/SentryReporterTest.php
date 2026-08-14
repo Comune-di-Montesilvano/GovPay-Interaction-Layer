@@ -77,4 +77,19 @@ final class SentryReporterTest extends TestCase
         $this->assertSame('[REDACTED]', $result['debitore']['cf']);
         $this->assertSame('Mario', $result['debitore']['nome']);
     }
+
+    public function testIsReportableSeverityFalseForDeprecationAndNoticeLevels(): void
+    {
+        $this->assertFalse(SentryReporter::isReportableSeverity(E_DEPRECATED));
+        $this->assertFalse(SentryReporter::isReportableSeverity(E_USER_DEPRECATED));
+        $this->assertFalse(SentryReporter::isReportableSeverity(E_NOTICE));
+    }
+
+    public function testIsReportableSeverityTrueForErrorsAndWarnings(): void
+    {
+        $this->assertTrue(SentryReporter::isReportableSeverity(E_ERROR));
+        $this->assertTrue(SentryReporter::isReportableSeverity(E_WARNING));
+        $this->assertTrue(SentryReporter::isReportableSeverity(E_USER_ERROR));
+        $this->assertTrue(SentryReporter::isReportableSeverity(E_USER_WARNING));
+    }
 }

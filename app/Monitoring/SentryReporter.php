@@ -35,6 +35,19 @@ class SentryReporter
     }
 
     /**
+     * Severità PHP che non vanno mai a Sentry (rumore: deprecation/notice).
+     * Unica fonte di verità condivisa con 'error_types' qui sotto e con
+     * qualunque set_error_handler applicativo (es. backoffice/src/bootstrap/app.php)
+     * che inoltri errori a Logger — quel path bypassa 'error_types' perché
+     * non passa dal listener nativo dell'SDK, quindi deve applicare lo stesso
+     * filtro esplicitamente prima di chiamare Logger con forwarding a Sentry.
+     */
+    public static function isReportableSeverity(int $severity): bool
+    {
+        return ($severity & (E_DEPRECATED | E_USER_DEPRECATED | E_NOTICE)) === 0;
+    }
+
+    /**
      * Redige ricorsivamente i valori le cui chiavi matchano pattern PII noti
      * (cf, codice_fiscale, iban, pan). Difesa in profondità per l'evento
      * inviato a Sentry/GlitchTip — non sostituisce la disciplina a monte su
@@ -78,10 +91,24 @@ class SentryReporter
                     $event->setExtra(self::scrubSensitiveKeys($extra));
                 }
                 $request = $event->getRequest();
-                if (isset($request['query_string']) && is_string($request['query_string'])) {
-                    parse_str($request['query_string'], $queryParams);
-                    $request['query_string'] = http_build_query(self::scrubSensitiveKeys($queryParams));
-                    $event->setRequest($request);
+                if ($request) {
+                    $mutated = false;
+                    if (isset($request['query_string']) && is_string($request['query_string'])) {
+                        parse_str($request['query_string'], $queryParams);
+                        $request['query_string'] = http_build_query(self::scrubSensitiveKeys($queryParams));
+                        $mutated = true;
+                    }
+                    // Il body request (POST JSON/form) non è coperto da send_default_pii=false
+                    // lato SDK — su una piattaforma pagamenti può contenere CF, email, nominativi
+                    // in campi liberi (es. causale) non riconoscibili da scrubSensitiveKeys per
+                    // nome-chiave. Non lo si invia proprio, invece di provare a redigerlo.
+                    if (isset($request['data'])) {
+                        unset($request['data']);
+                        $mutated = true;
+                    }
+                    if ($mutated) {
+                        $event->setRequest($request);
+                    }
                 }
                 return $event;
             },
