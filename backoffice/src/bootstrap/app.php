@@ -9,6 +9,8 @@ declare(strict_types=1);
 // Never output raw PHP errors/warnings to HTTP responses (prevents HTML leaking into JSON)
 ini_set('display_errors', '0');
 
+\App\Monitoring\SentryReporter::init();
+
 use Slim\Factory\AppFactory;
 use Slim\Views\Twig;
 use Slim\Views\TwigMiddleware;
