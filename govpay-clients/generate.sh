@@ -118,6 +118,38 @@ for i in $(seq 0 $((NUM_APIS - 1))); do
         --invoker-package "$CLIENT_NAMESPACE" \
         --additional-properties packageName="$CLIENT_NAMESPACE" # Usa il namespace per coerenza
 
+    # 6.5. CORREZIONE OUTPUT PHP: GuzzleHttp\Utils::jsonEncode() è deprecato dalla 7.15
+    # (rimosso in 8.0) — il template openapi-generator lo usa ancora (era il fix per la
+    # deprecation precedente, \GuzzleHttp\json_encode(), risolta in openapi-generator v6.3.0).
+    # Sostituiamo con json_encode() nativo nell'output generato, non nello spec.
+    echo "   > 🔧 Correzione output: GuzzleHttp\\Utils::jsonEncode() -> json_encode() nativo"
+    find "$WORKING_DIR/$CLIENT_DIR" -name '*.php' -print0 | xargs -0 sed -i -E \
+        's/\\\\GuzzleHttp\\\\Utils::jsonEncode\(/json_encode(/g'
+
+    # 6.6. VALIDAZIONE OUTPUT PHP: alcune spec hanno proprietà duplicate (es. 'iur' due volte
+    # nello spec Biz Events pagoPA con wire-name diverso) che openapi-generator riproduce come
+    # metodi getter/setter duplicati -> PHP Fatal error "Cannot redeclare" al primo autoload.
+    # php -l non lo cattura sempre in fase di sviluppo (autoload lazy), quindi lo verifichiamo
+    # qui, appena generato, invece di scoprirlo a runtime in produzione.
+    if command -v php &> /dev/null; then
+        echo "   > 🔎 Verifica sintattica (php -l) dei file generati..."
+        LINT_FAILED=0
+        while IFS= read -r -d '' phpfile; do
+            if ! php -l "$phpfile" > /tmp/openapi_lint_out 2>&1; then
+                echo "   > ❌ ERRORE DI SINTASSI in $phpfile:"
+                cat /tmp/openapi_lint_out
+                LINT_FAILED=1
+            fi
+        done < <(find "$WORKING_DIR/$CLIENT_DIR" -name '*.php' -print0)
+        if [ "$LINT_FAILED" -eq 1 ]; then
+            echo "❌ Generazione client $API_NAME interrotta: uno o più file generati non passano php -l."
+            echo "   Probabile causa: proprietà duplicata nello spec OpenAPI sorgente."
+            exit 1
+        fi
+    else
+        echo "   > ⚠️  'php' non trovato in PATH, salto la verifica sintattica dei file generati."
+    fi
+
      # 7. CORREZIONE FINALE: Aggiunta del campo 'name' E INIEZIONE PSR-4 con jq
     COMPOSER_FILE="$WORKING_DIR/$CLIENT_DIR/composer.json"
     

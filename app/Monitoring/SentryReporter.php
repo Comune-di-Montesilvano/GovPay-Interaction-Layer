@@ -35,19 +35,6 @@ class SentryReporter
     }
 
     /**
-     * Severità PHP che non vanno mai a Sentry (rumore: deprecation/notice).
-     * Unica fonte di verità condivisa con 'error_types' qui sotto e con
-     * qualunque set_error_handler applicativo (es. backoffice/src/bootstrap/app.php)
-     * che inoltri errori a Logger — quel path bypassa 'error_types' perché
-     * non passa dal listener nativo dell'SDK, quindi deve applicare lo stesso
-     * filtro esplicitamente prima di chiamare Logger con forwarding a Sentry.
-     */
-    public static function isReportableSeverity(int $severity): bool
-    {
-        return ($severity & (E_DEPRECATED | E_USER_DEPRECATED | E_NOTICE)) === 0;
-    }
-
-    /**
      * Redige ricorsivamente i valori le cui chiavi matchano pattern PII noti
      * (cf, codice_fiscale, iban, pan). Difesa in profondità per l'evento
      * inviato a Sentry/GlitchTip — non sostituisce la disciplina a monte su
@@ -82,9 +69,6 @@ class SentryReporter
             'environment' => self::resolveEnvironment(getenv('SENTRY_ENVIRONMENT') ?: null),
             'traces_sample_rate' => 0,
             'send_default_pii' => false,
-            // E_STRICT rimosso: deprecato/senza effetto da PHP 8.4, referenziarlo genera
-            // esso stesso un E_DEPRECATED (che questo mask esclude comunque).
-            'error_types' => E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_NOTICE,
             'before_send' => static function (Event $event): ?Event {
                 $extra = $event->getExtra();
                 if ($extra) {

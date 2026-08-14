@@ -148,12 +148,7 @@ return (function (): array {
                 'request_uri' => $_SERVER['REQUEST_URI'] ?? null,
                 'user_id' => isset($_SESSION['user']['id']) ? $_SESSION['user']['id'] : null,
             ];
-            Logger::getInstance()->error(
-                'PHP error: ' . $message,
-                $context,
-                null,
-                \App\Monitoring\SentryReporter::isReportableSeverity($severity)
-            );
+            Logger::getInstance()->error('PHP error: ' . $message, $context);
         } catch (\Throwable $_) {
             // swallow
         }
