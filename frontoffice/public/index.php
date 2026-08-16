@@ -2578,7 +2578,7 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
             Logger::getInstance()->warning('Identificativo pagatore/versante non coincide con l\'input', [
                 'identificativoInput' => $normalizedInputId,
                 'numeroAvviso' => $numeroAvviso,
-            ]);
+            ], null, false); // input utente errato, non errore applicativo: no Sentry
             return [
                 'success' => false,
                 'errors' => ['Il codice fiscale o la partita IVA indicata non coincide con il soggetto associato all\'avviso.'],
