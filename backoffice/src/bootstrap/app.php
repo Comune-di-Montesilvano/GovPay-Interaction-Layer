@@ -140,6 +140,13 @@ return (function (): array {
 
     // Register global error/exception handlers to also write to our application log
     set_error_handler(function (int $severity, string $message, string $file, int $line) {
+        // Rispetta l'operatore @ di soppressione errori: error_reporting() torna 0
+        // durante una chiamata @-prefissata. Senza questo check, ogni @unlink/@fopen
+        // "best effort" nel codice (es. circuit breaker GovPay) finisce comunque
+        // in Sentry come rumore, nonostante la soppressione esplicita a monte.
+        if (!(error_reporting() & $severity)) {
+            return false;
+        }
         try {
             $context = [
                 'file' => $file,

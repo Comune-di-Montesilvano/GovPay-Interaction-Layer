@@ -187,8 +187,18 @@ COPY --chown=www-app:www-data scripts/ /var/www/html/scripts/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
     && ln -s /var/www/html/backoffice/templates /var/www/html/templates \
-    && mkdir -p /var/www/html/backoffice/storage/logs \
-    && chown www-data:www-data /var/www/html/backoffice/storage/logs
+    && mkdir -p /var/www/html/backoffice/storage/logs /var/www/html/backoffice/storage/tmp \
+    && touch /var/www/html/backoffice/storage/logs/app.log \
+    && chown -R www-data:www-data /var/www/html/backoffice/storage \
+    && chmod 2775 /var/www/html/backoffice/storage/logs /var/www/html/backoffice/storage/tmp \
+    && chmod 664 /var/www/html/backoffice/storage/logs/app.log
+# storage/logs e storage/tmp: setgid (2775) + file pre-creati e chownati www-data.
+# I demoni cron sono lanciabili anche via `docker exec` (di norma come root, nessun
+# USER nel container) mentre Apache gira come www-data — senza setgid un file creato
+# da root finisce root:root e www-data non riesce più a fopen/unlink (Permission
+# denied / Operation not permitted, vedi GOVPAY-GIL-D/K e duplicati). Col bit setgid
+# ogni nuovo file eredita il gruppo www-data della directory indipendentemente da chi
+# lo crea, restando scrivibile da entrambi.
 COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 
@@ -205,5 +215,8 @@ RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
 FROM runtime-base AS runtime-frontoffice
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs \
-    && chown www-data:www-data /var/www/html/frontoffice/storage/logs
+    && touch /var/www/html/frontoffice/storage/logs/app.log \
+    && chown -R www-data:www-data /var/www/html/frontoffice/storage \
+    && chmod 2775 /var/www/html/frontoffice/storage/logs \
+    && chmod 664 /var/www/html/frontoffice/storage/logs/app.log
 

@@ -77,6 +77,10 @@ docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
 docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
 
 # Daemon gestibili anche da Backoffice → Impostazioni → Cron (start/stop/log/autostart)
+# `docker exec` senza -u gira come root (nessun USER nel Dockerfile) — Apache/PHP-FPM
+# gira invece come www-data. File condivisi tra i due vanno in dir con setgid (2775),
+# mai in sys_get_temp_dir()/tmp (sticky bit blocca unlink cross-owner). Vedi
+# GovPayClientFactory::circuitBreakerFilePath()/writeCircuitBreakerFile().
 
 # Accesso DB diretto — backoffice user NON funziona da localhost dentro il container
 docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
@@ -165,6 +169,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **`docker-compose.override.yml` non monta `app/` live** (solo `./debug`) — `docker exec ... php -l file` dentro il container linta l'immagine buildata, non i sorgenti locali appena editati. Per verificare un fix nel container serve `docker compose up -d --build`; in alternativa lintare il file locale con `php -l` sull'host.
 - **GovPay pendenza `stato=ESEGUITO`**: qualsiasi PUT di aggiornamento viene rifiutato con `VER_003` ("stato che non consente l'aggiornamento"), indipendentemente dai campi inviati. `PendenzeController::addNotificationToPendenza()` (allegare notifiche a `datiAllegati.notifiche`) funziona solo su pendenze non ancora pagate — non utilizzabile per annotare pendenze già riscosse.
 - **pagoPA CheckoutEc `postCarts` 422 "Invalid payment notice data"**: `PaymentNotice` valida lato client PRIMA della rete (notice_number esatt. 18 char, fiscal_code 11, company_name/description ≤140 → `InvalidArgumentException` se sballato) — un 4xx/5xx di rete quindi vuol dire payload già schema-valido, rifiuto semantico pagoPA/nodo (avviso già pagato/annullato, o lock temporaneo per pagamento con stessa notice in corso). GovPay `StatoPendenza` non ha stato "in corso" (solo ESEGUITA/NON_ESEGUITA/ESEGUITA_PARZIALE/ANNULLATA/SCADUTA/INCASSATA/ANOMALA) — il lock è invisibile a GIL, non distinguibile da "già pagato" nel body ProblemJson. `FrontofficeApiController::checkoutCarrello()` intercetta questo caso → 409 dedicato invece di 503 generico.
+- **`Logger::error()/warning()` sono metodi d'istanza**, non statici — `Logger::error(...)` compila ma fatal-erra a runtime ("Non-static method... cannot be called statically"). Sempre `Logger::getInstance()->error(...)`. Grep di controllo: `grep -rn "Logger::(error|warning|info|debug)(" app/ backoffice/src/`.
 
 ## Integrazioni esterne
 
@@ -221,7 +226,7 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
    - Hook: backoffice (`web.php` `setDefaultErrorHandler`), frontoffice (`captureLastError()` da shutdown function, MAI `set_exception_handler` — cambierebbe l'UX errore), 8 demoni cron (init + `set_exception_handler` di sicurezza + capture sui catch prefissati `'ERRORE'`/`'Errore'` non per-record). `App\Logger::error()/warning()` forwardano sempre a Sentry (nessun filtro per severità — vedi sotto).
    - **Non sopprimere errori per severità/livello**: Sentry serve a vedere gli errori, non a nasconderli — solo i dati PII vanno nascosti (`scrubSensitiveKeys` su `extra`/query string, `request.data` POST rimosso del tutto perché `send_default_pii=false` non lo copre). Un filtro `error_types`/severità fu aggiunto e poi rimosso su richiesta esplicita in questa stessa sessione — non reintrodurlo.
    - GlitchTip self-hosted (provincia di Pescara), API compatibile Sentry `/api/0/...`. MCP server community `@vitaliypanait/sentry-self-hosted-mcp` configurato per parlarci (scope user, non nel progetto).
-   - **Gotcha MCP GlitchTip**: `get_issue`/`get_issue_with_stacktrace`/`get_latest_event` accettano solo pk numerico globale, MAI lo short-id tipo `GOVPAY-GIL-9` (404 sempre) — risolvere il pk chiamando `get_issue` con interi crescenti (list_issues non lo espone), o bypassare del tutto con curl diretto su API (org slug `provincia-di-pescara`, token Bearer da Settings → Auth Tokens). Il tool MCP inoltre non espone `extra`/`context` dell'evento (dove sta il messaggio errore reale, es. `context.context.error`) — per quello serve sempre curl su `/api/0/projects/provincia-di-pescara/<project>/events/<event_id>/`.
+   - **Gotcha MCP GlitchTip**: `get_issue`/`get_issue_with_stacktrace`/`get_latest_event` accettano solo pk numerico globale, MAI lo short-id tipo `GOVPAY-GIL-9` (404 sempre) — risolvere il pk chiamando `get_issue` con interi crescenti (list_issues non lo espone), o bypassare del tutto con curl diretto su API (org slug `provincia-di-pescara`, token Bearer da Settings → Auth Tokens). Il tool MCP inoltre non espone `extra`/`context` dell'evento (dove sta il messaggio errore reale, es. `context.context.error`) — per quello serve sempre curl su `/api/0/projects/provincia-di-pescara/<project>/events/<event_id>/`. Chiamate `get_issue` in parallelo durante il brute-force pk vanno in 403 (rate limit) — farle sequenziali.
 
 ## Configurazione: DB vs .env
 
