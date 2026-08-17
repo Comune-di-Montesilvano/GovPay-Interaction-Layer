@@ -92,13 +92,13 @@ class GovPayClientFactory
                     return false;
                 }
                 if ($retries >= $maxTlsRetries) {
-                    Logger::error(sprintf(
+                    Logger::getInstance()->error(sprintf(
                         'GovPay TLS error after %d retries (errno %s): %s',
                         $maxTlsRetries, $errno ?: 'n/a', $exception->getMessage()
                     ));
                     return false;
                 }
-                Logger::warning(sprintf(
+                Logger::getInstance()->warning(sprintf(
                     'Retry GovPay call after TLS error (attempt %d/%d, errno %s)',
                     $retries + 1, $maxTlsRetries, $errno ?: 'n/a'
                 ));
@@ -122,13 +122,51 @@ class GovPayClientFactory
     }
 
     /**
+     * Path del file di stato del Circuit Breaker. Deliberatamente NON in
+     * sys_get_temp_dir() (/tmp ha lo sticky bit): un daemon lanciato via
+     * `docker exec` (di norma come root, nessun USER nell'immagine) e Apache
+     * (www-data) scrivono entrambi qui — su /tmp lo sticky bit impedirebbe
+     * a www-data di fare unlink() su un file creato da root (Operation not
+     * permitted, vedi GOVPAY-GIL-K e duplicati). storage/tmp ha invece il
+     * bit setgid (2775, impostato in Dockerfile) così ogni nuovo file
+     * eredita il gruppo www-data indipendentemente da chi scrive.
+     */
+    private static function circuitBreakerFilePath(): string
+    {
+        $dir = dirname(__DIR__, 2) . '/backoffice/storage/tmp';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        return $dir . '/govpay_circuit_breaker.json';
+    }
+
+    /**
+     * Scrive lo stato del Circuit Breaker via file temporaneo + rename().
+     * A differenza di file_put_contents() in-place, rename() richiede solo
+     * il permesso di scrittura sulla directory (come unlink) — non su un
+     * eventuale file esistente scritto da un altro utente con mode 0644
+     * (owner-only write). Elimina il caso limite in cui root e www-data si
+     * alternano nello scrivere lo stesso file e uno dei due resta bloccato.
+     */
+    private static function writeCircuitBreakerFile(string $cbFile, array $data): void
+    {
+        $tmp = $cbFile . '.' . getmypid() . '.tmp';
+        if (@file_put_contents($tmp, json_encode($data)) !== false) {
+            @chmod($tmp, 0664);
+            if (!@rename($tmp, $cbFile)) {
+                @unlink($tmp);
+            }
+        }
+    }
+
+    /**
      * Middleware per Circuit Breaker su GovPay.
      */
     public static function circuitBreakerMiddleware(): \Closure
     {
         return static function (callable $handler) {
             return static function (HttpRequest $request, array $options) use ($handler) {
-                $cbFile = sys_get_temp_dir() . '/govpay_circuit_breaker.json';
+                $cbFile = self::circuitBreakerFilePath();
                 $cooloff = 30; // secondi
                 $maxFailures = 3;
 
@@ -145,7 +183,7 @@ class GovPayClientFactory
                             );
                         }
                         $cbData['status'] = 'HALF-OPEN';
-                        @file_put_contents($cbFile, json_encode($cbData));
+                        self::writeCircuitBreakerFile($cbFile, $cbData);
                     }
                 }
 
@@ -177,12 +215,12 @@ class GovPayClientFactory
 
                             if ($cbData['failures'] >= $maxFailures) {
                                 $cbData['status'] = 'OPEN';
-                                Logger::error(sprintf(
+                                Logger::getInstance()->error(sprintf(
                                     'Connessione a GovPay fallita per %d volte. Circuit Breaker APERTO.',
                                     $cbData['failures']
                                 ));
                             }
-                            @file_put_contents($cbFile, json_encode($cbData));
+                            self::writeCircuitBreakerFile($cbFile, $cbData);
                         }
 
                         return \GuzzleHttp\Promise\Create::rejectionFor($reason);
@@ -265,7 +303,7 @@ class GovPayClientFactory
             return ['online' => true, 'error' => null];
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
-            Logger::error('GovPay check status failed: ' . $msg);
+            Logger::getInstance()->error('GovPay check status failed: ' . $msg);
             return ['online' => false, 'error' => $msg];
         }
     }
