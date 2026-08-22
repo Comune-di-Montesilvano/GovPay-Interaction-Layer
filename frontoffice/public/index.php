@@ -1339,7 +1339,14 @@ if (!function_exists('frontoffice_prepare_payer')) {
         }
         $phone = trim((string)($raw['telefono'] ?? ''));
         if ($phone !== '' && trim(preg_replace('/^\+39\s*/', '', $phone)) !== '') {
-            $payload['cellulare'] = frontoffice_normalize_cellulare($phone);
+            $normalized = frontoffice_normalize_cellulare($phone);
+            // GovPay rifiuta con errore SINTASSI qualsiasi valore che non rispetti esattamente
+            // il pattern +XX XXX-XXXXXXX (es. numeri esteri come francesi/tedeschi con conteggio
+            // cifre diverso). Campo opzionale: se non normalizzabile, va omesso invece di essere
+            // inoltrato e far fallire l'intera creazione pendenza.
+            if ($normalized !== null) {
+                $payload['cellulare'] = $normalized;
+            }
         }
 
         return $payload;
@@ -1347,14 +1354,14 @@ if (!function_exists('frontoffice_prepare_payer')) {
 }
 
 if (!function_exists('frontoffice_normalize_cellulare')) {
-    function frontoffice_normalize_cellulare(string $phone): string
+    function frontoffice_normalize_cellulare(string $phone): ?string
     {
         // GovPay pattern: \+[0-9]{2,2}\s[0-9]{3,3}\-[0-9]{7,7}
         $clean = preg_replace('/[\s\-\.]/', '', $phone);
         if (preg_match('/^\+(\d{2})(\d{3})(\d{7})$/', $clean, $m)) {
             return "+{$m[1]} {$m[2]}-{$m[3]}";
         }
-        return $phone;
+        return null;
     }
 }
 
