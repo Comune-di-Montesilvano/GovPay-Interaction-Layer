@@ -15,7 +15,7 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
 
       - name: Debug struttura client generati
@@ -89,7 +89,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Trivy filesystem scan (vuln + secrets + misconfig)
         uses: aquasecurity/trivy-action@v0.36.0
