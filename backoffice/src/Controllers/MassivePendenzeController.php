@@ -281,6 +281,21 @@ class MassivePendenzeController
         // same helper as other controllers if needed (left minimal here)
     }
 
+    /**
+     * Ripulisce un valore importo grezzo da CSV (simboli valuta, spazi/NBSP, migliaia)
+     * e normalizza la virgola decimale a punto, restituendo stringa pronta per (float) cast.
+     */
+    private static function cleanImportoRaw(string $raw): string
+    {
+        $s = trim($raw);
+        if ($s === '') return '';
+        $s = str_replace("\xC2\xA0", ' ', $s); // NBSP -> spazio
+        $s = str_replace(' ', '', $s);
+        $s = preg_replace('/[^\d,.\-]/', '', $s) ?? ''; // via simboli valuta (€, $, ecc.)
+        $s = str_replace(',', '.', $s);
+        return $s;
+    }
+
     private static function parseCsv(string $content): array
     {
         $rows = [];
@@ -307,7 +322,7 @@ class MassivePendenzeController
         $nome = strtoupper(trim((string)($r['NOME'] ?? '')));
         $caus = (string)($r['CAUSALE'] ?? '');
         $anno = (int)($r['ANNO_RIFERIMENTO'] ?? 0);
-        $imp = (float)str_replace(',', '.', (string)($r['IMPORTO'] ?? '0'));
+        $imp = (float)self::cleanImportoRaw((string)($r['IMPORTO'] ?? '0'));
         $email = trim((string)($r['EMAIL'] ?? ''));
         $dvRaw = trim((string)($r['DATA_VALIDITA'] ?? ''));
         $dsRaw = trim((string)($r['DATA_SCADENZA'] ?? ''));
@@ -319,9 +334,9 @@ class MassivePendenzeController
         $v2imp = (string)($r['VOCE_2_IMPORTO'] ?? '');
         $v2desc = (string)($r['VOCE_2_CAUSALE'] ?? '');
         $v1impProvided = trim($v1imp) !== '';
-        $v1impParsed = $v1impProvided ? (float)str_replace(',', '.', $v1imp) : $imp;
+        $v1impParsed = $v1impProvided ? (float)self::cleanImportoRaw($v1imp) : $imp;
         $v2impProvided = trim($v2imp) !== '';
-        $v2impParsed = $v2impProvided ? (float)str_replace(',', '.', $v2imp) : 0.0;
+        $v2impParsed = $v2impProvided ? (float)self::cleanImportoRaw($v2imp) : 0.0;
         return [
             'tipo' => $tipo,
             'identificativo' => $ident,
@@ -407,7 +422,7 @@ class MassivePendenzeController
         // Se VOCE_1_IMPORTO è stato fornito dall'utente, validalo come numerico (virgola ammessa)
         if (!empty($norm['_v1imp_provided'])) {
             $raw = (string)($norm['_v1imp_raw'] ?? '');
-            $numOk = $raw !== '' && is_numeric(str_replace(',', '.', $raw));
+            $numOk = $raw !== '' && is_numeric(self::cleanImportoRaw($raw));
             if (!$numOk) return 'VOCE_1_IMPORTO non valido';
         }
         // Voci sum
