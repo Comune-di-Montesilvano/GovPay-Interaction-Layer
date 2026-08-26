@@ -413,6 +413,11 @@ class MassivePendenzeController
                 return 'Campo obbligatorio mancante: ' . $f;
             }
         }
+        // Email: stessa regex applicata da GovPay lato server (SINTASSI/RICHIESTA non valida)
+        // per rifiutare a monte invece di far fallire la POST /pendenze.
+        if ($norm['email'] !== '' && !preg_match('/^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/', $norm['email'])) {
+            return 'EMAIL non valida (formato non conforme)';
+        }
         // Causale length
         if (!ValidationService::validateCausaleLength($norm['causale'])) return 'Causale oltre 140 caratteri';
         // Tipo
