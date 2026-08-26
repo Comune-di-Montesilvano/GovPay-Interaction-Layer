@@ -20,7 +20,7 @@
         "slim/psr7": "^1.6",
         "slim/slim": "^4.13",
         "slim/twig-view": "^3.3",
-        "symfony/mailer": "^7.0",
+        "symfony/mailer": "^8.1",
         "symfony/mime": "^7.0",
         "twig/twig": "^3.0"
     },
