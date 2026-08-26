@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 env:
   REGISTRY: ghcr.io
@@ -116,6 +117,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · ${{ matrix.app }}
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -144,6 +146,23 @@ jobs:
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main,mode=max
             type=gha,mode=max,scope=${{ matrix.scope }}
             type=inline
+
+      - name: Trivy scan · ${{ matrix.app }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-${{ matrix.image_suffix }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
+      - name: Upload Trivy results · ${{ matrix.app }}
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.image_suffix }}.sarif
+          category: trivy-${{ matrix.image_suffix }}
 
   # ── Independent services: parallel matrix ─────────────────────────────────
   build-services:
@@ -184,6 +203,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build & push · ${{ matrix.image }}
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
@@ -208,3 +228,20 @@ jobs:
           cache-to: |
             type=gha,mode=${{ matrix.cache_mode }},scope=${{ matrix.scope }}
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}-cache:main,mode=max
+
+      - name: Trivy scan · ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
+      - name: Upload Trivy results · ${{ matrix.image }}
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
