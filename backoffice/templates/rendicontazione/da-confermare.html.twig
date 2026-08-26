@@ -60,14 +60,13 @@
 
     {% set totalPages = (totale / per_page)|round(0, 'ceil') %}
     {% if totalPages > 1 %}
-      <nav class="mt-3">
-        <ul class="pagination">
+      <nav class="mt-3 d-flex flex-wrap gap-2 align-items-center" aria-label="Paginazione">
+        <div class="small text-muted">Pagina {{ page }} di {{ totalPages }}</div>
+        <div class="btn-group btn-group-sm" role="group">
           {% for p in 1..totalPages %}
-            <li class="page-item {{ p == page ? 'active' : '' }}">
-              <a class="page-link" href="?page={{ p }}">{{ p }}</a>
-            </li>
+            <a class="btn {{ p == page ? 'btn-primary' : 'btn-outline-primary' }}" href="?page={{ p }}">{{ p }}</a>
           {% endfor %}
-        </ul>
+        </div>
       </nav>
     {% endif %}
   {% endif %}
