@@ -100,11 +100,24 @@ class MassivePendenzeController
         // Processa righe: valida e costruisci preview
         $valid = [];
         $invalid = [];
+        $repo = new MassivePendenzeRepository();
+        $todayKeys = $repo->findTodayIdentCausaleKeys();
+        $seenInBatch = [];
         foreach ($rows as $i => $row) {
             $rowNum = $i + 2; // header è riga 1
             $r = self::assocRow($header, $row);
             $norm = self::normalizeRow($r);
             $err = self::validateRow($norm);
+            if (!$err) {
+                $dupKey = strtoupper(trim((string)$norm['identificativo'])) . '|' . strtoupper(trim((string)$norm['causale']));
+                if (isset($seenInBatch[$dupKey])) {
+                    $err = 'Duplicato nel file: stesso codice fiscale/partita IVA e causale già presente alla riga ' . $seenInBatch[$dupKey];
+                } elseif (isset($todayKeys[$dupKey])) {
+                    $err = 'Duplicato: stesso codice fiscale/partita IVA e causale già inserito oggi in un altro lotto';
+                } else {
+                    $seenInBatch[$dupKey] = $rowNum;
+                }
+            }
             if ($err) {
                 $norm['_error'] = $err;
                 $norm['_row'] = $rowNum;
@@ -117,7 +130,6 @@ class MassivePendenzeController
         // Assign batch id and persist invalids as ERROR records (optional) or keep in memory for CSV error download
         $batchId = 'B' . date('YmdHis') . '-' . substr(bin2hex(random_bytes(4)), 0, 8);
         // Persist just for listing counts (we will insert valid ones only on confirm step)
-        $repo = new MassivePendenzeRepository();
         foreach ($invalid as $inv) {
             $payload = $inv; unset($payload['_error'],$payload['_row']);
             $repo->insertPending($batchId, (int)$inv['_row'], $payload, $inv['_error']);
@@ -428,6 +440,14 @@ class MassivePendenzeController
         // Voci sum
         $sum = 0.0; foreach ($norm['voci'] as $v) { $sum += (float)($v['importo'] ?? 0); }
         if ((int)round($sum * 100) !== (int)round(((float)$norm['importo']) * 100)) return 'Somma voci diversa da importo';
+        // Date validità/scadenza: se fornite, non possono essere nel passato
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        if (!empty($norm['dataValidita']) && $norm['dataValidita'] < $today) {
+            return 'DATA_VALIDITA non può essere nel passato';
+        }
+        if (!empty($norm['dataScadenza']) && $norm['dataScadenza'] <= $today) {
+            return 'DATA_SCADENZA non può essere nel passato o oggi';
+        }
         return null;
     }
 
