@@ -1,0 +1,69 @@
+# Trivy ignore list — CVE upstream non risolvibili lato GIL, rivalutare a ogni
+# bump immagine base (dependabot docker ecosystem apre PR automatiche; se una
+# CVE qui sotto sparisce dallo scan perche fixata upstream, l'entry diventa
+# no-op — nessun danno a lasciarla, ma va comunque ripulita quando ce ne
+# accorgiamo per non accumulare rumore).
+#
+# Verificato 2026-08-26 su govpay-interaction-layer-{backoffice,frontoffice,db}
+# v1.5.67, nessuna versione mariadb (11/11.4/11.8/12/12.1/latest) o php:8.5-*
+# disponibile con fix.
+
+# --- db (mariadb:11): gosu vendored da docker-library/mariadb, Go stdlib
+# datata (v1.24.6). Nessun mariadb tag pubblicato con gosu aggiornato.
+CVE-2025-68121
+CVE-2025-61726
+CVE-2025-61729
+CVE-2026-25679
+CVE-2026-27145
+CVE-2026-32280
+CVE-2026-32281
+CVE-2026-32283
+CVE-2026-33811
+CVE-2026-33814
+CVE-2026-33818
+CVE-2026-39820
+CVE-2026-39821
+CVE-2026-39822
+CVE-2026-39836
+CVE-2026-42499
+CVE-2026-42504
+CVE-2026-56853
+CVE-2026-56858
+CVE-2026-56859
+CVE-2026-56860
+CVE-2026-56862
+
+# --- backoffice/frontoffice (php:8.5-apache-trixie): linux-libc-dev, pacchetto
+# kernel headers Debian trixie. Nessun kernel in esecuzione nel container —
+# superficie d'attacco nulla in pratica — ma package version non ancora
+# bumpata upstream nell'immagine base.
+CVE-2026-64017
+CVE-2026-68159
+CVE-2026-68166
+CVE-2026-68264
+CVE-2026-68480
+CVE-2026-74446
+CVE-2026-74476
+CVE-2026-74480
+CVE-2026-74488
+CVE-2026-74502
+CVE-2026-74503
+CVE-2026-74509
+CVE-2026-74510
+CVE-2026-74516
+CVE-2026-74518
+CVE-2026-74556
+CVE-2026-74569
+CVE-2026-74574
+CVE-2026-74580
+CVE-2026-74581
+CVE-2026-74582
+CVE-2026-74583
+CVE-2026-74586
+CVE-2026-74588
+CVE-2026-74597
+CVE-2026-74615
+CVE-2026-74616
+CVE-2026-74630
+CVE-2026-74641
+CVE-2026-74669

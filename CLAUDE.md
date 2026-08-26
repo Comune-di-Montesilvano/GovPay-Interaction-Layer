@@ -144,6 +144,11 @@ Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsReposito
 
 Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona versione.
 
+**Sicurezza CI** — `ci.yml`: `composer audit` (blocca su deps vulnerabili note) + job `trivy-fs` (vuln/secret/misconfig, report-only). `docker-publish.yml`: Trivy scan per immagine buildata (backoffice/frontoffice/db), bloccante su CRITICAL/HIGH fixabili. `semgrep.yml`: SAST PHP (report-only) — **CodeQL non supporta PHP**, non riprovare `codeql-action` con `languages: php` (rifiutato a `init`, lingue supportate: c-cpp/csharp/go/java-kotlin/js-ts/python/ruby/swift). `.trivyignore` a root per CVE upstream non fixabili (rivalutare quando dependabot ecosistema `docker` apre bump).
+- **Gotcha `trivy-action`**: tag richiedono prefisso `v` (`v0.36.0`, non `0.36.0`). `.trivyignore` a root NON auto-rilevato — va passato esplicito `trivyignores: ${{ github.workspace }}/.trivyignore`. **Bug non ovvio**: con `format: sarif` disattiva silenziosamente `--severity` (scan tutte le severità) a meno di `limit-severities-for-sarif: true` — senza, il gate `exit-code` scatta anche su CVE fuori soglia configurata. Immagini vanno scansionate by build digest (`steps.build.outputs.digest`), mai by tag — i tag semver di `metadata-action` non sempre coincidono col `version` di `version-resolver`.
+- **Debug job CI fallito**: `gh api repos/<org>/<repo>/actions/jobs/<job_id>/logs` per il log completo — più affidabile di `gh run view --log` su run ancora in corso.
+- **Test locale immagini GHCR** (Windows git-bash): `MSYS_NO_PATHCONV=1 docker run --rm -v //var/run/docker.sock:/var/run/docker.sock -v "$(pwd)://workdir" -w //workdir aquasec/trivy:<versione esatta bundled in trivy-action> image ...` — senza `MSYS_NO_PATHCONV=1` e doppio slash iniziale, git-bash rovina i path `-v`.
+
 ## Convenzioni di sviluppo
 
 - **Branch principale**: `main` (production-ready); sviluppo attivo su `dev`
