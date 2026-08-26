@@ -65,6 +65,35 @@ class MassivePendenzeRepository
         ]);
     }
 
+    /**
+     * Coppie identificativo(CF/PIVA)+causale già presenti in batch odierni (qualsiasi file_batch_id),
+     * per rilevare duplicati cross-batch nello stesso giorno. Considera righe non ancora fallite
+     * (PENDING/PROCESSING/SUCCESS): una riga ERROR non rappresenta una pendenza realmente creata.
+     *
+     * @return array<string,bool> chiavi "IDENTIFICATIVO|CAUSALE" (uppercase/trim) già presenti oggi
+     */
+    public function findTodayIdentCausaleKeys(): array
+    {
+        $sql = "SELECT
+                    UPPER(TRIM(COALESCE(
+                        JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.soggettoPagatore.identificativo')),
+                        JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.identificativo'))
+                    ))) AS ident,
+                    UPPER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.causale')))) AS causale
+                FROM pendenze_massive
+                WHERE DATE(created_at) = CURDATE()
+                  AND stato IN ('PENDING','PROCESSING','SUCCESS')";
+        $stmt = $this->pdo->query($sql);
+        $keys = [];
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [] as $row) {
+            $ident = (string)($row['ident'] ?? '');
+            $causale = (string)($row['causale'] ?? '');
+            if ($ident === '' || $causale === '') continue;
+            $keys[$ident . '|' . $causale] = true;
+        }
+        return $keys;
+    }
+
     public function listByBatch(string $fileBatchId, ?string $stato = null, int $page = 1, int $perPage = 50): array
     {
         $offset = max(0, ($page - 1) * $perPage);
