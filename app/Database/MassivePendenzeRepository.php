@@ -25,11 +25,27 @@ class MassivePendenzeRepository
             ':riga' => $riga,
             ':stato' => $errore ? 'ERROR' : 'PENDING',
             ':errore' => $errore,
-            ':payload' => json_encode($payload, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
+            ':payload' => self::safeJsonEncode($payload),
             ':created' => $now,
             ':updated' => $now,
         ]);
         return (int)$this->pdo->lastInsertId();
+    }
+
+    /**
+     * json_encode() ritorna false su byte UTF-8 invalidi (es. CF corrotto da encoding CSV) senza
+     * eccezione: il valore false passato a PDO viola il CHECK JSON_VALID sulla colonna. Sostituisce
+     * i byte invalidi con U+FFFD invece di fallire, e garantisce comunque una stringa JSON valida.
+     */
+    private static function safeJsonEncode(array $data): string
+    {
+        $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+        $json = json_encode($data, $flags);
+        if ($json === false) {
+            // Fallback estremo: dump errore invece di un false non-JSON
+            $json = json_encode(['_encode_error' => json_last_error_msg()], JSON_UNESCAPED_SLASHES);
+        }
+        return (string)$json;
     }
 
     public function setProcessing(int $id): void
@@ -43,7 +59,7 @@ class MassivePendenzeRepository
         $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = :stato, response_json = :resp, errore = :err, updated_at = NOW() WHERE id = :id');
         $stmt->execute([
             ':stato' => $ok ? 'SUCCESS' : 'ERROR',
-            ':resp' => $response ? json_encode($response, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) : null,
+            ':resp' => $response ? self::safeJsonEncode($response) : null,
             ':err' => $errore,
             ':id' => $id,
         ]);
