@@ -90,6 +90,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd):/app" -w //app composer:2 install 
 # Path repos (govpay-clients/, pagopa-clients/) fanno mirroring in vendor/, non symlink:
 # dopo aver editato i sorgenti generati, "composer install" da solo dice "Nothing to install"
 # — serve `rm -rf vendor/<vendor>` prima per forzare il re-mirror.
+
+# Audit sicurezza dipendenze (girato anche in CI, bloccante su ci.yml)
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd):/app" -w //app composer:2 audit --no-dev
 ```
 
 ## Struttura directory
@@ -188,7 +191,10 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 | App IO | Notifiche e pagamenti cittadini |
 | OIDC Esterno | Autenticazione opzionale cittadini (Authorization Code + PKCE) |
 
-## Nuove Funzionalità Chiave (Maggio 2026)
+## Nuove Funzionalità Chiave (Maggio–Agosto 2026)
+
+> Sezione cronologica non archiviata — rivedere/potare le voci più vecchie
+> quando confluiscono stabilmente nelle sezioni architetturali sopra.
 
 1. **Riprogettazione UI Backoffice**:
    - **Dashboard in tempo reale**: Grafici combinati Chart.js (trend mensili incassi e transazioni), doughnut split flussi interni (GovPay) vs esterni (Biz Events), e breakdown per tipologia di pendenza (Top 6 predefinita ed espansione a tutte con bottone toggle e animazione client-side).
