@@ -36,20 +36,24 @@ class RendicontazioneController
         $righe = empty($idEntrateView) ? [] : $repo->getDaConfermarePerTipologie($idDominio, $idEntrateView, $page, $perPage);
         $totale = empty($idEntrateView) ? 0 : $repo->countDaConfermarePerTipologie($idDominio, $idEntrateView);
 
+        // Debitore: preso da biz_ricevute (join in getDaConfermarePerTipologie, popolato dal
+        // cron_govpay_debitore_scanner). Fallback a chiamata live GovPay solo se la riga non è
+        // ancora stata scansionata — evita 25 chiamate HTTP sequenziali ad ogni page load.
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
-        $client = $this->buildGovPayClient();
+        $client = null;
 
         foreach ($righe as &$r) {
             // Formatta lo IUV: se minore di 18 cifre, aggiunge zeri a sinistra e imposta il 3 come prima cifra
             $r['iuv_completo'] = (strlen($r['iuv']) < 18) ? '3' . str_pad($r['iuv'], 17, '0', STR_PAD_LEFT) : $r['iuv'];
 
-            $r['debitore_nome'] = 'N/D';
-            $r['debitore_cf'] = 'N/D';
+            $r['debitore_nome'] = trim((string)($r['nominativo_debitore'] ?? '')) !== '' ? $r['nominativo_debitore'] : 'N/D';
+            $r['debitore_cf'] = trim((string)($r['cf_debitore'] ?? '')) !== '' ? $r['cf_debitore'] : 'N/D';
 
             $idPendenza = $r['id_pendenza'] ?? '';
-            if ($r['is_govpay'] == 1 && $idPendenza !== '' && $backofficeUrl !== '' && $idA2A !== '') {
+            if ($r['debitore_nome'] === 'N/D' && $r['is_govpay'] == 1 && $idPendenza !== '' && $backofficeUrl !== '' && $idA2A !== '') {
                 try {
+                    $client ??= $this->buildGovPayClient();
                     $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
                     $res = $client->request('GET', $url);
                     $pendenza = json_decode((string)$res->getBody(), true);
