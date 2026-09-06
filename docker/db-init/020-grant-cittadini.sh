@@ -33,6 +33,20 @@ $MYSQL_CLIENT -uroot -p"$MYSQL_ROOT_PASSWORD" <<-EOSQL
   CREATE USER IF NOT EXISTS '${CITTADINI_USER}'@'%' IDENTIFIED BY '${ESCAPED_PASS}';
   ALTER USER '${CITTADINI_USER}'@'%' IDENTIFIED BY '${ESCAPED_PASS}';
   GRANT SELECT ON \`${DB_NAME}\`.* TO '${CITTADINI_USER}'@'%';
+  -- Al primo avvio (datadir vuota) l'app non ha ancora eseguito le migrazioni:
+  -- garantiamo qui l'esistenza della tabella (stessa DDL di migrations/010_rate_limit_buckets.sql,
+  -- idempotente: la migration successiva la trova già presente e non fa nulla) prima del
+  -- GRANT dedicato sotto, altrimenti la GRANT su tabella inesistente fallisce, lo script
+  -- esce (set -e) e il container muore: al riavvio (restart:always) l'init NON viene
+  -- rieseguito (datadir non più vuota), quindi il GRANT su rate_limit_buckets resterebbe
+  -- mancante per sempre.
+  CREATE TABLE IF NOT EXISTS \`${DB_NAME}\`.\`rate_limit_buckets\` (
+    bucket_key   VARCHAR(190) NOT NULL PRIMARY KEY,
+    window_start INT UNSIGNED NOT NULL,
+    count        INT UNSIGNED NOT NULL DEFAULT 0,
+    updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_rlb_window (window_start)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   -- Eccezione: tabella di rate limit (sliding window) richiede INSERT/UPDATE/DELETE
   -- per consentire al frontoffice di registrare e ripulire i bucket lato cittadino.
   GRANT SELECT, INSERT, UPDATE, DELETE ON \`${DB_NAME}\`.\`rate_limit_buckets\` TO '${CITTADINI_USER}'@'%';
