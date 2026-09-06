@@ -16,6 +16,12 @@ on:
     branches: [dev]
   workflow_dispatch:
 
+# Mai cancel-in-progress: un push a ghcr interrotto a meta' puo' lasciare un digest/manifest
+# corrotto o incompleto — run concorrenti sullo stesso ref si accodano invece di accavallarsi.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
@@ -31,6 +37,7 @@ jobs:
   setup:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.v.outputs.version }}
       version_type: ${{ steps.v.outputs.version_type }}
@@ -52,6 +59,7 @@ jobs:
   build-php-base:
     needs: setup
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -93,6 +101,7 @@ jobs:
   build-php:
     needs: [setup]
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -183,6 +192,7 @@ jobs:
   build-services:
     needs: setup
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
