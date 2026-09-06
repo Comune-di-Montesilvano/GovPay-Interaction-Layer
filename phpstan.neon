@@ -1,0 +1,18 @@
+parameters:
+    level: 3
+    paths:
+        - app
+        - backoffice/src
+        - frontoffice
+        - scripts
+    excludePaths:
+        - */vendor/*
+        - */tests/*
+        # Bridge legacy standalone: da copiare a mano su servizi.comune.montesilvano.pe.it
+        # (vedi docblock del file), NON gira nella pipeline Docker/CI di GIL e richiede
+        # file/globals di un altro server che non esistono in questo repo per definizione —
+        # non analizzabile staticamente qui, non e' codice morto ne' un bug di questo progetto.
+        - scripts/legacy-bridge/*
+    tmpDir: /tmp/phpstan
+includes:
+    - phpstan-baseline.neon

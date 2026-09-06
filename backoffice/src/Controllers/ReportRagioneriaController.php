@@ -229,6 +229,7 @@ class ReportRagioneriaController
 
                     $baseParams = $filters;
                     $baseParams['q'] = '1';
+                    // @phpstan-ignore-next-line unset.offset ($filters non ha mai la chiave 'export' per costruzione: no-op difensivo a protezione di futuri campi aggiunti a $filters)
                     unset($baseParams['export']);
 
                     if ($currentPage > 1) {

@@ -1568,15 +1568,6 @@ class ImpostazioniController
         }
     }
 
-    private function triggerAuthProxyReload(): bool
-    {
-        return $this->callAuthProxyControlEndpoint('reload');
-    }
-
-    private function triggerAuthProxyRestart(): bool
-    {
-        return $this->callAuthProxyControlEndpoint('restart');
-    }
     private function getRuntimeEncryptionKey(): string
     {
         $fromConfig = (string)(ConfigLoader::get('app.encryption_key') ?? '');

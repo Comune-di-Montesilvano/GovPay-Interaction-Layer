@@ -17,9 +17,7 @@ use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Middleware;
 use GovPay\Backoffice\Api\PendenzeApi as BackofficePendenzeApi;
 use GovPay\Backoffice\Configuration as BackofficeConfiguration;
-use GovPay\Backoffice\Model\RaggruppamentoStatistica;
 use GovPay\Backoffice\Model\StatoPendenza;
-use GovPay\Backoffice\ObjectSerializer as BackofficeSerializer;
 use GovPay\Pendenze\Api\PendenzeApi;
 use Psr\Http\Message\RequestInterface as HttpRequest;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -35,90 +33,6 @@ class PendenzeController
     {
     }
 
-    public function index(Request $request, Response $response): Response
-    {
-        // Se la route riceve una POST, la trattiamo come richiesta di creazione pendenza
-        if (strtoupper((string)$request->getMethod()) === 'POST') {
-            return $this->create($request, $response);
-        }
-
-        $debug = '';
-        $apiClass = PendenzeApi::class;
-        if (class_exists($apiClass)) {
-            $debug .= "Classe trovata: {$apiClass}\n";
-            try {
-                $client = new Client();
-                new PendenzeApi($client, new PendenzeConfiguration());
-                $debug .= "Istanza API creata con successo.\n";
-            } catch (\Throwable $e) {
-                $debug .= 'Errore: ' . $e->getMessage() . "\n";
-            }
-        } else {
-            $debug .= "Classe API non trovata.\n";
-        }
-
-    $errors = [];
-    $warnings = [];
-        $statsJson = null;
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        if (class_exists(BackofficePendenzeApi::class)) {
-            if (!empty($backofficeUrl)) {
-                try {
-                    $config = new BackofficeConfiguration();
-                    $config->setHost(rtrim($backofficeUrl, '/'));
-
-                    $username = SettingsRepository::get('govpay', 'user', '');
-                    $password = SettingsRepository::get('govpay', 'password', '');
-                    if ($username !== '' && $password !== '') {
-                        $config->setUsername($username);
-                        $config->setPassword($password);
-                    }
-
-                    $guzzleOptions = [];
-                    $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-                    if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-                        $cert    = SettingsRepository::get('govpay', 'tls_cert_path', '');
-                        $key     = SettingsRepository::get('govpay', 'tls_key_path', '');
-                        $keyPass = SettingsRepository::get('govpay', 'tls_key_password');
-                        if (!empty($cert) && !empty($key)) {
-                            $guzzleOptions['cert'] = $cert;
-                            $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-                        } else {
-                            $errors[] = 'mTLS abilitato ma tls_cert_path/tls_key_path non configurati';
-                        }
-                    }
-
-                    $httpClient = new Client($guzzleOptions);
-                    $api = new BackofficePendenzeApi($httpClient, $config);
-
-                    $gruppi = [RaggruppamentoStatistica::DOMINIO];
-                    $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
-                    if ($idDominioEnv !== '') {
-                        $stats = $api->findQuadratureRiscossioni($gruppi, 1, 10, null, null, trim((string)$idDominioEnv));
-                    } else {
-                        $stats = $api->findQuadratureRiscossioni($gruppi, 1, 10);
-                    }
-
-                    $data = BackofficeSerializer::sanitizeForSerialization($stats);
-                    $statsJson = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-                } catch (\Throwable $e) {
-                    $errors[] = 'Errore chiamata Backoffice: ' . $e->getMessage();
-                }
-            } else {
-                $errors[] = 'Variabile GOVPAY_BACKOFFICE_URL non impostata';
-            }
-        } else {
-            $errors[] = 'Client Backoffice non disponibile (namespace GovPay\\Backoffice)';
-        }
-
-        $this->exposeCurrentUser();
-
-        return $this->twig->render($response, 'pendenze.html.twig', [
-            'debug' => nl2br(htmlspecialchars($debug, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')),
-            'stats_json' => $statsJson,
-            'errors' => $errors,
-        ]);
-    }
 
     /**
      * Gestisce la creazione di una nuova pendenza inviata dal form.
@@ -273,7 +187,7 @@ class PendenzeController
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
                     $templateRepo = new \App\Database\PendenzaTemplateRepository();
-                    $templates = $templateRepo->findAllAssignedToUser($idDominio, (int)$_SESSION['user']['id']);
+                    $templates = $templateRepo->findAllByDominioForUser($idDominio, (int)$_SESSION['user']['id']);
                 } catch (\Throwable $e) {}
             }
             return $this->twig->render($response, 'pendenze/inserimento.html.twig', [
@@ -365,7 +279,7 @@ class PendenzeController
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
                     $templateRepo = new \App\Database\PendenzaTemplateRepository();
-                    $templates = $templateRepo->findAllAssignedToUser($idDominio, (int)$_SESSION['user']['id']);
+                    $templates = $templateRepo->findAllByDominioForUser($idDominio, (int)$_SESSION['user']['id']);
                 } catch (\Throwable $e) {}
             }
             return $this->twig->render($response, 'pendenze/inserimento.html.twig', [
@@ -399,7 +313,7 @@ class PendenzeController
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
                     $templateRepo = new \App\Database\PendenzaTemplateRepository();
-                    $templates = $templateRepo->findAllAssignedToUser($idDominio, (int)$_SESSION['user']['id']);
+                    $templates = $templateRepo->findAllByDominioForUser($idDominio, (int)$_SESSION['user']['id']);
                 } catch (\Throwable $e) {}
             }
                 return $this->twig->render($response, 'pendenze/inserimento.html.twig', [
@@ -437,7 +351,7 @@ class PendenzeController
                 if ($idDominio && isset($_SESSION['user']['id'])) {
                     try {
                         $templateRepo = new \App\Database\PendenzaTemplateRepository();
-                        $templates = $templateRepo->findAllAssignedToUser($idDominio, (int)$_SESSION['user']['id']);
+                        $templates = $templateRepo->findAllByDominioForUser($idDominio, (int)$_SESSION['user']['id']);
                     } catch (\Throwable $e) {}
                 }
                 return $this->twig->render($response, 'pendenze/inserimento.html.twig', [
@@ -484,17 +398,17 @@ class PendenzeController
             // Notifiche email + App IO
             $notifResult = $this->sendCreationNotifications(
                 (string)($newId ?? ''),
-                $email ?? '',
-                $anagrafica ?? '',
-                $identificativo ?? '',
-                $tipoSog ?? 'F',
+                $email,
+                $anagrafica,
+                $identificativo,
+                $tipoSog,
                 [
                     'causale'         => $causale,
                     'importo'         => $importo,
                     'iuv'             => $iuvFromResponse,
                     'numeroAvviso'    => $numeroAvvisoFromResponse,
                     'dataScadenza'    => $params['dataScadenza'] ?? null,
-                    'idTipoPendenza'  => $idTipo ?? '',
+                    'idTipoPendenza'  => $idTipo,
                 ],
                 $request
             );
@@ -539,7 +453,7 @@ class PendenzeController
             if ($idDominio && isset($_SESSION['user']['id'])) {
                 try {
                     $templateRepo = new \App\Database\PendenzaTemplateRepository();
-                    $templates = $templateRepo->findAllAssignedToUser($idDominio, (int)$_SESSION['user']['id']);
+                    $templates = $templateRepo->findAllByDominioForUser($idDominio, (int)$_SESSION['user']['id']);
                 } catch (\Throwable $e) {}
             }
             return $this->twig->render($response, 'pendenze/inserimento.html.twig', [
@@ -1719,7 +1633,6 @@ class PendenzeController
             $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Rate create con successo'];
             // Fallback: preview multi-rate document
             $loc = '/pendenze/multirata/preview';
-            if (!empty($created[0])) $loc .= '?id=' . rawurlencode($created[0]);
             return $response->withHeader('Location', $loc)->withStatus(302);
         }
     }
@@ -2489,7 +2402,7 @@ class PendenzeController
     private function computeCfBlock(string $value, bool $isName): string
     {
         $ascii = $this->normalizeAsciiUpper($value);
-        $filtered = preg_replace('/[^A-Z]/', '', $ascii ?? '') ?? '';
+        $filtered = preg_replace('/[^A-Z]/', '', $ascii) ?? '';
         $consonants = preg_replace('/[AEIOU]/', '', $filtered);
         $vowels = preg_replace('/[^AEIOU]/', '', $filtered);
         $block = '';
@@ -4077,6 +3990,7 @@ class PendenzeController
             }
 
             // 4) Non inviare idPendenza/idA2A nel body (sono nell'URL)
+            // @phpstan-ignore-next-line unset.offset (idPendenza/idA2A non sono in $allowedKeys quindi $put non li contiene mai per costruzione: unset difensivo, no-op voluto a protezione di futuri cambi ad $allowedKeys)
             unset($put['idPendenza'], $put['idA2A']);
             // Assicura idDominio popolato: obbligatorio per PendenzaPut
             if (empty($put['idDominio'])) {
@@ -4251,11 +4165,10 @@ class PendenzeController
     }
 
     /**
-     * Aggiunge i dati di una notifica ai datiAllegati della pendenza.
-     * 
-     * @param string $idPendenza ID della pendenza
-     * @param array $notificationData Dati della notifica (timestamp, esito, destinatario, canale)
-     * @return bool True se l'aggiornamento è riuscito
+     * Estrae IUV e numero avviso dalla risposta GovPay, provando piu' chiavi/percorsi possibili.
+     *
+     * @param array $response Risposta GovPay (creazione/lettura pendenza)
+     * @return array{0: string, 1: string} Coppia [iuv, numeroAvviso], stringa vuota se non trovato
      */
     public function extractIuvAndNumeroAvviso(array $response): array
     {
@@ -4625,7 +4538,7 @@ class PendenzeController
         }
 
         // Path assoluto nel filesystem del container
-        if ($logoSrc[0] !== '/' && preg_match('/^[A-Za-z]:[\\\/]/', $logoSrc) !== 1) {
+        if ($logoSrc[0] !== '/' && preg_match('/^[A-Za-z]:[\\\\\/]/', $logoSrc) !== 1) {
             return '';
         }
 
@@ -5118,6 +5031,7 @@ class PendenzeController
             }
             
             // 4) Rimuovi campi non consentiti nel body
+            // @phpstan-ignore-next-line unset.offset (idPendenza/idA2A non sono in $allowedKeys quindi $put non li contiene mai per costruzione: unset difensivo, no-op voluto a protezione di futuri cambi ad $allowedKeys)
             unset($put['idPendenza'], $put['idA2A']);
             
             // 5) Assicura che idDominio sia presente (obbligatorio)

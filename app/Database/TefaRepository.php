@@ -428,7 +428,7 @@ class TefaRepository
 
     /**
      * Righe dettagliate per-IUR (per export CSV), JOIN con flussi_rendicontazioni.
-     * @return array<int,array<string,mixed>>
+     * @return \Generator<int,array<string,mixed>>
      */
     public function getDetailedRows(string $dataDa, string $dataA, string $idDominio): \Generator
     {

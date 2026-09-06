@@ -19,20 +19,44 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
 
-      - name: Run Semgrep
+      # --exclude-rule: 2 regole del motore "generic" (non capisce la sintassi Twig, opera per
+      # pattern testuali) verificate a mano come rumore puro su questo repo (2026-09-06) — zero
+      # match genuini in tutto il codebase (grep su tutti i template: nessun attributo HTML
+      # realmente non quotato, nessun href costruito senza escaping — Twig autoescape e' sempre
+      # attivo, mai disabilitato, ogni {{ var }} in un attributo e' dentro virgolette). Le regole
+      # scattavano su testo dentro tag <span>/<div> scambiato per attributi dal motore generic.
+      - name: Run Semgrep (diff-aware, bloccante) · pull_request
+        if: github.event_name == 'pull_request'
         run: |
           semgrep scan \
             --config p/php \
             --config p/owasp-top-ten \
             --config p/security-audit \
             --config p/secrets \
+            --exclude-rule generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var \
+            --exclude-rule generic.html-templates.security.var-in-href.var-in-href \
+            --baseline-commit "${{ github.event.pull_request.base.sha }}" \
             --sarif --output=semgrep.sarif \
-            --error || true
+            --error
+
+      - name: Run Semgrep (scan completo, report-only) · push/schedule
+        if: github.event_name != 'pull_request'
+        run: |
+          semgrep scan \
+            --config p/php \
+            --config p/owasp-top-ten \
+            --config p/security-audit \
+            --config p/secrets \
+            --exclude-rule generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var \
+            --exclude-rule generic.html-templates.security.var-in-href.var-in-href \
+            --sarif --output=semgrep.sarif
 
       - name: Upload SARIF to GH Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         if: always()
         with:
           sarif_file: semgrep.sarif

@@ -96,7 +96,7 @@ class ValidationService
     private static function cfBlockFromString(string $str, bool $isName): string
     {
         $s = strtoupper(self::normalizeAscii($str));
-        $s = preg_replace('/[^A-Z]/', '', $s ?? '') ?? '';
+        $s = preg_replace('/[^A-Z]/', '', $s) ?? '';
         $consonants = preg_replace('/[AEIOU]/', '', $s);
         $vowels = preg_replace('/[^AEIOU]/', '', $s);
         $block = '';

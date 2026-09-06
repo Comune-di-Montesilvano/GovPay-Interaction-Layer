@@ -222,5 +222,9 @@ return (function (): array {
     // current_user is populated per-request by CurrentPathMiddleware to ensure
     // session is started and DB enrichment (if needed) can run safely.
 
+    // Falso positivo noto: Slim\App e' generico su TContainerInterface ma il template non e'
+    // dichiarato covariante (https://phpstan.org/blog/whats-up-with-template-covariant) — stesso
+    // identico tipo riportato sia come atteso sia come effettivo nel messaggio d'errore.
+    // @phpstan-ignore-next-line return.type
     return [$app, $twig];
 })();

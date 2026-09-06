@@ -255,7 +255,7 @@ return function (App $app, Twig $twig): void {
     });
 
     // GovPay Status check per backoffice badge (AJAX)
-    $app->get('/api/govpay/status', function(Request $request, Response $response) use ($twig): Response {
+    $app->get('/api/govpay/status', function(Request $request, Response $response): Response {
         $res = \App\Services\GovPayClientFactory::checkGovPayStatusCached(30);
         $response->getBody()->write(json_encode([
             'success' => true,
@@ -358,12 +358,6 @@ return function (App $app, Twig $twig): void {
     $app->post('/impostazioni/rendicontazione/regole/{id}/delete', function(Request $request, Response $response, array $args) use ($twig): Response {
         $controller = new \App\Controllers\RendicontazioneController($twig);
         return $controller->eliminaRegolaEsterna($request, $response, $args);
-    });
-
-    // Pendenze
-    $app->any('/pendenze', function(Request $request, Response $response) use ($twig): Response {
-        $controller = new PendenzeController($twig);
-        return $controller->index($request, $response);
     });
 
     $app->get('/pendenze/ricerca', function(Request $request, Response $response) use ($twig): Response {
@@ -1296,7 +1290,7 @@ return function (App $app, Twig $twig): void {
         });
 
         // Simple session diagnostic (only in debug)
-        $app->get('/_diag/session', function($request, $response) use ($twig) {
+        $app->get('/_diag/session', function($request, $response) {
             $sess = session_status() === PHP_SESSION_ACTIVE ? ($_SESSION ?? []) : null;
             $payload = [
                 'session_active' => session_status() === PHP_SESSION_ACTIVE,
@@ -1308,7 +1302,7 @@ return function (App $app, Twig $twig): void {
         });
 
         // Debug helper: login as seeded superadmin (only in debug)
-        $app->get('/_diag/login-as-admin', function($request, $response) use ($twig) {
+        $app->get('/_diag/login-as-admin', function($request, $response) {
             try {
                 $repo = new UserRepository();
                 $user = $repo->findByEmail('admin@example.com');

@@ -388,7 +388,11 @@
 
 {% block scripts %}
 {{ parent() }}
+{# type="application/json" (mai eseguito come JS) + json_encode PHP default: escapa '/' come
+   '\/' (JSON_UNESCAPED_SLASHES non usato) — un valore contenente "</script>" diventa "<\/script>",
+   sequenza che non chiude il tag: pattern standard sicuro per embeddare JSON in una pagina. #}
 <script id="service-options-data" type="application/json">
+  {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag #}
   {{ service_options|json_encode|raw }}
 </script>
 <script>

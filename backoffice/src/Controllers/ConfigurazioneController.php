@@ -1069,7 +1069,7 @@ class ConfigurazioneController
                                 $registerTipologiaCode($extractValue($tipoEntrataPayload, ['idEntrata', 'id_entrata']));
                             }
                         }
-                        if ($idDominioEnv !== '' && isset($idDominio)) {
+                        if ($idDominioEnv !== '') {
                             try {
                                 $repoEntr   = new EntrateRepository();
                                 foreach ($entrateRows as $row) { $repoEntr->upsertFromBackoffice($idDominio, $row); }
@@ -1913,11 +1913,13 @@ class ConfigurazioneController
                 'abilitato' => $enable,
             ]);
             if ($ibanAccredito === '-') {
+                // @phpstan-ignore-next-line offsetAssign.dimType (EntrataPost implementa ArrayAccess<string,mixed>: bypass intenzionale del setter tipizzato per azzerare esplicitamente il campo, i setter non accettano null)
                 $body['iban_accredito'] = null;
             } else {
                 $body->setIbanAccredito($ibanAccredito);
             }
             if ($ibanAppoggio === '-') {
+                // @phpstan-ignore-next-line offsetAssign.dimType (EntrataPost implementa ArrayAccess<string,mixed>: bypass intenzionale del setter tipizzato per azzerare esplicitamente il campo, i setter non accettano null)
                 $body['iban_appoggio'] = null;
             } else {
                 $body->setIbanAppoggio($ibanAppoggio);
@@ -2744,6 +2746,7 @@ class ConfigurazioneController
                         }
 
                         if ($finalIbanAccredito === '-') {
+                            // @phpstan-ignore-next-line offsetAssign.dimType (EntrataPost implementa ArrayAccess<string,mixed>: bypass intenzionale del setter tipizzato per azzerare esplicitamente il campo, i setter non accettano null)
                             $body['iban_accredito'] = null;
                         } else {
                             $body->setIbanAccredito($finalIbanAccredito);
@@ -2756,6 +2759,7 @@ class ConfigurazioneController
                         }
 
                         if ($finalIbanAppoggio === '-') {
+                            // @phpstan-ignore-next-line offsetAssign.dimType (EntrataPost implementa ArrayAccess<string,mixed>: bypass intenzionale del setter tipizzato per azzerare esplicitamente il campo, i setter non accettano null)
                             $body['iban_appoggio'] = null;
                         } else {
                             $body->setIbanAppoggio($finalIbanAppoggio);

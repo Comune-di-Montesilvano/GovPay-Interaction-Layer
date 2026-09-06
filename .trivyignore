@@ -8,6 +8,21 @@
 # v1.5.67, nessuna versione mariadb (11/11.4/11.8/12/12.1/latest) o php:8.5-*
 # disponibile con fix.
 
+# --- DS-0002 "Image user should not be root" (misconfig Dockerfile, entrambi i Dockerfile
+# di questo repo) — falso positivo verificato 2026-09-06: entrambe le immagini base fanno
+# drop privilegi INTERNAMENTE nel proprio entrypoint ufficiale, root nel Dockerfile e'
+# necessario per quel meccanismo, non un bug:
+# - mariadb:12 (docker/db/Dockerfile): l'entrypoint fa `chown mysql:` sul datadir (serve
+#   root per chownare un volume appena montato) poi droppa a `mysql` via gosu — verificato
+#   dal vivo (log boot: "Switching to dedicated user 'mysql'").
+# - php:8.5-apache-trixie (Dockerfile): il master process Apache parte come root (necessario
+#   per bindare la porta privilegiata 443) ma i worker che eseguono davvero il codice PHP
+#   girano come www-data (APACHE_RUN_USER/APACHE_RUN_GROUP in /etc/apache2/envvars,
+#   verificato nell'immagine base) — pattern standard di tutte le immagini *-apache ufficiali.
+# Aggiungere uno USER esplicito romperebbe entrambi i meccanismi (mariadb non potrebbe piu'
+# chownare il datadir al primo avvio; Apache non potrebbe bindare la porta).
+DS-0002
+
 # --- db (mariadb:11): gosu vendored da docker-library/mariadb, Go stdlib
 # datata (v1.24.6). Nessun mariadb tag pubblicato con gosu aggiornato.
 CVE-2025-68121

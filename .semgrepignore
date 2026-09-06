@@ -1,0 +1,6 @@
+# Spec OpenAPI generate/vendorizzate delle API esterne (GovPay/pagoPA) — descrivono il
+# security scheme REALE dell'API di terze parti (es. basic auth su alcuni endpoint GovPay,
+# verificato: e' il contratto documentato dell'API upstream, non una nostra configurazione
+# di sicurezza). Non file sorgente scritti da questo progetto.
+govpay-clients/
+pagopa-clients/

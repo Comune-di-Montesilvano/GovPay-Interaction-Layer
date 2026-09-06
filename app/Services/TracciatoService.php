@@ -426,7 +426,7 @@ class TracciatoService
                                         'body' => $resBody,
                                         'exception' => (string)$reason,
                                     ]);
-                                    return \GuzzleHttp\Promise\rejection_for($reason);
+                                    return \GuzzleHttp\Promise\Create::rejectionFor($reason);
                                 }
                             );
                         };

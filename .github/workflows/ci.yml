@@ -15,7 +15,7 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
 
       - name: Debug struttura client generati
@@ -33,14 +33,14 @@ jobs:
 
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.5'
           extensions: mbstring, pdo_mysql, intl, zip
           coverage: xdebug
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: vendor
           key: composer-${{ hashFiles('composer.lock') }}
@@ -52,9 +52,12 @@ jobs:
       - name: Composer audit (known vulnerable deps)
         run: composer audit --no-dev
 
+      - name: PHPStan (static analysis, baseline su debito esistente)
+        run: vendor/bin/phpstan analyse --memory-limit=1G
+
       - name: Cache DB image
         id: db-image-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/docker-cache
           key: docker-db-${{ hashFiles('docker/db/Dockerfile', 'docker/db-init/**') }}
@@ -77,7 +80,7 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db
 
       - name: Run tests
-        run: vendor/bin/phpunit --coverage-text || echo "No tests found"
+        run: vendor/bin/phpunit --coverage-text
 
       - name: Ferma i container
         if: always()
@@ -89,10 +92,10 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Trivy filesystem scan (vuln + secrets + misconfig)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -100,11 +103,15 @@ jobs:
           format: sarif
           output: trivy-fs-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: 0
+          # Bloccante (coerente con docker-publish.yml): un secret/misconfig/vuln
+          # CRITICAL-HIGH nel sorgente non deve passare silenziosamente.
+          exit-code: 1
+          ignore-unfixed: true
           limit-severities-for-sarif: true
+          trivyignores: ${{ github.workspace }}/.trivyignore
 
       - name: Upload Trivy results to GH Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         if: always()
         with:
           sarif_file: trivy-fs-results.sarif

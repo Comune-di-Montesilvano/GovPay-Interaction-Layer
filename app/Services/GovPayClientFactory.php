@@ -194,7 +194,7 @@ class GovPayClientFactory
                         }
                         return $response;
                     },
-                    static function ($reason) use ($cbFile, $request, $maxFailures) {
+                    static function ($reason) use ($cbFile, $maxFailures) {
                         $isNetworkError = false;
                         if ($reason instanceof \GuzzleHttp\Exception\ConnectException) {
                             $isNetworkError = true;

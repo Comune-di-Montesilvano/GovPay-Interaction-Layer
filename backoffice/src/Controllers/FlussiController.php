@@ -675,7 +675,7 @@ class FlussiController
                     }
                 }
             } catch (\Throwable $ex) {
-                \App\Services\Logger::getInstance()->warning("Impossibile recuperare dettagli flusso {$idFlusso} da GovPay per regolarizzazione manuale: " . $ex->getMessage());
+                \App\Logger::getInstance()->warning("Impossibile recuperare dettagli flusso {$idFlusso} da GovPay per regolarizzazione manuale: " . $ex->getMessage());
             }
 
             // Fallback locale se non trovato o nullo

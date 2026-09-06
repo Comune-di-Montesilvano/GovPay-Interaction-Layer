@@ -867,6 +867,7 @@ class BackupController
             throw new \RuntimeException("Impossibile aprire il dump compresso per il ripristino.");
         }
 
+        $pdo = null;
         try {
             $pdo = Connection::getPDO();
             $pdo->exec("SET FOREIGN_KEY_CHECKS=0; SET autocommit=0;");
@@ -901,7 +902,9 @@ class BackupController
 
             $pdo->exec("COMMIT; SET autocommit=1; SET FOREIGN_KEY_CHECKS=1;");
         } catch (\Throwable $e) {
-            try { $pdo->exec("ROLLBACK; SET autocommit=1; SET FOREIGN_KEY_CHECKS=1;"); } catch (\Throwable $_) {}
+            if ($pdo instanceof \PDO) {
+                try { $pdo->exec("ROLLBACK; SET autocommit=1; SET FOREIGN_KEY_CHECKS=1;"); } catch (\Throwable $_) {}
+            }
             throw new \RuntimeException("Ripristino DB fallito: " . $e->getMessage(), 0, $e);
         } finally {
             @gzclose($gz);
