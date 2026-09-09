@@ -16,9 +16,27 @@ class Connection
     public static function getPDO(): PDO
     {
         if (self::$pdo instanceof PDO) {
-            return self::$pdo;
+            try {
+                // Ping leggero: rileva connessione stale (es. riavvio del container db
+                // mentre questo processo la teneva aperta -> "MySQL server has gone away").
+                self::$pdo->query('SELECT 1');
+                return self::$pdo;
+            } catch (PDOException $e) {
+                self::$pdo = null;
+            }
         }
 
+        return self::connect();
+    }
+
+    /**
+     * Apre una nuova connessione con retry/backoff: assorbe la race di avvio tra
+     * container app e container db (db non ancora pronto ad accettare connessioni
+     * quando il container GIL riparte), oltre alle disconnessioni causate da un
+     * riavvio del db a runtime.
+     */
+    private static function connect(int $maxAttempts = 5): PDO
+    {
         $host   = getenv('DB_HOST') ?: ConfigLoader::get('db.host', 'db');
         $port   = getenv('DB_PORT') ?: ConfigLoader::get('db.port', '3306');
         $dbname = getenv('DB_NAME') ?: ConfigLoader::get('db.name', 'govpay');
@@ -31,13 +49,22 @@ class Connection
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ];
-        try {
-            self::$pdo = new PDO($dsn, $user, $pass, $options);
-            // Ensure utf8mb4
-            self::$pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-            return self::$pdo;
-        } catch (PDOException $e) {
-            throw $e;
+
+        $attempt = 0;
+        while (true) {
+            $attempt++;
+            try {
+                self::$pdo = new PDO($dsn, $user, $pass, $options);
+                self::$pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+                return self::$pdo;
+            } catch (PDOException $e) {
+                if ($attempt >= $maxAttempts) {
+                    throw $e;
+                }
+                $baseDelayMs = 100 * (1 << ($attempt - 1));
+                $jitterMs    = random_int(0, 100);
+                usleep((int)min(2000, $baseDelayMs + $jitterMs) * 1000);
+            }
         }
     }
 
