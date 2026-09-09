@@ -360,6 +360,12 @@ return function (App $app, Twig $twig): void {
         return $controller->eliminaRegolaEsterna($request, $response, $args);
     });
 
+    // Creazione pendenza: submit finale dal form conferma (bottone "Conferma e crea")
+    $app->post('/pendenze', function (Request $request, Response $response) use ($twig): Response {
+        $controller = new PendenzeController($twig);
+        return $controller->create($request, $response);
+    });
+
     $app->get('/pendenze/ricerca', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);
         return $controller->search($request, $response);
