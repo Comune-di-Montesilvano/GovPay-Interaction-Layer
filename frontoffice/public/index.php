@@ -4673,6 +4673,12 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
     ]);
 
     if (!$cartResult['success']) {
+        // Stato business (avviso gia' pagato/in corso/annullato), non un errore: niente Sentry.
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
+            return;
+        }
         Logger::getInstance()->warning('Checkout spontaneo: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
@@ -4823,12 +4829,13 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
     ]);
 
     if (!$cartResult['success']) {
-        Logger::getInstance()->warning('Checkout avviso: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
+        // Stato business (avviso gia' pagato/in corso/annullato), non un errore: niente Sentry.
         if ((int)($cartResult['error_status'] ?? 0) === 409) {
             http_response_code(409);
             echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
             return;
         }
+        Logger::getInstance()->warning('Checkout avviso: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
@@ -4955,6 +4962,12 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
     ]);
 
     if (!$cartResult['success']) {
+        // Stato business (avviso gia' pagato/in corso/annullato), non un errore: niente Sentry.
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
+            return;
+        }
         Logger::getInstance()->warning('Checkout pendenza/profilo: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
@@ -5148,6 +5161,12 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     ]);
 
     if (!$cartResult['success']) {
+        // Stato business (una o piu' pendenze gia' pagate/in corso/annullate), non un errore: niente Sentry.
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Una o più pendenze nel carrello non sono più disponibili per il pagamento: potrebbero essere state pagate, avere un pagamento in corso, o essere state annullate. Controlla il carrello e riprova.';
+            return;
+        }
         Logger::getInstance()->warning('Carrello: risposta errore dal backoffice API', [
             'idCart'  => $idCart,
             'message' => $cartResult['message'],
