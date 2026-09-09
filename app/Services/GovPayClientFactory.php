@@ -25,8 +25,10 @@ class GovPayClientFactory
     /**
      * Client HTTP per chiamate raw verso GovPay Backoffice v1.
      *
-     * Include: TLS v1.2 forzato, Connection:close, retry automatico su cURL 35
-     * (backoff esponenziale con jitter, max 5 tentativi, 0–2000 ms).
+     * Include: TLS v1.2 forzato, Connection:close, retry automatico su cURL 35/28/56
+     * (backoff esponenziale con jitter, max 5 tentativi, 0–2000 ms). 28 (timeout) e
+     * 56 (connection reset) sono transitori tipici al riavvio dei container (GovPay
+     * o rete non ancora pronti), oltre al TLS handshake instabile di 35.
      *
      * @param array $extra Opzioni Guzzle aggiuntive (es. auth, headers specifici)
      */
@@ -78,29 +80,36 @@ class GovPayClientFactory
             }
         ));
 
-        $maxTlsRetries = 5;
+        $maxNetworkRetries = 5;
         $handlerStack->push(Middleware::retry(
-            function (int $retries, $request, $response = null, $exception = null) use ($maxTlsRetries): bool {
+            function (int $retries, $request, $response = null, $exception = null) use ($maxNetworkRetries): bool {
                 if (!$exception instanceof RequestException) {
                     return false;
                 }
                 $context = $exception->getHandlerContext();
                 $errno   = (int)($context['errno'] ?? 0);
                 $message = strtolower($exception->getMessage());
-                $isTlsError = $errno === 35 || str_contains($message, 'curl error 35');
-                if (!$isTlsError) {
+                // 35 = TLS handshake, 28 = timeout, 56 = connection reset by peer.
+                // Tutti transitori tipici al riavvio dei container (GovPay/rete non
+                // ancora pronti), non errori applicativi reali.
+                $retryableErrnos = [35, 28, 56];
+                $isRetryable = in_array($errno, $retryableErrnos, true)
+                    || str_contains($message, 'curl error 35')
+                    || str_contains($message, 'curl error 28')
+                    || str_contains($message, 'curl error 56');
+                if (!$isRetryable) {
                     return false;
                 }
-                if ($retries >= $maxTlsRetries) {
+                if ($retries >= $maxNetworkRetries) {
                     Logger::getInstance()->error(sprintf(
-                        'GovPay TLS error after %d retries (errno %s): %s',
-                        $maxTlsRetries, $errno ?: 'n/a', $exception->getMessage()
+                        'GovPay network error after %d retries (errno %s): %s',
+                        $maxNetworkRetries, $errno ?: 'n/a', $exception->getMessage()
                     ));
                     return false;
                 }
                 Logger::getInstance()->warning(sprintf(
-                    'Retry GovPay call after TLS error (attempt %d/%d, errno %s)',
-                    $retries + 1, $maxTlsRetries, $errno ?: 'n/a'
+                    'Retry GovPay call after network error (attempt %d/%d, errno %s)',
+                    $retries + 1, $maxNetworkRetries, $errno ?: 'n/a'
                 ));
                 return true;
             },
