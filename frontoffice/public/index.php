@@ -3084,23 +3084,8 @@ if ($spidCallbackPath === '' || $spidCallbackPath[0] !== '/') {
 }
 $spidCallbackUrl = $frontofficeBaseUrl !== '' ? ($frontofficeBaseUrl . $spidCallbackPath) : '';
 
-// Validate CSRF token for all POST requests, excluding the SAML assertion callback path.
-if ($method === 'POST' && $normalizedPath !== $spidCallbackPath) {
-    $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
-    if (!frontoffice_csrf_validate($csrfToken)) {
-        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
-            'path' => $normalizedPath,
-            'ip' => frontoffice_client_ip(),
-            'received_token' => $csrfToken,
-            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
-            'session_id' => session_id(),
-            'session_status' => session_status(),
-        ]);
-        http_response_code(403);
-        echo 'Forbidden (CSRF token missing or invalid)';
-        return;
-    }
-}
+// CSRF token validation spostata dopo la definizione di $routes (vedi sotto): serve a
+// riconoscere le route reali ed escludere i probe bot su path inesistenti dal rumore Sentry.
 
 $routes = [
     '/' => static function () use ($serviceCatalog): array {
@@ -4280,6 +4265,36 @@ $routes = [
     },
 ];
 
+// Validate CSRF token for POST requests su route reali, escludendo il callback SAML.
+// Path non riconosciuti (probe bot su endpoint WordPress/PHP inesistenti tipo /wp-login.php,
+// /xmlrpc.php) saltano la validazione e cadono nel normale flusso di routing, che finira'
+// comunque in 404 poco sotto — niente log/Sentry per rumore che non e' mai stata una richiesta reale.
+$frontofficeKnownPostPaths = array_merge(array_keys($routes), [
+    '/carrello/checkout',
+    '/carrello/aggiungi-multiplo',
+    '/carrello/aggiungi',
+    '/carrello/rimuovi',
+]);
+if (
+    $method === 'POST'
+    && $normalizedPath !== $spidCallbackPath
+    && in_array($normalizedPath, $frontofficeKnownPostPaths, true)
+) {
+    $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+    if (!frontoffice_csrf_validate($csrfToken)) {
+        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
+            'path' => $normalizedPath,
+            'ip' => frontoffice_client_ip(),
+            'received_token' => $csrfToken,
+            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
+            'session_id' => session_id(),
+            'session_status' => session_status(),
+        ]);
+        http_response_code(403);
+        echo 'Forbidden (CSRF token missing or invalid)';
+        return;
+    }
+}
 
 $routeDefinition = null;
 

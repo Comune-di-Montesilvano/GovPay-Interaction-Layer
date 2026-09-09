@@ -113,6 +113,10 @@ class Logger
                 if ($context) {
                     $scope->setExtra('context', $context);
                 }
+                // Fingerprint esplicito su livello+messaggio: senza eccezione lo stacktrace
+                // di cattura puo' variare (autoload, container id) e spezzare il grouping
+                // di default in issue diversi per lo stesso identico messaggio.
+                $scope->setFingerprint(['logger-message', $level, $message]);
                 \Sentry\captureMessage($message, $level === 'error' ? Severity::error() : Severity::warning());
             });
         } catch (\Throwable $_) {
