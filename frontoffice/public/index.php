@@ -3084,23 +3084,8 @@ if ($spidCallbackPath === '' || $spidCallbackPath[0] !== '/') {
 }
 $spidCallbackUrl = $frontofficeBaseUrl !== '' ? ($frontofficeBaseUrl . $spidCallbackPath) : '';
 
-// Validate CSRF token for all POST requests, excluding the SAML assertion callback path.
-if ($method === 'POST' && $normalizedPath !== $spidCallbackPath) {
-    $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
-    if (!frontoffice_csrf_validate($csrfToken)) {
-        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
-            'path' => $normalizedPath,
-            'ip' => frontoffice_client_ip(),
-            'received_token' => $csrfToken,
-            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
-            'session_id' => session_id(),
-            'session_status' => session_status(),
-        ]);
-        http_response_code(403);
-        echo 'Forbidden (CSRF token missing or invalid)';
-        return;
-    }
-}
+// CSRF token validation spostata dopo la definizione di $routes (vedi sotto): serve a
+// riconoscere le route reali ed escludere i probe bot su path inesistenti dal rumore Sentry.
 
 $routes = [
     '/' => static function () use ($serviceCatalog): array {
@@ -4280,6 +4265,36 @@ $routes = [
     },
 ];
 
+// Validate CSRF token for POST requests su route reali, escludendo il callback SAML.
+// Path non riconosciuti (probe bot su endpoint WordPress/PHP inesistenti tipo /wp-login.php,
+// /xmlrpc.php) saltano la validazione e cadono nel normale flusso di routing, che finira'
+// comunque in 404 poco sotto — niente log/Sentry per rumore che non e' mai stata una richiesta reale.
+$frontofficeKnownPostPaths = array_merge(array_keys($routes), [
+    '/carrello/checkout',
+    '/carrello/aggiungi-multiplo',
+    '/carrello/aggiungi',
+    '/carrello/rimuovi',
+]);
+if (
+    $method === 'POST'
+    && $normalizedPath !== $spidCallbackPath
+    && in_array($normalizedPath, $frontofficeKnownPostPaths, true)
+) {
+    $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+    if (!frontoffice_csrf_validate($csrfToken)) {
+        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
+            'path' => $normalizedPath,
+            'ip' => frontoffice_client_ip(),
+            'received_token' => $csrfToken,
+            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
+            'session_id' => session_id(),
+            'session_status' => session_status(),
+        ]);
+        http_response_code(403);
+        echo 'Forbidden (CSRF token missing or invalid)';
+        return;
+    }
+}
 
 $routeDefinition = null;
 
@@ -4658,6 +4673,12 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-spontaneo/checkout') {
     ]);
 
     if (!$cartResult['success']) {
+        // Stato business (avviso gia' pagato/in corso/annullato), non un errore: niente Sentry.
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
+            return;
+        }
         Logger::getInstance()->warning('Checkout spontaneo: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
@@ -4808,12 +4829,13 @@ if ($method === 'GET' && $normalizedPath === '/pagamento-avviso/checkout') {
     ]);
 
     if (!$cartResult['success']) {
-        Logger::getInstance()->warning('Checkout avviso: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
+        // Stato business (avviso gia' pagato/in corso/annullato), non un errore: niente Sentry.
         if ((int)($cartResult['error_status'] ?? 0) === 409) {
             http_response_code(409);
             echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
             return;
         }
+        Logger::getInstance()->warning('Checkout avviso: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
         return;
@@ -4940,6 +4962,12 @@ if ($method === 'GET' && preg_match('#^/pendenze/([^/]+)/checkout$#', $normalize
     ]);
 
     if (!$cartResult['success']) {
+        // Stato business (avviso gia' pagato/in corso/annullato), non un errore: niente Sentry.
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Questo avviso non è disponibile per il pagamento al momento: potrebbe essere già stato pagato, avere un pagamento in corso, o essere stato annullato. Se hai avviato un pagamento di recente attendi qualche minuto e ricontrolla nella tua area personale prima di riprovare.';
+            return;
+        }
         Logger::getInstance()->warning('Checkout pendenza/profilo: errore backoffice sidecar', ['idPendenza' => $idPendenza, 'message' => $cartResult['message']]);
         http_response_code(503);
         echo 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.';
@@ -5133,6 +5161,12 @@ if ($method === 'POST' && $normalizedPath === '/carrello/checkout') {
     ]);
 
     if (!$cartResult['success']) {
+        // Stato business (una o piu' pendenze gia' pagate/in corso/annullate), non un errore: niente Sentry.
+        if ((int)($cartResult['error_status'] ?? 0) === 409) {
+            http_response_code(409);
+            echo 'Una o più pendenze nel carrello non sono più disponibili per il pagamento: potrebbero essere state pagate, avere un pagamento in corso, o essere state annullate. Controlla il carrello e riprova.';
+            return;
+        }
         Logger::getInstance()->warning('Carrello: risposta errore dal backoffice API', [
             'idCart'  => $idCart,
             'message' => $cartResult['message'],
