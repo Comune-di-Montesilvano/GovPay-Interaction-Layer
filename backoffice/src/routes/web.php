@@ -360,6 +360,12 @@ return function (App $app, Twig $twig): void {
         return $controller->eliminaRegolaEsterna($request, $response, $args);
     });
 
+    // Creazione pendenza: submit finale dal form conferma (bottone "Conferma e crea")
+    $app->post('/pendenze', function (Request $request, Response $response) use ($twig): Response {
+        $controller = new PendenzeController($twig);
+        return $controller->create($request, $response);
+    });
+
     $app->get('/pendenze/ricerca', function(Request $request, Response $response) use ($twig): Response {
         $controller = new PendenzeController($twig);
         return $controller->search($request, $response);
@@ -1233,6 +1239,11 @@ return function (App $app, Twig $twig): void {
         bool $logErrors,
         bool $logErrorDetails
     ) use ($twig) : Response {
+        // Captura su Sentry solo per sessioni operatore loggate: 404 anonimi (bot/scan)
+        // sono rumore, un 404 con sessione attiva e' regressione reale (link/form rotto).
+        if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['user'])) {
+            \Sentry\captureException($exception);
+        }
         $response = new \Slim\Psr7\Response();
         return $twig->render($response->withStatus(200), 'errors/404.html.twig', [
             'path' => $request->getUri()->getPath()
