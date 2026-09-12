@@ -182,7 +182,7 @@ jobs:
           trivyignores: ${{ github.workspace }}/.trivyignore
 
       - name: Upload Trivy results · ${{ matrix.app }}
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         if: always()
         with:
           sarif_file: trivy-${{ matrix.image_suffix }}.sarif
@@ -267,7 +267,7 @@ jobs:
           trivyignores: ${{ github.workspace }}/.trivyignore
 
       - name: Upload Trivy results · ${{ matrix.image }}
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         if: always()
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
