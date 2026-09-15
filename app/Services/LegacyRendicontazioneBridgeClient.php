@@ -59,6 +59,7 @@ class LegacyRendicontazioneBridgeClient
                 'messaggio' => (string)($data['messaggio'] ?? ''),
             ];
         } catch (\Throwable $e) {
+            \Sentry\captureException($e);
             return ['esito' => false, 'messaggio' => $e->getMessage()];
         }
     }
