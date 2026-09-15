@@ -342,6 +342,16 @@ return function (App $app, Twig $twig): void {
         return $controller->conferma($request, $response);
     });
 
+    // Rendicontazione GovPay — righe ERRORE fuori finestra max_giorni_retry, ritentativo forzato (superadmin)
+    $app->get('/rendicontazione/errori', function(Request $request, Response $response) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->errori($request, $response);
+    });
+    $app->post('/rendicontazione/errori/{id}/forza', function(Request $request, Response $response, array $args) use ($twig): Response {
+        $controller = new \App\Controllers\RendicontazioneController($twig);
+        return $controller->forzaRiga($request, $response, $args);
+    });
+
     // Rendicontazione GovPay — Impostazioni tab (settings + regole esterne CRUD)
     $app->get('/impostazioni/rendicontazione', function(Request $request, Response $response) use ($twig): Response {
         $controller = new \App\Controllers\RendicontazioneController($twig);

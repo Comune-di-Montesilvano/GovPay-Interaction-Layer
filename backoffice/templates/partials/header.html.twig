@@ -107,6 +107,12 @@
           <span class="badge bg-danger rounded-pill text-white" style="font-size: 0.72rem; padding: 0.25em 0.6em;">{{ da_confermare_count }}</span>
         {% endif %}
       </a>
+      {% if is_auth and current_user.role == 'superadmin' %}
+        <a class="bo-nav-item {{ cp == '/rendicontazione/errori' ? 'is-active' : '' }}" href="/rendicontazione/errori">
+          <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+          <span>Rendicontazione — Errori</span>
+        </a>
+      {% endif %}
 
       <div class="bo-nav-section-title">Sistema</div>
 

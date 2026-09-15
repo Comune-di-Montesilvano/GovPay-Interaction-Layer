@@ -139,6 +139,79 @@ class RendicontazioneController
         return $response->withHeader('Location', '/rendicontazione/da-confermare')->withStatus(302);
     }
 
+    public function errori(Request $request, Response $response): Response
+    {
+        $user = $this->requireAuth();
+        $this->requireSuperadmin($user);
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $repo = new RendicontazioneRepository();
+
+        $params = $request->getQueryParams();
+        $page = max(1, (int)($params['page'] ?? 1));
+        $perPage = 25;
+
+        $righe = $repo->getErrore($idDominio, $page, $perPage);
+        $totale = $repo->countErrore($idDominio);
+
+        $flash = $_SESSION['flash'] ?? [];
+        unset($_SESSION['flash']);
+
+        return $this->twig->render($response, 'rendicontazione/errori.html.twig', [
+            'righe'      => $righe,
+            'totale'     => $totale,
+            'page'       => $page,
+            'per_page'   => $perPage,
+            'csrf_token' => $this->generateCsrf(),
+            'flash'      => $flash,
+        ]);
+    }
+
+    /**
+     * Ritenta una singola riga ERRORE bypassando la finestra rendicontazione.max_giorni_retry
+     * (che filtra solo il ciclo automatico cron_rendicontazione_govpay.php). Non tocca
+     * rendicontazione_regolarizzato: se il flusso era già regolarizzato, controllaERegolarizzaFlussoPerRiga()
+     * fa return early su isFlussoRegolarizzato() — nessuna doppia chiamata GovPay regolarizzaIncasso.
+     */
+    public function forzaRiga(Request $request, Response $response, array $args): Response
+    {
+        $user = $this->requireAuth();
+        $this->requireSuperadmin($user);
+
+        if (!$this->validateCsrf($request)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore: token CSRF non valido.'];
+            return $response->withHeader('Location', '/rendicontazione/errori')->withStatus(302);
+        }
+
+        $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
+        $idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
+        $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
+        $geriMaxTentativi = max(1, (int)SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'));
+
+        $repo = new RendicontazioneRepository();
+        $riga = $repo->findById((int)($args['id'] ?? 0));
+
+        if (!$riga || $riga['id_dominio'] !== $idDominio || (int)($riga['is_govpay'] ?? 0) !== 1 || $riga['rendicontazione_stato'] !== 'ERRORE') {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Riga non trovata o non in stato ERRORE.'];
+            return $response->withHeader('Location', '/rendicontazione/errori')->withStatus(302);
+        }
+
+        try {
+            $engine = new RendicontazioneEngineService($repo, new LegacyRendicontazioneBridgeClient(), $this->buildGovPayClient());
+            $engine->processaRigaSpecifica($riga, $idDominio, $idA2A, $backofficeUrl, $geriMaxTentativi, false);
+
+            $esito = $repo->findById((int)$riga['id']);
+            $stato = $esito['rendicontazione_stato'] ?? 'ERRORE';
+            $_SESSION['flash'][] = $stato === 'GESTITO'
+                ? ['type' => 'success', 'text' => "Riga #{$riga['id']} rientrata: GESTITO"]
+                : ['type' => 'warning', 'text' => "Riga #{$riga['id']} ancora in {$stato}: " . (string)($esito['rendicontazione_note'] ?? '')];
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Errore forzatura ritentativo riga rendicontazione', ['id' => $riga['id'], 'error' => $e->getMessage()]);
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Errore durante il ritentativo: ' . $e->getMessage()];
+        }
+
+        return $response->withHeader('Location', '/rendicontazione/errori')->withStatus(302);
+    }
+
     /** Stessa costruzione client usata da scripts/cron_rendicontazione_govpay.php::buildGovPayClientForRendicontazione(). */
     private function buildGovPayClient(): \GuzzleHttp\Client
     {
