@@ -263,6 +263,41 @@ class RendicontazioneRepository
         return (int)$stmt->fetchColumn();
     }
 
+    /**
+     * Righe GovPay in ERRORE, senza filtro finestra data_pagamento (a differenza di
+     * getPendingOrError()) — usata dalla vista "forza ritentativo" per righe
+     * escluse dal ciclo automatico perché fuori da rendicontazione.max_giorni_retry.
+     */
+    public function getErrore(string $idDominio, int $page, int $perPage): array
+    {
+        $offset = max(0, ($page - 1) * $perPage);
+        $limit = max(1, $perPage);
+
+        $stmt = $this->pdo->prepare(
+            "SELECT f.*, COALESCE(e.descrizione_locale, e.descrizione) AS descrizione_tipologia
+             FROM flussi_rendicontazioni f
+             LEFT JOIN entrate_tipologie e ON f.cod_entrata = e.id_entrata AND f.id_dominio = e.id_dominio
+             WHERE f.id_dominio = :dom AND f.is_govpay = 1 AND f.rendicontazione_stato = 'ERRORE'
+             ORDER BY f.data_pagamento ASC
+             LIMIT :limit OFFSET :offset"
+        );
+        $stmt->bindValue(':dom', $idDominio);
+        $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function countErrore(string $idDominio): int
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND is_govpay = 1 AND rendicontazione_stato = 'ERRORE'"
+        );
+        $stmt->execute([':dom' => $idDominio]);
+        return (int)$stmt->fetchColumn();
+    }
+
     /** @param int[] $ids @return int righe aggiornate */
     public function confermaRighe(array $ids, int $userId): int
     {
