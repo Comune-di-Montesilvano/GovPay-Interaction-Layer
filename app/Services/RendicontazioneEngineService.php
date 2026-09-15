@@ -111,7 +111,14 @@ class RendicontazioneEngineService
                 $importo = (float)($pendenza['importo'] ?? 0);
                 $rata = isset($pendenza['documento']['rata']) ? (string)$pendenza['documento']['rata'] : null;
 
-                $esito = $this->bridge->invia($decision->handler, $iuv, $idAtto, $dataPagamento, $importo, $rata);
+                // I gestionali legacy (Geri, Dilazione) indicizzano sul numero avviso completo
+                // (cifra ausiliaria + IUV, 18 cifre) stampato sul bollettino, non sullo IUV
+                // interno breve restituito da GovPay — senza il padding il lookup lato
+                // legacy fallisce silenziosamente ("Rata non trovata").
+                $auxDigit = (string)SettingsRepository::get('entity', 'aux_digit', '3');
+                $iuvAvviso = strlen($iuv) < 18 ? $auxDigit . str_pad($iuv, 17, '0', STR_PAD_LEFT) : $iuv;
+
+                $esito = $this->bridge->invia($decision->handler, $iuvAvviso, $idAtto, $dataPagamento, $importo, $rata);
                 if (!$esito['esito']) {
                     if ($decision->handler === 'GERI') {
                         $this->repo->markErroreGeri($rigaId, "Bridge GERI: " . $esito['messaggio']);
