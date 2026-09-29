@@ -52,3 +52,8 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    # Restiamo su 12.3 LTS: 13.0 e' rolling (EOL community Q4 2026). Rimuovere quando
+    # una 13.x diventa LTS.
+    ignore:
+      - dependency-name: "mariadb"
+        versions: [">= 13.0, < 13.1"]
