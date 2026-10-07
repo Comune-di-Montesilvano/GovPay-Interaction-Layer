@@ -48,10 +48,13 @@ if ($handler === 'GERI') {
     require_once '/var/www/servizi.comune.montesilvano.pe.it/lib/backoffice/connector.php';
     try {
         $arc = new BackOffice();
-        // Nota: il connector legacy non ha un contratto di ritorno affidabile
-        // (vedi geri.php storico) — si considera riuscita l'assenza di eccezioni.
-        $arc->registra_versamento_geri($idAtto, $dataPagamento, number_format($importo, 2, '.', ''), $iuv);
-        rispondi(true, 'Registrato su Geri (best-effort, nessuna verifica esito disponibile)');
+        // Il connector ritorna -1 se ws_portale risponde ERR o vuoto (connessione fallita);
+        // qualsiasi altro valore non e' verificabile, si considera riuscito (best-effort).
+        $esito = $arc->registra_versamento_geri($idAtto, $dataPagamento, number_format($importo, 2, '.', ''), $iuv);
+        if ($esito === -1) {
+            rispondi(false, 'Geri ha risposto ERR o connessione ws_portale fallita');
+        }
+        rispondi(true, 'Registrato su Geri (best-effort, retval: ' . substr(json_encode($esito), 0, 200) . ')');
     } catch (\Throwable $e) {
         rispondi(false, 'Eccezione chiamata Geri: ' . $e->getMessage());
     }
