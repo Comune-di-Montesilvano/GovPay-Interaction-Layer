@@ -120,6 +120,16 @@ class RendicontazioneEngineService
 
                 $esito = $this->bridge->invia($decision->handler, $iuvAvviso, $idAtto, $dataPagamento, $importo, $rata);
                 if (!$esito['esito']) {
+                    // Il bridge risponde HTTP 200 anche su esito negativo (es. "Rata non trovata"):
+                    // nessuna eccezione Guzzle, quindi senza questo log il fallimento resta solo su DB.
+                    Logger::getInstance()->warning("Bridge {$decision->handler} esito negativo: " . $esito['messaggio'], [
+                        'riga_id'     => $rigaId,
+                        'handler'     => $decision->handler,
+                        'iuv'         => $iuv,
+                        'iuv_avviso'  => $iuvAvviso,
+                        'id_pendenza' => $idPendenza,
+                        'id_atto'     => $idAtto,
+                    ]);
                     if ($decision->handler === 'GERI') {
                         $this->repo->markErroreGeri($rigaId, "Bridge GERI: " . $esito['messaggio']);
                     } else {

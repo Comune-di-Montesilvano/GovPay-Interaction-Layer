@@ -43,7 +43,10 @@ final class RendicontazioneRouter
                 continue;
             }
             if ($tipo === 'ID_APP_AGID') {
-                $idApp = strlen($iuv) > 3 ? substr($iuv, 3, 1) : '';
+                // IUV 17 cifre (forma salvata in flussi_rendicontazioni): codice segregazione(2) + id app.
+                // Numero avviso 18 cifre: cifra ausiliaria in testa, id app slitta di una posizione.
+                $pos = strlen($iuv) >= 18 ? 3 : 2;
+                $idApp = strlen($iuv) > $pos ? substr($iuv, $pos, 1) : '';
                 if ($idApp !== $valore) {
                     continue;
                 }

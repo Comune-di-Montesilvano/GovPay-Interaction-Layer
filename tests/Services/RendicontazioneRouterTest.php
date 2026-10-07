@@ -102,6 +102,65 @@ final class RendicontazioneRouterTest extends TestCase
         $this->assertSame('GERI', $decision->handler);
     }
 
+    /** IUV 17 cifre (forma in flussi_rendicontazioni): codice segregazione(2) + id applicazione in indice 2 */
+    public function testIdAppAgidSuIuv17CifreMatchaDilazione(): void
+    {
+        $decision = RendicontazioneRouter::decide(
+            '300607000005051850',
+            '00607000005051850',
+            'GIL',
+            null,
+            [
+                ['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '6', 'handler' => 'DILAZIONE'],
+                ['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '1', 'handler' => 'GERI'],
+            ]
+        );
+        $this->assertSame('DILAZIONE', $decision->handler);
+    }
+
+    public function testIdAppAgidSuIuv17CifreMatchaGeri(): void
+    {
+        $decision = RendicontazioneRouter::decide(
+            '',
+            '00107000005051850',
+            'GIL',
+            null,
+            [
+                ['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '6', 'handler' => 'DILAZIONE'],
+                ['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '1', 'handler' => 'GERI'],
+            ]
+        );
+        $this->assertSame('GERI', $decision->handler);
+    }
+
+    /** Numero avviso 18 cifre: cifra ausiliaria + IUV, id applicazione in indice 3 */
+    public function testIdAppAgidSuNumeroAvviso18CifreMatchaDilazione(): void
+    {
+        $decision = RendicontazioneRouter::decide(
+            '',
+            '300607000005051850',
+            'GIL',
+            null,
+            [['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '6', 'handler' => 'DILAZIONE']]
+        );
+        $this->assertSame('DILAZIONE', $decision->handler);
+    }
+
+    public function testIdAppAgidNonMatchataAutoEsterno(): void
+    {
+        $decision = RendicontazioneRouter::decide(
+            'e1b1620716924248add74cd8485af08e',
+            '00000000000624416',
+            'GIL',
+            null,
+            [
+                ['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '6', 'handler' => 'DILAZIONE'],
+                ['pattern_tipo' => 'ID_APP_AGID', 'pattern_valore' => '1', 'handler' => 'GERI'],
+            ]
+        );
+        $this->assertSame('AUTO_ESTERNO', $decision->handler);
+    }
+
     public function testNonGilConRegolaRegexInvalidaNonLanciaEccezione(): void
     {
         $decision = RendicontazioneRouter::decide(
