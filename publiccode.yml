@@ -1,4 +1,4 @@
-publiccodeYmlVersion: 0.5.0
+publiccodeYmlVersion: "0"
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
 softwareVersion: 1.5.80
@@ -9,6 +9,7 @@ categories:
   - payment-gateway
 organisation:
   uri: urn:x-italian-pa:c_f646
+  name: Comune di Montesilvano
 usedBy:
   - Comune di Montesilvano
   - Provincia di Pescara
@@ -52,7 +53,6 @@ description:
 legal:
   license: EUPL-1.2
   mainCopyrightOwner: Comune di Montesilvano
-  repoOwner: Comune di Montesilvano
 maintenance:
   type: internal
   contacts:
@@ -69,16 +69,9 @@ localisation:
     - es
 IT:
   countryExtensionVersion: "1.0"
-  conforme:
-    lineeGuidaDesign: true
-    modelloInteroperabilita: true
-    misureMinimeSicurezza: true
-    gdpr: true
   piattaforme:
     spid: true
     cie: true
     anpr: false
     pagopa: true
     io: true
-  riuso:
-    codiceIPA: c_f646
