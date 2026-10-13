@@ -809,9 +809,7 @@ class ConfigurazioneController
                     $errors[] = 'ID_DOMINIO non impostato: impossibile caricare i template';
                 }
 
-                if (empty($usersList)) {
-                    $usersList = $this->userRepository->listAll();
-                }
+                $usersList = $this->userRepository->listAll();
             } catch (\Throwable $e) {
                 $errors[] = 'Errore caricamento template pendenze: ' . $e->getMessage();
             }
@@ -1389,7 +1387,7 @@ class ConfigurazioneController
                 } else {
                     $errors[] = 'ID_DOMINIO non impostato: impossibile caricare i template';
                 }
-                if (empty($usersList)) { $usersList = $this->userRepository->listAll(); }
+                $usersList = $this->userRepository->listAll();
             } catch (\Throwable $e) {
                 $errors[] = 'Errore caricamento template pendenze: ' . $e->getMessage();
             }
