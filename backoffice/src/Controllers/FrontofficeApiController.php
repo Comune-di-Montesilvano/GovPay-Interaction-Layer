@@ -594,17 +594,17 @@ class FrontofficeApiController
 
             return $this->jsonOk('Cart creato', ['location' => $location]);
         } catch (\Throwable $e) {
-            Logger::getInstance()->warning('FrontofficeApi::checkoutCarrello errore pagoPA', [
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
+            $logCtx = ['error' => Logger::sanitizeErrorForDisplay($e->getMessage())];
             // pagoPA risponde 422 quando l'avviso non è (al momento) esigibile: può
             // significare già pagato/annullato, oppure un pagamento con la stessa
             // notice ancora in corso lato Nodo dei Pagamenti (lock temporaneo, tipicamente
             // qualche minuto) — il body ProblemJson non distingue i due casi, quindi non
-            // affermiamo "già pagato" con certezza.
+            // affermiamo "già pagato" con certezza. Esito di business atteso: solo log locale.
             if ($e instanceof \PagoPA\CheckoutEc\ApiException && $e->getCode() === 422) {
+                Logger::getInstance()->info('FrontofficeApi::checkoutCarrello avviso non esigibile (422 pagoPA)', $logCtx);
                 return $this->jsonError('Avviso non disponibile per il pagamento al momento (potrebbe essere già stato pagato, in corso di elaborazione, o annullato)', 409);
             }
+            Logger::getInstance()->warning('FrontofficeApi::checkoutCarrello errore pagoPA', $logCtx);
             return $this->jsonError('Errore durante la creazione del carrello pagoPA', 503);
         }
     }
