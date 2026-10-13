@@ -77,4 +77,20 @@ final class SentryReporterTest extends TestCase
         $this->assertSame('[REDACTED]', $result['debitore']['cf']);
         $this->assertSame('Mario', $result['debitore']['nome']);
     }
+
+    public function testScrubSensitiveKeysRedactsSecretQueryParamsInStrings(): void
+    {
+        $input = ['context' => ['error' => '[422] Client error: `POST https://api.platform.pagopa.it/checkout/ec/v1/carts?subscription-key=9d73b7c4&x=1` resulted in a `422`']];
+        $result = SentryReporter::scrubSensitiveKeys($input);
+        $this->assertSame(
+            '[422] Client error: `POST https://api.platform.pagopa.it/checkout/ec/v1/carts?subscription-key=[REDACTED]&x=1` resulted in a `422`',
+            $result['context']['error']
+        );
+    }
+
+    public function testScrubSecretsInStringLeavesPlainTextUntouched(): void
+    {
+        $this->assertSame('Invalid payment notice data', SentryReporter::scrubSecretsInString('Invalid payment notice data'));
+        $this->assertSame('token_received', SentryReporter::scrubSecretsInString('token_received'));
+    }
 }

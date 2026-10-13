@@ -521,8 +521,9 @@ class FrontofficeApiController
         if ($host !== '') {
             $config->setHost(rtrim($host, '/'));
         }
+        // Solo header: la variante query-string 'subscription-key' finisce nell'URL che Guzzle
+        // riporta nel messaggio d'eccezione (→ log/Sentry in chiaro). APIM accetta entrambe.
         $config->setApiKey('Ocp-Apim-Subscription-Key', $subscriptionKey);
-        $config->setApiKey('subscription-key', $subscriptionKey);
 
         $api = new \PagoPA\CheckoutEc\Api\DefaultApi(
             new \GuzzleHttp\Client(['timeout' => 15, 'connect_timeout' => 10, 'allow_redirects' => false]),
