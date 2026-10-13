@@ -97,6 +97,15 @@ final class SentryReporterTest extends TestCase
         $this->assertSame('cf [REDACTED]', SentryReporter::scrubSecretsInString('cf RSSMRA80A01H501U'));
     }
 
+    public function testScrubUrlRedactsSensitiveQueryParams(): void
+    {
+        $this->assertSame(
+            'http://example.it/link/checkout?action=checkout&cf=%5BREDACTED%5D&iuv=300000000000561336',
+            SentryReporter::scrubUrl('http://example.it/link/checkout?action=checkout&cf=BAXKDD85H58Z343X&iuv=300000000000561336')
+        );
+        $this->assertSame('http://example.it/path', SentryReporter::scrubUrl('http://example.it/path'));
+    }
+
     public function testScrubSecretsInStringLeavesPlainTextUntouched(): void
     {
         $this->assertSame('Invalid payment notice data', SentryReporter::scrubSecretsInString('Invalid payment notice data'));
