@@ -32,7 +32,11 @@ jobs:
             exit 1
           fi
 
-          release=$(gh api repos/aquasecurity/trivy/releases/latest --jq '[.tag_name, .published_at] | @tsv')
+          # Chiamata anonima: l'org aquasecurity ha una IP allow list che rifiuta il GITHUB_TOKEN
+          # dei runner (HTTP 403) anche su risorse pubbliche. Limite anonimo ampiamente sufficiente.
+          release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/aquasecurity/trivy/releases/latest \
+            | jq -r '[.tag_name, .published_at] | @tsv')
           latest=$(cut -f1 <<<"$release")
           published=$(cut -f2 <<<"$release")
           age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
