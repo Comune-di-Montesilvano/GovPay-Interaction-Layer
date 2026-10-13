@@ -77,4 +77,38 @@ final class SentryReporterTest extends TestCase
         $this->assertSame('[REDACTED]', $result['debitore']['cf']);
         $this->assertSame('Mario', $result['debitore']['nome']);
     }
+
+    public function testScrubSensitiveKeysRedactsSecretQueryParamsInStrings(): void
+    {
+        $input = ['context' => ['error' => '[422] Client error: `POST https://api.platform.pagopa.it/checkout/ec/v1/carts?subscription-key=9d73b7c4&x=1` resulted in a `422`']];
+        $result = SentryReporter::scrubSensitiveKeys($input);
+        $this->assertSame(
+            '[422] Client error: `POST https://api.platform.pagopa.it/checkout/ec/v1/carts?subscription-key=[REDACTED]&x=1` resulted in a `422`',
+            $result['context']['error']
+        );
+    }
+
+    public function testScrubSecretsInStringRedactsFiscalCodeAnyCase(): void
+    {
+        $this->assertSame(
+            'value "[REDACTED]" at root.fiscal_code is not valid',
+            SentryReporter::scrubSecretsInString('value "dtdrst48e29d076a" at root.fiscal_code is not valid')
+        );
+        $this->assertSame('cf [REDACTED]', SentryReporter::scrubSecretsInString('cf RSSMRA80A01H501U'));
+    }
+
+    public function testScrubUrlRedactsSensitiveQueryParams(): void
+    {
+        $this->assertSame(
+            'http://example.it/link/checkout?action=checkout&cf=%5BREDACTED%5D&iuv=300000000000561336',
+            SentryReporter::scrubUrl('http://example.it/link/checkout?action=checkout&cf=BAXKDD85H58Z343X&iuv=300000000000561336')
+        );
+        $this->assertSame('http://example.it/path', SentryReporter::scrubUrl('http://example.it/path'));
+    }
+
+    public function testScrubSecretsInStringLeavesPlainTextUntouched(): void
+    {
+        $this->assertSame('Invalid payment notice data', SentryReporter::scrubSecretsInString('Invalid payment notice data'));
+        $this->assertSame('token_received', SentryReporter::scrubSecretsInString('token_received'));
+    }
 }
