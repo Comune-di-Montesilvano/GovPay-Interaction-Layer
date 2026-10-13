@@ -864,6 +864,9 @@ class FrontofficeApiController
             return $this->jsonError('idPendenza mancante', 400);
         }
 
+        // Il chiamante (fireAndForgetSelf) chiude dopo 1s: completare comunque l'invio.
+        ignore_user_abort(true);
+
         try {
             $this->pendenzeController()->sendCreationNotifications(
                 $idPendenza,
@@ -897,7 +900,7 @@ class FrontofficeApiController
         }
 
         try {
-            $client = new \GuzzleHttp\Client(['connect_timeout' => 1.0, 'timeout' => 3.0]);
+            $client = new \GuzzleHttp\Client(['connect_timeout' => 1.0, 'timeout' => 1.0]);
             $client->post('http://127.0.0.1' . $path, [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $masterToken,
@@ -905,6 +908,18 @@ class FrontofficeApiController
                     'Connection'    => 'close',
                 ],
                 'body' => (string)json_encode($data, JSON_UNESCAPED_UNICODE),
+            ]);
+        } catch (\GuzzleHttp\Exception\ConnectException $e) {
+            // Timeout (cURL 28) a connessione stabilita = richiesta consegnata, il target
+            // continua da solo (ignore_user_abort): e' il comportamento atteso, non un errore.
+            $ctx = $e->getHandlerContext();
+            if (($ctx['errno'] ?? 0) === 28 && ($ctx['connect_time'] ?? 0) > 0) {
+                Logger::getInstance()->info('FrontofficeApi::fireAndForgetSelf detached', ['path' => $path]);
+                return;
+            }
+            Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf failed', [
+                'path'  => $path,
+                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
             ]);
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf failed', [
