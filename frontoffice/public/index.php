@@ -2449,9 +2449,13 @@ if (!function_exists('frontoffice_start_govpay_checkout')) {
         ]);
 
         if (!$result['success']) {
-            Logger::getInstance()->warning('frontoffice_start_govpay_checkout: errore backoffice sidecar', [
-                'flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $result['message'],
-            ]);
+            $logCtx = ['flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $result['message']];
+            if ((int)$result['error_status'] === 404) {
+                // Checkout GovPay non configurato: il chiamante ripiega su pagoPA standard, non e' un errore.
+                Logger::getInstance()->info('frontoffice_start_govpay_checkout: non configurato, fallback pagoPA', $logCtx);
+            } else {
+                Logger::getInstance()->warning('frontoffice_start_govpay_checkout: errore backoffice sidecar', $logCtx);
+            }
             return ['success' => false, 'status' => $result['error_status'] ?: 503, 'message' => $result['message'] ?: 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
         }
 
