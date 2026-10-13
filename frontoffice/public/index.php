@@ -2963,6 +2963,24 @@ if (!function_exists('frontoffice_verify_link')) {
     }
 }
 
+if (!function_exists('frontoffice_log_invalid_link')) {
+    /**
+     * Link firmato rifiutato: se solo scaduto (vecchia email/notifica riaperta, anche da
+     * crawler tipo Google-Read-Aloud) e' un esito atteso → log locale. Firma assente o errata
+     * = possibile manomissione → warning Sentry.
+     */
+    function frontoffice_log_invalid_link(string $kind, array $params): void
+    {
+        $expires = (int)($params['expires'] ?? 0);
+        $context = ['kind' => $kind, 'expires' => $expires];
+        if ($expires > 0 && time() > $expires && ($params['sig'] ?? '') !== '') {
+            Logger::getInstance()->info('Link firmato scaduto', $context);
+            return;
+        }
+        Logger::getInstance()->warning('Link firmato non valido (firma assente o errata)', $context);
+    }
+}
+
 if (!function_exists('frontoffice_generate_pdf_link')) {
     /**
      * Genera URL firmato per il download del PDF avviso via CF+IUV.
@@ -4329,10 +4347,7 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link avviso non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('avviso', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');
@@ -4404,10 +4419,7 @@ if ($method === 'GET' && $normalizedPath === '/link/documento') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link documento non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('documento', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');
@@ -4434,10 +4446,7 @@ if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link ricevuta non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('ricevuta', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');
@@ -4471,10 +4480,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link checkout non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('checkout', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');

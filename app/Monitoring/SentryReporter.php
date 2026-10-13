@@ -76,6 +76,21 @@ class SentryReporter
         ) ?? $value;
     }
 
+    /**
+     * Redige la query string di un URL con le stesse regole di scrubSensitiveKeys
+     * (chiavi PII) e scrubSecretsInString (segreti/CF nei valori).
+     */
+    public static function scrubUrl(string $url): string
+    {
+        $pos = strpos($url, '?');
+        if ($pos === false) {
+            return self::scrubSecretsInString($url);
+        }
+        parse_str(substr($url, $pos + 1), $queryParams);
+        return self::scrubSecretsInString(substr($url, 0, $pos))
+            . '?' . http_build_query(self::scrubSensitiveKeys($queryParams), '', '&', PHP_QUERY_RFC3986);
+    }
+
     public static function init(?string $suiteOverride = null): void
     {
         $dsn = getenv('SENTRY_DSN') ?: '';
@@ -96,6 +111,12 @@ class SentryReporter
                 $request = $event->getRequest();
                 if ($request) {
                     $mutated = false;
+                    // L'URL completo (usato anche come culprit da GlitchTip) ripete la query string:
+                    // va redatto come query_string, altrimenti es. `cf=` dei link firmati esce in chiaro.
+                    if (isset($request['url']) && is_string($request['url'])) {
+                        $request['url'] = self::scrubUrl($request['url']);
+                        $mutated = true;
+                    }
                     if (isset($request['query_string']) && is_string($request['query_string'])) {
                         parse_str($request['query_string'], $queryParams);
                         $request['query_string'] = http_build_query(self::scrubSensitiveKeys($queryParams));
