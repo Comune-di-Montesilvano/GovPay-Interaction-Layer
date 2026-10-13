@@ -58,14 +58,20 @@ class SentryReporter
     }
 
     /**
-     * Redige parametri segreti in forma `nome=valore` dentro testo libero — tipicamente
-     * URL riportati da Guzzle nel messaggio d'eccezione (es. `?subscription-key=...`).
+     * Redige dati sensibili dentro testo libero: parametri segreti `nome=valore` (tipicamente
+     * URL riportati da Guzzle nel messaggio d'eccezione, es. `?subscription-key=...`) e codici
+     * fiscali di persona fisica (es. echo del valore nei messaggi di validazione API esterne).
      */
     public static function scrubSecretsInString(string $value): string
     {
-        return preg_replace(
+        $value = preg_replace(
             '/\b(subscription-key|api[_-]?key|access_token|token|password|secret)=[^&\s`"\']+/i',
             '$1=[REDACTED]',
+            $value
+        ) ?? $value;
+        return preg_replace(
+            '/\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/i',
+            '[REDACTED]',
             $value
         ) ?? $value;
     }

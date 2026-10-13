@@ -63,6 +63,8 @@ class AppIoService
         ?array $paymentData = null,
         ?string $ctaLink = null
     ): array {
+        // API IO valida fiscal_code con regex solo maiuscolo: CF salvati minuscoli → 400.
+        $fiscalCode = strtoupper(trim($fiscalCode));
         try {
             // Default conservativo: STANDARD. Se necessario, puo essere forzato da env.
             $featureLevelType = strtoupper(SettingsRepository::get('pagopa', 'appio_feature_level', 'STANDARD') ?: 'STANDARD');
@@ -162,6 +164,10 @@ class AppIoService
                 } elseif (is_array($data) && isset($data['message'])) {
                     $errorMsg = $data['message'];
                 }
+            }
+            // Il detail di validazione IO riporta il CF in chiaro (es. "value \"...\" at root.fiscal_code").
+            if ($fiscalCode !== '') {
+                $errorMsg = str_ireplace($fiscalCode, $this->maskFiscalCode($fiscalCode), (string)$errorMsg);
             }
 
             Logger::getInstance()->warning('Eccezione RequestException durante invio IO', [
