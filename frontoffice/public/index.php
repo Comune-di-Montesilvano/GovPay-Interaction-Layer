@@ -2449,9 +2449,13 @@ if (!function_exists('frontoffice_start_govpay_checkout')) {
         ]);
 
         if (!$result['success']) {
-            Logger::getInstance()->warning('frontoffice_start_govpay_checkout: errore backoffice sidecar', [
-                'flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $result['message'],
-            ]);
+            $logCtx = ['flow' => $flow, 'idPendenza' => $idPendenza, 'message' => $result['message']];
+            if ((int)$result['error_status'] === 404) {
+                // Checkout GovPay non configurato: il chiamante ripiega su pagoPA standard, non e' un errore.
+                Logger::getInstance()->info('frontoffice_start_govpay_checkout: non configurato, fallback pagoPA', $logCtx);
+            } else {
+                Logger::getInstance()->warning('frontoffice_start_govpay_checkout: errore backoffice sidecar', $logCtx);
+            }
             return ['success' => false, 'status' => $result['error_status'] ?: 503, 'message' => $result['message'] ?: 'Al momento non riusciamo ad avviare il pagamento. Riprova più tardi.'];
         }
 
@@ -2956,6 +2960,24 @@ if (!function_exists('frontoffice_verify_link')) {
         $payload = http_build_query($check, '', '&', PHP_QUERY_RFC3986);
         $expected = hash_hmac('sha256', $payload, frontoffice_link_signing_key());
         return hash_equals($expected, $sig);
+    }
+}
+
+if (!function_exists('frontoffice_log_invalid_link')) {
+    /**
+     * Link firmato rifiutato: se solo scaduto (vecchia email/notifica riaperta, anche da
+     * crawler tipo Google-Read-Aloud) e' un esito atteso → log locale. Firma assente o errata
+     * = possibile manomissione → warning Sentry.
+     */
+    function frontoffice_log_invalid_link(string $kind, array $params): void
+    {
+        $expires = (int)($params['expires'] ?? 0);
+        $context = ['kind' => $kind, 'expires' => $expires];
+        if ($expires > 0 && time() > $expires && ($params['sig'] ?? '') !== '') {
+            Logger::getInstance()->info('Link firmato scaduto', $context);
+            return;
+        }
+        Logger::getInstance()->warning('Link firmato non valido (firma assente o errata)', $context);
     }
 }
 
@@ -4282,14 +4304,21 @@ if (
 ) {
     $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
     if (!frontoffice_csrf_validate($csrfToken)) {
-        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
+        // Token assente = POST non partito da un nostro form (tutti includono _csrf): bot/form
+        // spammer, solo log locale. Token presente ma errato = utente reale (es. sessione scaduta),
+        // va su Sentry. Mai session_id/token/IP nel context: finirebbero in chiaro nel bug tracker.
+        $csrfContext = [
             'path' => $normalizedPath,
-            'ip' => frontoffice_client_ip(),
-            'received_token' => $csrfToken,
-            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
-            'session_id' => session_id(),
-            'session_status' => session_status(),
-        ]);
+            'token_received' => $csrfToken !== null && $csrfToken !== '',
+            'session_cookie_sent' => isset($_COOKIE[session_name()]),
+            'has_referer' => !empty($_SERVER['HTTP_REFERER']),
+            'has_origin' => !empty($_SERVER['HTTP_ORIGIN']),
+        ];
+        if ($csrfContext['token_received']) {
+            Logger::getInstance()->warning('CSRF validation failed for frontoffice request', $csrfContext);
+        } else {
+            Logger::getInstance()->info('CSRF token missing on frontoffice POST (non-UI client)', $csrfContext);
+        }
         http_response_code(403);
         echo 'Forbidden (CSRF token missing or invalid)';
         return;
@@ -4318,10 +4347,7 @@ if ($method === 'GET' && $normalizedPath === '/link/avviso') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link avviso non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('avviso', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');
@@ -4393,10 +4419,7 @@ if ($method === 'GET' && $normalizedPath === '/link/documento') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link documento non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('documento', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');
@@ -4423,10 +4446,7 @@ if ($method === 'GET' && $normalizedPath === '/link/ricevuta') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link ricevuta non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('ricevuta', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');
@@ -4460,10 +4480,7 @@ if ($method === 'GET' && $normalizedPath === '/link/checkout') {
     if (!frontoffice_verify_link($qp)) {
         http_response_code(403);
         echo 'Link non valido o scaduto.';
-        Logger::getInstance()->warning('Link checkout non valido o scaduto', [
-            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'expires' => $qp['expires'] ?? '',
-        ]);
+        frontoffice_log_invalid_link('checkout', $qp);
         return;
     }
     $linkType = (string)($qp['type'] ?? '');

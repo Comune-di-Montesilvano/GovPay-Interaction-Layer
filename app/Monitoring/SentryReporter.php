@@ -52,9 +52,43 @@ class SentryReporter
                 $result[$key] = '[REDACTED]';
                 continue;
             }
-            $result[$key] = $value;
+            $result[$key] = is_string($value) ? self::scrubSecretsInString($value) : $value;
         }
         return $result;
+    }
+
+    /**
+     * Redige dati sensibili dentro testo libero: parametri segreti `nome=valore` (tipicamente
+     * URL riportati da Guzzle nel messaggio d'eccezione, es. `?subscription-key=...`) e codici
+     * fiscali di persona fisica (es. echo del valore nei messaggi di validazione API esterne).
+     */
+    public static function scrubSecretsInString(string $value): string
+    {
+        $value = preg_replace(
+            '/\b(subscription-key|api[_-]?key|access_token|token|password|secret)=[^&\s`"\']+/i',
+            '$1=[REDACTED]',
+            $value
+        ) ?? $value;
+        return preg_replace(
+            '/\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/i',
+            '[REDACTED]',
+            $value
+        ) ?? $value;
+    }
+
+    /**
+     * Redige la query string di un URL con le stesse regole di scrubSensitiveKeys
+     * (chiavi PII) e scrubSecretsInString (segreti/CF nei valori).
+     */
+    public static function scrubUrl(string $url): string
+    {
+        $pos = strpos($url, '?');
+        if ($pos === false) {
+            return self::scrubSecretsInString($url);
+        }
+        parse_str(substr($url, $pos + 1), $queryParams);
+        return self::scrubSecretsInString(substr($url, 0, $pos))
+            . '?' . http_build_query(self::scrubSensitiveKeys($queryParams), '', '&', PHP_QUERY_RFC3986);
     }
 
     public static function init(?string $suiteOverride = null): void
@@ -77,6 +111,12 @@ class SentryReporter
                 $request = $event->getRequest();
                 if ($request) {
                     $mutated = false;
+                    // L'URL completo (usato anche come culprit da GlitchTip) ripete la query string:
+                    // va redatto come query_string, altrimenti es. `cf=` dei link firmati esce in chiaro.
+                    if (isset($request['url']) && is_string($request['url'])) {
+                        $request['url'] = self::scrubUrl($request['url']);
+                        $mutated = true;
+                    }
                     if (isset($request['query_string']) && is_string($request['query_string'])) {
                         parse_str($request['query_string'], $queryParams);
                         $request['query_string'] = http_build_query(self::scrubSensitiveKeys($queryParams));
