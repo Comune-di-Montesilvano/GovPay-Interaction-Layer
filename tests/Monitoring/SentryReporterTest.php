@@ -88,6 +88,15 @@ final class SentryReporterTest extends TestCase
         );
     }
 
+    public function testScrubSecretsInStringRedactsFiscalCodeAnyCase(): void
+    {
+        $this->assertSame(
+            'value "[REDACTED]" at root.fiscal_code is not valid',
+            SentryReporter::scrubSecretsInString('value "dtdrst48e29d076a" at root.fiscal_code is not valid')
+        );
+        $this->assertSame('cf [REDACTED]', SentryReporter::scrubSecretsInString('cf RSSMRA80A01H501U'));
+    }
+
     public function testScrubSecretsInStringLeavesPlainTextUntouched(): void
     {
         $this->assertSame('Invalid payment notice data', SentryReporter::scrubSecretsInString('Invalid payment notice data'));
