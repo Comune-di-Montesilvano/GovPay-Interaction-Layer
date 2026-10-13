@@ -4282,14 +4282,21 @@ if (
 ) {
     $csrfToken = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
     if (!frontoffice_csrf_validate($csrfToken)) {
-        Logger::getInstance()->warning('CSRF validation failed for frontoffice request', [
+        // Token assente = POST non partito da un nostro form (tutti includono _csrf): bot/form
+        // spammer, solo log locale. Token presente ma errato = utente reale (es. sessione scaduta),
+        // va su Sentry. Mai session_id/token/IP nel context: finirebbero in chiaro nel bug tracker.
+        $csrfContext = [
             'path' => $normalizedPath,
-            'ip' => frontoffice_client_ip(),
-            'received_token' => $csrfToken,
-            'stored_token' => $_SESSION['frontoffice_csrf_token'] ?? null,
-            'session_id' => session_id(),
-            'session_status' => session_status(),
-        ]);
+            'token_received' => $csrfToken !== null && $csrfToken !== '',
+            'session_cookie_sent' => isset($_COOKIE[session_name()]),
+            'has_referer' => !empty($_SERVER['HTTP_REFERER']),
+            'has_origin' => !empty($_SERVER['HTTP_ORIGIN']),
+        ];
+        if ($csrfContext['token_received']) {
+            Logger::getInstance()->warning('CSRF validation failed for frontoffice request', $csrfContext);
+        } else {
+            Logger::getInstance()->info('CSRF token missing on frontoffice POST (non-UI client)', $csrfContext);
+        }
         http_response_code(403);
         echo 'Forbidden (CSRF token missing or invalid)';
         return;
