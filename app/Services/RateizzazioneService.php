@@ -63,6 +63,29 @@ class RateizzazioneService
     }
 
     /**
+     * Come buildPartsWithDates(), ma la prima rata scade esattamente a $firstDueDate
+     * (nessun +1 mese) e le successive a cadenza mensile con lo stesso ancoraggio di fine mese.
+     *
+     * @return array<int,array{indice:int,importo:float,dataValidita:string,dataScadenza:string}>
+     */
+    public static function buildPartsFromFirstDueDate(float $total, int $n, DateTimeImmutable $firstDueDate): array
+    {
+        $parts = self::splitAmount($total, $n);
+        $anchorMode = self::detectAnchorMode((int)$firstDueDate->format('j'), (int)$firstDueDate->format('n'), (int)$firstDueDate->format('Y'));
+        $result = [];
+        foreach ($parts as $i => $importo) {
+            $formatted = self::addMonthsWithAnchor($firstDueDate, $i, $anchorMode)->format('Y-m-d');
+            $result[] = [
+                'indice' => $i + 1,
+                'importo' => (float)round($importo, 2),
+                'dataValidita' => $formatted,
+                'dataScadenza' => $formatted,
+            ];
+        }
+        return $result;
+    }
+
+    /**
      * Rileva la modalità di ancoraggio in base al giorno della prima scadenza.
      * - 31 o ultimo giorno mese -> EOM
      * - 30 -> D30 (usa 30 per i mesi >=30 giorni, ultimo per febbraio)

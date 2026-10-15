@@ -59,6 +59,10 @@
             <div class="p-2 rounded border bg-light" style="overflow-x:auto;white-space:nowrap;">
               <code class="small text-secondary">TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;RATA;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE</code>
             </div>
+            <p class="small text-muted mt-1 mb-0">
+              <strong>RATA</strong>: numero di rate (vuota o 1 = pendenza unica). Con N &gt; 1 l'importo viene diviso in N rate
+              mensili collegate da un unico documento; la prima scade a DATA_SCADENZA (o tra un mese se vuota).
+            </p>
           </div>
 
           <form method="post" action="/pendenze/massivo/upload" enctype="multipart/form-data" id="massiveUploadForm">

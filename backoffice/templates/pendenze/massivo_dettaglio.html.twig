@@ -21,6 +21,90 @@
     </div>
   </div>
 
+  {% if success_count > 0 %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light border-bottom py-3">
+          <h2 class="h6 mb-0 fw-bold"><i class="fas fa-file-export me-2 text-primary"></i>Export batch</h2>
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-3">
+            {{ success_count }} pendenze create. Il tracciato riporta le righe del CSV di input con i numeri avviso
+            (una colonna per rata se rateizzata). Lo ZIP contiene un PDF per riga (<code>CAUSALE_CODICEFISCALE.pdf</code>,
+            multirata per le rateizzate) e viene generato in background.
+          </p>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <a href="/pendenze/massivo/{{ batch_id|url_encode }}/tracciato" class="btn btn-outline-primary btn-sm">
+              <i class="fas fa-file-csv me-1"></i>Scarica tracciato
+            </a>
+            <button type="button" class="btn btn-primary btn-sm" id="exportAvvisiBtn">
+              <i class="fas fa-file-zipper me-1"></i>Genera ZIP avvisi
+            </button>
+            <a href="/pendenze/massivo/{{ batch_id|url_encode }}/export-avvisi/download" class="btn btn-success btn-sm d-none" id="exportAvvisiDownload">
+              <i class="fas fa-download me-1"></i>Scarica ZIP
+            </a>
+          </div>
+          <div class="mt-3 d-none" id="exportAvvisiStatus">
+            <div class="progress" style="height:8px;">
+              <div class="progress-bar" role="progressbar" id="exportAvvisiBar" style="width:0%"></div>
+            </div>
+            <div class="small text-muted mt-1" id="exportAvvisiText"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const base = '/pendenze/massivo/{{ batch_id|url_encode }}/export-avvisi';
+      const btn = document.getElementById('exportAvvisiBtn');
+      const dl = document.getElementById('exportAvvisiDownload');
+      const box = document.getElementById('exportAvvisiStatus');
+      const bar = document.getElementById('exportAvvisiBar');
+      const txt = document.getElementById('exportAvvisiText');
+      let timer = null;
+
+      function render(job) {
+        if (!job) return;
+        box.classList.remove('d-none');
+        const running = job.stato === 'PENDING' || job.stato === 'RUNNING';
+        const pct = job.totale > 0 ? Math.round(job.processati * 100 / job.totale) : (job.stato === 'DONE' ? 100 : 0);
+        bar.style.width = pct + '%';
+        bar.className = 'progress-bar' + (job.stato === 'ERROR' ? ' bg-danger' : job.stato === 'DONE' ? ' bg-success' : ' progress-bar-striped progress-bar-animated');
+        btn.disabled = running;
+        dl.classList.toggle('d-none', !job.download);
+        if (running) {
+          txt.textContent = job.stato === 'PENDING' ? 'In coda…' : 'Generazione in corso: ' + job.processati + ' / ' + job.totale + ' PDF';
+        } else if (job.stato === 'DONE') {
+          txt.textContent = job.download
+            ? 'ZIP pronto (' + job.processati + ' PDF' + (job.errori ? ', ' + job.errori + ' non scaricati: vedi ERRORI.txt' : '') + ') — ' + job.updated_at
+            : (job.messaggio || 'File non più disponibile') + '. Rigenera lo ZIP.';
+        } else if (job.stato === 'ERROR') {
+          txt.textContent = 'Errore: ' + (job.messaggio || 'sconosciuto');
+        }
+        if (running && !timer) timer = setInterval(poll, 3000);
+        if (!running && timer) { clearInterval(timer); timer = null; }
+      }
+
+      function poll() {
+        fetch(base + '/stato', { credentials: 'same-origin' })
+          .then(r => r.json()).then(d => render(d.job)).catch(() => {});
+      }
+
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        fetch(base, { method: 'POST', credentials: 'same-origin' })
+          .then(r => r.json())
+          .then(d => { if (d.ok) { render(d.job); } else { btn.disabled = false; alert(d.error || 'Errore avvio export'); } })
+          .catch(() => { btn.disabled = false; alert('Errore avvio export'); });
+      });
+
+      render({{ export_job|json_encode|raw }});
+    })();
+  </script>
+  {% endif %}
+
   <div class="row">
     <div class="col-12">
       <div class="card-wrapper card-space">
