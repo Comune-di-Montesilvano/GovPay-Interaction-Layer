@@ -79,7 +79,10 @@ class MassivePendenzeRepository
                         JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.soggettoPagatore.identificativo')),
                         JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.identificativo'))
                     ))) AS ident,
-                    UPPER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.causale')))) AS causale
+                    UPPER(TRIM(COALESCE(
+                        JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.datiAllegati.rateizzazione.causale')),
+                        JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.causale'))
+                    ))) AS causale
                 FROM pendenze_massive
                 WHERE DATE(created_at) = CURDATE()
                   AND stato IN ('PENDING','PROCESSING','SUCCESS')";
@@ -112,6 +115,17 @@ class MassivePendenzeRepository
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         return $rows;
+    }
+
+    /**
+     * Tutte le righe di un batch (senza paginazione) per tracciato/export.
+     * @return list<array<string,mixed>>
+     */
+    public function listAllByBatch(string $fileBatchId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id, riga, stato, payload_json, response_json FROM pendenze_massive WHERE file_batch_id = :batch ORDER BY riga ASC, id ASC');
+        $stmt->execute([':batch' => $fileBatchId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function countByBatch(string $fileBatchId, ?string $stato = null): int

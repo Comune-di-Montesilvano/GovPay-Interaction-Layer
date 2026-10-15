@@ -7,6 +7,9 @@ use App\Config\SettingsRepository;
 use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\MassivePendenzeRepository;
+use App\Database\MassivoExportRepository;
+use App\Services\MassivoExportService;
+use App\Services\MassivoRateizzazioneService;
 use App\Services\ValidationService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -14,6 +17,10 @@ use Slim\Views\Twig;
 
 class MassivePendenzeController
 {
+    private const EXPORT_SCRIPT = '/var/www/html/scripts/export_avvisi_massivo.php';
+    private const EXPORT_LOG = '/var/www/cache/export-avvisi-massivo.log';
+    private const EXPORT_DIR = '/var/www/cache/exports/massivo';
+
     public function __construct(private readonly Twig $twig)
     {
     }
@@ -194,7 +201,9 @@ class MassivePendenzeController
         foreach ($valid as $v) {
             $riga = (int)($v['_row'] ?? ++$riga);
             $payload = self::rowToPayload($v, $idTipo, $batchId, $operatore);
-            $repo->insertPending($batchId, $riga, $payload, null);
+            foreach (self::expandRate($payload, $v) as $p) {
+                $repo->insertPending($batchId, $riga, $p, null);
+            }
         }
         // redirect alla lista dettagli batch
         return $response->withHeader('Location', '/pendenze/massivo/dettaglio?batch=' . urlencode($batchId) . '&from=inserimento')->withStatus(302);
@@ -209,10 +218,13 @@ class MassivePendenzeController
         if ($batchId === '') return $response->withStatus(400);
         $repo = new MassivePendenzeRepository();
         $rows = $repo->listByBatch($batchId, null, 1, 500);
+        $exportJob = (new MassivoExportRepository())->findLatestByBatch($batchId);
         return $this->twig->render($response, 'pendenze/massivo_dettaglio.html.twig', [
             'batch_id' => $batchId,
             'rows' => $rows,
-            'from' => $from
+            'from' => $from,
+            'success_count' => $repo->countByBatch($batchId, 'SUCCESS'),
+            'export_job' => $exportJob ? self::jobView($exportJob) : null,
         ]);
     }
 
@@ -286,6 +298,94 @@ class MassivePendenzeController
         
         $_SESSION['flash'][] = ['type' => $type, 'text' => $msg];
         return $response->withHeader('Location', '/pendenze/massivo/storico')->withStatus(302);
+    }
+
+    /** Tracciato di output del batch: righe CSV di input + numeri avviso (anche per rata). */
+    public function tracciato(Request $request, Response $response, string $batchId): Response
+    {
+        if ($batchId === '') return $response->withStatus(400);
+        $rows = (new MassivePendenzeRepository())->listAllByBatch($batchId);
+        [$header, $lines] = MassivoExportService::buildTracciato($rows);
+        $response->getBody()->write(MassivoExportService::toCsv($header, $lines));
+        $safe = preg_replace('/[^A-Za-z0-9\-_]/', '_', $batchId);
+        return $response->withHeader('Content-Type', 'text/csv; charset=UTF-8')
+                        ->withHeader('Content-Disposition', 'attachment; filename="tracciato_' . $safe . '.csv"');
+    }
+
+    /**
+     * Avvia (o riusa, se già in corso) il job async che genera lo ZIP avvisi PDF del batch.
+     * Il worker scripts/export_avvisi_massivo.php gira in background, fuori dalla request.
+     */
+    public function avviaExportAvvisi(Request $request, Response $response, string $batchId): Response
+    {
+        if ($batchId === '') return $this->json($response, ['ok' => false, 'error' => 'Batch mancante'], 400);
+        if ((new MassivePendenzeRepository())->countByBatch($batchId, 'SUCCESS') === 0) {
+            return $this->json($response, ['ok' => false, 'error' => 'Nessuna pendenza creata in questo batch'], 409);
+        }
+        $repo = new MassivoExportRepository();
+        $last = $repo->findLatestByBatch($batchId);
+        if ($last && in_array($last['stato'], ['PENDING', 'RUNNING'], true) && !self::isJobStale($last)) {
+            return $this->json($response, ['ok' => true, 'job' => self::jobView($last)]);
+        }
+        $operatore = PendenzeController::getCurrentOperatorString() ?? 'Operatore Sconosciuto';
+        $jobId = $repo->create($batchId, $operatore);
+        $cmd = sprintf(
+            'php %s %d < /dev/null >> %s 2>&1 &',
+            escapeshellarg(self::EXPORT_SCRIPT),
+            $jobId,
+            escapeshellarg(self::EXPORT_LOG)
+        );
+        exec($cmd);
+        return $this->json($response, ['ok' => true, 'job' => self::jobView($repo->find($jobId) ?? [])]);
+    }
+
+    public function statoExportAvvisi(Request $request, Response $response, string $batchId): Response
+    {
+        $last = (new MassivoExportRepository())->findLatestByBatch($batchId);
+        return $this->json($response, ['ok' => true, 'job' => $last ? self::jobView($last) : null]);
+    }
+
+    public function downloadExportAvvisi(Request $request, Response $response, string $batchId): Response
+    {
+        $last = (new MassivoExportRepository())->findLatestByBatch($batchId);
+        $path = (string)($last['file_path'] ?? '');
+        if (!$last || $last['stato'] !== 'DONE' || $path === '' || !str_starts_with($path, self::EXPORT_DIR . '/') || !is_file($path)) {
+            return $response->withStatus(404);
+        }
+        $fh = fopen($path, 'rb');
+        if ($fh === false) return $response->withStatus(500);
+        return $response->withBody(new \Slim\Psr7\Stream($fh))
+            ->withHeader('Content-Type', 'application/zip')
+            ->withHeader('Content-Length', (string)filesize($path))
+            ->withHeader('Content-Disposition', 'attachment; filename="' . basename($path) . '"');
+    }
+
+    /** Un job PENDING/RUNNING fermo da >10 minuti è considerato morto (worker crashato) e rilanciabile. */
+    private static function isJobStale(array $job): bool
+    {
+        $ts = strtotime((string)($job['updated_at'] ?? ''));
+        return $ts !== false && $ts < time() - 600;
+    }
+
+    private static function jobView(array $job): array
+    {
+        return [
+            'id' => (int)($job['id'] ?? 0),
+            'stato' => (string)($job['stato'] ?? ''),
+            'totale' => (int)($job['totale'] ?? 0),
+            'processati' => (int)($job['processati'] ?? 0),
+            'errori' => (int)($job['errori'] ?? 0),
+            'download' => ($job['stato'] ?? '') === 'DONE' && !empty($job['file_path']),
+            'messaggio' => (string)($job['messaggio'] ?? ''),
+            'created_by' => (string)($job['created_by'] ?? ''),
+            'updated_at' => (string)($job['updated_at'] ?? ''),
+        ];
+    }
+
+    private function json(Response $response, array $data, int $status = 200): Response
+    {
+        $response->getBody()->write((string)json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
     }
 
     private function exposeCurrentUser(): void
@@ -436,6 +536,15 @@ class MassivePendenzeController
         }
         // Importo
         if (!is_numeric((string)$norm['importo']) || $norm['importo'] <= 0) return 'Importo non valido';
+        // RATA = numero di rate in cui suddividere la pendenza (vuota o 1 = pendenza unica)
+        if ($norm['rata'] !== '') {
+            if (!ctype_digit($norm['rata']) || (int)$norm['rata'] < 1 || (int)$norm['rata'] > MassivoRateizzazioneService::MAX_RATE) {
+                return 'RATA non valida (intero da 1 a ' . MassivoRateizzazioneService::MAX_RATE . ')';
+            }
+            if ((int)round(((float)$norm['importo']) * 100) < (int)$norm['rata']) {
+                return 'Importo troppo basso per il numero di rate indicato';
+            }
+        }
         // Se VOCE_1_IMPORTO è stato fornito dall'utente, validalo come numerico (virgola ammessa)
         if (!empty($norm['_v1imp_provided'])) {
             $raw = (string)($norm['_v1imp_raw'] ?? '');
@@ -454,6 +563,31 @@ class MassivePendenzeController
             return 'DATA_SCADENZA non può essere nel passato o oggi';
         }
         return null;
+    }
+
+    /**
+     * RATA = N > 1: espande il payload in N rate collegate da un documento GovPay
+     * (prima scadenza = DATA_SCADENZA, oppure oggi + 1 mese, poi mensile).
+     *
+     * @return list<array<string,mixed>>
+     */
+    private static function expandRate(array $payload, array $norm): array
+    {
+        $numRate = (int)($norm['rata'] ?? 0);
+        if ($numRate <= 1) {
+            return [$payload];
+        }
+        $firstDue = !empty($norm['dataScadenza'])
+            ? new \DateTimeImmutable((string)$norm['dataScadenza'])
+            : (new \DateTimeImmutable('today'))->modify('+1 month');
+        $hex = bin2hex(random_bytes(14));
+        return MassivoRateizzazioneService::expand(
+            $payload,
+            $numRate,
+            $firstDue,
+            'RATA-' . substr($hex, 0, 12),
+            'GIL-' . substr($hex, 12, 16)
+        );
     }
 
     private static function rowToPayload(array $norm, string $idTipoPendenza, string $batchId, string $operatore): array

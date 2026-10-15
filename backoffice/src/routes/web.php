@@ -497,6 +497,21 @@ return function (App $app, Twig $twig): void {
         return $controller->azioneBatch($request, $response, $args['batchId'] ?? '', 'CANCEL');
     });
 
+    // Export batch: tracciato CSV di output (sincrono) + ZIP avvisi PDF (job async)
+    $app->get('/pendenze/massivo/{batchId}/tracciato', function(Request $request, Response $response, array $args) use ($twig): Response {
+        return (new \App\Controllers\MassivePendenzeController($twig))->tracciato($request, $response, $args['batchId'] ?? '');
+    });
+    $app->post('/pendenze/massivo/{batchId}/export-avvisi', function(Request $request, Response $response, array $args) use ($twig): Response {
+        if (session_status() !== PHP_SESSION_ACTIVE) @session_start();
+        return (new \App\Controllers\MassivePendenzeController($twig))->avviaExportAvvisi($request, $response, $args['batchId'] ?? '');
+    });
+    $app->get('/pendenze/massivo/{batchId}/export-avvisi/stato', function(Request $request, Response $response, array $args) use ($twig): Response {
+        return (new \App\Controllers\MassivePendenzeController($twig))->statoExportAvvisi($request, $response, $args['batchId'] ?? '');
+    });
+    $app->get('/pendenze/massivo/{batchId}/export-avvisi/download', function(Request $request, Response $response, array $args) use ($twig): Response {
+        return (new \App\Controllers\MassivePendenzeController($twig))->downloadExportAvvisi($request, $response, $args['batchId'] ?? '');
+    });
+
     $app->get('/pendenze/dettaglio/{idPendenza}', function(Request $request, Response $response, array $args) use ($twig): Response {
         $controller = new PendenzeController($twig);
         return $controller->showDetail($request, $response, $args);
