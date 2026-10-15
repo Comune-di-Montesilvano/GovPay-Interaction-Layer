@@ -66,9 +66,13 @@ FROM php:8.5-apache-trixie AS runtime-base
 # System deps + PHP extensions FIRST — stable layer, cache must not be busted
 # by per-commit ARGs. All volatile ARG/ENV go AFTER this RUN.
 ARG DEBIAN_FRONTEND=noninteractive
+# Chiave di refresh settimanale (anno-settimana ISO, passata da docker-publish.yml): senza,
+# la build cache congela questo layer e `apt-get upgrade` non applica più le patch Debian
+# (CVE fixabili bloccanti sul gate Trivy). Cambia una volta a settimana, non per commit.
+ARG APT_REFRESH=local
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    echo "apt refresh: ${APT_REFRESH}" && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libicu-dev libzip-dev libonig-dev \
     ca-certificates curl unzip openssl \
     && docker-php-ext-install intl mbstring pdo_mysql zip \

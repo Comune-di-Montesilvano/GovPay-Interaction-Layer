@@ -43,6 +43,7 @@ jobs:
       version_type: ${{ steps.v.outputs.version_type }}
       version_label: ${{ steps.v.outputs.version_label }}
       ref_url: ${{ steps.v.outputs.ref_url }}
+      apt_refresh: ${{ steps.apt.outputs.apt_refresh }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -52,6 +53,11 @@ jobs:
         uses: ./.github/actions/version-resolver
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+      # Settimana ISO: invalida il layer apt di runtime-base una volta a settimana, altrimenti
+      # la cache GHA/registry congela `apt-get upgrade` e le patch Debian non entrano mai.
+      - name: Resolve apt refresh key
+        id: apt
+        run: echo "apt_refresh=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
   # ── Shared PHP base cache warmup ───────────────────────────────────────────
   # Build the common runtime-base layer once so backoffice/frontoffice reuse
@@ -87,6 +93,7 @@ jobs:
             GIL_VERSION_LABEL=cache-warmup
             GIL_REF_URL=
             GIT_COMMIT_SHA=cache-warmup
+            APT_REFRESH=${{ needs.setup.outputs.apt_refresh }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
@@ -156,6 +163,7 @@ jobs:
             GIL_VERSION_LABEL=${{ needs.setup.outputs.version_label }}
             GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
             GIT_COMMIT_SHA=${{ github.sha }}
+            APT_REFRESH=${{ needs.setup.outputs.apt_refresh }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
