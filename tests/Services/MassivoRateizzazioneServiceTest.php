@@ -49,6 +49,28 @@ final class MassivoRateizzazioneServiceTest extends TestCase
         }
     }
 
+    public function testExpandConDateEsplicitePerRata(): void
+    {
+        $rate = MassivoRateizzazioneService::expand($this->payload(), 3, new DateTimeImmutable('2026-11-30'), 'RATA-abc', 'GIL-xyz', [
+            1 => ['dataValidita' => '2026-11-01', 'dataScadenza' => '2026-11-15'],
+            2 => ['dataScadenza' => '2027-02-28'],
+            3 => ['dataValidita' => '2027-05-01', 'dataScadenza' => '2027-06-30'],
+        ]);
+        $this->assertSame(['2026-11-15', '2027-02-28', '2027-06-30'], array_column($rate, 'dataScadenza'));
+        // validità non indicata = scadenza della rata
+        $this->assertSame(['2026-11-01', '2027-02-28', '2027-05-01'], array_column($rate, 'dataValidita'));
+        $this->assertSame([33.34, 33.33, 33.33], array_column($rate, 'importo'));
+    }
+
+    public function testScheduleSoloValiditaMantieneScadenzeMensili(): void
+    {
+        $date = MassivoRateizzazioneService::schedule(2, new DateTimeImmutable('2026-11-30'), [2 => ['dataValidita' => '2026-12-01']]);
+        $this->assertSame([
+            ['dataValidita' => '2026-11-30', 'dataScadenza' => '2026-11-30'],
+            ['dataValidita' => '2026-12-01', 'dataScadenza' => '2026-12-31'],
+        ], $date);
+    }
+
     public function testAllocateVociProporzionaleConRestoSullUltima(): void
     {
         $voci = [['importo' => 70.0, 'descrizione' => 'A'], ['importo' => 30.0, 'descrizione' => 'B']];
