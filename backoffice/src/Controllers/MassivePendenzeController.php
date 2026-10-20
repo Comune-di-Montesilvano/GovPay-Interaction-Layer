@@ -20,6 +20,12 @@ class MassivePendenzeController
     private const EXPORT_SCRIPT = '/var/www/html/scripts/export_avvisi_massivo.php';
     private const EXPORT_LOG = '/var/www/cache/export-avvisi-massivo.log';
     private const EXPORT_DIR = '/var/www/cache/exports/massivo';
+    private const CSV_HEADERS = [
+        'TIPO','CODICE_FISCALE_PIVA','COGNOME_ANAGRAFICA','NOME','CAUSALE','ANNO_RIFERIMENTO','IMPORTO','EMAIL','DATA_VALIDITA','DATA_SCADENZA','RATA','VOCE_1_IMPORTO','VOCE_1_CAUSALE','VOCE_2_IMPORTO','VOCE_2_CAUSALE'
+    ];
+    /** Colonne facoltative in coda: date esplicite per rata (RATA_1_DATA_VALIDITA, RATA_1_DATA_SCADENZA, ...). */
+    private const RATA_DATE_HEADER = '/^RATA_([1-9]\d?)_DATA_(VALIDITA|SCADENZA)$/';
+    private const TEMPLATE_RATE = 3;
 
     public function __construct(private readonly Twig $twig)
     {
@@ -59,14 +65,25 @@ class MassivePendenzeController
 
     public function templateCsv(Request $request, Response $response): Response
     {
-        $headers = [
-            'TIPO','CODICE_FISCALE_PIVA','COGNOME_ANAGRAFICA','NOME','CAUSALE','ANNO_RIFERIMENTO','IMPORTO','EMAIL','DATA_VALIDITA','DATA_SCADENZA','RATA','VOCE_1_IMPORTO','VOCE_1_CAUSALE','VOCE_2_IMPORTO','VOCE_2_CAUSALE'
-        ];
-        $sample = ['F','RSSMRA80A01F205X','ROSSI','MARIO','TASSA ISCRIZIONE',date('Y'), '44.00','mario.rossi@example.com',date('d/m/Y'), '31/12/' . date('Y'), '', '44.00','Quota iscrizione','',''];
+        $headers = self::CSV_HEADERS;
+        for ($i = 1; $i <= self::TEMPLATE_RATE; $i++) {
+            array_push($headers, "RATA_{$i}_DATA_VALIDITA", "RATA_{$i}_DATA_SCADENZA");
+        }
+        $sample = array_merge(
+            ['F','RSSMRA80A01F205X','ROSSI','MARIO','TASSA ISCRIZIONE',date('Y'), '44.00','mario.rossi@example.com',date('d/m/Y'), '31/12/' . date('Y'), '', '44.00','Quota iscrizione','',''],
+            array_fill(0, self::TEMPLATE_RATE * 2, '')
+        );
+        // Esempio rateizzata: validità = primo del mese, scadenza = fine mese, dal mese prossimo
+        $sampleRate = ['F','RSSMRA80A01F205X','ROSSI','MARIO','TARI ' . date('Y'),date('Y'), '300.00','mario.rossi@example.com','', '', (string)self::TEMPLATE_RATE, '300.00','TARI','',''];
+        for ($i = 1; $i <= self::TEMPLATE_RATE; $i++) {
+            $mese = (new \DateTimeImmutable('first day of this month'))->modify("+{$i} month");
+            array_push($sampleRate, $mese->format('d/m/Y'), $mese->modify('last day of this month')->format('d/m/Y'));
+        }
         $csv = fopen('php://temp', 'w+');
     // separatore ; con enclosure ed escape espliciti per evitare deprecazioni PHP (fputcsv richiede $escape)
     fputcsv($csv, $headers, ';', '"', '\\');
     fputcsv($csv, $sample, ';', '"', '\\');
+    fputcsv($csv, $sampleRate, ';', '"', '\\');
         rewind($csv);
         $content = stream_get_contents($csv) ?: '';
         fclose($csv);
@@ -99,9 +116,10 @@ class MassivePendenzeController
         }
         // Normalizza header
         $header = array_map(fn($h) => strtoupper(trim((string)$h)), array_shift($rows));
-        $expected = ['TIPO','CODICE_FISCALE_PIVA','COGNOME_ANAGRAFICA','NOME','CAUSALE','ANNO_RIFERIMENTO','IMPORTO','EMAIL','DATA_VALIDITA','DATA_SCADENZA','RATA','VOCE_1_IMPORTO','VOCE_1_CAUSALE','VOCE_2_IMPORTO','VOCE_2_CAUSALE'];
-        if ($header !== $expected) {
-            $errors[] = 'Intestazioni CSV non valide. Atteso: ' . implode(';', $expected);
+        $expected = self::CSV_HEADERS;
+        if (array_slice($header, 0, count($expected)) !== $expected || !self::validRateHeaders(array_slice($header, count($expected)))) {
+            $errors[] = 'Intestazioni CSV non valide. Atteso: ' . implode(';', $expected)
+                . ' (seguite facoltativamente da RATA_1_DATA_VALIDITA;RATA_1_DATA_SCADENZA;RATA_2_DATA_VALIDITA;...)';
             return $this->twig->render($response, 'pendenze/inserimento_massivo.html.twig', ['errors' => $errors]);
         }
         // Processa righe: valida e costruisci preview
@@ -408,6 +426,22 @@ class MassivePendenzeController
         return $s;
     }
 
+    /** Colonne in coda al tracciato base: solo RATA_i_DATA_VALIDITA/SCADENZA (i <= MAX_RATE), senza duplicati. */
+    private static function validRateHeaders(array $extra): bool
+    {
+        // Celle vuote finali (";" in coda aggiunti da Excel) ammesse
+        while ($extra !== [] && end($extra) === '') {
+            array_pop($extra);
+        }
+        if (count($extra) !== count(array_unique($extra))) return false;
+        foreach ($extra as $h) {
+            if (!preg_match(self::RATA_DATE_HEADER, $h, $m) || (int)$m[1] > MassivoRateizzazioneService::MAX_RATE) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static function parseCsv(string $content): array
     {
         $rows = [];
@@ -449,6 +483,17 @@ class MassivePendenzeController
         $v1impParsed = $v1impProvided ? (float)self::cleanImportoRaw($v1imp) : $imp;
         $v2impProvided = trim($v2imp) !== '';
         $v2impParsed = $v2impProvided ? (float)self::cleanImportoRaw($v2imp) : 0.0;
+        // Date per rata: indice => ['dataValidita' => ISO, 'dataScadenza' => ISO] (solo rate con almeno una data)
+        $dateRate = [];
+        $dateRateInvalid = [];
+        foreach ($r as $col => $val) {
+            $val = trim((string)$val);
+            if ($val === '' || !preg_match(self::RATA_DATE_HEADER, (string)$col, $m)) continue;
+            $iso = self::normalizeDate($val);
+            if ($iso === '') { $dateRateInvalid[] = (string)$col; continue; }
+            $dateRate[(int)$m[1]][$m[2] === 'VALIDITA' ? 'dataValidita' : 'dataScadenza'] = $iso;
+        }
+        ksort($dateRate);
         return [
             'tipo' => $tipo,
             'identificativo' => $ident,
@@ -461,6 +506,8 @@ class MassivePendenzeController
             'dataValidita' => $dv,
             'dataScadenza' => $ds,
             'rata' => $rata,
+            'dateRate' => $dateRate,
+            '_dateRate_invalid' => $dateRateInvalid,
             '_v1imp_provided' => $v1impProvided,
             '_v1imp_raw' => $v1imp,
             'voci' => [
@@ -545,6 +592,21 @@ class MassivePendenzeController
                 return 'Importo troppo basso per il numero di rate indicato';
             }
         }
+        // Date per rata (colonne facoltative RATA_i_DATA_VALIDITA/RATA_i_DATA_SCADENZA)
+        if (!empty($norm['_dateRate_invalid'])) {
+            return $norm['_dateRate_invalid'][0] . ' non valida (formato gg/mm/aaaa)';
+        }
+        $dateRate = is_array($norm['dateRate'] ?? null) ? $norm['dateRate'] : [];
+        $numRate = (int)$norm['rata'];
+        if ($dateRate !== []) {
+            if ($numRate <= 1) return 'Date per rata indicate ma RATA non è maggiore di 1';
+            $maxIdx = max(array_keys($dateRate));
+            if ($maxIdx > $numRate) return "Date indicate per la rata {$maxIdx} ma RATA = {$numRate}";
+            $conScadenza = array_filter($dateRate, static fn($d) => !empty($d['dataScadenza']));
+            if ($conScadenza !== [] && count($conScadenza) !== $numRate) {
+                return 'RATA_i_DATA_SCADENZA va indicata per tutte le rate (o per nessuna)';
+            }
+        }
         // Se VOCE_1_IMPORTO è stato fornito dall'utente, validalo come numerico (virgola ammessa)
         if (!empty($norm['_v1imp_provided'])) {
             $raw = (string)($norm['_v1imp_raw'] ?? '');
@@ -562,12 +624,24 @@ class MassivePendenzeController
         if (!empty($norm['dataScadenza']) && $norm['dataScadenza'] <= $today) {
             return 'DATA_SCADENZA non può essere nel passato o oggi';
         }
+        if ($numRate > 1) {
+            $prevScadenza = '';
+            foreach (MassivoRateizzazioneService::schedule($numRate, self::firstDue($norm), $dateRate) as $k => $d) {
+                $i = $k + 1;
+                if ($d['dataValidita'] < $today) return "RATA_{$i}_DATA_VALIDITA non può essere nel passato";
+                if ($d['dataScadenza'] <= $today) return "RATA_{$i}_DATA_SCADENZA non può essere nel passato o oggi";
+                if ($d['dataValidita'] > $d['dataScadenza']) return "RATA_{$i}_DATA_VALIDITA successiva alla scadenza della rata";
+                if ($d['dataScadenza'] <= $prevScadenza) return "RATA_{$i}_DATA_SCADENZA deve essere successiva alla scadenza della rata precedente";
+                $prevScadenza = $d['dataScadenza'];
+            }
+        }
         return null;
     }
 
     /**
      * RATA = N > 1: espande il payload in N rate collegate da un documento GovPay
-     * (prima scadenza = DATA_SCADENZA, oppure oggi + 1 mese, poi mensile).
+     * (prima scadenza = DATA_SCADENZA, oppure oggi + 1 mese, poi mensile; le colonne
+     * RATA_i_DATA_VALIDITA/RATA_i_DATA_SCADENZA, se valorizzate, sostituiscono le date calcolate).
      *
      * @return list<array<string,mixed>>
      */
@@ -577,17 +651,22 @@ class MassivePendenzeController
         if ($numRate <= 1) {
             return [$payload];
         }
-        $firstDue = !empty($norm['dataScadenza'])
-            ? new \DateTimeImmutable((string)$norm['dataScadenza'])
-            : (new \DateTimeImmutable('today'))->modify('+1 month');
         $hex = bin2hex(random_bytes(14));
         return MassivoRateizzazioneService::expand(
             $payload,
             $numRate,
-            $firstDue,
+            self::firstDue($norm),
             'RATA-' . substr($hex, 0, 12),
-            'GIL-' . substr($hex, 12, 16)
+            'GIL-' . substr($hex, 12, 16),
+            is_array($norm['dateRate'] ?? null) ? $norm['dateRate'] : []
         );
+    }
+
+    private static function firstDue(array $norm): \DateTimeImmutable
+    {
+        return !empty($norm['dataScadenza'])
+            ? new \DateTimeImmutable((string)$norm['dataScadenza'])
+            : (new \DateTimeImmutable('today'))->modify('+1 month');
     }
 
     private static function rowToPayload(array $norm, string $idTipoPendenza, string $batchId, string $operatore): array
