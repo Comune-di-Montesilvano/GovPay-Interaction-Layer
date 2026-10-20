@@ -625,14 +625,19 @@ class MassivePendenzeController
             return 'DATA_SCADENZA non può essere nel passato o oggi';
         }
         if ($numRate > 1) {
-            $prevScadenza = '';
+            $prevData = '';
             foreach (MassivoRateizzazioneService::schedule($numRate, self::firstDue($norm), $dateRate) as $k => $d) {
                 $i = $k + 1;
+                // Senza scadenze (né per rata né DATA_SCADENZA) ogni rata deve avere almeno la validità
+                if ($d['dataValidita'] === '') return "RATA_{$i}_DATA_VALIDITA mancante (senza scadenze va indicata la validità di ogni rata)";
                 if ($d['dataValidita'] < $today) return "RATA_{$i}_DATA_VALIDITA non può essere nel passato";
-                if ($d['dataScadenza'] <= $today) return "RATA_{$i}_DATA_SCADENZA non può essere nel passato o oggi";
-                if ($d['dataValidita'] > $d['dataScadenza']) return "RATA_{$i}_DATA_VALIDITA successiva alla scadenza della rata";
-                if ($d['dataScadenza'] <= $prevScadenza) return "RATA_{$i}_DATA_SCADENZA deve essere successiva alla scadenza della rata precedente";
-                $prevScadenza = $d['dataScadenza'];
+                if ($d['dataScadenza'] !== '') {
+                    if ($d['dataScadenza'] <= $today) return "RATA_{$i}_DATA_SCADENZA non può essere nel passato o oggi";
+                    if ($d['dataValidita'] > $d['dataScadenza']) return "RATA_{$i}_DATA_VALIDITA successiva alla scadenza della rata";
+                }
+                $data = $d['dataScadenza'] ?: $d['dataValidita'];
+                if ($data <= $prevData) return "Date della rata {$i} non successive a quelle della rata precedente";
+                $prevData = $data;
             }
         }
         return null;
@@ -642,6 +647,7 @@ class MassivePendenzeController
      * RATA = N > 1: espande il payload in N rate collegate da un documento GovPay
      * (prima scadenza = DATA_SCADENZA, oppure oggi + 1 mese, poi mensile; le colonne
      * RATA_i_DATA_VALIDITA/RATA_i_DATA_SCADENZA, se valorizzate, sostituiscono le date calcolate).
+     * Con sole validità per rata e DATA_SCADENZA vuota le rate non hanno scadenza.
      *
      * @return list<array<string,mixed>>
      */
@@ -662,11 +668,13 @@ class MassivePendenzeController
         );
     }
 
-    private static function firstDue(array $norm): \DateTimeImmutable
+    /** Scadenza rata 1 da cui calcolare le mensili; null = date per rata indicate senza DATA_SCADENZA (nessuna scadenza calcolata). */
+    private static function firstDue(array $norm): ?\DateTimeImmutable
     {
-        return !empty($norm['dataScadenza'])
-            ? new \DateTimeImmutable((string)$norm['dataScadenza'])
-            : (new \DateTimeImmutable('today'))->modify('+1 month');
+        if (!empty($norm['dataScadenza'])) {
+            return new \DateTimeImmutable((string)$norm['dataScadenza']);
+        }
+        return empty($norm['dateRate']) ? (new \DateTimeImmutable('today'))->modify('+1 month') : null;
     }
 
     private static function rowToPayload(array $norm, string $idTipoPendenza, string $batchId, string $operatore): array
