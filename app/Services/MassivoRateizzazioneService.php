@@ -23,13 +23,18 @@ final class MassivoRateizzazioneService
      * @param DateTimeImmutable   $firstDue   scadenza della rata 1
      * @param string              $documentoId identificativo documento condiviso tra le rate
      * @param string              $baseIdPendenza prefisso idPendenza (ogni rata = "<base>-R<i>")
+     * @param array<int,array{dataValidita?:string,dataScadenza?:string}> $dateRate date esplicite per rata (vedi schedule())
      * @return list<array<string,mixed>> un payload per rata, in ordine di indice
      */
-    public static function expand(array $payload, int $numRate, DateTimeImmutable $firstDue, string $documentoId, string $baseIdPendenza): array
+    public static function expand(array $payload, int $numRate, DateTimeImmutable $firstDue, string $documentoId, string $baseIdPendenza, array $dateRate = []): array
     {
         $causaleOrig = trim((string)($payload['causale'] ?? ''));
         $importoTot = (float)($payload['importo'] ?? 0);
-        $parts = RateizzazioneService::buildPartsFromFirstDueDate($importoTot, $numRate, $firstDue);
+        $date = self::schedule($numRate, $firstDue, $dateRate);
+        $parts = [];
+        foreach (RateizzazioneService::splitAmount($importoTot, $numRate) as $k => $importo) {
+            $parts[] = ['indice' => $k + 1, 'importo' => (float)round($importo, 2)] + $date[$k];
+        }
         $vociOrig = is_array($payload['voci'] ?? null) ? array_values($payload['voci']) : [];
         $descrDoc = self::withSuffix($causaleOrig, " (Rate {$numRate})");
 
@@ -61,6 +66,26 @@ final class MassivoRateizzazioneService
             ];
             $single['datiAllegati'] = $dati;
             $out[] = $single;
+        }
+        return $out;
+    }
+
+    /**
+     * Date validità/scadenza di ogni rata: scadenze mensili da $firstDue, sostituite da quelle
+     * esplicite in $dateRate (indice rata 1..N => date ISO, '' o assente = calcolata).
+     * Validità non indicata = scadenza della rata.
+     *
+     * @param array<int,array{dataValidita?:string,dataScadenza?:string}> $dateRate
+     * @return list<array{dataValidita:string,dataScadenza:string}> una voce per rata, in ordine di indice
+     */
+    public static function schedule(int $numRate, DateTimeImmutable $firstDue, array $dateRate = []): array
+    {
+        $out = [];
+        foreach (RateizzazioneService::buildPartsFromFirstDueDate(0.0, $numRate, $firstDue) as $p) {
+            $i = (int)$p['indice'];
+            $scadenza = (string)($dateRate[$i]['dataScadenza'] ?? '') ?: $p['dataScadenza'];
+            $validita = (string)($dateRate[$i]['dataValidita'] ?? '') ?: $scadenza;
+            $out[] = ['dataValidita' => $validita, 'dataScadenza' => $scadenza];
         }
         return $out;
     }
