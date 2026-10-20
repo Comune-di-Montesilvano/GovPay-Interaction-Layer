@@ -20,13 +20,13 @@ final class MassivoRateizzazioneService
     /**
      * @param array<string,mixed> $payload    payload pendenza unica (output di rowToPayload)
      * @param int                 $numRate    numero rate (>1)
-     * @param DateTimeImmutable   $firstDue   scadenza della rata 1
+     * @param DateTimeImmutable|null $firstDue scadenza della rata 1 (null = rate senza scadenza calcolata)
      * @param string              $documentoId identificativo documento condiviso tra le rate
      * @param string              $baseIdPendenza prefisso idPendenza (ogni rata = "<base>-R<i>")
      * @param array<int,array{dataValidita?:string,dataScadenza?:string}> $dateRate date esplicite per rata (vedi schedule())
      * @return list<array<string,mixed>> un payload per rata, in ordine di indice
      */
-    public static function expand(array $payload, int $numRate, DateTimeImmutable $firstDue, string $documentoId, string $baseIdPendenza, array $dateRate = []): array
+    public static function expand(array $payload, int $numRate, ?DateTimeImmutable $firstDue, string $documentoId, string $baseIdPendenza, array $dateRate = []): array
     {
         $causaleOrig = trim((string)($payload['causale'] ?? ''));
         $importoTot = (float)($payload['importo'] ?? 0);
@@ -46,7 +46,11 @@ final class MassivoRateizzazioneService
             $single['idPendenza'] = substr($baseIdPendenza . '-R' . $i, 0, 35);
             $single['importo'] = $p['importo'];
             $single['dataValidita'] = $p['dataValidita'];
-            $single['dataScadenza'] = $p['dataScadenza'];
+            if ($p['dataScadenza'] !== '') {
+                $single['dataScadenza'] = $p['dataScadenza'];
+            } else {
+                unset($single['dataScadenza']);
+            }
             $single['causale'] = self::withSuffix($causaleOrig, $suffix);
             $single['voci'] = self::allocateVoci($vociOrig, $p['importo'], $suffix);
             $single['documento'] = [
@@ -71,19 +75,21 @@ final class MassivoRateizzazioneService
     }
 
     /**
-     * Date validità/scadenza di ogni rata: scadenze mensili da $firstDue, sostituite da quelle
-     * esplicite in $dateRate (indice rata 1..N => date ISO, '' o assente = calcolata).
-     * Validità non indicata = scadenza della rata.
+     * Date validità/scadenza di ogni rata: scadenze mensili da $firstDue (nessuna se null),
+     * sostituite da quelle esplicite in $dateRate (indice rata 1..N => date ISO, '' o assente = calcolata).
+     * Validità non indicata = scadenza della rata. Date non determinabili restano ''.
      *
      * @param array<int,array{dataValidita?:string,dataScadenza?:string}> $dateRate
      * @return list<array{dataValidita:string,dataScadenza:string}> una voce per rata, in ordine di indice
      */
-    public static function schedule(int $numRate, DateTimeImmutable $firstDue, array $dateRate = []): array
+    public static function schedule(int $numRate, ?DateTimeImmutable $firstDue, array $dateRate = []): array
     {
+        $calcolate = $firstDue !== null
+            ? array_column(RateizzazioneService::buildPartsFromFirstDueDate(0.0, $numRate, $firstDue), 'dataScadenza')
+            : [];
         $out = [];
-        foreach (RateizzazioneService::buildPartsFromFirstDueDate(0.0, $numRate, $firstDue) as $p) {
-            $i = (int)$p['indice'];
-            $scadenza = (string)($dateRate[$i]['dataScadenza'] ?? '') ?: $p['dataScadenza'];
+        for ($i = 1; $i <= $numRate; $i++) {
+            $scadenza = (string)($dateRate[$i]['dataScadenza'] ?? '') ?: (string)($calcolate[$i - 1] ?? '');
             $validita = (string)($dateRate[$i]['dataValidita'] ?? '') ?: $scadenza;
             $out[] = ['dataValidita' => $validita, 'dataScadenza' => $scadenza];
         }
