@@ -52,12 +52,14 @@ final class MassivoExportService
 
     /**
      * Tracciato di output: una riga per riga CSV di input. Pendenza unica → NUMERO_AVVISO;
-     * rateizzata → RATA_i_IMPORTO/RATA_i_SCADENZA/RATA_i_NUMERO_AVVISO fino al max rate del batch.
+     * rateizzata → RATA_i_IMPORTO/RATA_i_VALIDITA/RATA_i_SCADENZA/RATA_i_NUMERO_AVVISO fino al max rate del batch.
+     * Con $pdfNames (riga CSV => nome file nello ZIP) aggiunge la colonna NOME_PDF dopo NUMERO_AVVISO.
      *
      * @param list<array<string,mixed>> $dbRows
+     * @param array<int,string>|null $pdfNames
      * @return array{0:list<string>,1:list<list<string>>} [header, righe]
      */
-    public static function buildTracciato(array $dbRows): array
+    public static function buildTracciato(array $dbRows, ?array $pdfNames = null): array
     {
         $groups = self::groupByRiga($dbRows);
         $maxRate = 0;
@@ -67,8 +69,11 @@ final class MassivoExportService
             }
         }
         $header = self::BASE_HEADERS;
+        if ($pdfNames !== null) {
+            $header[] = 'NOME_PDF';
+        }
         for ($i = 1; $i <= $maxRate; $i++) {
-            array_push($header, "RATA_{$i}_IMPORTO", "RATA_{$i}_SCADENZA", "RATA_{$i}_NUMERO_AVVISO");
+            array_push($header, "RATA_{$i}_IMPORTO", "RATA_{$i}_VALIDITA", "RATA_{$i}_SCADENZA", "RATA_{$i}_NUMERO_AVVISO");
         }
 
         $rows = [];
@@ -95,11 +100,15 @@ final class MassivoExportService
                 isset($voci[1]) ? (string)($voci[1]['descrizione'] ?? '') : '',
                 $rateizzata ? '' : $g['rate'][0]['numeroAvviso'],
             ];
+            if ($pdfNames !== null) {
+                $line[] = $pdfNames[$g['riga']] ?? '';
+            }
             for ($i = 0; $i < $maxRate; $i++) {
                 $r = $rateizzata ? ($g['rate'][$i] ?? null) : null;
                 array_push(
                     $line,
                     $r ? self::fmtImporto($r['payload']['importo'] ?? null) : '',
+                    $r ? self::fmtData($r['payload']['dataValidita'] ?? null) : '',
                     $r ? self::fmtData($r['payload']['dataScadenza'] ?? null) : '',
                     $r ? $r['numeroAvviso'] : ''
                 );
