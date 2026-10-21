@@ -50,10 +50,11 @@ final class MassivoExportServiceTest extends TestCase
         [$header, $rows] = MassivoExportService::buildTracciato($this->dbRows());
 
         $this->assertSame(array_merge(MassivoExportService::BASE_HEADERS, [
-            'RATA_1_IMPORTO', 'RATA_1_SCADENZA', 'RATA_1_NUMERO_AVVISO',
-            'RATA_2_IMPORTO', 'RATA_2_SCADENZA', 'RATA_2_NUMERO_AVVISO',
+            'RATA_1_IMPORTO', 'RATA_1_VALIDITA', 'RATA_1_SCADENZA', 'RATA_1_NUMERO_AVVISO',
+            'RATA_2_IMPORTO', 'RATA_2_VALIDITA', 'RATA_2_SCADENZA', 'RATA_2_NUMERO_AVVISO',
         ]), $header);
         $this->assertNotContains('NOME', $header);
+        $this->assertNotContains('NOME_PDF', $header);
         $this->assertCount(2, $rows);
 
         $h = array_flip($header);
@@ -75,6 +76,39 @@ final class MassivoExportServiceTest extends TestCase
         $this->assertSame('300000000000000002', $rateizzata[$h['RATA_1_NUMERO_AVVISO']]);
         $this->assertSame('31/01/2027', $rateizzata[$h['RATA_2_SCADENZA']]);
         $this->assertSame('300000000000000003', $rateizzata[$h['RATA_2_NUMERO_AVVISO']]);
+    }
+
+    public function testTracciatoZipConNomePdf(): void
+    {
+        [$header, $rows] = MassivoExportService::buildTracciato($this->dbRows(), [2 => 'TASSA_ISCRIZIONE_RSSMRA80A01F205X.pdf']);
+
+        $h = array_flip($header);
+        $this->assertSame($h['NUMERO_AVVISO'] + 1, $h['NOME_PDF']);
+        $this->assertSame('TASSA_ISCRIZIONE_RSSMRA80A01F205X.pdf', $rows[0][$h['NOME_PDF']]);
+        // PDF non scaricato (assente dalla mappa) → colonna vuota
+        $this->assertSame('', $rows[1][$h['NOME_PDF']]);
+        $this->assertCount(count($header), $rows[1]);
+    }
+
+    public function testTracciatoRateConDateEsplicite(): void
+    {
+        $base = $this->unica();
+        $base['importo'] = 100.0;
+        $base['voci'] = [['idVocePendenza' => '1', 'descrizione' => 'TARI', 'importo' => 100.0]];
+        $rate = MassivoRateizzazioneService::expand($base, 2, new DateTimeImmutable('2026-12-31'), 'RATA-d', 'GIL-d', [
+            1 => ['dataValidita' => '2026-11-01', 'dataScadenza' => '2026-11-30'],
+            2 => ['dataValidita' => '2027-03-01', 'dataScadenza' => '2027-03-31'],
+        ]);
+        $db = [];
+        foreach ($rate as $k => $r) {
+            $db[] = ['riga' => 2, 'stato' => 'SUCCESS', 'payload_json' => json_encode($r), 'response_json' => json_encode(['numeroAvviso' => '30000000000000000' . $k])];
+        }
+        [$header, $rows] = MassivoExportService::buildTracciato($db);
+        $h = array_flip($header);
+        $this->assertSame('01/11/2026', $rows[0][$h['RATA_1_VALIDITA']]);
+        $this->assertSame('30/11/2026', $rows[0][$h['RATA_1_SCADENZA']]);
+        $this->assertSame('01/03/2027', $rows[0][$h['RATA_2_VALIDITA']]);
+        $this->assertSame('31/03/2027', $rows[0][$h['RATA_2_SCADENZA']]);
     }
 
     public function testPdfPlanAvvisoSingoloEDocumentoMultirata(): void
