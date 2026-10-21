@@ -148,10 +148,12 @@ class Config
      *
      * Keys:
      * - version: stringa base (`development`, `dev`, `v1.2.3`, ...)
-     * - version_type: `development`, `dev`, `release`, `tag`, `commit`
+     * - version_type: `development`, `dev`, `release`, `tag`, `commit`, `auto`
+     *   (`auto` = rebuild schedulato senza tag: version/label restano l'ultimo tag)
      * - version_label: label finale da renderizzare (`dev@sha7`, `v1.2.3`, ...)
      * - commit: full SHA se disponibile
      * - ref_url: URL GitHub finale oppure stringa vuota
+     * - build_date: data build CI (YYYY-MM-DD) oppure stringa vuota
      */
     public static function getVersionInfo(): array
     {
@@ -164,6 +166,7 @@ class Config
             'version_label' => '',
             'commit' => $commit,
             'ref_url' => '',
+            'build_date' => (string) (getenv('GIL_BUILD_DATE') ?: ''),
         ];
 
         $fileInfo = self::readVersionInfoFile();
@@ -182,6 +185,7 @@ class Config
         if ($info['ref_url'] === '') {
             $info['ref_url'] = self::buildRefUrl($info['version_type'], $info['version'], $commit);
         }
+        $info['build_date'] = trim((string) ($info['build_date'] ?? ''));
 
         return $info;
     }
@@ -224,7 +228,7 @@ class Config
     private static function normalizeVersionType(string $versionType, string $version, string $commit): string
     {
         $normalized = strtolower(trim($versionType));
-        if (in_array($normalized, ['development', 'dev', 'release', 'tag', 'commit'], true)) {
+        if (in_array($normalized, ['development', 'dev', 'release', 'tag', 'commit', 'auto'], true)) {
             return $normalized;
         }
 
@@ -271,7 +275,7 @@ class Config
             return '';
         }
 
-        if (in_array($versionType, ['dev', 'commit'], true) && $commit !== 'unknown') {
+        if (in_array($versionType, ['dev', 'commit', 'auto'], true) && $commit !== 'unknown') {
             return self::REPOSITORY_URL . '/commit/' . $commit;
         }
 
