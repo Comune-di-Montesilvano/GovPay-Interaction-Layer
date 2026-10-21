@@ -10,6 +10,8 @@ name: Dependabot auto-merge
 # branch deve essere aggiornato con main). Sul trigger pull_request di dependabot sono
 # visibili solo i secret Dependabot: i due secret vanno salvati sia come Actions che come
 # Dependabot secret.
+# Permessi App (repo): Contents RW, Pull requests RW, Workflows RW (le PR github-actions
+# toccano .github/workflows/), Metadata R.
 on:
   pull_request:
     types: [opened, reopened, synchronize]
