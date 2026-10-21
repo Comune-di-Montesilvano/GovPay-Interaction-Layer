@@ -1,49 +1,30 @@
 ######################################################################
-# STAGE 1: Asset Builder (Font Awesome + Chart.js)
+# STAGE 1: Asset Builder (librerie frontend da npm)
 ######################################################################
 FROM node:lts-trixie-slim AS asset_builder
 
-# Installa dipendenze necessarie per la fase di build (Wget, Unzip)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates unzip wget
-
 WORKDIR /app
 
-# ----------------------------------------------------------------------
-# VARIABILI GLOBALI DI CONFIGURAZIONE
-# ----------------------------------------------------------------------
+# Versioni esatte in package.json/package-lock.json (root repo): le aggiorna dependabot
+# (ecosistema npm). Niente ARG di versione qui: dependabot non li vedrebbe.
+COPY package.json package-lock.json ./
 
-# Variabili per Font Awesome
-ARG FA_VERSION="7.2.0"
-ENV FA_URL=https://github.com/FortAwesome/Font-Awesome/releases/download/${FA_VERSION}/fontawesome-free-${FA_VERSION}-web.zip
-ENV FA_DIR="fontawesome-free-${FA_VERSION}-web"
-
-# Variabili per Chart.js
-ARG CHARTJS_VERSION="4.5.1"
-
-# 1. Scarica Font Awesome in questa fase per usarlo come asset copiabile nella Fase 2
-RUN mkdir -p /tmp/fa_download && \
-    cd /tmp/fa_download && \
-    echo "Scarico Font Awesome ${FA_VERSION}..." && \
-    wget -q -O fa.zip ${FA_URL} && \
-    unzip -q fa.zip && \
-    mv ${FA_DIR} /app/fontawesome-dist && \
-    rm -rf /tmp/fa_download
-
-# 2. Scarica Chart.js (bundle UMD) per distribuirlo localmente tramite npm
+# --ignore-scripts: nessun postinstall di terze parti in build (supply-chain).
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    mkdir -p /app/chartjs-dist && \
-    echo "Scarico Chart.js ${CHARTJS_VERSION} via npm..." && \
-    npm install chart.js@${CHARTJS_VERSION} --prefix /tmp/chartjs-download && \
-    cp /tmp/chartjs-download/node_modules/chart.js/dist/chart.umd.js /app/chartjs-dist/chart.umd.js && \
-    cp /tmp/chartjs-download/node_modules/chart.js/dist/chart.umd.min.js /app/chartjs-dist/chart.umd.min.js && \
-    cp /tmp/chartjs-download/node_modules/chart.js/dist/chart.umd.min.js.map /app/chartjs-dist/chart.umd.min.js.map && \
-    rm -rf /tmp/chartjs-download
+    npm ci --ignore-scripts --no-audit --no-fund && \
+    mkdir -p /app/dist/fontawesome /app/dist/chartjs /app/dist/litepicker /app/dist/tom-select && \
+    cp -r node_modules/@fortawesome/fontawesome-free/css \
+          node_modules/@fortawesome/fontawesome-free/js \
+          node_modules/@fortawesome/fontawesome-free/webfonts /app/dist/fontawesome/ && \
+    cp node_modules/chart.js/dist/chart.umd.js \
+       node_modules/chart.js/dist/chart.umd.min.js \
+       node_modules/chart.js/dist/chart.umd.min.js.map /app/dist/chartjs/ && \
+    cp node_modules/litepicker/dist/litepicker.js \
+       node_modules/litepicker/dist/css/litepicker.css /app/dist/litepicker/ && \
+    cp node_modules/tom-select/dist/js/tom-select.complete.min.js \
+       node_modules/tom-select/dist/css/tom-select.bootstrap5.min.css /app/dist/tom-select/
 
-# Il risultato del download di Font Awesome è in /app/fontawesome-dist
-# Il risultato del download di Chart.js è in /app/chartjs-dist
+# Risultato in /app/dist/{fontawesome,chartjs,litepicker,tom-select} -> /assets/* runtime
 
 
 ######################################################################
@@ -97,11 +78,10 @@ COPY --link --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 RUN mkdir -p public/assets/fontawesome
 
-# Copia Font Awesome (Asset scaricati dalla Fase 1)
-ENV FA_DEST="/var/www/html/public/assets/fontawesome"
-COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/css ${FA_DEST}/css/
-COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/js ${FA_DEST}/js/
-COPY --chown=www-app:www-data --from=asset_builder /app/fontawesome-dist/webfonts ${FA_DEST}/webfonts/
+# Copia librerie frontend (Fase 1, da npm)
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/fontawesome/ /var/www/html/public/assets/fontawesome/
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/litepicker/ /var/www/html/public/assets/litepicker/
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/tom-select/ /var/www/html/public/assets/tom-select/
 RUN chmod -R 755 public/assets
 
 # (Documentativo) composer gestito nello stage vendor_builder
@@ -207,7 +187,7 @@ RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
 # denied / Operation not permitted, vedi GOVPAY-GIL-D/K e duplicati). Col bit setgid
 # ogni nuovo file eredita il gruppo www-data della directory indipendentemente da chi
 # lo crea, restando scrivibile da entrambi.
-COPY --chown=www-app:www-data --from=asset_builder /app/chartjs-dist/ /var/www/html/public/assets/chartjs/
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/chartjs/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 
 # Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
