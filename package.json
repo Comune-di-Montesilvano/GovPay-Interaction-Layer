@@ -1,0 +1,12 @@
+{
+  "name": "gil-frontend-assets",
+  "private": true,
+  "description": "Librerie frontend servite da /assets (installate nello stage asset_builder del Dockerfile). Versioni esatte: le aggiorna dependabot.",
+  "license": "EUPL-1.2",
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "7.2.0",
+    "chart.js": "4.5.1",
+    "litepicker": "2.0.12",
+    "tom-select": "2.4.3"
+  }
+}
