@@ -14,7 +14,17 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [dev]
+  # Rebuild settimanale di main (lunedi' 04:30 UTC): aggiorna SOLO `latest` (+ `latest-YYYYMMDD`)
+  # con immagini base/patch Debian fresche, senza toccare i tag vX.Y.Z (quelli li crea solo
+  # il maintainer). Saltato se nell'ultima settimana e' gia' stato pubblicato un tag.
+  schedule:
+    - cron: "30 4 * * 1"
   workflow_dispatch:
+    inputs:
+      rebuild_latest:
+        description: "Rebuild automatico di latest (come lo schedule settimanale, senza skip)"
+        type: boolean
+        default: false
 
 # Mai cancel-in-progress: un push a ghcr interrotto a meta' puo' lasciare un digest/manifest
 # corrotto o incompleto — run concorrenti sullo stesso ref si accodano invece di accavallarsi.
@@ -26,6 +36,7 @@ permissions:
   contents: read
   packages: write
   security-events: write
+  actions: read
 
 env:
   REGISTRY: ghcr.io
@@ -45,15 +56,51 @@ jobs:
       ref_url: ${{ steps.v.outputs.ref_url }}
       apt_refresh: ${{ steps.apt.outputs.apt_refresh }}
       build_date: ${{ steps.apt.outputs.build_date }}
+      auto: ${{ steps.mode.outputs.auto }}
+      skip: ${{ steps.mode.outputs.skip }}
+      auto_tag: ${{ steps.mode.outputs.auto_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          # Storia + tag completi: il rebuild automatico ricava l'ultimo tag vX.Y.Z.
+          fetch-depth: 0
+      - name: Resolve build mode
+        id: mode
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          REBUILD_LATEST: ${{ inputs.rebuild_latest }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          auto=false
+          skip=false
+          if [[ "$EVENT_NAME" == "schedule" || "$REBUILD_LATEST" == "true" ]]; then
+            auto=true
+          fi
+          # Solo lo schedule salta: un tag pubblicato negli ultimi 7 giorni ha gia' rinfrescato
+          # latest. Le run "push" di questo workflow sono solo tag (i branch passano da workflow_run).
+          if [[ "$EVENT_NAME" == "schedule" ]]; then
+            since=$(date -u -d '7 days ago' +%F)
+            recent=$(gh run list -R "$REPO" --workflow docker-publish.yml --event push \
+              --status success --created ">=$since" --json headBranch -q 'length')
+            if [[ "$recent" -gt 0 ]]; then
+              echo "::notice::Tag pubblicato negli ultimi 7 giorni: rebuild settimanale saltato."
+              skip=true
+            fi
+          fi
+          {
+            echo "auto=$auto"
+            echo "skip=$skip"
+            echo "auto_tag=latest-$(date -u +%Y%m%d)"
+          } >> "$GITHUB_OUTPUT"
       - name: Resolve version info
         id: v
         uses: ./.github/actions/version-resolver
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          auto: ${{ steps.mode.outputs.auto }}
       # Settimana ISO: invalida il layer apt di runtime-base una volta a settimana, altrimenti
       # la cache GHA/registry congela `apt-get upgrade` e le patch Debian non entrano mai.
       - name: Resolve apt refresh key
@@ -67,6 +114,7 @@ jobs:
   # the expensive asset_builder/vendor_builder/runtime-base graph.
   build-php-base:
     needs: setup
+    if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -110,6 +158,7 @@ jobs:
   # Shared layers are warmed by build-php-base and then reused per app.
   build-php:
     needs: [setup]
+    if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -143,10 +192,11 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
           tags: |
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ needs.setup.outputs.auto != 'true' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
       - name: Build & push · ${{ matrix.app }}
         id: build
@@ -194,6 +244,15 @@ jobs:
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore
 
+      # Rebuild automatico: `latest` punta al nuovo digest solo DOPO che Trivy l'ha passato
+      # (se lo scan fallisce il job si ferma prima e latest resta la build precedente).
+      - name: Promuovi latest · ${{ matrix.app }}
+        if: needs.setup.outputs.auto == 'true'
+        env:
+          IMAGE: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
+
       - name: Upload Trivy results · ${{ matrix.app }}
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
         if: always()
@@ -204,6 +263,7 @@ jobs:
   # ── Independent services: parallel matrix ─────────────────────────────────
   build-services:
     needs: setup
+    if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -235,10 +295,11 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
           tags: |
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ needs.setup.outputs.auto != 'true' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
       - name: Build & push · ${{ matrix.image }}
         id: build
@@ -280,6 +341,15 @@ jobs:
           limit-severities-for-sarif: true
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore
+
+      # Rebuild automatico: `latest` punta al nuovo digest solo DOPO che Trivy l'ha passato
+      # (se lo scan fallisce il job si ferma prima e latest resta la build precedente).
+      - name: Promuovi latest · ${{ matrix.image }}
+        if: needs.setup.outputs.auto == 'true'
+        env:
+          IMAGE: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
 
       - name: Upload Trivy results · ${{ matrix.image }}
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
