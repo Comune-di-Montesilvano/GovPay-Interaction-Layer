@@ -8,7 +8,6 @@ updates:
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
       default-days: 7
-      semver-major-days: 14
     # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
     # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
     groups:
@@ -51,7 +50,6 @@ updates:
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
       default-days: 7
-      semver-major-days: 14
     # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
     # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
     groups:
@@ -66,7 +64,6 @@ updates:
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
       default-days: 7
-      semver-major-days: 14
     # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
     # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
     groups:
