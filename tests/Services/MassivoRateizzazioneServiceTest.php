@@ -71,6 +71,29 @@ final class MassivoRateizzazioneServiceTest extends TestCase
         ], $date);
     }
 
+    public function testExpandSoloValiditaSenzaScadenza(): void
+    {
+        $payload = $this->payload();
+        unset($payload['dataScadenza']);
+        $rate = MassivoRateizzazioneService::expand($payload, 2, null, 'RATA-abc', 'GIL-xyz', [
+            1 => ['dataValidita' => '2026-11-30'],
+            2 => ['dataValidita' => '2026-12-31'],
+        ]);
+        $this->assertSame(['2026-11-30', '2026-12-31'], array_column($rate, 'dataValidita'));
+        foreach ($rate as $r) {
+            $this->assertArrayNotHasKey('dataScadenza', $r);
+        }
+    }
+
+    public function testScheduleSenzaFirstDueLasciaDateVuote(): void
+    {
+        $date = MassivoRateizzazioneService::schedule(2, null, [1 => ['dataValidita' => '2026-11-30']]);
+        $this->assertSame([
+            ['dataValidita' => '2026-11-30', 'dataScadenza' => ''],
+            ['dataValidita' => '', 'dataScadenza' => ''],
+        ], $date);
+    }
+
     public function testAllocateVociProporzionaleConRestoSullUltima(): void
     {
         $voci = [['importo' => 70.0, 'descrizione' => 'A'], ['importo' => 30.0, 'descrizione' => 'B']];
