@@ -173,8 +173,12 @@ ENV GIL_REF_URL=$GIL_REF_URL
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
 
+# Data build CI (YYYY-MM-DD): distingue i rebuild schedulati della stessa versione
+ARG GIL_BUILD_DATE=
+ENV GIL_BUILD_DATE=$GIL_BUILD_DATE
+
 RUN printf '%s\n' "$GIL_IMAGE_TAG" > /var/www/html/VERSION \
-    && php -r '$data = ["version" => getenv("GIL_IMAGE_TAG") ?: "development", "version_type" => getenv("GIL_VERSION_TYPE") ?: "development", "version_label" => getenv("GIL_VERSION_LABEL") ?: (getenv("GIL_IMAGE_TAG") ?: "development"), "commit" => getenv("GIT_COMMIT_SHA") ?: "unknown", "ref_url" => getenv("GIL_REF_URL") ?: ""]; file_put_contents("/var/www/html/VERSION_INFO.json", json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
+    && php -r '$data = ["version" => getenv("GIL_IMAGE_TAG") ?: "development", "version_type" => getenv("GIL_VERSION_TYPE") ?: "development", "version_label" => getenv("GIL_VERSION_LABEL") ?: (getenv("GIL_IMAGE_TAG") ?: "development"), "commit" => getenv("GIT_COMMIT_SHA") ?: "unknown", "ref_url" => getenv("GIL_REF_URL") ?: "", "build_date" => getenv("GIL_BUILD_DATE") ?: ""]; file_put_contents("/var/www/html/VERSION_INFO.json", json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
 
 EXPOSE 443
 
