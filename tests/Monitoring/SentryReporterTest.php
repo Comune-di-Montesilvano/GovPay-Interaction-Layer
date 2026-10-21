@@ -111,4 +111,36 @@ final class SentryReporterTest extends TestCase
         $this->assertSame('Invalid payment notice data', SentryReporter::scrubSecretsInString('Invalid payment notice data'));
         $this->assertSame('token_received', SentryReporter::scrubSecretsInString('token_received'));
     }
+
+    public function testResolveReleaseForTaggedBuild(): void
+    {
+        $info = ['version' => 'v1.6.6', 'version_type' => 'release', 'commit' => 'dbac2433d43f7fbf61065392b067cf8481a185ff', 'build_date' => '2026-10-21'];
+        $this->assertSame('gil@1.6.6', SentryReporter::resolveRelease($info));
+        $this->assertSame('gil@1.6.6', SentryReporter::resolveRelease(['version_type' => 'tag'] + $info));
+    }
+
+    public function testResolveReleaseForAutoBuildCarriesDateAndCommit(): void
+    {
+        $info = ['version' => 'v1.6.6', 'version_type' => 'auto', 'commit' => 'dbac2433d43f7fbf61065392b067cf8481a185ff', 'build_date' => '2026-10-26'];
+        $this->assertSame('gil@1.6.6+auto.20261026.dbac243', SentryReporter::resolveRelease($info));
+    }
+
+    public function testResolveReleaseForAutoBuildWithoutMetadata(): void
+    {
+        $info = ['version' => 'v1.6.6', 'version_type' => 'auto', 'commit' => 'unknown', 'build_date' => ''];
+        $this->assertSame('gil@1.6.6+auto', SentryReporter::resolveRelease($info));
+    }
+
+    public function testResolveReleaseForDevAndCommitBuilds(): void
+    {
+        $sha = 'dbac2433d43f7fbf61065392b067cf8481a185ff';
+        $this->assertSame('gil@dev+dbac243', SentryReporter::resolveRelease(['version' => 'dev', 'version_type' => 'dev', 'commit' => $sha]));
+        $this->assertSame('gil@dbac243', SentryReporter::resolveRelease(['version' => 'dbac243', 'version_type' => 'commit', 'commit' => $sha]));
+    }
+
+    public function testResolveReleaseNullForLocalDevelopment(): void
+    {
+        $this->assertNull(SentryReporter::resolveRelease(['version' => 'development', 'version_type' => 'development', 'commit' => 'unknown']));
+        $this->assertNull(SentryReporter::resolveRelease([]));
+    }
 }

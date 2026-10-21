@@ -29,6 +29,45 @@ class SentryReporter
         return $envTrimmed !== '' ? $envTrimmed : 'unknown';
     }
 
+    /**
+     * Release Sentry dai metadati di Config::getVersionInfo().
+     * Build `auto` (rebuild settimanale senza tag) mantengono l'ultimo tag come base
+     * e aggiungono data+commit come build metadata semver, cosi' ogni rebuild e'
+     * una release distinta in GlitchTip pur restando raggruppabile per versione.
+     */
+    public static function resolveRelease(array $versionInfo): ?string
+    {
+        $type = (string)($versionInfo['version_type'] ?? '');
+        $version = ltrim(trim((string)($versionInfo['version'] ?? '')), 'v');
+        $commit = trim((string)($versionInfo['commit'] ?? ''));
+        $sha7 = ($commit !== '' && $commit !== 'unknown') ? substr($commit, 0, 7) : '';
+
+        switch ($type) {
+            case 'release':
+            case 'tag':
+                return $version !== '' ? 'gil@' . $version : null;
+            case 'auto':
+                if ($version === '') {
+                    return null;
+                }
+                $meta = ['auto'];
+                $date = substr((string)preg_replace('/\D/', '', (string)($versionInfo['build_date'] ?? '')), 0, 8);
+                if ($date !== '') {
+                    $meta[] = $date;
+                }
+                if ($sha7 !== '') {
+                    $meta[] = $sha7;
+                }
+                return 'gil@' . $version . '+' . implode('.', $meta);
+            case 'dev':
+                return 'gil@dev' . ($sha7 !== '' ? '+' . $sha7 : '');
+            case 'commit':
+                return $sha7 !== '' ? 'gil@' . $sha7 : null;
+            default:
+                return null;
+        }
+    }
+
     public static function shouldInit(?string $dsn): bool
     {
         return trim((string)$dsn) !== '';
@@ -98,9 +137,12 @@ class SentryReporter
             return;
         }
 
+        $versionInfo = \App\Config\Config::getVersionInfo();
+
         \Sentry\init([
             'dsn' => $dsn,
             'environment' => self::resolveEnvironment(getenv('SENTRY_ENVIRONMENT') ?: null),
+            'release' => self::resolveRelease($versionInfo),
             'traces_sample_rate' => 0,
             'send_default_pii' => false,
             'before_send' => static function (Event $event): ?Event {
@@ -139,8 +181,13 @@ class SentryReporter
         ]);
 
         $suite = self::resolveSuite($suiteOverride, getenv('APP_SUITE') ?: null);
-        \Sentry\configureScope(static function (Scope $scope) use ($suite): void {
+        \Sentry\configureScope(static function (Scope $scope) use ($suite, $versionInfo): void {
             $scope->setTag('suite', $suite);
+            $scope->setTag('build_type', (string)($versionInfo['version_type'] ?? 'development'));
+            $commit = (string)($versionInfo['commit'] ?? 'unknown');
+            if ($commit !== '' && $commit !== 'unknown') {
+                $scope->setTag('commit', substr($commit, 0, 7));
+            }
         });
     }
 }
