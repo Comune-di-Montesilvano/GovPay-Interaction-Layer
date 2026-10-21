@@ -63,6 +63,12 @@
               <strong>RATA</strong>: numero di rate (vuota o 1 = pendenza unica). Con N &gt; 1 l'importo viene diviso in N rate
               mensili collegate da un unico documento; la prima scade a DATA_SCADENZA (o tra un mese se vuota).
             </p>
+            <p class="small text-muted mt-1 mb-0">
+              <strong>Date per rata</strong> (facoltative, in coda): <code>RATA_1_DATA_VALIDITA;RATA_1_DATA_SCADENZA;RATA_2_DATA_VALIDITA;…</code>
+              fino al numero di rate. Se indicate, le scadenze vanno valorizzate per tutte le rate e sostituiscono il calcolo mensile;
+              validità vuota = scadenza della rata. Con sole validità (e DATA_SCADENZA vuota) le rate non hanno scadenza:
+              in tal caso la validità è obbligatoria per ogni rata.
+            </p>
           </div>
 
           <form method="post" action="/pendenze/massivo/upload" enctype="multipart/form-data" id="massiveUploadForm">
