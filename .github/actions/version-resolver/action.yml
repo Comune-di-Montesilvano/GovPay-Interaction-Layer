@@ -4,13 +4,17 @@ description: Derives version, version_type, version_label, ref_url from GITHUB_R
 inputs:
   github_token:
     required: true
+  auto:
+    description: "true = rebuild automatico di latest (version/label = ultimo tag vX.Y.Z)"
+    required: false
+    default: "false"
 
 outputs:
   version:
     description: Version string (e.g. "dev", "v1.2.3", short-sha)
     value: ${{ steps.resolve.outputs.version }}
   version_type:
-    description: development | dev | release | tag | commit
+    description: development | dev | release | tag | commit | auto
     value: ${{ steps.resolve.outputs.version_type }}
   version_label:
     description: Human-readable label
@@ -27,6 +31,7 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
+        AUTO_BUILD: ${{ inputs.auto }}
       run: |
         set -euo pipefail
         repo_url="https://github.com/${GITHUB_REPOSITORY}"
@@ -37,7 +42,15 @@ runs:
         version_label="development"
         ref_url=""
 
-        if [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
+        if [[ "${AUTO_BUILD}" == "true" ]]; then
+          # Footer = ultimo tag rilasciato; build_date/commit (Sentry) distinguono il rebuild.
+          # Richiede checkout con fetch-depth: 0.
+          last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+          version="${last_tag:-${GITHUB_SHA::7}}"
+          version_type="auto"
+          version_label="${version}"
+          ref_url="${commit_url}"
+        elif [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
           version="dev"
           version_type="dev"
           version_label="dev@${GITHUB_SHA::7}"
