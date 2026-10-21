@@ -9,6 +9,11 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
+    # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "composer"
     directory: "/"
@@ -19,6 +24,11 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
+    # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
     # Questi package sono client locali risolti via repository type=path in composer.json.
     # Dependabot non puo aggiornarli via registry remota.
     ignore:
@@ -42,6 +52,11 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
+    # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
     directory: "/docker/db"
@@ -52,8 +67,28 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
+    # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
     # Restiamo su 12.3 LTS: 13.0 e' rolling (EOL community Q4 2026). Rimuovere quando
     # una 13.x diventa LTS.
     ignore:
       - dependency-name: "mariadb"
         versions: [">= 13.0, < 13.1"]
+
+  # Librerie frontend (Font Awesome, Chart.js, litepicker, tom-select): package.json root,
+  # installate nello stage asset_builder del Dockerfile e servite da /assets.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    # Minor+patch in una sola PR per ecosistema (merge automatico, vedi
+    # dependabot-automerge.yml); le major restano PR singole, aperte come promemoria.
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
