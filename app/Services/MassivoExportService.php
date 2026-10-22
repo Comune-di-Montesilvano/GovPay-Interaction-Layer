@@ -17,12 +17,16 @@ final class MassivoExportService
         'NUMERO_AVVISO',
     ];
 
+    public const NOTIFICHE_HEADERS = [
+        'NOTIFICA_EMAIL', 'NOTIFICA_EMAIL_DATA', 'NOTIFICA_EMAIL_DESTINATARIO', 'NOTIFICA_APP_IO', 'NOTIFICA_APP_IO_DATA',
+    ];
+
     /**
      * Raggruppa le righe DB per riga CSV di input. Esclude i gruppi senza alcuna riga SUCCESS
      * (righe scartate in validazione: hanno già il CSV errori dedicato).
      *
      * @param list<array<string,mixed>> $dbRows
-     * @return list<array{riga:int,rate:list<array{payload:array<string,mixed>,numeroAvviso:string,stato:string}>}>
+     * @return list<array{riga:int,rate:list<array{payload:array<string,mixed>,numeroAvviso:string,idPendenza:string,stato:string}>}>
      */
     public static function groupByRiga(array $dbRows): array
     {
@@ -34,9 +38,11 @@ final class MassivoExportService
             }
             $stato = (string)($r['stato'] ?? '');
             $resp = json_decode((string)($r['response_json'] ?? ''), true);
-            $avviso = ($stato === 'SUCCESS' && is_array($resp)) ? (string)($resp['numeroAvviso'] ?? '') : '';
+            $ok = $stato === 'SUCCESS' && is_array($resp);
+            $avviso = $ok ? (string)($resp['numeroAvviso'] ?? '') : '';
+            $idPendenza = $ok ? (string)($resp['idPendenza'] ?? $payload['idPendenza'] ?? '') : '';
             $riga = (int)($r['riga'] ?? 0);
-            $groups[$riga][] = ['payload' => $payload, 'numeroAvviso' => $avviso, 'stato' => $stato];
+            $groups[$riga][] = ['payload' => $payload, 'numeroAvviso' => $avviso, 'idPendenza' => $idPendenza, 'stato' => $stato];
         }
         ksort($groups);
         $out = [];
@@ -54,12 +60,15 @@ final class MassivoExportService
      * Tracciato di output: una riga per riga CSV di input. Pendenza unica → NUMERO_AVVISO;
      * rateizzata → RATA_i_IMPORTO/RATA_i_VALIDITA/RATA_i_SCADENZA/RATA_i_NUMERO_AVVISO fino al max rate del batch.
      * Con $pdfNames (riga CSV => nome file nello ZIP) aggiunge la colonna NOME_PDF dopo NUMERO_AVVISO.
+     * Con $notifiche (idPendenza => datiAllegati.notifiche GovPay, null = non recuperata) aggiunge
+     * NOTIFICHE_HEADERS: esito invio avviso per canale, aggregato sulle rate (vedi esitoNotifica()).
      *
      * @param list<array<string,mixed>> $dbRows
      * @param array<int,string>|null $pdfNames
+     * @param array<string,list<array<string,mixed>>|null>|null $notifiche
      * @return array{0:list<string>,1:list<list<string>>} [header, righe]
      */
-    public static function buildTracciato(array $dbRows, ?array $pdfNames = null): array
+    public static function buildTracciato(array $dbRows, ?array $pdfNames = null, ?array $notifiche = null): array
     {
         $groups = self::groupByRiga($dbRows);
         $maxRate = 0;
@@ -71,6 +80,9 @@ final class MassivoExportService
         $header = self::BASE_HEADERS;
         if ($pdfNames !== null) {
             $header[] = 'NOME_PDF';
+        }
+        if ($notifiche !== null) {
+            array_push($header, ...self::NOTIFICHE_HEADERS);
         }
         for ($i = 1; $i <= $maxRate; $i++) {
             array_push($header, "RATA_{$i}_IMPORTO", "RATA_{$i}_VALIDITA", "RATA_{$i}_SCADENZA", "RATA_{$i}_NUMERO_AVVISO");
@@ -103,6 +115,11 @@ final class MassivoExportService
             if ($pdfNames !== null) {
                 $line[] = $pdfNames[$g['riga']] ?? '';
             }
+            if ($notifiche !== null) {
+                [$ioEsito, $ioData] = self::esitoNotifica($g, $notifiche, 'app_io');
+                array_push($line, ...self::esitoNotifica($g, $notifiche, 'email'));
+                array_push($line, $ioEsito, $ioData);
+            }
             for ($i = 0; $i < $maxRate; $i++) {
                 $r = $rateizzata ? ($g['rate'][$i] ?? null) : null;
                 array_push(
@@ -116,6 +133,72 @@ final class MassivoExportService
             $rows[] = $line;
         }
         return [$header, $rows];
+    }
+
+    /**
+     * idPendenza delle pendenze create nel batch (per recuperarne le notifiche da GovPay).
+     *
+     * @param list<array<string,mixed>> $dbRows
+     * @return list<string>
+     */
+    public static function idPendenze(array $dbRows): array
+    {
+        $ids = [];
+        foreach (self::groupByRiga($dbRows) as $g) {
+            foreach ($g['rate'] as $r) {
+                if ($r['idPendenza'] !== '') {
+                    $ids[] = $r['idPendenza'];
+                }
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Esito notifica di creazione su un canale per una riga CSV, sulle sue pendenze create:
+     * INVIATA (tutte) | INVIATA k/n (solo alcune rate) | NON INVIATA | N/D (pendenze non recuperate da GovPay).
+     * Data = ultimo invio riuscito; destinatari distinti degli invii riusciti.
+     * GovPay registra in datiAllegati.notifiche solo gli invii riusciti: assenza = non inviata.
+     *
+     * @param array<string,list<array<string,mixed>>|null> $notifiche
+     * @return array{0:string,1:string,2:string} [esito, data, destinatari]
+     */
+    private static function esitoNotifica(array $g, array $notifiche, string $canale): array
+    {
+        $ids = array_values(array_filter(array_column($g['rate'], 'idPendenza'), static fn($id) => $id !== ''));
+        $n = count($ids);
+        $recuperate = 0;
+        $inviate = 0;
+        $ultima = '';
+        $destinatari = [];
+        foreach ($ids as $id) {
+            $lista = $notifiche[$id] ?? null;
+            if ($lista === null) {
+                continue;
+            }
+            $recuperate++;
+            $ok = array_filter($lista, static fn($x) => ($x['canale'] ?? 'email') === $canale
+                && ($x['esito'] ?? '') === 'OK'
+                && ($x['tipo'] ?? 'creazione_pendenza') === 'creazione_pendenza');
+            if ($ok === []) {
+                continue;
+            }
+            $inviate++;
+            foreach ($ok as $x) {
+                $ultima = max($ultima, (string)($x['timestamp'] ?? ''));
+                $d = trim((string)($x['destinatario'] ?? ''));
+                if ($d !== '') {
+                    $destinatari[strtolower($d)] = $d;
+                }
+            }
+        }
+        $esito = match (true) {
+            $recuperate === 0 => 'N/D',
+            $inviate === $n => 'INVIATA',
+            $inviate === 0 => 'NON INVIATA',
+            default => "INVIATA {$inviate}/{$n}",
+        };
+        return [$esito, self::fmtDataOra($ultima), implode(', ', $destinatari)];
     }
 
     /**
@@ -221,6 +304,14 @@ final class MassivoExportService
     private static function fmtImporto(mixed $v): string
     {
         return is_numeric($v) ? number_format((float)$v, 2, ',', '') : '';
+    }
+
+    private static function fmtDataOra(string $v): string
+    {
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/', $v, $m)) {
+            return "{$m[3]}/{$m[2]}/{$m[1]} {$m[4]}:{$m[5]}";
+        }
+        return $v;
     }
 
     private static function fmtData(mixed $v): string

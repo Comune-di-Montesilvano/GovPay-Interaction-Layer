@@ -9,7 +9,8 @@ declare(strict_types=1);
  * elabora un solo job (pendenze_massive_export) e termina.
  *
  * Contenuto ZIP: un PDF per riga CSV di input ("CAUSALE_CF.pdf" — avviso singolo o PDF
- * documento multirata per le rateizzate), tracciato CSV di output con colonna NOME_PDF, ERRORI.txt se qualche
+ * documento multirata per le rateizzate), tracciato CSV di output con colonna NOME_PDF ed esito
+ * notifiche email/App IO, ERRORI.txt se qualche
  * PDF non è stato scaricato.
  */
 
@@ -104,8 +105,11 @@ try {
             $exportRepo->updateProgress($jobId, $processati, count($errori));
         }
     }
+    // Esito notifiche da datiAllegati.notifiche GovPay (solo nello ZIP: una GET per pendenza)
+    $notifiche = $controller->fetchNotifichePendenze(MassivoExportService::idPendenze($rows));
+    $log('Notifiche recuperate: ' . count(array_filter($notifiche, 'is_array')) . '/' . count($notifiche) . ' pendenze.');
     // Tracciato dopo i download: NOME_PDF valorizzato solo per i PDF effettivamente nello ZIP
-    [$header, $tracciato] = MassivoExportService::buildTracciato($rows, $pdfNames);
+    [$header, $tracciato] = MassivoExportService::buildTracciato($rows, $pdfNames, $notifiche);
     $zip->addFromString('tracciato_' . $safeBatch . '.csv', MassivoExportService::toCsv($header, $tracciato));
     if ($errori !== []) {
         $zip->addFromString('ERRORI.txt', implode("\n", $errori) . "\n");
