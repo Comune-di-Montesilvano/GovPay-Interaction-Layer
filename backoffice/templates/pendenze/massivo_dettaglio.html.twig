@@ -32,7 +32,8 @@
           <p class="small text-muted mb-3">
             {{ success_count }} pendenze create. Il tracciato riporta le righe del CSV di input con i numeri avviso
             (una colonna per rata se rateizzata). Lo ZIP contiene un PDF per riga (<code>CAUSALE_CODICEFISCALE.pdf</code>,
-            multirata per le rateizzate) e viene generato in background.
+            multirata per le rateizzate) più il tracciato con nome PDF ed esito notifiche email/App IO letto da GovPay;
+            viene generato in background.
           </p>
           <div class="d-flex flex-wrap gap-2 align-items-center">
             <a href="/pendenze/massivo/{{ batch_id|url_encode }}/tracciato" class="btn btn-outline-primary btn-sm">

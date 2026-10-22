@@ -90,6 +90,36 @@ final class MassivoExportServiceTest extends TestCase
         $this->assertCount(count($header), $rows[1]);
     }
 
+    public function testTracciatoZipConEsitoNotifiche(): void
+    {
+        $db = $this->dbRows();
+        $db[0]['response_json'] = json_encode(['numeroAvviso' => '300000000000000001', 'idPendenza' => 'GIL-u']);
+        $this->assertSame(['GIL-u', 'GIL-r-R1', 'GIL-r-R2'], MassivoExportService::idPendenze($db));
+
+        $email = fn(string $ts, string $dest) => ['timestamp' => $ts, 'tipo' => 'creazione_pendenza', 'canale' => 'email', 'destinatario' => $dest, 'esito' => 'OK'];
+        [$header, $rows] = MassivoExportService::buildTracciato($db, [], [
+            'GIL-u' => [
+                $email('2026-10-22 09:15:02', 'm@r.it'),
+                ['timestamp' => '2026-10-22 09:15:03', 'tipo' => 'creazione_pendenza', 'canale' => 'app_io', 'destinatario' => 'msg1', 'esito' => 'OK'],
+                // notifiche di altro tipo ignorate
+                ['timestamp' => '2026-11-01 10:00:00', 'tipo' => 'notifica pagamento registrato', 'canale' => 'email', 'destinatario' => 'x@y.it', 'esito' => 'OK'],
+            ],
+            'GIL-r-R1' => [$email('2026-10-22 09:16:00', 'v@r.it')],
+            'GIL-r-R2' => [],
+        ]);
+
+        $h = array_flip($header);
+        $this->assertSame($h['NOME_PDF'] + 1, $h['NOTIFICA_EMAIL']);
+        $this->assertSame(['INVIATA', '22/10/2026 09:15', 'm@r.it', 'INVIATA', '22/10/2026 09:15'], array_slice($rows[0], $h['NOTIFICA_EMAIL'], 5));
+        // rateizzata: email solo sulla rata 1, App IO su nessuna
+        $this->assertSame(['INVIATA 1/2', '22/10/2026 09:16', 'v@r.it', 'NON INVIATA', ''], array_slice($rows[1], $h['NOTIFICA_EMAIL'], 5));
+
+        // pendenze non recuperate da GovPay → esito sconosciuto
+        [, $rows] = MassivoExportService::buildTracciato($db, null, ['GIL-u' => null]);
+        $this->assertSame('N/D', $rows[0][$h['NOTIFICA_EMAIL'] - 1]);
+        $this->assertSame('N/D', $rows[1][$h['NOTIFICA_EMAIL'] - 1]);
+    }
+
     public function testTracciatoRateConDateEsplicite(): void
     {
         $base = $this->unica();
