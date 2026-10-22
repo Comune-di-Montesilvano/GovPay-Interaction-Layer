@@ -4479,6 +4479,52 @@ class PendenzeController
     }
 
     /**
+     * Notifiche registrate in datiAllegati.notifiche per più pendenze, con GET concorrenti.
+     * Pendenza non recuperabile → null (esito sconosciuto, distinto da "nessuna notifica").
+     *
+     * @param list<string> $idPendenze
+     * @return array<string,list<array<string,mixed>>|null> idPendenza => notifiche
+     */
+    public function fetchNotifichePendenze(array $idPendenze, int $concorrenza = 8): array
+    {
+        $backofficeUrl = rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/');
+        $idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
+        $idPendenze = array_values(array_unique(array_filter($idPendenze, static fn($id) => $id !== '')));
+        $out = array_fill_keys($idPendenze, null);
+        if ($backofficeUrl === '' || $idA2A === '' || $idPendenze === []) {
+            return $out;
+        }
+
+        $http = $this->makeHttpClient(array_merge(
+            ['headers' => ['Accept' => 'application/json']],
+            GovPayClientFactory::basicAuthOptions()
+        ));
+        $requests = static function () use ($http, $backofficeUrl, $idA2A, $idPendenze) {
+            foreach ($idPendenze as $id) {
+                yield $id => static fn() => $http->getAsync($backofficeUrl . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($id));
+            }
+        };
+        $pool = new \GuzzleHttp\Pool($http, $requests(), [
+            'concurrency' => $concorrenza,
+            'fulfilled' => static function (\Psr\Http\Message\ResponseInterface $resp, string $id) use (&$out) {
+                $data = json_decode((string)$resp->getBody(), true);
+                if (is_array($data)) {
+                    $notifiche = $data['datiAllegati']['notifiche'] ?? [];
+                    $out[$id] = is_array($notifiche) ? array_values(array_filter($notifiche, 'is_array')) : [];
+                }
+            },
+            'rejected' => static function (\Throwable $e, string $id) {
+                Logger::getInstance()->warning('Impossibile recuperare pendenza per notifiche', [
+                    'idPendenza' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            },
+        ]);
+        $pool->promise()->wait();
+        return $out;
+    }
+
+    /**
      * Cerca una pendenza per IUV/numeroAvviso usando l'endpoint di lista GovPay.
      * Restituisce il primo risultato trovato o null.
      *
