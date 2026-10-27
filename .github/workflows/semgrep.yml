@@ -2,11 +2,11 @@ name: Semgrep
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "dev" ]
+    branches: [ "main" ]
   schedule:
-    - cron: '0 5 * * 1'  # lunedi 05:00 UTC
+    - cron: '0 5 * * *'  # ogni giorno 05:00 UTC: nuove regole su codice invariato
   workflow_dispatch:
 
 concurrency:

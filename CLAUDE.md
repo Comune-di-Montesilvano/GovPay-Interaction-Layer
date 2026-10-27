@@ -147,8 +147,8 @@ Accesso in codice: `Config::get('ENV_KEY')` — priorità: DB (`SettingsReposito
 
 **GitHub Actions** (`.github/workflows/`):
 
-- **`ci.yml`** — push/PR su `main`/`dev`: installa PHP 8.5, avvia solo il container `db` (backoffice/frontoffice non servono), esegue PHPUnit. DB image cachata via `docker save`/`docker load` (chiave: hash di `docker/db/Dockerfile` + `docker/db-init/`).
-- **`docker-publish.yml`** — tag `vX.Y.Z` o push su `dev`: job `setup` risolve version-resolver una volta, poi `build-php` e `build-services` parallelizzano su quella output. PHP builds usano `type=gha,mode=max` + fallback `type=registry` sull'immagine `:dev`; services usano `type=gha,mode=min` per non esaurire i 10GB di cache GHA.
+- **`ci.yml`** — PR, push su `main`, giornaliero 05:00 UTC (nuovi advisory su dipendenze invariate): installa PHP 8.5, avvia solo il container `db` (backoffice/frontoffice non servono), esegue PHPUnit. DB image cachata via `docker save`/`docker load` (chiave: hash di `docker/db/Dockerfile` + `docker/db-init/`).
+- **`docker-publish.yml`** — tag `vX.Y.Z` (sempre) o schedule giornaliero 04:30 UTC: job `setup` risolve version-resolver e, sullo schedule, esegue `scripts/ci/rebuild-check.sh` — `latest` (+`latest-YYYYMMDD`) si ricostruisce **solo con una causa reale** (commit su main dopo la label `org.opencontainers.image.revision`, `apt list --upgradable` non vuoto, Trivy HIGH/CRITICAL con fix su latest), causa salvata in label `gil.rebuild.reason`. Rebuild fallito → issue "Rebuild automatico di latest fallito". `workflow_dispatch rebuild_latest=true` forza. PHP builds usano `type=gha,mode=max` + fallback `type=registry` sulle `*-buildcache:main`/`php-common-cache:main`; services usano `type=gha,mode=min` per non esaurire i 10GB di cache GHA. harden-runner `egress-policy: block` con allowlist per job: un build fallito per host "blocked" → aggiungere l'host (log post-step harden-runner).
 
 Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona versione.
 
@@ -166,12 +166,11 @@ Tag immagini: `:vX.Y.Z`, `:X.Y`, `:latest`. `APP_VERSION` nel compose seleziona 
 - **`.semgrepignore`** esclude `govpay-clients/`/`pagopa-clients/` (spec OpenAPI vendorizzate — `use-of-basic-authentication` descrive il security scheme REALE dell'API upstream, non nostro).
 - **Trivy `DS-0002`** ("Image user should not be root") è falso positivo su `docker/db/Dockerfile` (mariadb) e `Dockerfile` (php-apache): entrambe le immagini base droppano privilegi INTERNAMENTE nel proprio entrypoint ufficiale (mariadb `chown`+gosu a `mysql`; Apache master resta root solo per bindare porta, worker girano come `www-data` via `APACHE_RUN_USER`) — aggiungere `USER` esplicito romperebbe entrambi. Documentato in `.trivyignore`.
 - **Dependabot `cooldown.default-days` minimo accettato dalla regola semgrep `dependabot-missing-cooldown` è 7** — un valore più basso (es. 3) continua a essere segnalato come mancante.
-- **`docker-publish.yml` gated da CI su push a `dev`** via `workflow_run` (non trigger diretto) — ogni job deve fare `checkout` con `ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}`, altrimenti builda/pubblica il codice sbagliato (default branch, non il commit che ha superato CI).
 - **Tutti i workflow hanno `concurrency` + `timeout-minutes`**: `cancel-in-progress:true` ovunque tranne `docker-publish.yml` (`false` — un push ghcr interrotto a metà può corrompere un digest).
 
 ## Convenzioni di sviluppo
 
-- **Branch principale**: `main` (production-ready); sviluppo attivo su `dev`
+- **Branch**: solo `main` (feature branch → PR squash → main). `dev` dismesso (fermo da maggio 2026)
 - **PHP**: PSR-4 autoloading via Composer; namespace `App\` per librerie condivise
 - **Routing**: Slim 4 con middleware per autenticazione e CSRF
 - **Template**: Twig 3 con estensioni custom; i18n via file JSON in `locales/`
