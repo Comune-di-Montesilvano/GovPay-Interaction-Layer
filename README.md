@@ -401,6 +401,8 @@ Lo script non richiede cosign installato (usa l'immagine ufficiale `ghcr.io/sigs
 2. impostare `VERIFY_IMAGES=true` nel `.env` o nelle *Environment variables* di Portainer, poi `docker compose up -d`;
 3. il server deve raggiungere in HTTPS `ghcr.io`, `tuf-repo-cdn.sigstore.dev` e `rekor.sigstore.dev`.
 
+La verifica controlla il tag **nel registry**: esegui `docker compose pull` prima di `docker compose up -d` (oppure fissa `APP_VERSION` a un rilascio), altrimenti un `latest` locale obsoleto può non coincidere con quanto verificato.
+
 La verifica avviene solo quando compose (ri)crea/avvia lo stack: i riavvii dei container già creati (riavvio host, restart policy) non ripassano da `verify-images`.
 
 ### Note di rilascio: hardening runtime (cambio incompatibile)
@@ -409,6 +411,9 @@ La verifica avviene solo quando compose (ri)crea/avvia lo stack: i riavvii dei c
 > Da questa versione **i segreti di bootstrap sono obbligatori**: `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD`, `APP_ENCRYPTION_KEY`, `MASTER_TOKEN`, `FRONTOFFICE_LINK_SIGNING_KEY`. Un'istanza con una di queste variabili vuota o assente **non riparte** dopo l'upgrade (`docker compose` termina con `required variable ... is missing a value`). **Prima dell'upgrade** controllare il `.env` (o le *Environment variables* di Portainer) e compilarle con i valori **già in uso** — non generarne di nuovi per un'istanza esistente: `APP_ENCRYPTION_KEY` diversa rende illeggibili i segreti cifrati nel DB, password DB diverse non corrispondono a quelle già nel volume. Solo se `MASTER_TOKEN` o `FRONTOFFICE_LINK_SIGNING_KEY` erano davvero vuote se ne può generare una nuova (`openssl rand -hex 24` / `-hex 32`): con chiave vuota nessun link firmato era stato emesso.
 
 Altre modifiche del compose, senza azioni richieste: `no-new-privileges` e `cap_drop: ALL` su tutti i servizi con le sole capability necessarie (backoffice/frontoffice: `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER, KILL`; db: `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER`); servizio `verify-images` (spento di default, vedi sopra). Chi usa un compose personalizzato con processi aggiuntivi nei container deve verificare che non servano altre capability.
+
+> [!WARNING]
+> **Altri cambi incompatibili.** `composer` non è più nell'immagine runtime: le istanze che montano `composer.json`/`vendor` o contano sul `composer update` all'avvio devono usare il `vendor` dell'immagine; con `vendor` assente il container si ferma con un errore esplicito. L'immagine cosign `ghcr.io/sigstore/cosign/cosign` viene scaricata sempre, anche con `VERIFY_IMAGES=false`: i registry mirror/offline devono includerla. È richiesto Docker Compose v2 (`service_completed_successfully`, liste con merge YAML): un Portainer datato con compose v1 non funziona.
 
 ### Upgrade: backup del DB obbligatorio
 

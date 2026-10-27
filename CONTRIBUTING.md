@@ -12,7 +12,8 @@ Per feature importanti apri prima una issue per discuterne.
    niente push diretti.
 2. Apri una Pull Request verso `main` compilando il template (checklist test, sicurezza/PII,
    migrazioni, documentazione).
-3. I check obbligatori (`build-test`, `trivy-fs`) devono essere verdi e i thread di review
+3. I check obbligatori (`build-test`, `trivy-fs`, `semgrep`, `dependency-review`,
+   `trivy-image (backoffice)`, `trivy-image (frontoffice)`, `trivy-image (db)`) devono essere verdi e i thread di review
    risolti. Il merge avviene solo in **squash**; il branch viene cancellato al merge.
 4. Messaggi di commit in [Conventional Commits](https://www.conventionalcommits.org/)
    (`feat:`, `fix:`, `refactor:`, `chore:`...), soggetto imperativo, max 72 caratteri.

@@ -12,8 +12,9 @@ name: Alert di sicurezza aperti
 # Alert Dependabot: il GITHUB_TOKEN non ha uno scope per leggerli (nessun permesso
 # `vulnerability-alerts` per i workflow), serve il token della GitHub App GIL bot (secret
 # GIL_BOT_CLIENT_ID / GIL_BOT_PRIVATE_KEY, come in dependabot-automerge.yml) con permesso
-# repo "Dependabot alerts: Read". Se il permesso manca la chiamata va in 403 e il job
-# fallisce con un messaggio esplicito (configurazione da correggere, non da ignorare).
+# repo "Dependabot alerts: Read". Se il permesso manca la chiamata va in 403: il job emette
+# un warning, aggiorna comunque la issue con gli alert code scanning (annotando che quelli
+# Dependabot non sono leggibili) e fallisce alla fine (configurazione da correggere).
 on:
   schedule:
     # Dopo il giro giornaliero di ci.yml (05:00 UTC).
@@ -47,6 +48,8 @@ jobs:
         with:
           client-id: ${{ secrets.GIL_BOT_CLIENT_ID }}
           private-key: ${{ secrets.GIL_BOT_PRIVATE_KEY }}
+          # Solo lettura alert Dependabot: la issue usa il GITHUB_TOKEN del job.
+          permission-vulnerability-alerts: read
 
       - name: Alert high/critical aperti su main
         env:
@@ -58,19 +61,21 @@ jobs:
           set -euo pipefail
           code=$(gh api --paginate "repos/$REPO/code-scanning/alerts?state=open&ref=refs/heads/main&per_page=100" \
             --jq '.[] | select(.tool.name != "Scorecard")
-                      | select((.rule.security_severity_level // "") as $s | $s == "high" or $s == "critical")
-                      | "- [#\(.number)](\(.html_url)) **\(.rule.security_severity_level)** \(.tool.name) `\(.rule.id)` — `\(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)`"')
+                      | select((.rule.security_severity_level // "") as $s | $s == "high" or $s == "critical" or ($s == "" and .rule.severity == "error"))
+                      | "- [#\(.number)](\(.html_url)) **\(.rule.security_severity_level // .rule.severity)** \(.tool.name) `\(.rule.id)` — `\(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)`"')
 
+          dep_failed=0
           if ! dep=$(GH_TOKEN="$APP_TOKEN" gh api --paginate "repos/$REPO/dependabot/alerts?state=open&severity=high,critical&per_page=100" \
             --jq '.[] | "- [Dependabot #\(.number)](\(.html_url)) **\(.security_advisory.severity)** `\(.dependency.package.ecosystem)/\(.dependency.package.name)` \(.security_advisory.ghsa_id) — `\(.dependency.manifest_path)`"'); then
-            echo "::error::Lettura alert Dependabot fallita: verificare il permesso 'Dependabot alerts: Read' della GitHub App GIL bot"
-            exit 1
+            echo "::warning::Lettura alert Dependabot fallita: verificare il permesso 'Dependabot alerts: Read' della GitHub App GIL bot"
+            dep=""
+            dep_failed=1
           fi
 
           list=$(printf '%s\n%s\n' "$code" "$dep" | sed '/^$/d')
           existing=$(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
 
-          if [ -z "$list" ]; then
+          if [ -z "$list" ] && [ "$dep_failed" = 0 ]; then
             echo "Nessun alert high/critical aperto."
             if [ -n "$existing" ]; then
               gh issue close "$existing" -R "$REPO" --comment "Nessun alert high/critical aperto: chiusa da \`security-alerts.yml\`."
@@ -78,16 +83,26 @@ jobs:
             exit 0
           fi
 
-          count=$(printf '%s\n' "$list" | wc -l)
-          body=$(printf '%s\n\n%s\n\n%s\n' \
+          note=""
+          if [ "$dep_failed" = 1 ]; then
+            note="Alert Dependabot non leggibili: concedere all'App il permesso Dependabot alerts: Read"
+          fi
+          if [ -z "$list" ]; then
+            list="Nessun alert code scanning high/critical aperto."
+            count=0
+          else
+            count=$(printf '%s\n' "$list" | wc -l)
+          fi
+          body=$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
             "$count alert code scanning/Dependabot high o critical aperti su main:" \
             "$list" \
-            "Ognuno va corretto oppure chiuso dalla tab Security con motivazione (falso positivo, rischio accettato). Issue aggiornata da \`security-alerts.yml\`.")
+            "Ognuno va corretto oppure chiuso dalla tab Security con motivazione (falso positivo, rischio accettato). Issue aggiornata da \`security-alerts.yml\`." \
+            "$note")
           if [ -n "$existing" ]; then
             gh issue edit "$existing" -R "$REPO" --body "$body"
           else
             gh issue create -R "$REPO" --title "$TITLE" --body "$body"
           fi
-          echo "::error::$count alert high/critical aperti su main"
+          echo "::error::$count alert high/critical aperti su main${note:+; $note}"
           printf '%s\n' "$list"
           exit 1

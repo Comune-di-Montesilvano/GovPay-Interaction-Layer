@@ -328,6 +328,8 @@ jobs:
             check.trivy.dev:443
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
+            # Rekor v2: host degli shard
+            *.rekor.sigstore.dev:443
             timestamp.sigstore.dev:443
             tuf-repo-cdn.sigstore.dev:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -521,6 +523,8 @@ jobs:
             archive.mariadb.org:80
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
+            # Rekor v2: host degli shard
+            *.rekor.sigstore.dev:443
             timestamp.sigstore.dev:443
             tuf-repo-cdn.sigstore.dev:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
