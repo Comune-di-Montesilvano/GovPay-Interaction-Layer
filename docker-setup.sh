@@ -9,25 +9,11 @@ if [ "$APP_SUITE" = "frontoffice" ]; then
 fi
 cd "$APP_DIR"
 
-echo "--- Esecuzione Setup Composer Autocorreggente ---"
-
-INIT_MARKER="${APP_DIR}/.init_done"
-RUN_COMPOSER=1
-if [ "$APP_SUITE" = "frontoffice" ]; then
-  RUN_COMPOSER=0
-fi
-if [ -f "$INIT_MARKER" ]; then
-  echo "ℹ️  Init marker presente: salto fase Composer (nessun cambiamento rilevato)."
-  RUN_COMPOSER=0
-fi
-
-# Rileva composer (path assoluto se disponibile)
-if command -v composer >/dev/null 2>&1; then
-  COMPOSER_BIN="$(command -v composer)"
-else
-  # fallback: potrebbe non essere stato copiato (immagine minimale) -> esci con warning non bloccante
-  echo "⚠️  Composer non trovato nel PATH. Skip operazioni Composer." >&2
-  COMPOSER_BIN=""
+# Composer gira solo a build time (stage vendor_builder del Dockerfile): a runtime nessun
+# download. Solo il backoffice usa vendor/ dall'immagine.
+if [ "$APP_SUITE" = "backoffice" ] && [ ! -f /var/www/html/vendor/autoload.php ]; then
+  echo "❌ vendor/ assente nell'immagine: ricostruire l'immagine (composer gira solo a build time)" >&2
+  exit 1
 fi
 
 # Rileva openssl per eventuale generazione certificati
@@ -101,39 +87,6 @@ if [ "$SSL_ON" = "on" ] && [ -z "${SKIP_SELF_SIGNED:-}" ] && ( [ ! -s /ssl/serve
   chmod 600 /ssl/server.key || true
   chmod 644 /ssl/server.crt || true
   echo "✅ Certificati self-signed creati.";
-fi
-
-# === 1. SCENARIO AGGIORNAMENTO/RIGENERAZIONE LOCK ===
-# Se il file lock NON esiste E la cartella vendor ESISTE,
-# l'utente ha ELIMINATO il lock per forzare un aggiornamento.
-if [ "$RUN_COMPOSER" -eq 1 ] && [ -n "$COMPOSER_BIN" ] && [ ! -f composer.lock ] && [ -d /var/www/html/vendor ]; then
-  echo '🟡 ATTENZIONE: composer.lock mancante. Eseguo: composer update per rigenerarlo...'
-  $COMPOSER_BIN update --no-dev --optimize-autoloader;
-
-# === 2. SCENARIO PRIMA INSTALLAZIONE (Nuovo progetto o pulizia completa) ===
-# Se il file lock NON esiste E la cartella vendor NON esiste (primo avvio/pulizia totale)
-elif [ "$RUN_COMPOSER" -eq 1 ] && [ -n "$COMPOSER_BIN" ] && [ ! -f composer.lock ] && [ ! -d /var/www/html/vendor ]; then
-  echo '🔴 ATTENZIONE: Nessun artefatto trovato. Eseguo: composer install...'
-  $COMPOSER_BIN install --no-dev --optimize-autoloader;
-
-# === 3. SCENARIO NORMALE (Dump-autoload veloce) ===
-elif [ "$RUN_COMPOSER" -eq 1 ] && [ -n "$COMPOSER_BIN" ]; then
-  echo '✅ Artefatti trovati. Eseguo dump-autoload o update condizionale...'
-
-  # Puoi mantenere qui la tua logica originale di update/dump
-  if [ /var/www/html/vendor/composer/installed.json -ot composer.json ]; then
-      echo 'Eseguo: composer update (file modificati)...'
-      $COMPOSER_BIN update --no-dev --optimize-autoloader;
-  else
-      echo 'Eseguo: composer dump-autoload...'
-      $COMPOSER_BIN dump-autoload;
-  fi
-else
-  echo "ℹ️  Nessuna operazione Composer eseguita (composer mancante o suite frontoffice)"
-fi
-
-if [ "$RUN_COMPOSER" -eq 1 ]; then
-  touch "$INIT_MARKER" || true
 fi
 
 if [ "$APP_SUITE" = "frontoffice" ]; then

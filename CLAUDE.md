@@ -90,6 +90,8 @@ docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
 # ("No such file"/"Could not open input file") — sempre MSYS_NO_PATHCONV=1 davanti al comando,
 # non solo per composer.
 
+# composer NON è nell'immagine runtime (gira solo a build time, stage vendor_builder): ogni modifica a
+# dipendenze richiede rebuild immagine; docker-setup.sh esce con errore se vendor/ manca.
 # composer non è un binario locale in questo ambiente — usa sempre via Docker
 MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd):/app" -w //app composer:2 install --prefer-dist --no-progress
 # Path repos (govpay-clients/, pagopa-clients/) fanno mirroring in vendor/, non symlink:

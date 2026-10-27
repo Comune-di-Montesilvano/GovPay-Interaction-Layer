@@ -72,8 +72,6 @@ WORKDIR /var/www/html
 
 # Copia vendor dal builder (strato pesante, teniamolo in alto in modo che non venga invalidato)
 COPY --link --from=vendor_builder /app/vendor /var/www/html/vendor
-# Reintroduco composer solo per script di setup (dump-autoload scenario)
-COPY --link --from=vendor_builder /usr/bin/composer /usr/local/bin/composer
 
 # ----------------------------------------------------------------------
 # COPIA ASSET FRONT-END
