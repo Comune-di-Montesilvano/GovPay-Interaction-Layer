@@ -30,7 +30,9 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
 ######################################################################
 # STAGE 2: Composer vendor builder (solo dipendenze PHP)
 ######################################################################
-FROM composer:2@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc AS vendor_builder
+# Versione esplicita (non solo `composer:2`): dependabot propone il bump del tag, da allineare
+# a `tools: composer:X.Y.Z` in .github/workflows/ci.yml.
+FROM composer:2.10.3@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc AS vendor_builder
 WORKDIR /app
 COPY --link composer.json composer.lock* ./
 COPY --link govpay-clients/ ./govpay-clients/
