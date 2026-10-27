@@ -345,7 +345,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` su:
+Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` (tag immagine `X.Y.Z`, `X.Y`, `latest`), firmate e verificabili con `scripts/verify-images.sh` (vedi [Rilasci e immagini Docker](#rilasci-e-immagini-docker-ghcr)), su:
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db`
@@ -358,15 +358,57 @@ Per un server di produzione sono sufficienti: il `docker-compose.yml` e le varia
 
 ### Flusso di rilascio
 
-Ogni release è associata a un tag Git `vX.Y.Z`. Al push del tag, il workflow GitHub Actions `.github/workflows/docker-publish.yml` builda e pubblica automaticamente le immagini Docker su GHCR con i tag `:vX.Y.Z`, `:X.Y` e `:latest`.
+Ogni release è associata a un tag Git `vX.Y.Z`, creato su un commit già presente su `main` (altrimenti il workflow rifiuta il rilascio). Al push del tag, il workflow GitHub Actions `.github/workflows/docker-publish.yml`:
+
+1. builda le 3 immagini e le pusha su GHCR **solo per digest** (nessun tag);
+2. le scansiona con Trivy (bloccante su HIGH/CRITICAL con fix);
+3. genera l'SBOM CycloneDX, le attestazioni GitHub (provenance SLSA + SBOM) e firma ogni digest con cosign (keyless, identità OIDC del workflow);
+4. avvia lo stack di produzione (`docker-compose.yml`) con i 3 digest ed esegue lo smoke test (`scripts/smoke-stack.sh`);
+5. solo se tutto è passato, applica i tag a **tutte e 3** le immagini insieme: `:X.Y.Z` (senza `v`, es. `1.6.8`), `:X.Y` e `:latest`.
+
+Il rebuild automatico giornaliero di `latest` (solo con una causa reale: commit su `main`, patch di sistema, CVE con fix) segue la stessa pipeline e pubblica `:latest` + `:latest-YYYYMMDD`. Un'immagine che fallisce un passo resta un digest senza tag (rimosso da `ghcr-cleanup.yml`) e i tag esistenti non si spostano.
 
 ```bash
-# Avanzare di versione
+# Avanzare di versione (dal commit di main da rilasciare)
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
 Il workflow parte automaticamente. Puoi seguire l'avanzamento su GitHub → Actions → "Docker Publish".
+
+### Verifica delle immagini prima del deploy
+
+Prima di aggiornare uno stack verifica che le immagini del tag da installare siano state prodotte e firmate da `docker-publish.yml` di questo repository:
+
+```bash
+scripts/verify-images.sh 1.6.9        # stesso valore di APP_VERSION
+scripts/verify-images.sh latest
+CONTAINER_CLI=podman scripts/verify-images.sh 1.6.9
+```
+
+Lo script non richiede cosign installato (usa l'immagine ufficiale `ghcr.io/sigstore/cosign/cosign` fissata per digest) e verifica la firma di backoffice, frontoffice e db con l'identità `https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/.github/workflows/docker-publish.yml@refs/(tags/v*|heads/main)`. Se la CLI `gh` è presente verifica anche le attestazioni (provenance SLSA e SBOM CycloneDX). Stampa i digest verificati; **exit ≠ 0 = non aggiornare lo stack**. Le immagini pubblicate prima dell'introduzione della firma non passano la verifica.
+
+### Upgrade: backup del DB obbligatorio
+
+> [!WARNING]
+> **Prima di ogni upgrade (cambio di `APP_VERSION` o pull di un nuovo `latest`) esegui un backup del database.** Le migrazioni dello schema sono **irreversibili**: una volta avviata la nuova versione, il DB non torna allo stato precedente senza un restore.
+
+```bash
+# Dump logico (stack attivo)
+docker exec gil-db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction --routines --all-databases' \
+  > gil_db_$(date +%Y%m%d_%H%M).sql
+```
+
+In alternativa (o in aggiunta) il backup a freddo del volume descritto in [Volumi: regola aurea in produzione](#volumi-regola-aurea-in-produzione).
+
+> [!NOTE]
+> Il servizio `db` ha un healthcheck (`healthcheck.sh --connect --innodb_initialized`) e il backoffice parte solo con il DB *healthy*. Il check usa l'utente `healthcheck` che l'entrypoint MariaDB crea in `/var/lib/mysql/.my-healthcheck.cnf`: su un volume DB creato da un'immagine molto vecchia il file può mancare e il `db` resta *unhealthy* (backoffice non parte). In quel caso avvia una volta con `MARIADB_AUTO_UPGRADE=1` (dopo il backup), poi rimuovi la variabile.
+
+### Rollback
+
+- Reimposta `APP_VERSION=<tag precedente>` (es. `1.6.8`) nel `.env` o nelle *Environment variables* di Portainer, poi `docker compose pull && docker compose up -d`. I tag `latest-YYYYMMDD` esistono solo per i rebuild automatici giornalieri: utili per tornare a un `latest` precedente, non sostituiscono i tag di versione.
+- `APP_VERSION` seleziona **tutte e 3** le immagini, quindi il rollback cambia anche l'immagine `db`. Il downgrade di `db` (nuova versione di MariaDB) o di uno schema già migrato è possibile **solo insieme al restore del backup** fatto prima dell'upgrade: fermare lo stack, ripristinare dump/volume, poi avviare con la `APP_VERSION` precedente. Mai avviare una versione vecchia su un DB già migrato.
+- Prima del rollback verifica le immagini del tag di destinazione con `scripts/verify-images.sh`.
 
 ### Immagini disponibili
 

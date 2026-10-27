@@ -34,6 +34,11 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
+    # Avvio solo con MariaDB pronta (InnoDB inizializzato): niente errori di connessione
+    # al primo avvio o dopo un upgrade dell'immagine db.
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - govpay-network
 
@@ -69,6 +74,8 @@ services:
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     depends_on:
+      db:
+        condition: service_healthy
       backoffice:
         condition: service_healthy
     networks:
@@ -87,8 +94,21 @@ services:
       - MARIADB_DATABASE=${DB_NAME:-govpay}
       - DB_USER_CITTADINI=${FRONTOFFICE_DB_USER:-govpay_cittadini}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
+      # Vuoto = disattivo. 1 = mariadb-upgrade + utente healthcheck all'avvio (volumi vecchi).
+      - MARIADB_AUTO_UPGRADE=${MARIADB_AUTO_UPGRADE:-}
     volumes:
       - db_data:/var/lib/mysql
+    # healthcheck.sh dell'immagine ufficiale mariadb: --connect = server in ascolto (non piu'
+    # il server temporaneo dell'init), --innodb_initialized = InnoDB pronto. Usa l'utente
+    # `healthcheck` creato dall'entrypoint in /var/lib/mysql/.my-healthcheck.cnf: un volume
+    # nato prima di quell'utente resta unhealthy — avviare una volta con MARIADB_AUTO_UPGRADE=1
+    # (variabile sopra, da .env/Portainer).
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - govpay-network
 
