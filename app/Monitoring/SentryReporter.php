@@ -59,8 +59,6 @@ class SentryReporter
                     $meta[] = $sha7;
                 }
                 return 'gil@' . $version . '+' . implode('.', $meta);
-            case 'dev':
-                return 'gil@dev' . ($sha7 !== '' ? '+' . $sha7 : '');
             case 'commit':
                 return $sha7 !== '' ? 'gil@' . $sha7 : null;
             default:

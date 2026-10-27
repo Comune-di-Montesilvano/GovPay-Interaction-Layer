@@ -53,6 +53,7 @@ jobs:
           php-version: '8.5'
           extensions: mbstring, pdo_mysql, intl, zip
           coverage: xdebug
+          # Stessa versione del FROM composer nel Dockerfile (dependabot aggiorna solo quello).
           tools: composer:2.10.3
 
       - name: Cache Composer dependencies

@@ -131,11 +131,17 @@ final class SentryReporterTest extends TestCase
         $this->assertSame('gil@1.6.6+auto', SentryReporter::resolveRelease($info));
     }
 
-    public function testResolveReleaseForDevAndCommitBuilds(): void
+    public function testResolveReleaseForCommitBuilds(): void
     {
         $sha = 'dbac2433d43f7fbf61065392b067cf8481a185ff';
-        $this->assertSame('gil@dev+dbac243', SentryReporter::resolveRelease(['version' => 'dev', 'version_type' => 'dev', 'commit' => $sha]));
         $this->assertSame('gil@dbac243', SentryReporter::resolveRelease(['version' => 'dbac243', 'version_type' => 'commit', 'commit' => $sha]));
+    }
+
+    public function testResolveReleaseNullForRetiredDevBuilds(): void
+    {
+        // Branch dev dismesso: nessuna immagine nuova ha version_type "dev".
+        $sha = 'dbac2433d43f7fbf61065392b067cf8481a185ff';
+        $this->assertNull(SentryReporter::resolveRelease(['version' => 'dev', 'version_type' => 'dev', 'commit' => $sha]));
     }
 
     public function testResolveReleaseNullForLocalDevelopment(): void

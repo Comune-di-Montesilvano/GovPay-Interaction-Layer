@@ -147,10 +147,10 @@ class Config
      * Ritorna i metadati normalizzati per versioning e footer.
      *
      * Keys:
-     * - version: stringa base (`development`, `dev`, `v1.2.3`, ...)
-     * - version_type: `development`, `dev`, `release`, `tag`, `commit`, `auto`
+     * - version: stringa base (`development`, `v1.2.3`, sha7, ...)
+     * - version_type: `development`, `release`, `tag`, `commit`, `auto`
      *   (`auto` = rebuild schedulato senza tag: version/label restano l'ultimo tag)
-     * - version_label: label finale da renderizzare (`dev@sha7`, `v1.2.3`, ...)
+     * - version_label: label finale da renderizzare (`v1.2.3`, sha7, ...)
      * - commit: full SHA se disponibile
      * - ref_url: URL GitHub finale oppure stringa vuota
      * - build_date: data build CI (YYYY-MM-DD) oppure stringa vuota
@@ -228,16 +228,12 @@ class Config
     private static function normalizeVersionType(string $versionType, string $version, string $commit): string
     {
         $normalized = strtolower(trim($versionType));
-        if (in_array($normalized, ['development', 'dev', 'release', 'tag', 'commit', 'auto'], true)) {
+        if (in_array($normalized, ['development', 'release', 'tag', 'commit', 'auto'], true)) {
             return $normalized;
         }
 
         if ($version === 'development') {
             return 'development';
-        }
-
-        if ($version === 'dev') {
-            return 'dev';
         }
 
         if (preg_match('/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/', $version) === 1) {
@@ -253,10 +249,6 @@ class Config
 
     private static function buildVersionLabel(string $versionType, string $version, string $commit): string
     {
-        if ($versionType === 'dev') {
-            return $commit !== 'unknown' ? 'dev@' . substr($commit, 0, 7) : 'dev';
-        }
-
         if ($versionType === 'commit') {
             return $commit !== 'unknown' ? substr($commit, 0, 7) : $version;
         }
@@ -275,7 +267,7 @@ class Config
             return '';
         }
 
-        if (in_array($versionType, ['dev', 'commit', 'auto'], true) && $commit !== 'unknown') {
+        if (in_array($versionType, ['commit', 'auto'], true) && $commit !== 'unknown') {
             return self::REPOSITORY_URL . '/commit/' . $commit;
         }
 
