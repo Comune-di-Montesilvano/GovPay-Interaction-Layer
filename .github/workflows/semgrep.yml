@@ -15,17 +15,21 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   semgrep:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    # Versione e digest fissati: aggiornati a mano su issue di toolchain-version-check.yml.
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep:1.181.0@sha256:81474464c1f07483ba0682a44787fd93c91397419762a04abe2bafaae396304b
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       # --exclude-rule: 2 regole del motore "generic" (non capisce la sintassi Twig, opera per
