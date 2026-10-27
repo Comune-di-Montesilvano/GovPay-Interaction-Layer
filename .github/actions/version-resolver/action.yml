@@ -9,7 +9,7 @@ inputs:
     required: false
     default: "false"
   ref:
-    description: "Ref da risolvere (default GITHUB_REF; su workflow_run va passato quello del run CI)"
+    description: "Ref da risolvere (default GITHUB_REF)"
     required: false
     default: ""
   sha:
@@ -19,10 +19,10 @@ inputs:
 
 outputs:
   version:
-    description: Version string (e.g. "dev", "v1.2.3", short-sha)
+    description: Version string (e.g. "v1.2.3", short-sha)
     value: ${{ steps.resolve.outputs.version }}
   version_type:
-    description: development | dev | release | tag | commit | auto
+    description: development | release | tag | commit | auto
     value: ${{ steps.resolve.outputs.version_type }}
   version_label:
     description: Human-readable label
@@ -62,11 +62,6 @@ runs:
           version="${last_tag:-${GITHUB_SHA::7}}"
           version_type="auto"
           version_label="${version}"
-          ref_url="${commit_url}"
-        elif [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
-          version="dev"
-          version_type="dev"
-          version_label="dev@${GITHUB_SHA::7}"
           ref_url="${commit_url}"
         elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
           version="${GITHUB_REF_NAME}"

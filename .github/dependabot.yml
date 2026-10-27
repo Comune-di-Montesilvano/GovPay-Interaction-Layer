@@ -1,9 +1,16 @@
 version: 2
+# Controllo giornaliero alle 01:00 (come ComunicaPA): l'auto-merge delle minor/patch finisce prima
+# del rebuild-check delle 04:30 UTC (docker-publish.yml), che ricostruisce latest solo se c'e' una
+# causa reale (es. un merge dependabot). Il cooldown non si applica ai security update: le
+# correzioni di advisory arrivano subito. Ecosistema docker-compose non usato: docker-compose.yml
+# referenzia solo immagini GIL (${APP_VERSION}), nessuna immagine di terzi da aggiornare.
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     # Attende N giorni dalla pubblicazione prima di proporre l'update — mitiga il rischio di
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
@@ -17,7 +24,9 @@ updates:
   - package-ecosystem: "composer"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     # Attende N giorni dalla pubblicazione prima di proporre l'update — mitiga il rischio di
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
@@ -38,14 +47,14 @@ updates:
       - dependency-name: "pagopa/gpd-client"
       - dependency-name: "pagopa/checkout-ec-client"
       - dependency-name: "pagopa/biz-events-client"
-      # phpunit è dipendenza dev nei client generati (path-type): file non supportati da Dependabot
-      - dependency-name: "phpunit/phpunit"
 
   # Immagini base FROM nei Dockerfile (root: node/composer/php multi-stage; docker/db: mariadb)
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     # Attende N giorni dalla pubblicazione prima di proporre l'update — mitiga il rischio di
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
@@ -55,11 +64,16 @@ updates:
     groups:
       minor-patch:
         update-types: ["minor", "patch"]
+        # php/mariadb sempre in PR singola: il guard di dependabot-automerge.yml legge
+        # previous/new-version solo della prima dipendenza di un gruppo.
+        exclude-patterns: ["php", "mariadb"]
 
   - package-ecosystem: "docker"
     directory: "/docker/db"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     # Attende N giorni dalla pubblicazione prima di proporre l'update — mitiga il rischio di
     # una release appena pubblicata compromessa/malevola (supply-chain), piu' margine sui major.
     cooldown:
@@ -69,6 +83,9 @@ updates:
     groups:
       minor-patch:
         update-types: ["minor", "patch"]
+        # php/mariadb sempre in PR singola: il guard di dependabot-automerge.yml legge
+        # previous/new-version solo della prima dipendenza di un gruppo.
+        exclude-patterns: ["php", "mariadb"]
     # Restiamo su 12.3 LTS: 13.0 e' rolling (EOL community Q4 2026). Rimuovere quando
     # una 13.x diventa LTS.
     ignore:
@@ -80,7 +97,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     cooldown:
       default-days: 7
       semver-major-days: 14

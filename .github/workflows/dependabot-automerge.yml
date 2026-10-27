@@ -2,8 +2,10 @@ name: Dependabot auto-merge
 # Minor/patch di dependabot: auto-merge (GitHub, squash: unico metodo ammesso dal repo) appena i
 # required check sono verdi.
 # Major: nessuna azione, la PR resta aperta come promemoria per l'upgrade manuale.
-# Eccezione: tag immagine php/mariadb (es. php 8.5 -> 8.6, mariadb 12.3 -> 12.4) — dependabot
-# li classifica minor ma sono upgrade di runtime/DB, restano manuali come le major.
+# Eccezione: cambio di tag immagine php/mariadb (es. php 8.5 -> 8.6, mariadb 12.3 -> 12.4) —
+# dependabot li classifica minor ma sono upgrade di runtime/DB, restano manuali come le major.
+# Il solo cambio di digest sullo stesso tag (es. php 8.5.x ripubblicato con un fix CVE) va invece
+# in auto-merge: e' la patch di sicurezza che il rebuild-check deve portare in latest.
 #
 # Token GitHub App (secret GIL_BOT_CLIENT_ID / GIL_BOT_PRIVATE_KEY) invece di GITHUB_TOKEN:
 # merge e update-branch fatti con GITHUB_TOKEN non triggerano altri workflow, quindi la CI
@@ -38,6 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - name: Dependabot metadata
         id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
@@ -49,6 +56,7 @@ jobs:
         if: >-
           steps.meta.outputs.update-type != 'version-update:semver-major' &&
           !(steps.meta.outputs.package-ecosystem == 'docker' &&
+            steps.meta.outputs.previous-version != steps.meta.outputs.new-version &&
             (contains(steps.meta.outputs.dependency-names, 'php') ||
              contains(steps.meta.outputs.dependency-names, 'mariadb')))
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -76,6 +84,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - name: Token GitHub App
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0

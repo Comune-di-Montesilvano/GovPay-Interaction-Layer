@@ -2,8 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main" ]
   pull_request:
+  # Giro giornaliero su main (05:00 UTC): nuovi advisory su dipendenze invariate
+  # (composer audit in build-test, Trivy fs).
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
 
 # Cancella run precedenti sullo stesso ref quando arriva un nuovo push (retry rapido,
 # fixup successivi sulla stessa PR) — evita di sprecare minuti runner su un risultato
@@ -23,12 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-
-      - name: Debug struttura client generati
-        run: |
-          ls -lR govpay-clients/generated-clients/backoffice-v1 || true
+        with:
+          persist-credentials: false
 
       - name: Crea file .env per il CI
         run: |
@@ -46,6 +53,7 @@ jobs:
           php-version: '8.5'
           extensions: mbstring, pdo_mysql, intl, zip
           coverage: xdebug
+          tools: composer:2.10.3
 
       - name: Cache Composer dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -101,7 +109,14 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Trivy filesystem scan (vuln + secrets + misconfig)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

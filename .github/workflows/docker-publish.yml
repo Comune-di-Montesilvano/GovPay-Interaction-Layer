@@ -1,28 +1,26 @@
 name: Docker Publish
 
 on:
+  # Rilascio: per convenzione un tag si crea solo su un commit già su main (PR+required check).
+  # Il ruleset release-tags limita CHI crea tag (admin), non SU QUALE commit: la verifica di
+  # origine arriva con la Fase 5 (D3).
   push:
     tags: ['v*.*.*']
-  # Push su "dev" NON triggera più direttamente: prima deve passare CI (ci.yml,
-  # stesso push). Le due pipeline giravano scollegate — codice che rompe i test
-  # poteva comunque finire buildato e pushato su ghcr con tag "dev" prima che
-  # CI segnalasse il fallimento. workflow_run aspetta l'esito di CI sullo
-  # stesso commit e pubblica solo se conclusion=='success' (vedi guardia sotto).
-  # I tag (rilascio) restano un trigger diretto: un tag viene creato solo da un
-  # commit già su main, già passato per PR+required check (v. branch protection).
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [dev]
-  # Rebuild settimanale di main (lunedi' 04:30 UTC): aggiorna SOLO `latest` (+ `latest-YYYYMMDD`)
-  # con immagini base/patch Debian fresche, senza toccare i tag vX.Y.Z (quelli li crea solo
-  # il maintainer). Saltato se nell'ultima settimana e' gia' stato pubblicato un tag.
+  # Controllo giornaliero (04:30 UTC, dopo il giro dependabot delle 01:00 Europe/Rome):
+  # `latest` (+ `latest-YYYYMMDD`) si ricostruisce SOLO se rebuild-check trova una causa reale
+  # (commit su main, pacchetti di sistema aggiornabili, vulnerabilità HIGH/CRITICAL con fix
+  # nell'immagine pubblicata — scripts/ci/rebuild-check.sh). Nessuna causa = nessun build e
+  # nessun riavvio inutile delle istanze. I tag vX.Y.Z li crea solo il maintainer.
   schedule:
-    - cron: "30 4 * * 1"
+    - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
       rebuild_latest:
-        description: "Rebuild automatico di latest (come lo schedule settimanale, senza skip)"
+        description: "Rebuild di latest da main senza rebuild-check (forzato)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Esegue solo il rebuild-check e ne stampa le cause, senza build (anche da branch)"
         type: boolean
         default: false
 
@@ -32,11 +30,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Permessi minimi a livello di workflow, quelli di scrittura solo nei job che li usano.
 permissions:
   contents: read
-  packages: write
-  security-events: write
-  actions: read
 
 env:
   REGISTRY: ghcr.io
@@ -44,11 +40,14 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ── Resolve version once, share outputs to all matrix jobs ───────────────
+  # ── Resolve version + rebuild-check, outputs condivisi con i job di build ──
   setup:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Pull delle immagini latest per rebuild-check.
+      packages: read
     outputs:
       version: ${{ steps.v.outputs.version }}
       version_type: ${{ steps.v.outputs.version_type }}
@@ -57,78 +56,135 @@ jobs:
       apt_refresh: ${{ steps.apt.outputs.apt_refresh }}
       build_date: ${{ steps.apt.outputs.build_date }}
       auto: ${{ steps.mode.outputs.auto }}
-      skip: ${{ steps.mode.outputs.skip }}
+      skip: ${{ inputs.dry_run && 'true' || steps.mode.outputs.skip || steps.check.outputs.skip || 'false' }}
+      reason: ${{ steps.check.outputs.reason || steps.mode.outputs.reason }}
       auto_tag: ${{ steps.mode.outputs.auto_tag }}
-      # Commit/ref realmente da buildare. Su workflow_run github.sha/github.ref puntano al
-      # default branch (main), NON al commit di dev che ha passato CI: tutti i job usano questi.
-      sha: ${{ steps.src.outputs.sha }}
-      ref: ${{ steps.src.outputs.ref }}
-      branch: ${{ steps.src.outputs.branch }}
     steps:
-      - name: Resolve source commit
-        id: src
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          GH_SHA: ${{ github.sha }}
-          GH_REF: ${{ github.ref }}
-          GH_REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
-            printf 'sha=%s\nref=refs/heads/%s\nbranch=%s\n' "$RUN_SHA" "$RUN_BRANCH" "$RUN_BRANCH" >> "$GITHUB_OUTPUT"
-          else
-            printf 'sha=%s\nref=%s\nbranch=%s\n' "$GH_SHA" "$GH_REF" "$GH_REF_NAME" >> "$GITHUB_OUTPUT"
-          fi
+      # Traffico in uscita limitato agli host elencati (anche dentro i container avviati dal
+      # job). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
+      # Run fallita per "blocked" → host nel log del post-step harden-runner o nella pagina
+      # insights della run: aggiungerlo qui se legittimo.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.githubapp.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            mirror.gcr.io:443
+            check.trivy.dev:443
+            deb.debian.org:80
+            deb.debian.org:443
+            archive.ubuntu.com:80
+            security.ubuntu.com:80
+            www.php.net:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ steps.src.outputs.sha }}
-          # Storia + tag completi: il rebuild automatico ricava l'ultimo tag vX.Y.Z.
+          persist-credentials: false
+          # Storia + tag completi: version-resolver ricava l'ultimo tag vX.Y.Z, rebuild-check
+          # conta i commit dopo la revisione di latest.
           fetch-depth: 0
       - name: Resolve build mode
         id: mode
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           REBUILD_LATEST: ${{ inputs.rebuild_latest }}
-          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           auto=false
-          skip=false
-          if [[ "$EVENT_NAME" == "schedule" || "$REBUILD_LATEST" == "true" ]]; then
-            auto=true
-          fi
-          # Solo lo schedule salta: un tag pubblicato negli ultimi 7 giorni ha gia' rinfrescato
-          # latest. Le run "push" di questo workflow sono solo tag (i branch passano da workflow_run).
+          skip=""
+          reason=""
           if [[ "$EVENT_NAME" == "schedule" ]]; then
-            since=$(date -u -d '7 days ago' +%F)
-            recent=$(gh run list -R "$REPO" --workflow docker-publish.yml --event push \
-              --status success --created ">=$since" --json headBranch -q 'length')
-            if [[ "$recent" -gt 0 ]]; then
-              echo "::notice::Tag pubblicato negli ultimi 7 giorni: rebuild settimanale saltato."
-              skip=true
+            auto=true
+          elif [[ "$REBUILD_LATEST" == "true" ]]; then
+            # latest si costruisce solo da main: un dispatch da branch pubblicherebbe codice
+            # non passato da PR.
+            if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+              echo "::error::rebuild_latest solo da main (ref: $GITHUB_REF)"
+              exit 1
             fi
+            auto=true
+            reason="rebuild forzato (workflow_dispatch)"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" != "true" ]]; then
+            # Dispatch senza opzioni: nessun tag da produrre.
+            skip=true
+            echo "::notice::Nessuna opzione scelta: niente build (rebuild_latest o dry_run)."
           fi
           {
             echo "auto=$auto"
             echo "skip=$skip"
+            echo "reason=$reason"
             echo "auto_tag=latest-$(date -u +%Y%m%d)"
           } >> "$GITHUB_OUTPUT"
+      # Report Trivy delle immagini latest pubblicate, letti da rebuild-check. Mai bloccanti
+      # qui: un'immagine assente o uno scan fallito diventano una causa di rebuild.
+      - name: Prepara cartella report Trivy
+        if: github.event_name == 'schedule' || inputs.dry_run
+        run: mkdir -p trivy-latest
+      - name: Trivy latest · backoffice
+        if: github.event_name == 'schedule' || inputs.dry_run
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice:latest
+          format: json
+          output: trivy-latest/backoffice.json
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 0
+          trivyignores: ${{ github.workspace }}/.trivyignore
+      - name: Trivy latest · frontoffice
+        if: github.event_name == 'schedule' || inputs.dry_run
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice:latest
+          format: json
+          output: trivy-latest/frontoffice.json
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 0
+          trivyignores: ${{ github.workspace }}/.trivyignore
+      - name: Trivy latest · db
+        if: github.event_name == 'schedule' || inputs.dry_run
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-db:latest
+          format: json
+          output: trivy-latest/db.json
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 0
+          trivyignores: ${{ github.workspace }}/.trivyignore
+      - name: Rebuild-check
+        id: check
+        if: github.event_name == 'schedule' || inputs.dry_run
+        env:
+          ORG: ${{ env.ORG }}
+          TRIVY_DIR: trivy-latest
+          HEAD_SHA: ${{ github.sha }}
+        run: scripts/ci/rebuild-check.sh
       - name: Resolve version info
         id: v
         uses: ./.github/actions/version-resolver
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           auto: ${{ steps.mode.outputs.auto }}
-          ref: ${{ steps.src.outputs.ref }}
-          sha: ${{ steps.src.outputs.sha }}
-      # Settimana ISO: invalida il layer apt di runtime-base una volta a settimana, altrimenti
-      # la cache GHA/registry congela `apt-get upgrade` e le patch Debian non entrano mai.
+      # Data del giorno: invalida il layer apt di runtime-base a ogni build, altrimenti la cache
+      # GHA/registry congela `apt-get upgrade` e le patch Debian non entrano mai.
       - name: Resolve apt refresh key
         id: apt
         run: |
-          echo "apt_refresh=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+          echo "apt_refresh=$(date -u +%F)" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
   # ── Shared PHP base cache warmup ───────────────────────────────────────────
@@ -139,10 +195,36 @@ jobs:
     if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
+      # Allowlist dei build: registry immagini base (Docker Hub), BuildKit, apt Debian, npm,
+      # composer (packagist + dist GitHub), GHCR per la cache. Vedi commento nel job setup.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.githubapp.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            production.cloudflare.docker.com:443
+            mirror.gcr.io:443
+            registry.npmjs.org:443
+            repo.packagist.org:443
+            deb.debian.org:80
+            deb.debian.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ needs.setup.outputs.sha }}
+          persist-credentials: false
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -172,8 +254,6 @@ jobs:
           cache-from: |
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
-            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice:dev
-            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice:dev
           cache-to: |
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main,mode=max
             type=gha,mode=max,scope=php-common
@@ -185,6 +265,10 @@ jobs:
     if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -198,9 +282,32 @@ jobs:
             image_suffix: frontoffice
             scope: frontoffice
     steps:
+      # Come build-php-base, piu' gli host di Trivy (DB vulnerabilità).
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.githubapp.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            production.cloudflare.docker.com:443
+            mirror.gcr.io:443
+            registry.npmjs.org:443
+            repo.packagist.org:443
+            deb.debian.org:80
+            deb.debian.org:443
+            check.trivy.dev:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ needs.setup.outputs.sha }}
+          persist-credentials: false
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -218,14 +325,15 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
           labels: |
-            org.opencontainers.image.revision=${{ needs.setup.outputs.sha }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            gil.rebuild.reason=${{ needs.setup.outputs.reason }}
+          # Rebuild automatico: nessun tag qui, l'immagine va su GHCR solo per digest e il job
+          # promote applica latest + latest-YYYYMMDD dopo che TUTTE le immagini hanno passato
+          # Trivy. (I tag di release vX.Y.Z taggano ancora prima dello scan: Fase 5, D3.)
           tags: |
-            type=ref,event=branch,enable=${{ needs.setup.outputs.auto != 'true' && github.event_name != 'workflow_run' }}
-            type=raw,value=${{ needs.setup.outputs.branch }},enable=${{ github.event_name == 'workflow_run' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
-            type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
       - name: Build & push · ${{ matrix.app }}
         id: build
@@ -233,8 +341,9 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          push: ${{ needs.setup.outputs.auto != 'true' }}
+          tags: ${{ needs.setup.outputs.auto != 'true' && steps.meta.outputs.tags || '' }}
+          outputs: ${{ needs.setup.outputs.auto == 'true' && format('type=image,name=ghcr.io/{0}/govpay-interaction-layer-{1},push-by-digest=true,name-canonical=true,push=true', env.ORG, matrix.image_suffix) || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           # Disabilitati per risparmiare tempo di esecuzione e spazio registry
           provenance: false
@@ -244,7 +353,7 @@ jobs:
             GIL_VERSION_TYPE=${{ needs.setup.outputs.version_type }}
             GIL_VERSION_LABEL=${{ needs.setup.outputs.version_label }}
             GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
-            GIT_COMMIT_SHA=${{ needs.setup.outputs.sha }}
+            GIT_COMMIT_SHA=${{ github.sha }}
             GIL_BUILD_DATE=${{ needs.setup.outputs.build_date }}
             APT_REFRESH=${{ needs.setup.outputs.apt_refresh }}
           cache-from: |
@@ -252,7 +361,6 @@ jobs:
             type=gha,scope=php-common
             type=gha,scope=${{ matrix.scope }}
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main
-            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}:dev
           # mode=max protegge cache di composer e npm (stage intermedi); inline aggiunge
           # metadati cache nell'immagine per fallback registry su cache GHA evict
           cache-to: |
@@ -273,14 +381,19 @@ jobs:
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore
 
-      # Rebuild automatico: `latest` punta al nuovo digest solo DOPO che Trivy l'ha passato
-      # (se lo scan fallisce il job si ferma prima e latest resta la build precedente).
-      - name: Promuovi latest · ${{ matrix.app }}
+      # Rebuild automatico: il digest passa a promote solo se Trivy (step prima) l'ha superato.
+      - name: Salva digest · ${{ matrix.app }}
         if: needs.setup.outputs.auto == 'true'
         env:
-          IMAGE: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
+        run: mkdir -p digests && printf '%s' "$DIGEST" > "digests/${{ matrix.image_suffix }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: needs.setup.outputs.auto == 'true'
+        with:
+          name: digest-${{ matrix.image_suffix }}
+          path: digests/${{ matrix.image_suffix }}
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Upload Trivy results · ${{ matrix.app }}
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
@@ -295,6 +408,10 @@ jobs:
     if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -306,9 +423,31 @@ jobs:
             cache_mode: min
 
     steps:
+      # Immagine db: base mariadb (Docker Hub), apt Ubuntu + repo mariadb (HTTP, pacchetti
+      # firmati GPG), script init, piu' Trivy e GHCR.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.githubapp.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            production.cloudflare.docker.com:443
+            mirror.gcr.io:443
+            check.trivy.dev:443
+            archive.ubuntu.com:80
+            security.ubuntu.com:80
+            archive.mariadb.org:80
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ needs.setup.outputs.sha }}
+          persist-credentials: false
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -326,14 +465,15 @@ jobs:
         with:
           images: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
           labels: |
-            org.opencontainers.image.revision=${{ needs.setup.outputs.sha }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            gil.rebuild.reason=${{ needs.setup.outputs.reason }}
+          # Rebuild automatico: nessun tag qui, l'immagine va su GHCR solo per digest e il job
+          # promote applica latest + latest-YYYYMMDD dopo che TUTTE le immagini hanno passato
+          # Trivy. (I tag di release vX.Y.Z taggano ancora prima dello scan: Fase 5, D3.)
           tags: |
-            type=ref,event=branch,enable=${{ needs.setup.outputs.auto != 'true' && github.event_name != 'workflow_run' }}
-            type=raw,value=${{ needs.setup.outputs.branch }},enable=${{ github.event_name == 'workflow_run' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
-            type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
       - name: Build & push · ${{ matrix.image }}
         id: build
@@ -341,8 +481,9 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file || format('{0}/Dockerfile', matrix.context) }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          push: ${{ needs.setup.outputs.auto != 'true' }}
+          tags: ${{ needs.setup.outputs.auto != 'true' && steps.meta.outputs.tags || '' }}
+          outputs: ${{ needs.setup.outputs.auto == 'true' && format('type=image,name=ghcr.io/{0}/govpay-interaction-layer-{1},push-by-digest=true,name-canonical=true,push=true', env.ORG, matrix.image) || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           # Disabilitati per risparmiare tempo di esecuzione e spazio registry
           provenance: false
@@ -352,8 +493,9 @@ jobs:
             GIL_VERSION_TYPE=${{ needs.setup.outputs.version_type }}
             GIL_VERSION_LABEL=${{ needs.setup.outputs.version_label }}
             GIL_REF_URL=${{ needs.setup.outputs.ref_url }}
-            GIT_COMMIT_SHA=${{ needs.setup.outputs.sha }}
+            GIT_COMMIT_SHA=${{ github.sha }}
             GIL_BUILD_DATE=${{ needs.setup.outputs.build_date }}
+            APT_REFRESH=${{ needs.setup.outputs.apt_refresh }}
           cache-from: |
             type=gha,scope=${{ matrix.scope }}
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}-cache:main
@@ -376,14 +518,19 @@ jobs:
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore
 
-      # Rebuild automatico: `latest` punta al nuovo digest solo DOPO che Trivy l'ha passato
-      # (se lo scan fallisce il job si ferma prima e latest resta la build precedente).
-      - name: Promuovi latest · ${{ matrix.image }}
+      # Rebuild automatico: il digest passa a promote solo se Trivy (step prima) l'ha superato.
+      - name: Salva digest · ${{ matrix.image }}
         if: needs.setup.outputs.auto == 'true'
         env:
-          IMAGE: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
+        run: mkdir -p digests && printf '%s' "$DIGEST" > "digests/${{ matrix.image }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: needs.setup.outputs.auto == 'true'
+        with:
+          name: digest-${{ matrix.image }}
+          path: digests/${{ matrix.image }}
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Upload Trivy results · ${{ matrix.image }}
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
@@ -391,3 +538,84 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: trivy-${{ matrix.image }}
+
+  # ── Rebuild automatico: latest + latest-YYYYMMDD su tutte le immagini insieme ─
+  # Gira solo se OGNI build e scan Trivy è passato: mai un latest misto tra revisioni
+  # (frontoffice usa le API /api/frontoffice/* del backoffice della stessa revisione).
+  promote:
+    needs: [setup, build-php, build-services]
+    if: needs.setup.outputs.auto == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: digests
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Niente setup-buildx: imagetools create lavora solo sul registry.
+      - name: Tagga latest
+        env:
+          ORG: ${{ env.ORG }}
+          AUTO_TAG: ${{ needs.setup.outputs.auto_tag }}
+        run: |
+          set -euo pipefail
+          for img in backoffice frontoffice db; do
+            [ -s "digests/$img" ] || { echo "::error::digest mancante per $img"; exit 1; }
+          done
+          for img in backoffice frontoffice db; do
+            image="ghcr.io/$ORG/govpay-interaction-layer-$img"
+            docker buildx imagetools create -t "$image:latest" -t "$image:$AUTO_TAG" "$image@$(cat "digests/$img")"
+          done
+
+  # ── Rebuild automatico fallito: issue (latest resta la build precedente) ───
+  # Tipico: vulnerabilità con fix non ancora nelle immagini base, host bloccato da
+  # harden-runner, build rotto. Una sola issue aperta alla volta, aggiornata a ogni fallimento.
+  report-failure:
+    needs: [setup, build-php-base, build-php, build-services, promote]
+    # Anche sullo schedule: se setup fallisce prima di "mode", auto resta vuoto.
+    if: failure() && (needs.setup.outputs.auto == 'true' || github.event_name == 'schedule')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+      - name: Apri o aggiorna issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REASON: ${{ needs.setup.outputs.reason }}
+        run: |
+          set -euo pipefail
+          title="Rebuild automatico di latest fallito"
+          body=$(printf 'Run: %s\n\nCausa del rebuild: %s\n\n`latest` resta la build precedente. Controllare il log (Trivy, harden-runner "blocked", build).' "$RUN_URL" "${REASON:-n/d}")
+          n=$(gh issue list -R "$REPO" --state open --search "in:title \"$title\"" --json number -q '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --title "$title" --body "$body"
+          fi
