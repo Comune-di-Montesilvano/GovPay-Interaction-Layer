@@ -8,8 +8,9 @@ on:
   # poteva comunque finire buildato e pushato su ghcr con tag "dev" prima che
   # CI segnalasse il fallimento. workflow_run aspetta l'esito di CI sullo
   # stesso commit e pubblica solo se conclusion=='success' (vedi guardia sotto).
-  # I tag (rilascio) restano un trigger diretto: un tag viene creato solo da un
-  # commit già su main, già passato per PR+required check (v. branch protection).
+  # I tag (rilascio) restano un trigger diretto: per convenzione un tag si crea solo su un
+  # commit già su main (PR+required check). Il ruleset release-tags limita CHI crea tag
+  # (admin), non SU QUALE commit: la verifica di origine arriva con la Fase 5 (D3).
   workflow_run:
     workflows: ["CI"]
     types: [completed]

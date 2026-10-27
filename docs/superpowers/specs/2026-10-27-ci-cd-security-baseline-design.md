@@ -332,11 +332,14 @@ D4 passo 2: non-root + `read_only`.
 
 ## Procedura break-glass
 
-Con PR obbligatoria, nessun bypass e Trivy fs bloccante, un CVE HIGH fixabile pubblicato
-un giorno qualsiasi blocca anche un hotfix non correlato. Procedura (da `docs/` dopo Fase 1):
-1. Preferito: aggiungere il CVE a `.trivyignore` con motivazione e scadenza, nella stessa PR dell'hotfix.
-2. Ultima risorsa: ruleset "Main Branch" in `enforcement: evaluate` per il tempo del merge,
-   poi ripristino da snapshot JSON; annotare nell'issue dell'hotfix (resta nell'audit log).
+Con PR obbligatoria, nessun bypass e check bloccanti (`trivy-fs`, `composer audit` in
+`build-test`), un advisory pubblicato un giorno qualsiasi blocca anche un hotfix non correlato.
+Procedura completa in `docs/security/break-glass.md`:
+1. Preferito: eccezione motivata con scadenza nella PR dell'hotfix — `.trivyignore` per Trivy,
+   `config.audit.ignore` in `composer.json` per `composer audit`.
+2. Ultima risorsa: ruleset "Main Branch" in `enforcement: disabled` per il tempo del merge
+   (`evaluate` non disponibile sul piano GitHub Free dell'org), poi ripristino da uno snapshot
+   JSON preso al momento e confronto integrale; annotare nell'issue dell'hotfix.
 
 ## Gap residui accettati
 
