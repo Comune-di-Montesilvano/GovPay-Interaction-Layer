@@ -162,6 +162,9 @@ RUN printf '%s\n' "$GIL_IMAGE_TAG" > /var/www/html/VERSION \
 
 EXPOSE 443
 
+# Nessun USER di proposito: il master Apache resta root solo per bindare la porta, i worker
+# girano come www-data (APACHE_RUN_USER) — stesso falso positivo di Trivy DS-0002 (.trivyignore).
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["apache2-foreground"]
 
 
