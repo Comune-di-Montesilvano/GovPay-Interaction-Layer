@@ -16,7 +16,7 @@ Principi adottati così come sono: nessuna fiducia implicita, fallire chiusi, un
 senza bypass, tutto fissato per SHA/digest/versione, privilegio minimo, ritardo deliberato sulle
 novità, provare ciò che si pubblica, costo proporzionato. Quest'ultimo pesa di più qui: team di
 1-2 maintainer, quindi si preferisce il meccanismo più semplice che chiude il gap (es. una sola
-firma, `harden-runner` solo in audit).
+firma).
 
 ## Gap analysis
 
@@ -204,13 +204,31 @@ CodeQL default setup, suite `extended`, linguaggi `actions` + `javascript-typesc
 (asset JS backoffice). Ruleset `code_scanning`: CodeQL alert `errors`, sicurezza `high_or_higher`.
 Semgrep resta bloccante diff-aware sulle PR (copre PHP).
 
-### D6 — harden-runner solo in audit
+### D6 — harden-runner: `block` su tutta la release, `audit` altrove (come ComunicaPA)
 
-`step-security/harden-runner` primo step di ogni job, `egress-policy: audit`. Niente `block`:
-l'allowlist per BuildKit, mirror Debian, Docker Hub CDN, packagist/codeload, npm e Sigstore si
-romperebbe al primo cambio upstream, e il rebuild settimanale fallirebbe senza nessuno a guardare.
-Rivalutare `block` solo sul job `publish` (imagetools + attest), che parla con pochi host.
-Escluso il job semgrep (`container:`, harden-runner non supportato).
+`step-security/harden-runner` primo step di ogni job. Stesso schema di ComunicaPA `release.yml`:
+
+- **`docker-publish.yml`: `egress-policy: block` su ogni job** (setup, build, smoke, publish),
+  con `allowed-endpoints` per job — è il punto dove un'esfiltrazione o un download malevolo
+  finisce dentro un'immagine firmata. Il blocco vale anche dentro i container di `docker build`.
+  Endpoint infrastruttura Actions consentiti in automatico dall'agent.
+- **Altri workflow: `egress-policy: audit`** (CI, semgrep, check settimanali, automerge).
+- Escluso il job semgrep (`container:`, harden-runner non supportato).
+
+Allowlist di partenza (da ComunicaPA, adattata a GIL: niente pypi/alpine, in più packagist):
+
+| Job | Host |
+|---|---|
+| setup | `github.com`, `api.github.com` |
+| build | `github.com`, `api.github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com`, `codeload.github.com` (dist composer), `*.githubapp.com`, `ghcr.io`, `pkg-containers.githubusercontent.com`, `registry-1.docker.io`, `auth.docker.io`, `production.cloudfront.docker.com`, `production.cloudflare.docker.com`, `mirror.gcr.io`, `registry.npmjs.org`, `repo.packagist.org`, `deb.debian.org:80`/`:443`, `check.trivy.dev`, `fulcio.sigstore.dev`, `rekor.sigstore.dev`, `timestamp.sigstore.dev`, `tuf-repo-cdn.sigstore.dev` (tutti `:443` salvo indicato) |
+| smoke | `github.com`, `api.github.com`, `ghcr.io`, `pkg-containers.githubusercontent.com`, Docker Hub (`registry-1`, `auth`, CDN cloudfront/cloudflare) |
+| publish | `github.com`, `api.github.com`, `ghcr.io`, `pkg-containers.githubusercontent.com` — niente `setup-buildx` (scaricherebbe BuildKit da Docker Hub): `imagetools create` usa il buildx del runner |
+
+Procedura (commento sopra ogni step, come ComunicaPA): release fallita per "blocked" → host nel
+log del post-step harden-runner o nella pagina insights della run, aggiungerlo se legittimo.
+Prima dell'attivazione: una run `workflow_dispatch` in `audit` per confermare l'elenco dal log
+DNS, poi `block`. Il rebuild settimanale schedulato è il primo a fallire su un cambio upstream:
+il fallimento lascia `latest` invariato (nessun tag prima di Trivy+smoke), quindi è sicuro.
 
 ## Piano per fasi
 
@@ -240,7 +258,7 @@ Ordine obbligato:
 3. `semgrep/semgrep` pinnato `:<versione>@sha256:…`; `trivy-version-check.yml` → `toolchain-version-check.yml` controlla anche semgrep.
 4. `FROM ...:tag@sha256:…` e `COPY --from=composer:2@sha256:…` nei due Dockerfile (dependabot aggiorna il digest); `tools: composer:2.x.y` in `setup-php`.
 5. Dependabot: ecosistema `docker-compose`.
-6. `harden-runner` audit su tutti i job tranne semgrep (D6).
+6. `harden-runner` su tutti i job tranne semgrep: `audit` ovunque, `block` con allowlist per job in `docker-publish.yml` (D6, prima una run dispatch in audit).
 7. Rimuovere step "Debug struttura client generati" da `ci.yml`.
 8. Dismissione `dev` (D1).
 9. Dopo il merge (impostazioni): `allowed_actions: selected` con elenco (`actions/*`, `github/*`,
