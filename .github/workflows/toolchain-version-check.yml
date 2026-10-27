@@ -1,0 +1,103 @@
+name: Toolchain version check
+# Tool fissati a mano che dependabot non aggiorna: binario Trivy (input `version:` di
+# trivy-action, che di default usa un binario vecchio) e immagine semgrep (`container:` di
+# semgrep.yml, versione+digest). Apre una issue quando esce una versione piu' nuova, dopo un
+# cooldown come dependabot (una release compromessa e ritirata nel frattempo non arriva mai a
+# una PR). Nessun fail su CI: un gate bloccherebbe ogni PR il giorno di una release.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: toolchain-version-check
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [trivy, semgrep]
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Confronta versione pinnata con ultima release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOOL: ${{ matrix.tool }}
+          COOLDOWN_DAYS: "7"
+        run: |
+          set -euo pipefail
+          digest=""
+          if [ "$TOOL" = trivy ]; then
+            pinned=$(grep -hoE '^\s+version: v[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/*.yml | awk '{print $2}' | sort -u)
+            # Chiamata anonima: l'org aquasecurity ha una IP allow list che rifiuta il GITHUB_TOKEN
+            # dei runner (HTTP 403) anche su risorse pubbliche. Limite anonimo ampiamente sufficiente.
+            release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+              https://api.github.com/repos/aquasecurity/trivy/releases/latest \
+              | jq -r '[.tag_name, .published_at] | @tsv')
+            where='input `version:` di tutti gli step `aquasecurity/trivy-action` (`grep -rn "version: v" .github/workflows`)'
+            notes="https://github.com/aquasecurity/trivy/releases/tag/"
+          else
+            pinned=$(grep -hoE 'semgrep/semgrep:[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/*.yml | cut -d: -f2 | sort -u)
+            # Ultima stabile X.Y.Z su Docker Hub (esclusi canary/nonroot/develop), con data e digest.
+            release=$(curl -fsSL --retry 3 'https://hub.docker.com/v2/repositories/semgrep/semgrep/tags?page_size=100&ordering=last_updated' \
+              | jq -r '[.results[] | select(.name | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+                       | sort_by(.name | split(".") | map(tonumber)) | last
+                       | [.name, .last_updated, .digest] | @tsv')
+            digest=$(cut -f3 <<<"$release")
+            where='`container: image:` di `.github/workflows/semgrep.yml` (versione **e** digest `sha256:` dell indice multi-arch)'
+            notes="https://github.com/semgrep/semgrep/releases/tag/v"
+          fi
+          if [ "$(printf '%s\n' "$pinned" | wc -l)" -ne 1 ] || [ -z "$pinned" ]; then
+            echo "::error::Versioni $TOOL pinnate incoerenti o assenti: $(echo $pinned)"
+            exit 1
+          fi
+          latest=$(cut -f1 <<<"$release")
+          published=$(cut -f2 <<<"$release")
+          if [ -z "$latest" ] || [ -z "$published" ]; then
+            echo "::error::Ultima release $TOOL non trovata (API cambiata o risposta vuota)"
+            exit 1
+          fi
+          age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
+          echo "$TOOL pinnato: $pinned — ultimo: $latest (pubblicato $published, $age_days giorni fa)"
+
+          [ "$latest" = "$pinned" ] && { echo "$TOOL aggiornato."; exit 0; }
+          if [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)" != "$latest" ]; then
+            echo "Pinnato piu' recente dell'ultima release, niente da fare."
+            exit 0
+          fi
+          if [ "$age_days" -lt "$COOLDOWN_DAYS" ]; then
+            echo "Release $latest piu' giovane di $COOLDOWN_DAYS giorni, cooldown."
+            exit 0
+          fi
+
+          existing=$(gh issue list --state open --search "in:title \"Aggiornare $TOOL a $latest\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Issue gia' aperta: #$existing"
+            exit 0
+          fi
+          gh issue create --title "Aggiornare $TOOL a $latest (pinnato $pinned)" --body "$(cat <<EOF
+          Disponibile **$TOOL $latest** (pubblicato $published). Pinnato: **$pinned**.
+          ${digest:+Digest indice: \`$digest\`}
+
+          Da aggiornare in $where.
+
+          Release notes: $notes$latest
+
+          _Issue aperta da \`toolchain-version-check.yml\`._
+          EOF
+          )"
