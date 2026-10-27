@@ -80,7 +80,7 @@ Legenda: ✅ fatto · ⚠️ parziale · ❌ mancante · n.a. non applicabile. (
 | ★ Scansione artefatto bloccante | ⚠️ | Trivy bloccante per digest ✅, **ma dopo il push con i tag**: su tag `v*` l'immagine è già `:vX.Y.Z`/`:X.Y`/`:latest` quando Trivy fallisce; nel rebuild schedulato `latest-YYYYMMDD` è pushato prima dello scan (solo `latest` promosso dopo) |
 | Origine della release verificata | ❌ | un tag `v*` può puntare a un commit fuori da `main` (il commento in `docker-publish.yml` assume il contrario, nulla lo verifica) e pubblica `latest`; `workflow_dispatch` da qualsiasi branch pubblica `:<branch>` con `packages: write` senza CI |
 | Build immagine prima del merge | ❌ | immagini costruite solo su tag/schedule: PR dependabot docker/npm vanno in auto-merge senza build né Trivy image |
-| Rebuild periodico | ⚠️ | `latest` ricostruito **settimanalmente** (lunedì 04:30, skip se tag negli ultimi 7 giorni); `APT_REFRESH` per settimana ISO. ComunicaPA: giornaliero 04:30, skip se tag nelle ultime 24 ore, `PKG_REFRESH` = data del giorno. Una patch PHP/Debian pubblicata il martedì entra fino a 6 giorni dopo |
+| Rebuild periodico | ⚠️ | `latest` ricostruito **settimanalmente** (lunedì 04:30, skip se tag negli ultimi 7 giorni); `APT_REFRESH` per settimana ISO. ComunicaPA: giornaliero 04:30, skip se tag nelle ultime 24 ore, `PKG_REFRESH` = data del giorno. Una patch PHP/Debian pubblicata il martedì entra fino a 6 giorni dopo, e il rebuild avviene anche senza nessuna novità |
 | Push per digest, tag a fine pipeline | ❌ | vedi sopra |
 | Firma + provenance + SBOM | ❌ | `provenance: false`, `sbom: false`, nessuna firma |
 | Smoke test stack prima del tag | ❌ | CI avvia solo `db` per PHPUnit; mai lo stack con le immagini finali |
@@ -239,7 +239,7 @@ Allowlist di partenza (da ComunicaPA, adattata a GIL: niente pypi/alpine, in pi�
 Procedura (commento sopra ogni step, come ComunicaPA): release fallita per "blocked" → host nel
 log del post-step harden-runner o nella pagina insights della run, aggiungerlo se legittimo.
 Prima dell'attivazione: una run `workflow_dispatch` in `audit` per confermare l'elenco dal log
-DNS, poi `block`. Il rebuild giornaliero schedulato è il primo a fallire su un cambio upstream:
+DNS, poi `block`. Il rebuild schedulato (quando ha una causa) è il primo a fallire su un cambio upstream:
 il fallimento lascia `latest` invariato (nessun tag prima di Trivy+smoke), quindi è sicuro.
 
 ### D7 — Cadenza giornaliera, come ComunicaPA
@@ -250,9 +250,29 @@ Catena giornaliera, nell'ordine (da ComunicaPA `dependabot.yml`, `security.yml`,
    `time: "01:00"`, `timezone: "Europe/Rome"`), cooldown invariato (7 giorni, 14 per le major
    composer/npm; docker, docker-compose e github-actions non supportano `semver-major-days`).
    L'auto-merge delle minor/patch finisce prima del rebuild.
-2. **04:30 UTC — rebuild giornaliero di `latest`** (`docker-publish.yml`, `cron: "30 4 * * *"`),
-   saltato se nelle ultime **24 ore** è uscito un tag; `APT_REFRESH` = data del giorno (`date -u +%F`)
-   invece della settimana ISO, così `apt-get upgrade` gira ogni giorno.
+2. **04:30 UTC — controllo giornaliero "serve un rebuild?"** (job `rebuild-check` in
+   `docker-publish.yml`, `cron: "30 4 * * *"`). **Deviazione voluta da ComunicaPA**, che
+   ricostruisce sempre: qui `latest` si ricostruisce **solo con una causa reale**, così un nuovo
+   `latest-YYYYMMDD` (e il riavvio delle istanze che lo scaricano) significa sempre "c'è qualcosa
+   di nuovo". Cause, valutate sull'attuale `latest` di backoffice, frontoffice e db:
+
+   | Causa | Come si rileva | Chi la produce |
+   |---|---|---|
+   | **Codice/dipendenze cambiati** | commit su `main` dopo la label `org.opencontainers.image.revision` dell'attuale `latest` | merge di PR, comprese quelle dependabot (composer, npm, actions, digest immagini base) e i security update dependabot (senza cooldown) |
+   | **Immagine base aggiornata a monte** | digest corrente di `php:8.5-apache-trixie`, `node:lts-trixie-slim`, `composer:2`, `mariadb:12.3` (`docker buildx imagetools inspect`) diverso da quello salvato in label al build (`gil.base.<nome>.digest`) | Docker Official Images (es. PHP 8.5.x con fix CVE) — finché il `FROM` è per tag; dopo la Fase 2 (FROM per digest) passa dalla PR dependabot e ricade nella riga sopra |
+   | **Patch Debian disponibili** | `apt-get update && apt list --upgradable` dentro l'attuale `latest` non vuoto | security Debian (openssl, libxml, …) |
+   | **Vulnerabilità nuova nell'immagine pubblicata** | Trivy sull'attuale `latest` per digest (DB aggiornato), HIGH/CRITICAL con fix | advisory pubblicati dopo il build |
+
+   Nessuna causa → nessun build, run verde con il riepilogo dei controlli (`$GITHUB_STEP_SUMMARY`).
+   Almeno una → rebuild completo (Trivy, firma, smoke, publish come D3); le cause trovate vanno nel
+   riepilogo e in una label dell'immagine (`gil.rebuild.reason`). Se il rebuild non risolve la
+   vulnerabilità (fix non ancora nelle immagini base) Trivy fallisce, `latest` resta quello di
+   prima e il job apre/aggiorna una issue — l'alert che oggi manca.
+   `APT_REFRESH` = data del giorno, così il build fatto applica davvero le patch Debian.
+   Tag `vX.Y.Z` e `workflow_dispatch` con `rebuild_latest=true` ricostruiscono sempre.
+   Controllo in più, solo informativo: versione `PHP_VERSION` dell'immagine vs ultima 8.5.x su
+   `https://www.php.net/releases/?json&version=8.5` → issue se indietro da oltre N giorni (immagine
+   ufficiale non ancora aggiornata).
 3. **05:00 UTC — scan giornaliero su main**: `trivy-fs`, `composer audit`, semgrep con
    `schedule: "0 5 * * *"` (nuovi advisory su dipendenze invariate), oltre a PR/push/merge_group.
 
@@ -295,7 +315,7 @@ Ordine obbligato:
 3. `semgrep/semgrep` pinnato `:<versione>@sha256:…`; `trivy-version-check.yml` → `toolchain-version-check.yml` controlla anche semgrep.
 4. `FROM ...:tag@sha256:…` e `COPY --from=composer:2@sha256:…` nei due Dockerfile (dependabot aggiorna il digest); `tools: composer:2.x.y` in `setup-php`.
 5. Dependabot: ecosistema `docker-compose`; tutti gli ecosistemi giornalieri alle 01:00 Europe/Rome (D7); rimuovere `phpunit/phpunit` dall'`ignore` composer (oggi esclude anche il phpunit del `composer.json` root).
-5b. Cadenza D7: `docker-publish.yml` rebuild giornaliero 04:30 con skip a 24 ore e `APT_REFRESH` giornaliero; `schedule: "0 5 * * *"` su `ci.yml` (trivy-fs, composer audit) e `semgrep.yml`; procedura CVE critico in `docs/security/`; verifica Trivy sulla versione PHP.
+5b. Cadenza D7: job `rebuild-check` giornaliero 04:30 (rebuild solo con causa reale), label `gil.base.*.digest`/`gil.rebuild.reason`, `APT_REFRESH` giornaliero; `schedule: "0 5 * * *"` su `ci.yml` (trivy-fs, composer audit) e `semgrep.yml`; procedura CVE critico in `docs/security/`; verifica Trivy sulla versione PHP.
 6. `harden-runner` su tutti i job tranne semgrep: `audit` ovunque, `block` con allowlist per job in `docker-publish.yml` (D6, prima una run dispatch in audit).
 7. Rimuovere step "Debug struttura client generati" da `ci.yml`.
 8. Dismissione `dev` (D1).
