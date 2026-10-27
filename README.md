@@ -1,5 +1,7 @@
 # GovPay Interaction Layer (GIL)
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/badge)](https://scorecard.dev/viewer/?uri=github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer)
+
 Piattaforma containerizzata (PHP/Apache + UI) per migliorare il flusso di lavoro degli enti che usano GovPay come soluzione PagoPA.
 
 Include:

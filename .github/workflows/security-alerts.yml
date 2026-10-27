@@ -1,0 +1,93 @@
+name: Alert di sicurezza aperti
+# I gate di PR (composer audit, trivy-fs, semgrep, trivy immagini) bloccano solo cio' che una
+# PR introduce: gli alert gia' aperti su main (CVE pubblicate dopo il merge, regole nuove)
+# non fermerebbero nulla e resterebbero nella tab Security senza decisione. Questo job li
+# conta: con alert code scanning (Trivy/CodeQL/semgrep) o Dependabot high/critical aperti
+# fallisce (notifica della run fallita) e tiene aggiornata una issue con l'elenco; ognuno va
+# corretto o chiuso dalla tab Security con motivazione (falso positivo / rischio accettato).
+# Senza alert la issue viene chiusa.
+# Non e' un required check: un alert aperto su main bloccherebbe anche la PR che lo corregge.
+# Esclusi gli alert Scorecard (postura del repo, non vulnerabilita').
+#
+# Alert Dependabot: il GITHUB_TOKEN non ha uno scope per leggerli (nessun permesso
+# `vulnerability-alerts` per i workflow), serve il token della GitHub App GIL bot (secret
+# GIL_BOT_CLIENT_ID / GIL_BOT_PRIVATE_KEY, come in dependabot-automerge.yml) con permesso
+# repo "Dependabot alerts: Read". Se il permesso manca la chiamata va in 403 e il job
+# fallisce con un messaggio esplicito (configurazione da correggere, non da ignorare).
+on:
+  schedule:
+    # Dopo il giro giornaliero di ci.yml (05:00 UTC).
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-alerts
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      security-events: read
+      issues: write
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Token GitHub App (lettura alert Dependabot)
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.GIL_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.GIL_BOT_PRIVATE_KEY }}
+
+      - name: Alert high/critical aperti su main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          TITLE: "Alert di sicurezza aperti su main"
+        run: |
+          set -euo pipefail
+          code=$(gh api --paginate "repos/$REPO/code-scanning/alerts?state=open&ref=refs/heads/main&per_page=100" \
+            --jq '.[] | select(.tool.name != "Scorecard")
+                      | select((.rule.security_severity_level // "") as $s | $s == "high" or $s == "critical")
+                      | "- [#\(.number)](\(.html_url)) **\(.rule.security_severity_level)** \(.tool.name) `\(.rule.id)` — `\(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)`"')
+
+          if ! dep=$(GH_TOKEN="$APP_TOKEN" gh api --paginate "repos/$REPO/dependabot/alerts?state=open&severity=high,critical&per_page=100" \
+            --jq '.[] | "- [Dependabot #\(.number)](\(.html_url)) **\(.security_advisory.severity)** `\(.dependency.package.ecosystem)/\(.dependency.package.name)` \(.security_advisory.ghsa_id) — `\(.dependency.manifest_path)`"'); then
+            echo "::error::Lettura alert Dependabot fallita: verificare il permesso 'Dependabot alerts: Read' della GitHub App GIL bot"
+            exit 1
+          fi
+
+          list=$(printf '%s\n%s\n' "$code" "$dep" | sed '/^$/d')
+          existing=$(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+
+          if [ -z "$list" ]; then
+            echo "Nessun alert high/critical aperto."
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" -R "$REPO" --comment "Nessun alert high/critical aperto: chiusa da \`security-alerts.yml\`."
+            fi
+            exit 0
+          fi
+
+          count=$(printf '%s\n' "$list" | wc -l)
+          body=$(printf '%s\n\n%s\n\n%s\n' \
+            "$count alert code scanning/Dependabot high o critical aperti su main:" \
+            "$list" \
+            "Ognuno va corretto oppure chiuso dalla tab Security con motivazione (falso positivo, rischio accettato). Issue aggiornata da \`security-alerts.yml\`.")
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --title "$TITLE" --body "$body"
+          fi
+          echo "::error::$count alert high/critical aperti su main"
+          printf '%s\n' "$list"
+          exit 1

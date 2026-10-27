@@ -8,6 +8,7 @@ use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\MassivePendenzeRepository;
 use App\Database\MassivoExportRepository;
+use App\Services\MassivoCsvParser;
 use App\Services\MassivoExportService;
 use App\Services\MassivoRateizzazioneService;
 use App\Services\ValidationService;
@@ -411,19 +412,10 @@ class MassivePendenzeController
         // same helper as other controllers if needed (left minimal here)
     }
 
-    /**
-     * Ripulisce un valore importo grezzo da CSV (simboli valuta, spazi/NBSP, migliaia)
-     * e normalizza la virgola decimale a punto, restituendo stringa pronta per (float) cast.
-     */
+    /** Vedi MassivoCsvParser::cleanImportoRaw(). */
     private static function cleanImportoRaw(string $raw): string
     {
-        $s = trim($raw);
-        if ($s === '') return '';
-        $s = str_replace("\xC2\xA0", ' ', $s); // NBSP -> spazio
-        $s = str_replace(' ', '', $s);
-        $s = preg_replace('/[^\d,.\-]/', '', $s) ?? ''; // via simboli valuta (€, $, ecc.)
-        $s = str_replace(',', '.', $s);
-        return $s;
+        return MassivoCsvParser::cleanImportoRaw($raw);
     }
 
     /** Colonne in coda al tracciato base: solo RATA_i_DATA_VALIDITA/SCADENZA (i <= MAX_RATE), senza duplicati. */
@@ -442,15 +434,10 @@ class MassivePendenzeController
         return true;
     }
 
+    /** Vedi MassivoCsvParser::parse(). */
     private static function parseCsv(string $content): array
     {
-        $rows = [];
-        $fh = fopen('php://temp', 'w+');
-        fwrite($fh, $content); rewind($fh);
-        // Specifica esplicitamente enclosure ed escape per evitare warning di deprecazione
-        while (($r = fgetcsv($fh, 0, ';', '"', '\\')) !== false) { $rows[] = $r; }
-        fclose($fh);
-        return $rows;
+        return MassivoCsvParser::parse($content);
     }
 
     private static function assocRow(array $header, array $row): array
