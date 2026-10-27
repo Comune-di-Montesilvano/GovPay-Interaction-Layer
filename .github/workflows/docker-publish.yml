@@ -302,7 +302,7 @@ jobs:
             scope: frontoffice
     steps:
       # Come build-php-base, piu' gli host di Trivy (DB vulnerabilità) e di Sigstore (firma
-      # cosign + attestazioni: Fulcio, Rekor, TSA, TUF). Il binario cosign arriva dalle release
+      # cosign + attestazioni: Fulcio, Rekor e shard Rekor v2 *.rekor, TSA, TUF). Il binario cosign arriva dalle release
       # GitHub (release-assets/objects.githubusercontent.com, gia' presenti).
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
@@ -328,7 +328,6 @@ jobs:
             check.trivy.dev:443
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
-            # Rekor v2: host degli shard
             *.rekor.sigstore.dev:443
             timestamp.sigstore.dev:443
             tuf-repo-cdn.sigstore.dev:443
@@ -500,7 +499,7 @@ jobs:
 
     steps:
       # Immagine db: base mariadb (Docker Hub), apt Ubuntu + repo mariadb (HTTP, pacchetti
-      # firmati GPG), script init, piu' Trivy, GHCR e Sigstore (firma + attestazioni).
+      # firmati GPG), script init, piu' Trivy, GHCR e Sigstore (firma + attestazioni, shard Rekor v2 *.rekor).
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
@@ -523,7 +522,6 @@ jobs:
             archive.mariadb.org:80
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
-            # Rekor v2: host degli shard
             *.rekor.sigstore.dev:443
             timestamp.sigstore.dev:443
             tuf-repo-cdn.sigstore.dev:443
