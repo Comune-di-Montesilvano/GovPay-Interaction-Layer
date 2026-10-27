@@ -1,7 +1,7 @@
 ######################################################################
 # STAGE 1: Asset Builder (librerie frontend da npm)
 ######################################################################
-FROM node:lts-trixie-slim AS asset_builder
+FROM node:lts-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS asset_builder
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
 ######################################################################
 # STAGE 2: Composer vendor builder (solo dipendenze PHP)
 ######################################################################
-FROM composer:2 AS vendor_builder
+FROM composer:2@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc AS vendor_builder
 WORKDIR /app
 COPY --link composer.json composer.lock* ./
 COPY --link govpay-clients/ ./govpay-clients/
@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.composer,sharing=locked \
 ######################################################################
 # STAGE 3: Runtime (Apache + PHP) harden
 ######################################################################
-FROM php:8.5-apache-trixie AS runtime-base
+FROM php:8.5-apache-trixie@sha256:7cd25eb48f9763dfeabe8fda3939897aca2001802fadeafa1b602f26c735ef96 AS runtime-base
 
 # System deps + PHP extensions FIRST — stable layer, cache must not be busted
 # by per-commit ARGs. All volatile ARG/ENV go AFTER this RUN.
@@ -70,7 +70,7 @@ WORKDIR /var/www/html
 # Copia vendor dal builder (strato pesante, teniamolo in alto in modo che non venga invalidato)
 COPY --link --from=vendor_builder /app/vendor /var/www/html/vendor
 # Reintroduco composer solo per script di setup (dump-autoload scenario)
-COPY --link --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+COPY --link --from=vendor_builder /usr/bin/composer /usr/local/bin/composer
 
 # ----------------------------------------------------------------------
 # COPIA ASSET FRONT-END
@@ -207,4 +207,4 @@ RUN mkdir -p /var/www/html/frontoffice/storage/logs \
     && chown -R www-data:www-data /var/www/html/frontoffice/storage \
     && chmod 2775 /var/www/html/frontoffice/storage/logs \
     && chmod 664 /var/www/html/frontoffice/storage/logs/app.log
-
+
