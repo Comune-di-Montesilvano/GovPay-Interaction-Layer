@@ -110,6 +110,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       # Report Trivy delle immagini latest pubblicate, letti da rebuild-check. Mai bloccanti
       # qui: un'immagine assente o uno scan fallito diventano una causa di rebuild.
+      - name: Prepara cartella report Trivy
+        if: github.event_name == 'schedule' || inputs.dry_run
+        run: mkdir -p trivy-latest
       - name: Trivy latest · backoffice
         if: github.event_name == 'schedule' || inputs.dry_run
         continue-on-error: true
