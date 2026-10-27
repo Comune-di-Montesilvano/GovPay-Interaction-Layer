@@ -4,6 +4,8 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
+  # Merge queue: i required check girano sul commit temporaneo della coda prima del merge.
+  merge_group:
   # Giro giornaliero su main (05:00 UTC): nuovi advisory su dipendenze invariate
   # (composer audit in build-test, Trivy fs).
   schedule:
@@ -25,6 +27,8 @@ permissions:
 
 jobs:
   build-test:
+    # Non su push a main: gia' passato su PR e in merge queue (il merge e' il commit testato).
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
