@@ -64,6 +64,9 @@ updates:
     groups:
       minor-patch:
         update-types: ["minor", "patch"]
+        # php/mariadb sempre in PR singola: il guard di dependabot-automerge.yml legge
+        # previous/new-version solo della prima dipendenza di un gruppo.
+        exclude-patterns: ["php", "mariadb"]
 
   - package-ecosystem: "docker"
     directory: "/docker/db"
@@ -80,6 +83,9 @@ updates:
     groups:
       minor-patch:
         update-types: ["minor", "patch"]
+        # php/mariadb sempre in PR singola: il guard di dependabot-automerge.yml legge
+        # previous/new-version solo della prima dipendenza di un gruppo.
+        exclude-patterns: ["php", "mariadb"]
     # Restiamo su 12.3 LTS: 13.0 e' rolling (EOL community Q4 2026). Rimuovere quando
     # una 13.x diventa LTS.
     ignore:

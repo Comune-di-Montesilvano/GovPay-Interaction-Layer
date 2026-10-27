@@ -47,18 +47,20 @@ for img in $IMAGES; do
     causes+=("${img}: label revision assente")
     rev="assente"
   elif ! git cat-file -e "${rev}^{commit}" 2>/dev/null; then
-    causes+=("${img}: revision ${rev::7} non in main")
+    causes+=("${img}: revision ${rev::7} assente dal repository")
   else
     commits=$(git rev-list --count "${rev}..${HEAD_SHA}")
     [ "$commits" -gt 0 ] && causes+=("${img}: ${commits} commit su main dopo ${rev::7}")
   fi
 
   # b. Aggiornamenti di sistema (Debian per backoffice/frontoffice, Ubuntu per mariadb).
+  # apt-get update fallito (mirror bloccato/irraggiungibile) = errore, mai "0 aggiornamenti".
   upgradable=$(docker run --rm --user 0 --entrypoint sh "$ref" -c \
-    'apt-get update -qq >/dev/null 2>&1 && apt list --upgradable 2>/dev/null | grep -c "\[upgradable from" || true' \
-    2>/dev/null || echo "errore")
-  if [ "$upgradable" = "errore" ]; then
+    'apt-get update -qq >/dev/null 2>&1 || exit 3; apt list --upgradable 2>/dev/null | grep -c "\[upgradable from" || true' \
+    2>/dev/null) || upgradable="errore"
+  if ! [[ "$upgradable" =~ ^[0-9]+$ ]]; then
     causes+=("${img}: controllo apt fallito")
+    upgradable="errore"
   elif [ "$upgradable" -gt 0 ]; then
     causes+=("${img}: ${upgradable} pacchetti di sistema aggiornabili")
   fi
@@ -69,8 +71,13 @@ for img in $IMAGES; do
     causes+=("${img}: report Trivy assente")
     vulns="n/d"
   else
-    vulns=$(jq '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "")] | length' "$report")
-    [ "$vulns" -gt 0 ] && causes+=("${img}: ${vulns} vulnerabilita' HIGH/CRITICAL con fix")
+    vulns=$(jq '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "")] | length' "$report" 2>/dev/null) || vulns=""
+    if ! [[ "$vulns" =~ ^[0-9]+$ ]]; then
+      causes+=("${img}: report Trivy illeggibile")
+      vulns="n/d"
+    elif [ "$vulns" -gt 0 ]; then
+      causes+=("${img}: ${vulns} vulnerabilita' HIGH/CRITICAL con fix")
+    fi
   fi
 
   # Solo informativo: versione PHP nell'immagine vs ultima 8.x.y pubblicata su php.net.

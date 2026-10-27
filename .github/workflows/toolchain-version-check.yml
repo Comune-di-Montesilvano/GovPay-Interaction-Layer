@@ -68,6 +68,10 @@ jobs:
           fi
           latest=$(cut -f1 <<<"$release")
           published=$(cut -f2 <<<"$release")
+          if [ -z "$latest" ] || [ -z "$published" ]; then
+            echo "::error::Ultima release $TOOL non trovata (API cambiata o risposta vuota)"
+            exit 1
+          fi
           age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
           echo "$TOOL pinnato: $pinned — ultimo: $latest (pubblicato $published, $age_days giorni fa)"
 
