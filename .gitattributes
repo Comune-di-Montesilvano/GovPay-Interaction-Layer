@@ -9,3 +9,6 @@ spid-proxy/entrypoint.sh text eol=lf
 
 # Legacy
 docker-setup.sh text eol=lf
+# Dockerfile in LF (diff e blame puliti anche da Windows con core.autocrlf=true)
+Dockerfile text eol=lf
+**/Dockerfile text eol=lf

@@ -8,14 +8,6 @@ inputs:
     description: "true = rebuild automatico di latest (version/label = ultimo tag vX.Y.Z)"
     required: false
     default: "false"
-  ref:
-    description: "Ref da risolvere (default GITHUB_REF)"
-    required: false
-    default: ""
-  sha:
-    description: "Commit da risolvere (default GITHUB_SHA)"
-    required: false
-    default: ""
 
 outputs:
   version:
@@ -40,12 +32,8 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         AUTO_BUILD: ${{ inputs.auto }}
-        INPUT_REF: ${{ inputs.ref }}
-        INPUT_SHA: ${{ inputs.sha }}
       run: |
         set -euo pipefail
-        GITHUB_REF="${INPUT_REF:-$GITHUB_REF}"
-        GITHUB_SHA="${INPUT_SHA:-$GITHUB_SHA}"
         GITHUB_REF_NAME="${GITHUB_REF#refs/*/}"
         repo_url="https://github.com/${GITHUB_REPOSITORY}"
         commit_url="${repo_url}/commit/${GITHUB_SHA}"
