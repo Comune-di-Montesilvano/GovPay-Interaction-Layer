@@ -676,7 +676,8 @@ jobs:
       contents: read
       packages: read
     steps:
-      # Solo GHCR: le 3 immagini sono tutte li', lo stack non scarica altro all'avvio.
+      # Solo GHCR: le 3 immagini e quella cosign di verify-images (ghcr.io/sigstore) sono tutte
+      # li'; con VERIFY_IMAGES non impostata verify-images esce subito, niente Sigstore.
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block

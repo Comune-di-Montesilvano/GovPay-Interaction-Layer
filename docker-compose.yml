@@ -1,5 +1,65 @@
+# Hardening runtime (passo 1): nessuna escalation di privilegi (setuid/setgid) e nessuna
+# capability Linux oltre a quelle strettamente necessarie.
+#
+# Segreti obbligatori: DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD, FRONTOFFICE_DB_PASSWORD,
+# APP_ENCRYPTION_KEY, MASTER_TOKEN, FRONTOFFICE_LINK_SIGNING_KEY. Se una manca o e' vuota
+# lo stack non parte (`${VAR:?...}`) e l'errore nomina la variabile: vedi .env.example.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+# backoffice/frontoffice: Apache master root, worker www-data; docker-setup.sh fa chown/chmod
+# su directory non di root; i demoni cron (docker exec, root) scrivono in directory setgid.
+# KILL serve al master per segnalare i worker www-data (graceful reload, stop).
+x-php-caps: &php-caps
+  cap_add:
+    - CHOWN
+    - SETUID
+    - SETGID
+    - DAC_OVERRIDE
+    - FOWNER
+    - KILL
+
 services:
+  # Verifica delle firme cosign delle 3 immagini di ${APP_VERSION} prima di avviarle
+  # (VERIFY_IMAGES=true): firmate da docker-publish.yml di questo repo su un tag v* o su main.
+  # Se fallisce (firma assente, tag inesistente), backoffice, frontoffice e db restano creati
+  # ma non avviati e il deploy da Portainer va in errore: rimettere il tag precedente.
+  # Spenta (default), esce subito con successo. Serve HTTPS verso ghcr.io e i servizi
+  # Sigstore (tuf-repo-cdn.sigstore.dev, rekor.sigstore.dev). Le ripartenze dei container
+  # gia' creati (riavvio host, restart policy) non passano di qui.
+  # Le immagini pubblicate prima del primo rilascio firmato NON sono firmate: attivare
+  # VERIFY_IMAGES solo dopo averlo installato.
+  verify-images:
+    <<: *hardening
+    # Variante -dev (con shell busybox) per il toggle VERIFY_IMAGES; fissata per digest.
+    image: ghcr.io/sigstore/cosign/cosign:v3.1.4-dev@sha256:8af1a2cf9fba903fdfc6bdafdc25f7b13ef34ad722095543ea787fb96f7240c1
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /home/nonroot:mode=1777
+    environment:
+      VERIFY_IMAGES: ${VERIFY_IMAGES:-false}
+      APP_VERSION: ${APP_VERSION:-latest}
+    entrypoint: ["/busybox/sh", "-ec"]
+    command:
+      - |
+        if [ "$$VERIFY_IMAGES" != "true" ]; then
+          echo "Verifica firme disattivata (VERIFY_IMAGES=$$VERIFY_IMAGES)"
+          exit 0
+        fi
+        R=ghcr.io/comune-di-montesilvano/govpay-interaction-layer
+        cosign verify \
+          --certificate-identity-regexp '^https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/\.github/workflows/docker-publish\.yml@refs/(tags/v.*|heads/main)$$' \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          "$$R-backoffice:$$APP_VERSION" "$$R-frontoffice:$$APP_VERSION" \
+          "$$R-db:$$APP_VERSION" >/dev/null
+        echo "Firme verificate: $$APP_VERSION"
+
   backoffice:
+    <<: [*hardening, *php-caps]
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     container_name: gil-backoffice
     ports:
@@ -17,15 +77,15 @@ services:
       - DB_PORT=3306
       - DB_NAME=${DB_NAME:-govpay}
       - DB_USER=${BACKOFFICE_DB_USER:-govpay}
-      - DB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
-      - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
-      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      - FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY}
+      - "DB_PASSWORD=${BACKOFFICE_DB_PASSWORD:?BACKOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
+      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
+      - "APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY obbligatoria: vedi .env.example}"
+      - "FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY:?FRONTOFFICE_LINK_SIGNING_KEY obbligatoria: vedi .env.example}"
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
       # Token per autenticare le chiamate Bearer
-      - MASTER_TOKEN=${MASTER_TOKEN}
+      - "MASTER_TOKEN=${MASTER_TOKEN:?MASTER_TOKEN obbligatoria: vedi .env.example}"
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     healthcheck:
@@ -35,14 +95,17 @@ services:
       retries: 6
       start_period: 30s
     # Avvio solo con MariaDB pronta (InnoDB inizializzato): niente errori di connessione
-    # al primo avvio o dopo un upgrade dell'immagine db.
+    # al primo avvio o dopo un upgrade dell'immagine db. verify-images: vedi sopra.
     depends_on:
+      verify-images:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
     networks:
       - govpay-network
 
   frontoffice:
+    <<: [*hardening, *php-caps]
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: gil-frontoffice
     ports:
@@ -57,9 +120,9 @@ services:
       # Sidecar: frontoffice chiama backoffice via API interna (Bearer MASTER_TOKEN).
       # Nessuna credenziale GovPay/pagoPA necessaria nel frontoffice.
       - BACKOFFICE_INTERNAL_URL=${BACKOFFICE_INTERNAL_URL:-http://backoffice}
-      - MASTER_TOKEN=${MASTER_TOKEN}
-      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY}
-      - FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY}
+      - "MASTER_TOKEN=${MASTER_TOKEN:?MASTER_TOKEN obbligatoria: vedi .env.example}"
+      - "APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY obbligatoria: vedi .env.example}"
+      - "FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY:?FRONTOFFICE_LINK_SIGNING_KEY obbligatoria: vedi .env.example}"
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
@@ -69,11 +132,13 @@ services:
       - DB_PORT=3306
       - DB_NAME=${DB_NAME:-govpay}
       - DB_USER=${FRONTOFFICE_DB_USER:-govpay_cittadini}
-      - DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD}
-      - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
+      - "DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
+      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     depends_on:
+      verify-images:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       backoffice:
@@ -84,16 +149,24 @@ services:
 
 
   db:
+    <<: *hardening
+    # L'entrypoint mariadb parte come root, fa chown della datadir e scende a `mysql` (gosu).
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: gil-db
     restart: always
     environment:
-      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - "MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD obbligatoria: vedi .env.example}"
       - MARIADB_USER=${BACKOFFICE_DB_USER:-govpay}
-      - MARIADB_PASSWORD=${BACKOFFICE_DB_PASSWORD}
+      - "MARIADB_PASSWORD=${BACKOFFICE_DB_PASSWORD:?BACKOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
       - MARIADB_DATABASE=${DB_NAME:-govpay}
       - DB_USER_CITTADINI=${FRONTOFFICE_DB_USER:-govpay_cittadini}
-      - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
+      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
       # Opzionale. Vuoto = disattivo; 1 = mariadb-upgrade all'avvio (non serve all'healthcheck).
       - MARIADB_AUTO_UPGRADE=${MARIADB_AUTO_UPGRADE:-}
     volumes:
@@ -110,6 +183,9 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    depends_on:
+      verify-images:
+        condition: service_completed_successfully
     networks:
       - govpay-network
 

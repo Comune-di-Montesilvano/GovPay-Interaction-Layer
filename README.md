@@ -145,6 +145,11 @@ Le variabili obbligatorie prima del primo avvio:
 | `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD` | Credenziali database |
 | `APP_ENCRYPTION_KEY` | Chiave cifratura segreti in DB — esattamente 32 caratteri (`openssl rand -hex 16`) |
 | `MASTER_TOKEN` | Token Bearer per comunicazione interna backoffice ↔ frontoffice (`openssl rand -hex 24`) |
+| `FRONTOFFICE_LINK_SIGNING_KEY` | Chiave firma link pubblici frontoffice (`openssl rand -hex 32`) |
+
+Se una di queste variabili manca o è vuota, `docker compose` si rifiuta di avviare lo stack con un errore che la nomina (es. `required variable MASTER_TOKEN is missing a value: MASTER_TOKEN obbligatoria: vedi .env.example`).
+
+Opzionale: `VERIFY_IMAGES` (default `false`) — vedi [Verifica delle immagini prima del deploy](#verifica-delle-immagini-prima-del-deploy).
 
 ---
 
@@ -387,6 +392,21 @@ CONTAINER_CLI=podman scripts/verify-images.sh 1.6.9
 ```
 
 Lo script non richiede cosign installato (usa l'immagine ufficiale `ghcr.io/sigstore/cosign/cosign` fissata per digest) e verifica la firma di backoffice, frontoffice e db con l'identità `https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/.github/workflows/docker-publish.yml@refs/(tags/v*|heads/main)`. Se la CLI `gh` è presente verifica anche le attestazioni (provenance SLSA e SBOM CycloneDX). Stampa i digest verificati; **exit ≠ 0 = non aggiornare lo stack**. Le immagini pubblicate prima dell'introduzione della firma non passano la verifica.
+
+**Verifica automatica all'avvio (`VERIFY_IMAGES`).** Il compose include il servizio one-shot `verify-images` (cosign, stessa identità): con `VERIFY_IMAGES=true` verifica la firma delle 3 immagini di `APP_VERSION` prima di avviarle; firma assente/non valida o tag inesistente → `backoffice`, `frontoffice` e `db` restano creati ma **non partono** e il deploy (anche da Portainer) va in errore: rimettere il tag precedente. Default `false` (il servizio esce subito con successo). Per attivarla:
+
+1. installare prima un rilascio firmato (le immagini precedenti non sono firmate e bloccherebbero l'avvio): verificarlo con `scripts/verify-images.sh <APP_VERSION>`;
+2. impostare `VERIFY_IMAGES=true` nel `.env` o nelle *Environment variables* di Portainer, poi `docker compose up -d`;
+3. il server deve raggiungere in HTTPS `ghcr.io`, `tuf-repo-cdn.sigstore.dev` e `rekor.sigstore.dev`.
+
+La verifica avviene solo quando compose (ri)crea/avvia lo stack: i riavvii dei container già creati (riavvio host, restart policy) non ripassano da `verify-images`.
+
+### Note di rilascio: hardening runtime (cambio incompatibile)
+
+> [!WARNING]
+> Da questa versione **i segreti di bootstrap sono obbligatori**: `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD`, `APP_ENCRYPTION_KEY`, `MASTER_TOKEN`, `FRONTOFFICE_LINK_SIGNING_KEY`. Un'istanza con una di queste variabili vuota o assente **non riparte** dopo l'upgrade (`docker compose` termina con `required variable ... is missing a value`). **Prima dell'upgrade** controllare il `.env` (o le *Environment variables* di Portainer) e compilarle con i valori **già in uso** — non generarne di nuovi per un'istanza esistente: `APP_ENCRYPTION_KEY` diversa rende illeggibili i segreti cifrati nel DB, password DB diverse non corrispondono a quelle già nel volume. Solo se `MASTER_TOKEN` o `FRONTOFFICE_LINK_SIGNING_KEY` erano davvero vuote se ne può generare una nuova (`openssl rand -hex 24` / `-hex 32`): con chiave vuota nessun link firmato era stato emesso.
+
+Altre modifiche del compose, senza azioni richieste: `no-new-privileges` e `cap_drop: ALL` su tutti i servizi con le sole capability necessarie (backoffice/frontoffice: `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER, KILL`; db: `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER`); servizio `verify-images` (spento di default, vedi sopra). Chi usa un compose personalizzato con processi aggiuntivi nei container deve verificare che non servano altre capability.
 
 ### Upgrade: backup del DB obbligatorio
 

@@ -137,7 +137,10 @@ openssl rand -hex 32   # FRONTOFFICE_LINK_SIGNING_KEY
 
 SENTRY_DSN                   # opzionale — vuoto = error tracking disattivo
 SENTRY_ENVIRONMENT           # opzionale — tag ambiente/istanza per GlitchTip, default "production"
+VERIFY_IMAGES                # opzionale, default false — true = servizio verify-images (cosign) blocca l'avvio se le 3 immagini di APP_VERSION non sono firmate
 ```
+
+**Hardening compose (Fase 6 baseline)**: i 6 segreti sopra sono `${VAR:?...}` in `docker-compose.yml` — vuoti/assenti → compose rifiuta di partire (anche `up db`: interpola tutto il file; per questo il `.env` generato in `ci.yml` e quello di `scripts/smoke-stack.sh` li contengono tutti). Nuovo segreto obbligatorio → aggiornarlo in entrambi. Voce `environment` in forma lista con `:?msg` contenente `": "` va tra virgolette, altrimenti YAML la legge come mappa ("unexpected type map"). Tutti i servizi `no-new-privileges` + `cap_drop: ALL`; backoffice/frontoffice `cap_add` CHOWN/SETUID/SETGID/DAC_OVERRIDE/FOWNER/KILL, db senza KILL. Processi in più nei container che richiedono altre capability → aggiungerle esplicite, verificare con `docker inspect -f '{{.HostConfig.CapAdd}}'`. `backoffice`/`frontoffice`/`db` dipendono da `verify-images` (`service_completed_successfully`): con `VERIFY_IMAGES` non `true` esce 0 subito.
 
 ### Configurazione applicativa (DB → UI)
 
