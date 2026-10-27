@@ -1,5 +1,6 @@
 name: Dependabot auto-merge
-# Minor/patch di dependabot: auto-merge (GitHub) appena i required check sono verdi.
+# Minor/patch di dependabot: auto-merge (GitHub, squash: unico metodo ammesso dal repo) appena i
+# required check sono verdi.
 # Major: nessuna azione, la PR resta aperta come promemoria per l'upgrade manuale.
 # Eccezione: tag immagine php/mariadb (es. php 8.5 -> 8.6, mariadb 12.3 -> 12.4) — dependabot
 # li classifica minor ma sono upgrade di runtime/DB, restano manuali come le major.
@@ -60,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --merge "$PR_URL"
+        run: gh pr merge --auto --squash "$PR_URL"
 
       - name: Major/runtime lasciata manuale
         if: steps.app.outcome == 'skipped'
