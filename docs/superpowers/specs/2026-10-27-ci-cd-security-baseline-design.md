@@ -15,8 +15,8 @@ workflow) e definisce come chiuderli, in fasi indipendenti.
 Principi adottati così come sono: nessuna fiducia implicita, fallire chiusi, un solo cancello
 senza bypass, tutto fissato per SHA/digest/versione, privilegio minimo, ritardo deliberato sulle
 novità, provare ciò che si pubblica, costo proporzionato. Quest'ultimo pesa di più qui: team di
-1-2 maintainer, quindi si preferisce il meccanismo più semplice che chiude il gap (es. una sola
-firma).
+1-2 maintainer, quindi si preferisce il meccanismo più semplice che chiude il gap, salvo dove
+ComunicaPA ha già una soluzione collaudata da riusare così com'è (firma, harden-runner).
 
 ## Gap analysis
 
@@ -144,6 +144,7 @@ Ristrutturazione di `docker-publish.yml`:
 ```
 setup (verifica origine) → build ×3 (push-by-digest, nessun tag)
       → Trivy bloccante per digest → SBOM CycloneDX (Trivy) → attest-build-provenance + attest-sbom
+      → cosign sign keyless (digest)
       → smoke: compose di produzione con i 3 digest → scripts/smoke-stack.sh
       → publish ×3: imagetools create -t <tag> per vX.Y.Z / X.Y / latest / latest-YYYYMMDD
 ```
@@ -154,10 +155,19 @@ setup (verifica origine) → build ×3 (push-by-digest, nessun tag)
   `outputs: type=image,name=ghcr.io/<org>/govpay-interaction-layer-<img>,push-by-digest=true,name-canonical=true,push=true`
   e senza `tags:`. `provenance: false`/`sbom: false` restano: provenance e SBOM li producono le
   action `attest-*`, così non nascono index con manifest figli non taggati.
-- **Una sola firma**: `actions/attest-build-provenance` + `actions/attest-sbom` (Sigstore keyless,
-  legati al digest, `push-to-registry: true`). Niente cosign separato: doppio meccanismo, doppi
-  permessi, doppia verifica. Verifica: `gh attestation verify oci://<image>@<digest> -R Comune-di-Montesilvano/GovPay-Interaction-Layer`
-  (`scripts/verify-images.sh <tag>`). SBOM generato con Trivy (già pinnato, `format: cyclonedx`).
+- **Firma + attestazioni, come ComunicaPA**:
+  - `actions/attest-build-provenance` + `actions/attest-sbom` (attestazioni GitHub, legate al
+    digest); SBOM CycloneDX generato con Trivy (già pinnato, `format: cyclonedx`);
+  - `sigstore/cosign-installer` + `cosign sign --yes "$IMAGE@$DIGEST"` (keyless, identità OIDC
+    del workflow, log Rekor). Serve perché la verifica al deploy gira con la sola immagine
+    cosign, senza `gh` né token.
+- **Verifica manuale** `scripts/verify-images.sh <tag>` (copia adattata da ComunicaPA): `cosign verify`
+  dall'immagine ufficiale `ghcr.io/sigstore/cosign/cosign` fissata per digest (nessuna
+  installazione), identità
+  `^https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/\.github/workflows/docker-publish\.yml@refs/(tags/v.*|heads/main)$`,
+  issuer `https://token.actions.githubusercontent.com`; se `gh` è presente verifica anche
+  `gh attestation verify --signer-workflow … --predicate-type` provenance SLSA e CycloneDX.
+  Supporta `CONTAINER_CLI=podman`.
 - **Publish**: riusa le liste tag di `metadata-action` di oggi, spostate nel job finale; con
   `latest-YYYYMMDD` incluso, nessun tag esiste prima di Trivy + smoke.
 - Permessi `packages: write`, `id-token: write`, `attestations: write` solo nei job che servono.
@@ -286,8 +296,9 @@ Fino all'attivazione: escludere l'ecosistema docker dall'auto-merge (nessuna bui
 
 ### Fase 5 — Release firmata e provata (1-2 PR)
 
-D3 completo: verifica origine, push-by-digest, Trivy, attestazioni, smoke, publish,
-`scripts/verify-images.sh`, `ghcr-cleanup.yml`.
+D3 completo: verifica origine, push-by-digest, Trivy, attestazioni + firma cosign, smoke,
+publish, `scripts/verify-images.sh`, `ghcr-cleanup.yml` (rimuove anche i tag firma
+`sha256-<digest>.sig`/`.att` dei digest orfani).
 
 Rollback documentato nel README: rollback principale = `APP_VERSION=<vX.Y.Z precedente>`
 (`latest-YYYYMMDD` esiste solo per i rebuild schedulati). **Backup DB obbligatorio prima di ogni
@@ -297,6 +308,16 @@ migrazione può rompere lo schema; downgrade dell'immagine `db` solo con restore
 ### Fase 6 — Runtime hardening passo 1 (1 PR)
 
 D4 passo 1 (incluso aggiornamento `.env` CI e release note).
+
+Più servizio one-shot `verify-images` nel compose (come ComunicaPA): immagine
+`ghcr.io/sigstore/cosign/cosign:<v>-dev@sha256:…` (variante con shell busybox), `read_only`,
+`restart: "no"`; con `VERIFY_IMAGES=true` esegue `cosign verify` (stessa identità di D3) sulle 3
+immagini di `APP_VERSION`, altrimenti esce 0. `backoffice`, `frontoffice`, `db` dipendono da lui
+con `condition: service_completed_successfully`: firma assente o tag inesistente → servizi non
+avviati. Toggle via **variabile**, non `profiles` (con il profilo una verifica fallita dà solo un
+warning e i servizi partono). Default `false` per non rompere le istanze esistenti; documentare
+l'attivazione. Le immagini pubblicate prima della Fase 5 non sono firmate: attivare solo dopo il
+primo rilascio firmato.
 
 ### Fase 7 — Governance
 
@@ -324,8 +345,7 @@ un giorno qualsiasi blocca anche un hotfix non correlato. Procedura (da `docs/` 
 3. **Secret scanning `non_provider_patterns`/`validity_checks`**: verificare disponibilità sul repo pubblico; su ComunicaPA richiedono licenza.
 4. **`publiccode-parser-action`**: immagine Docker interna non per digest, fuori dal nostro controllo.
 5. **`scripts/legacy-bridge/rendicontazione_bridge.php`**: deploy manuale fuori pipeline, nessuna garanzia di integrità sul server legacy.
-6. **Verifica firme al deploy automatica** (servizio `verify-images` nel compose): rimandata; `gh attestation verify` richiede `gh` + token, per ora procedura manuale con `scripts/verify-images.sh`.
-7. Fuori CI/CD: rotazione segreti `.env` delle istanze, accesso Portainer, backup con ripristino provato.
+6. Fuori CI/CD: rotazione segreti `.env` delle istanze, accesso Portainer, backup con ripristino provato.
 
 ## Verifica
 
