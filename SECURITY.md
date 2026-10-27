@@ -12,8 +12,8 @@ problema prima che sia disponibile una correzione.
 
 Segnala privatamente a:
 
-- **Email**: supporto@comune.montesilvano.pe.it
-- Oggetto: `[SECURITY] <breve descrizione>`
+- **GitHub** (preferito): [Report a vulnerability](https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/security/advisories/new) — segnalazione privata, visibile solo ai maintainer
+- **Email**: supporto@comune.montesilvano.pe.it — oggetto `[SECURITY] <breve descrizione>`
 
 Includi, dove possibile:
 
