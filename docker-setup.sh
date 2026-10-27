@@ -10,8 +10,8 @@ fi
 cd "$APP_DIR"
 
 # Composer gira solo a build time (stage vendor_builder del Dockerfile): a runtime nessun
-# download. Solo il backoffice usa vendor/ dall'immagine.
-if [ "$APP_SUITE" = "backoffice" ] && [ ! -f /var/www/html/vendor/autoload.php ]; then
+# download. Backoffice e frontoffice richiedono entrambi /var/www/html/vendor dall'immagine.
+if [ ! -f /var/www/html/vendor/autoload.php ]; then
   echo "❌ vendor/ assente nell'immagine: ricostruire l'immagine (composer gira solo a build time)" >&2
   exit 1
 fi
