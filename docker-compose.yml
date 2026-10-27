@@ -94,17 +94,18 @@ services:
       - MARIADB_DATABASE=${DB_NAME:-govpay}
       - DB_USER_CITTADINI=${FRONTOFFICE_DB_USER:-govpay_cittadini}
       - DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD}
-      # Vuoto = disattivo. 1 = mariadb-upgrade + utente healthcheck all'avvio (volumi vecchi).
+      # Opzionale. Vuoto = disattivo; 1 = mariadb-upgrade all'avvio (non serve all'healthcheck).
       - MARIADB_AUTO_UPGRADE=${MARIADB_AUTO_UPGRADE:-}
     volumes:
       - db_data:/var/lib/mysql
-    # healthcheck.sh dell'immagine ufficiale mariadb: --connect = server in ascolto (non piu'
-    # il server temporaneo dell'init), --innodb_initialized = InnoDB pronto. Usa l'utente
-    # `healthcheck` creato dall'entrypoint in /var/lib/mysql/.my-healthcheck.cnf: un volume
-    # nato prima di quell'utente resta unhealthy — avviare una volta con MARIADB_AUTO_UPGRADE=1
-    # (variabile sopra, da .env/Portainer).
+    # healthcheck.sh dell'immagine ufficiale mariadb, solo --connect: healthy quando il server
+    # vero accetta connessioni TCP (durante l'init gira con skip-networking → errore 2002 →
+    # unhealthy). Anche "access denied" conta come connesso, quindi non dipende dall'utente
+    # `healthcheck` in /var/lib/mysql/.my-healthcheck.cnf (assente sui volumi vecchi, con
+    # credenziali sbagliate dopo un restore): --innodb_initialized li lascerebbe unhealthy per
+    # sempre e backoffice/frontoffice non partirebbero.
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "healthcheck.sh", "--connect"]
       interval: 10s
       timeout: 5s
       retries: 10

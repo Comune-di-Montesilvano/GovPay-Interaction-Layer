@@ -402,7 +402,7 @@ docker exec gil-db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --singl
 In alternativa (o in aggiunta) il backup a freddo del volume descritto in [Volumi: regola aurea in produzione](#volumi-regola-aurea-in-produzione).
 
 > [!NOTE]
-> Il servizio `db` ha un healthcheck (`healthcheck.sh --connect --innodb_initialized`) e il backoffice parte solo con il DB *healthy*. Il check usa l'utente `healthcheck` che l'entrypoint MariaDB crea in `/var/lib/mysql/.my-healthcheck.cnf`: su un volume DB creato da un'immagine molto vecchia il file può mancare e il `db` resta *unhealthy* (backoffice non parte). In quel caso avvia una volta con `MARIADB_AUTO_UPGRADE=1` (dopo il backup), poi rimuovi la variabile.
+> Il servizio `db` ha un healthcheck (`healthcheck.sh --connect`) e backoffice/frontoffice partono solo con il DB *healthy*, cioè quando MariaDB accetta connessioni (init completato). Il check non usa credenziali: funziona anche su volumi creati da immagini vecchie o ripristinati da un dump. `MARIADB_AUTO_UPGRADE=1` resta disponibile come opzione (esegue `mariadb-upgrade` all'avvio, dopo il backup) ma non è necessario per l'healthcheck.
 
 ### Rollback
 
