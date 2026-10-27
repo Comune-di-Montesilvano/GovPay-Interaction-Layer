@@ -8,7 +8,7 @@ ComunicaPA documenta una baseline di sicurezza della supply chain
 ([`docs/ci-cd-security-baseline.md`](https://github.com/Comune-di-Montesilvano/ComunicaPA/blob/main/docs/ci-cd-security-baseline.md))
 con checklist per la gap analysis di altri repo. GIL ha già una parte consistente (action per
 SHA, Trivy bloccante sulle immagini, Trivy fs, semgrep, composer audit, dependabot con cooldown
-e auto-merge via GitHub App, `concurrency`/`timeout-minutes`, rebuild settimanale di `latest`).
+e auto-merge via GitHub App, `concurrency`/`timeout-minutes`, rebuild settimanale di `latest`) — ma con cadenza settimanale dove ComunicaPA è giornaliera (D7).
 Questo documento misura i gap (stato rilevato il 2026-10-27 via `gh api` e lettura dei
 workflow) e definisce come chiuderli, in fasi indipendenti.
 
@@ -69,6 +69,7 @@ Legenda: ✅ fatto · ⚠️ parziale · ❌ mancante · n.a. non applicabile. (
 | ★ Audit bloccante + dependency-review su PR | ⚠️ | `composer audit --no-dev` bloccante ✅; Trivy fs bloccante copre già `composer.lock` e `package-lock.json` ✅; **nessuna `dependency-review-action`** |
 | Dependabot tutti gli ecosistemi + cooldown | ⚠️ | actions, composer, docker (×2), npm con cooldown ✅; manca `docker-compose`; immagine `semgrep` non tracciata |
 | Immagini base per digest, tool a versione fissa | ⚠️ | Trivy pinnato + check settimanale ✅; solo per tag: `FROM node:lts-trixie-slim`, `FROM composer:2`, `COPY --from=composer:2` (`Dockerfile:73`), `FROM php:8.5-apache-trixie`, `FROM mariadb:12.3`; composer di `setup-php` in `ci.yml` senza versione |
+| Cadenza aggiornamenti | ❌ | dependabot **settimanale** su tutti gli ecosistemi (ComunicaPA: giornaliero 01:00 Europe/Rome); nessuno scan schedulato di `trivy-fs`/`composer audit` su main (ComunicaPA: `security.yml` giornaliero 05:00) — un advisory nuovo su dipendenze invariate si scopre solo alla PR successiva |
 | Scansione segreti/misconfig | ✅ | Trivy fs `vuln,secret,misconfig` bloccante + semgrep `p/secrets` |
 
 ### Release
@@ -79,6 +80,7 @@ Legenda: ✅ fatto · ⚠️ parziale · ❌ mancante · n.a. non applicabile. (
 | ★ Scansione artefatto bloccante | ⚠️ | Trivy bloccante per digest ✅, **ma dopo il push con i tag**: su tag `v*` l'immagine è già `:vX.Y.Z`/`:X.Y`/`:latest` quando Trivy fallisce; nel rebuild schedulato `latest-YYYYMMDD` è pushato prima dello scan (solo `latest` promosso dopo) |
 | Origine della release verificata | ❌ | un tag `v*` può puntare a un commit fuori da `main` (il commento in `docker-publish.yml` assume il contrario, nulla lo verifica) e pubblica `latest`; `workflow_dispatch` da qualsiasi branch pubblica `:<branch>` con `packages: write` senza CI |
 | Build immagine prima del merge | ❌ | immagini costruite solo su tag/schedule: PR dependabot docker/npm vanno in auto-merge senza build né Trivy image |
+| Rebuild periodico | ⚠️ | `latest` ricostruito **settimanalmente** (lunedì 04:30, skip se tag negli ultimi 7 giorni); `APT_REFRESH` per settimana ISO. ComunicaPA: giornaliero 04:30, skip se tag nelle ultime 24 ore, `PKG_REFRESH` = data del giorno. Una patch PHP/Debian pubblicata il martedì entra fino a 6 giorni dopo |
 | Push per digest, tag a fine pipeline | ❌ | vedi sopra |
 | Firma + provenance + SBOM | ❌ | `provenance: false`, `sbom: false`, nessuna firma |
 | Smoke test stack prima del tag | ❌ | CI avvia solo `db` per PHPUnit; mai lo stack con le immagini finali |
@@ -237,8 +239,33 @@ Allowlist di partenza (da ComunicaPA, adattata a GIL: niente pypi/alpine, in pi�
 Procedura (commento sopra ogni step, come ComunicaPA): release fallita per "blocked" → host nel
 log del post-step harden-runner o nella pagina insights della run, aggiungerlo se legittimo.
 Prima dell'attivazione: una run `workflow_dispatch` in `audit` per confermare l'elenco dal log
-DNS, poi `block`. Il rebuild settimanale schedulato è il primo a fallire su un cambio upstream:
+DNS, poi `block`. Il rebuild giornaliero schedulato è il primo a fallire su un cambio upstream:
 il fallimento lascia `latest` invariato (nessun tag prima di Trivy+smoke), quindi è sicuro.
+
+### D7 — Cadenza giornaliera, come ComunicaPA
+
+Catena giornaliera, nell'ordine (da ComunicaPA `dependabot.yml`, `security.yml`, `release.yml`):
+
+1. **01:00 Europe/Rome — dependabot giornaliero** su tutti gli ecosistemi (`interval: daily`,
+   `time: "01:00"`, `timezone: "Europe/Rome"`), cooldown invariato (7 giorni, 14 per le major
+   composer/npm; docker, docker-compose e github-actions non supportano `semver-major-days`).
+   L'auto-merge delle minor/patch finisce prima del rebuild.
+2. **04:30 UTC — rebuild giornaliero di `latest`** (`docker-publish.yml`, `cron: "30 4 * * *"`),
+   saltato se nelle ultime **24 ore** è uscito un tag; `APT_REFRESH` = data del giorno (`date -u +%F`)
+   invece della settimana ISO, così `apt-get upgrade` gira ogni giorno.
+3. **05:00 UTC — scan giornaliero su main**: `trivy-fs`, `composer audit`, semgrep con
+   `schedule: "0 5 * * *"` (nuovi advisory su dipendenze invariate), oltre a PR/push/merge_group.
+
+Settimanali restano solo i check delle versioni dei tool fissati a mano (`toolchain-version-check.yml`,
+`trivy-version-check.yml`, lunedì) e la pulizia GHCR, come in ComunicaPA.
+
+**CVE critico nell'interprete PHP.** PHP arriva compilato dall'immagine ufficiale
+`php:8.5-apache-trixie`: la correzione entra quando Docker ripubblica il tag. Oggi il `FROM` per
+tag la prende al primo rebuild (con D7: entro un giorno). Con il `FROM` per digest (Fase 2)
+arriva come PR dependabot di aggiornamento digest dopo il cooldown di 7 giorni; per un CVE
+critico si aggiorna il digest a mano (PR → merge → `gh workflow run docker-publish.yml -f rebuild_latest=true`
+o nuovo tag → `docker compose pull` sulle istanze). Da verificare in Fase 2 se Trivy rileva la
+versione dell'interprete PHP compilato da sorgente: se no, nessun alert automatico lo segnala.
 
 ## Piano per fasi
 
@@ -267,7 +294,8 @@ Ordine obbligato:
 2. `persist-credentials: false` su tutti gli `actions/checkout` (verificare `claude.yml`: la action gestisce credenziali proprie).
 3. `semgrep/semgrep` pinnato `:<versione>@sha256:…`; `trivy-version-check.yml` → `toolchain-version-check.yml` controlla anche semgrep.
 4. `FROM ...:tag@sha256:…` e `COPY --from=composer:2@sha256:…` nei due Dockerfile (dependabot aggiorna il digest); `tools: composer:2.x.y` in `setup-php`.
-5. Dependabot: ecosistema `docker-compose`.
+5. Dependabot: ecosistema `docker-compose`; tutti gli ecosistemi giornalieri alle 01:00 Europe/Rome (D7); rimuovere `phpunit/phpunit` dall'`ignore` composer (oggi esclude anche il phpunit del `composer.json` root).
+5b. Cadenza D7: `docker-publish.yml` rebuild giornaliero 04:30 con skip a 24 ore e `APT_REFRESH` giornaliero; `schedule: "0 5 * * *"` su `ci.yml` (trivy-fs, composer audit) e `semgrep.yml`; procedura CVE critico in `docs/security/`; verifica Trivy sulla versione PHP.
 6. `harden-runner` su tutti i job tranne semgrep: `audit` ovunque, `block` con allowlist per job in `docker-publish.yml` (D6, prima una run dispatch in audit).
 7. Rimuovere step "Debug struttura client generati" da `ci.yml`.
 8. Dismissione `dev` (D1).
