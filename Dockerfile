@@ -38,6 +38,7 @@ COPY --link composer.json composer.lock* ./
 COPY --link govpay-clients/ ./govpay-clients/
 COPY --link pagopa-clients/ ./pagopa-clients/
 RUN --mount=type=cache,target=/root/.composer,sharing=locked \
+    composer validate --no-check-publish --no-check-all && \
     composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
 

@@ -63,6 +63,9 @@ jobs:
           key: composer-${{ hashFiles('composer.lock') }}
           restore-keys: composer-
 
+      - name: Composer validate (composer.json valido e coerente)
+        run: composer validate --no-check-publish --no-check-all
+
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress
 
@@ -102,6 +105,31 @@ jobs:
       - name: Ferma i container
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+
+  # Dipendenze aggiunte o aggiornate dalla PR con advisory high/critical, devDependencies e
+  # Actions comprese (composer audit e Trivy vedono solo produzione e immagini). Solo sulle PR:
+  # in merge queue e su push il job risulta saltato, che per un required check vale verde.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, development
 
   trivy-fs:
     runs-on: ubuntu-latest
