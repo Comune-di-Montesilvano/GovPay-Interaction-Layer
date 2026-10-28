@@ -11,6 +11,7 @@ use App\Database\DbalConnectionFactory;
 use App\Database\JobStateRepository;
 use App\Monitoring\SentryReporter;
 use App\Services\ThrowableSummary;
+use Doctrine\DBAL\Exception\ConnectionLost;
 use Psr\Clock\ClockInterface;
 use Sentry\State\Scope;
 use Symfony\Component\Clock\NativeClock;
@@ -99,7 +100,7 @@ final class JobRunner
                 return null;
             }
             $lock = $this->locks->createLock('job:' . $name, self::LOCK_TTL_SECONDS, false);
-            if (!$lock->acquire(false)) {
+            if (!$this->acquire($lock)) {
                 return null;
             }
         } catch (\Throwable $e) {
@@ -117,6 +118,38 @@ final class JobRunner
                 // Lock gia' perso/scaduto: scade comunque per TTL.
             }
         }
+    }
+
+    /**
+     * La connessione DBAL dello store e' condivisa e vive quanto il worker. Su connessione
+     * caduta (riavvio db, wait_timeout) DBAL lancia ConnectionLost e chiude la connessione,
+     * che si riapre da sola al primo uso successivo. DoctrineDbalStore pero' inghiotte
+     * l'errore dell'INSERT come "lock gia' preso" e acquire() ritorna false: per questo si
+     * ritenta una volta sia su false sia su ConnectionLost (non bloccante, costo trascurabile;
+     * un conflitto reale resta false).
+     */
+    private function acquire(SharedLockInterface $lock): bool
+    {
+        try {
+            if ($lock->acquire(false)) {
+                return true;
+            }
+        } catch (\Throwable $e) {
+            if (!self::isConnectionLost($e)) {
+                throw $e;
+            }
+        }
+        return $lock->acquire(false);
+    }
+
+    private static function isConnectionLost(\Throwable $e): bool
+    {
+        for ($t = $e; $t !== null; $t = $t->getPrevious()) {
+            if ($t instanceof ConnectionLost) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function loop(PeriodicJob $job, SharedLockInterface $lock, bool $manual, bool $enabledAtStart, string $suite): JobResult

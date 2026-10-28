@@ -24,27 +24,41 @@ final class JobStateRepository
     private const DT = 'Y-m-d H:i:s';
 
     private readonly ClockInterface $clock;
+    /** @var \Closure(): \PDO */
+    private readonly \Closure $pdoProvider;
 
-    public function __construct(private readonly \PDO $pdo, ?ClockInterface $clock = null)
+    /**
+     * Il PDO e' risolto a ogni chiamata (default Connection::getPDO(), che riconnette se la
+     * connessione e' caduta): il repository vive per tutta la durata del worker.
+     *
+     * @param (\Closure(): \PDO)|null $pdoProvider
+     */
+    public function __construct(?\Closure $pdoProvider = null, ?ClockInterface $clock = null)
     {
+        $this->pdoProvider = $pdoProvider ?? static fn(): \PDO => Connection::getPDO();
         $this->clock = $clock ?? new NativeClock();
     }
 
     public static function default(): self
     {
-        return new self(Connection::getPDO());
+        return new self();
+    }
+
+    private function pdo(): \PDO
+    {
+        return ($this->pdoProvider)();
     }
 
     public function isEnabled(string $job): bool
     {
-        $st = $this->pdo->prepare('SELECT enabled FROM gil_jobs WHERE name = ?');
+        $st = $this->pdo()->prepare('SELECT enabled FROM gil_jobs WHERE name = ?');
         $st->execute([$job]);
         return (int)$st->fetchColumn() === 1;
     }
 
     public function setEnabled(string $job, bool $enabled): void
     {
-        $st = $this->pdo->prepare(
+        $st = $this->pdo()->prepare(
             'INSERT INTO gil_jobs (name, enabled) VALUES (?, ?) ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)'
         );
         $st->execute([$job, $enabled ? 1 : 0]);
@@ -53,7 +67,7 @@ final class JobStateRepository
     /** @return array<string, mixed>|null riga gil_jobs */
     public function state(string $job): ?array
     {
-        $st = $this->pdo->prepare('SELECT * FROM gil_jobs WHERE name = ?');
+        $st = $this->pdo()->prepare('SELECT * FROM gil_jobs WHERE name = ?');
         $st->execute([$job]);
         $row = $st->fetch(\PDO::FETCH_ASSOC);
         return $row === false ? null : $row;
@@ -61,7 +75,7 @@ final class JobStateRepository
 
     public function markStarted(string $job, \DateTimeImmutable $at): void
     {
-        $st = $this->pdo->prepare(
+        $st = $this->pdo()->prepare(
             'INSERT INTO gil_jobs (name, last_started_at) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_started_at = VALUES(last_started_at)'
         );
         $st->execute([$job, $at->format(self::DT)]);
@@ -86,9 +100,10 @@ final class JobStateRepository
         \DateTimeImmutable $nextRunAt,
         bool $manual = false
     ): int {
-        $this->pdo->beginTransaction();
+        $pdo = $this->pdo();
+        $pdo->beginTransaction();
         try {
-            $st = $this->pdo->prepare(
+            $st = $pdo->prepare(
                 'INSERT INTO gil_job_runs (job, started_at, finished_at, batches, processed, ok, skipped, errors, status, manual, error_message)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
@@ -105,16 +120,16 @@ final class JobStateRepository
                 $manual ? 1 : 0,
                 $errorMessage,
             ]);
-            $runId = (int)$this->pdo->lastInsertId();
+            $runId = (int)$pdo->lastInsertId();
 
             if ($errorDetails !== []) {
-                $ins = $this->pdo->prepare('INSERT INTO gil_job_run_errors (run_id, ref, reason) VALUES (?, ?, ?)');
+                $ins = $pdo->prepare('INSERT INTO gil_job_run_errors (run_id, ref, reason) VALUES (?, ?, ?)');
                 foreach (array_slice($errorDetails, 0, self::MAX_STORED_ERRORS) as $e) {
                     $ins->execute([$runId, mb_substr($e['ref'], 0, 64), mb_substr($e['reason'], 0, 512)]);
                 }
             }
 
-            $up = $this->pdo->prepare(
+            $up = $pdo->prepare(
                 'INSERT INTO gil_jobs (name, last_started_at, last_finished_at, last_status, next_run_at) VALUES (?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE last_started_at = VALUES(last_started_at), last_finished_at = VALUES(last_finished_at),
                    last_status = VALUES(last_status), next_run_at = VALUES(next_run_at)'
@@ -127,10 +142,16 @@ final class JobStateRepository
                 $nextRunAt->format(self::DT),
             ]);
 
-            $this->pdo->commit();
+            $pdo->commit();
             return $runId;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            try {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+            } catch (\Throwable) {
+                // Connessione caduta: la transazione e' gia' annullata dal server.
+            }
             throw $e;
         }
     }
@@ -138,7 +159,7 @@ final class JobStateRepository
     /** @return list<array<string, mixed>> esecuzioni piu' recenti prima */
     public function recentRuns(string $job, int $limit): array
     {
-        $st = $this->pdo->prepare('SELECT * FROM gil_job_runs WHERE job = ? ORDER BY started_at DESC, id DESC LIMIT ?');
+        $st = $this->pdo()->prepare('SELECT * FROM gil_job_runs WHERE job = ? ORDER BY started_at DESC, id DESC LIMIT ?');
         $st->bindValue(1, $job);
         $st->bindValue(2, max(1, $limit), \PDO::PARAM_INT);
         $st->execute();
@@ -148,7 +169,7 @@ final class JobStateRepository
     /** @return list<array{id:int|string, run_id:int|string, ref:string, reason:string}> */
     public function errorsForRun(int $runId): array
     {
-        $st = $this->pdo->prepare('SELECT id, run_id, ref, reason FROM gil_job_run_errors WHERE run_id = ? ORDER BY id');
+        $st = $this->pdo()->prepare('SELECT id, run_id, ref, reason FROM gil_job_run_errors WHERE run_id = ? ORDER BY id');
         $st->execute([$runId]);
         return array_values($st->fetchAll(\PDO::FETCH_ASSOC));
     }
@@ -160,7 +181,7 @@ final class JobStateRepository
      */
     public function dueJobs(\DateTimeImmutable $now): array
     {
-        $st = $this->pdo->prepare(
+        $st = $this->pdo()->prepare(
             'SELECT name FROM gil_jobs WHERE enabled = 1 AND name <> ? AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY name'
         );
         $st->execute([self::IMPORT_MARKER, $now->format(self::DT)]);
@@ -171,7 +192,7 @@ final class JobStateRepository
     public function purgeRunsOlderThan(int $days = 30): int
     {
         $cutoff = $this->clock->now()->modify('-' . max(0, $days) . ' days');
-        $st = $this->pdo->prepare('DELETE FROM gil_job_runs WHERE started_at < ?');
+        $st = $this->pdo()->prepare('DELETE FROM gil_job_runs WHERE started_at < ?');
         $st->execute([$cutoff->format(self::DT)]);
         return $st->rowCount();
     }
@@ -179,14 +200,14 @@ final class JobStateRepository
     /** Import .autostart gia' eseguito (riga marker in gil_jobs). */
     public function autostartImported(): bool
     {
-        $st = $this->pdo->prepare('SELECT autostart_imported FROM gil_jobs WHERE name = ?');
+        $st = $this->pdo()->prepare('SELECT autostart_imported FROM gil_jobs WHERE name = ?');
         $st->execute([self::IMPORT_MARKER]);
         return (int)$st->fetchColumn() === 1;
     }
 
     public function markAutostartImported(): void
     {
-        $st = $this->pdo->prepare(
+        $st = $this->pdo()->prepare(
             'INSERT INTO gil_jobs (name, enabled, autostart_imported) VALUES (?, 0, 1) ON DUPLICATE KEY UPDATE autostart_imported = 1'
         );
         $st->execute([self::IMPORT_MARKER]);

@@ -57,7 +57,7 @@ final class JobRunnerTest extends DbTestCase
     {
         parent::setUp();
         $this->clock = new MockClock('2026-10-28 10:00:00');
-        $this->repo = new JobStateRepository(self::pdo(), $this->clock);
+        $this->repo = new JobStateRepository(static fn(): \PDO => self::pdo(), $this->clock);
         $this->out = [];
         $this->reported = [];
     }
@@ -67,11 +67,11 @@ final class JobRunnerTest extends DbTestCase
         return new LockFactory(new DoctrineDbalStore(DbalConnectionFactory::create(), [], 0.0));
     }
 
-    private function runner(): JobRunner
+    private function runner(?LockFactory $locks = null): JobRunner
     {
         return new JobRunner(
             $this->repo,
-            self::locks(),
+            $locks ?? self::locks(),
             $this->clock,
             function (string $line): void { $this->out[] = $line; },
             function (string $suite, \Throwable $e): void { $this->reported[] = [$suite, $e]; },
@@ -366,5 +366,51 @@ final class JobRunnerTest extends DbTestCase
         self::assertCount(1, $runs);
         self::assertSame('2026-10-28 10:00:00', $runs[0]['started_at']);
         self::assertSame(1, (int)self::pdo()->query('SELECT COUNT(*) FROM gil_job_run_errors')->fetchColumn());
+    }
+
+    private static function freshPdo(): \PDO
+    {
+        $p = \App\Database\Connection::params();
+        return new \PDO(
+            sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $p['host'], $p['port'], $p['dbname']),
+            $p['user'],
+            $p['password'],
+            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
+        );
+    }
+
+    public function testRepositoryResolvesPdoPerCallSoReconnectsAreSeen(): void
+    {
+        $old = self::freshPdo();
+        $current = $old;
+        $repo = new JobStateRepository(static function () use (&$current): \PDO {
+            return $current;
+        }, $this->clock);
+        $repo->setEnabled('fake', true);
+        self::assertTrue($repo->isEnabled('fake'));
+
+        // Connessione caduta (riavvio db / wait_timeout): il provider ne restituisce una nuova.
+        self::pdo()->exec('KILL ' . (int)$old->query('SELECT CONNECTION_ID()')->fetchColumn());
+        $current = self::freshPdo();
+
+        self::assertTrue($repo->isEnabled('fake'));
+        $repo->setEnabled('fake', false);
+        self::assertFalse($repo->isEnabled('fake'));
+    }
+
+    public function testLockStoreRecoversFromLostDbalConnection(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $dbal = DbalConnectionFactory::create();
+        $locks = new LockFactory(new DoctrineDbalStore($dbal, [], 0.0));
+        $job = new FakePeriodicJob([fn() => self::res(1, false)]);
+        self::assertNotNull($this->runner($locks)->run($job));
+
+        self::pdo()->exec('KILL ' . (int)$dbal->fetchOne('SELECT CONNECTION_ID()'));
+
+        $r2 = $this->runner($locks)->run($job);
+        self::assertNotNull($r2, 'nuovo tentativo dopo ConnectionLost: ' . implode(' | ', $this->out) . ' ' . implode(' | ', array_map(fn($x) => get_class($x[1]) . ':' . $x[1]->getMessage() . ' prev=' . ($x[1]->getPrevious() ? get_class($x[1]->getPrevious()) : '-'), $this->reported)));
+        self::assertSame(2, $job->calls);
+        self::assertSame([], $this->reported);
     }
 }
