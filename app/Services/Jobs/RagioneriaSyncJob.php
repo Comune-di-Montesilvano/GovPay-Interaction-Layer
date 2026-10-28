@@ -39,12 +39,26 @@ final class RagioneriaSyncJob
 
     private ?string $rollingFrom = null;
 
+    /**
+     * Tetto delle chiavi tracciate dalla guardia "stessa chiave riscritta nel ciclo" ($preImage).
+     * Un rescan forzato/primo giro percorre ~300k righe: senza tetto chiavi + impronte potrebbero
+     * esaurire il memory_limit CLI (256M). 50k chiavi ~ pochi MB. Oltre il tetto la guardia si
+     * disattiva per il resto del ciclo e gli update grezzi (rowCount 2) contano come lavoro: i cicli
+     * grandi sono rescan/primi giri, il ciclo successivo (finestra 15 giorni) e' piccolo e la guardia
+     * torna attiva dove serve (flip-flop tra flussi recenti).
+     */
+    public const PRE_IMAGE_CAP = 50_000;
+
+    /** Dimensione massima raggiunta da $preImage nell'ultimo runOnce() (diagnostica/test). */
+    private int $lastPreImageSize = 0;
+
     public function __construct(
         private readonly string $idDominio,
         private readonly string $idA2A,
         string $backofficeUrl,
         ?Client $client = null,
-        private ?FlussiRendicontazioniRepository $repo = null
+        private ?FlussiRendicontazioniRepository $repo = null,
+        private readonly int $preImageCap = self::PRE_IMAGE_CAP
     ) {
         $this->backofficeUrl = rtrim($backofficeUrl, '/');
         $this->client = $client;
@@ -62,6 +76,12 @@ final class RagioneriaSyncJob
             return 'ERRORE: govpay.backoffice_url non configurato.';
         }
         return null;
+    }
+
+    /** Dimensione massima della struttura della guardia riscritture nell'ultimo runOnce() (<= tetto). */
+    public function lastPreImageSize(): int
+    {
+        return $this->lastPreImageSize;
     }
 
     /** Il prossimo ciclo ripartira' da ragioneria_scan_da (scan completo) azzerando la finestra salvata. */
@@ -110,6 +130,8 @@ final class RagioneriaSyncJob
         // "Aggiornata" = riga diversa a fine ciclo rispetto all'inizio: due flussi con la stessa chiave
         // che la riscrivono avanti e indietro non contano come lavoro se l'upstream e' invariato.
         $preImage = [];
+        $guardActive = true;
+        $this->lastPreImageSize = 0;
         $cycleRowsTotal = 0;
         $cycleGovPayYes = 0;
         $page = 1;
@@ -277,17 +299,26 @@ final class RagioneriaSyncJob
             $cycleRowsTotal += $flussoRowsTotal;
             $cycleGovPayYes += $flussoGovPayYes;
 
-            $unseen = [];
-            foreach ($rows as $mappedRow) {
-                $k = FlussiRendicontazioniRepository::rowKey($mappedRow);
-                if (!array_key_exists($k, $preImage)) {
-                    $unseen[] = $k;
+            if ($guardActive) {
+                $unseen = [];
+                foreach ($rows as $mappedRow) {
+                    $k = FlussiRendicontazioniRepository::rowKey($mappedRow);
+                    if (!array_key_exists($k, $preImage)) {
+                        $unseen[$k] = true;
+                    }
                 }
-            }
-            if ($unseen !== []) {
-                $fp = $repo->fingerprints($unseen);
-                foreach ($unseen as $k) {
-                    $preImage[$k] = $fp[$k] ?? null;
+                if (count($preImage) + count($unseen) > $this->preImageCap) {
+                    // oltre il tetto: guardia off per il resto del ciclo, memoria liberata
+                    $guardActive = false;
+                    $preImage = [];
+                    $ctx->debug('Guardia riscritture disattivata (oltre ' . $this->preImageCap . ' chiavi): conteggio update grezzo.');
+                } elseif ($unseen !== []) {
+                    $keys = array_map('strval', array_keys($unseen));
+                    $fp = $repo->fingerprints($keys);
+                    foreach ($keys as $k) {
+                        $preImage[$k] = $fp[$k] ?? null;
+                    }
+                    $this->lastPreImageSize = max($this->lastPreImageSize, count($preImage));
                 }
             }
 
@@ -306,7 +337,9 @@ final class RagioneriaSyncJob
             ));
         }
 
-        if ($rawUpdated > 0) {
+        if (!$guardActive) {
+            $changedRows = $rawUpdated;
+        } elseif ($rawUpdated > 0) {
             $existing = array_keys(array_filter($preImage, static fn(?string $v): bool => $v !== null));
             $final = $repo->fingerprints(array_map('strval', $existing));
             foreach ($existing as $k) {

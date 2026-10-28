@@ -51,7 +51,7 @@ final class RagioneriaSyncJobTest extends DbTestCase
 
     // ---------------------------------------------------------------- helpers
 
-    private function job(string $a2a = self::A2A): RagioneriaSyncJob
+    private function job(string $a2a = self::A2A, int $preImageCap = RagioneriaSyncJob::PRE_IMAGE_CAP): RagioneriaSyncJob
     {
         $stack = HandlerStack::create($this->mock);
         $stack->push(Middleware::history($this->requests));
@@ -60,7 +60,8 @@ final class RagioneriaSyncJobTest extends DbTestCase
             $a2a,
             self::BASE . '/',
             new Client(['handler' => $stack]),
-            new FlussiRendicontazioniRepository(self::pdo())
+            new FlussiRendicontazioniRepository(self::pdo()),
+            $preImageCap
         );
     }
 
@@ -703,6 +704,47 @@ final class RagioneriaSyncJobTest extends DbTestCase
         $rows = $this->rows();
         self::assertCount(1, $rows);
         self::assertSame(['-10.00', 'FL-B'], [$rows[0]['importo'], $rows[0]['id_flusso']], 'vince ultima scrittura');
+    }
+
+    public function testRewriteGuardFallsBackToRawUpdatesBeyondCap(): void
+    {
+        // Fix round 2: oltre il tetto la guardia si spegne (memoria limitata) e gli update grezzi contano
+        // come lavoro. FL-A ha 3 chiavi, tetto 2 -> guardia off subito; FL-B riscrive la chiave 1.
+        $queue = function (): void {
+            $this->queueList([self::item('FL-A', self::day(4)), self::item('FL-B', self::day(3))]);
+            $this->queueDetail(self::detail(self::day(4), [self::rend(1), self::rend(2), self::rend(3)]));
+            $b = self::rend(1);
+            $b['importo'] = -10.0;
+            $this->queueDetail(self::detail(self::day(3), [$b]));
+        };
+        $job = $this->job(self::A2A, 2);
+
+        $queue();
+        self::assertTrue($job->runOnce(new RecordingJobContext())->hadWork);
+        $queue();
+        $r2 = $job->runOnce(new RecordingJobContext());
+
+        self::assertTrue($r2->hadWork, 'fallback: update grezzi = lavoro');
+        self::assertLessThanOrEqual(2, $job->lastPreImageSize());
+        self::assertSame('-10.00', $this->rows()[0]['importo'], 'riga finale: ultima scrittura');
+    }
+
+    public function testRewriteGuardStaysOnWithinCap(): void
+    {
+        $queue = function (): void {
+            $this->queueList([self::item('FL-A', self::day(4)), self::item('FL-B', self::day(3))]);
+            $this->queueDetail(self::detail(self::day(4), [self::rend(1), self::rend(2)]));
+            $b = self::rend(1);
+            $b['importo'] = -10.0;
+            $this->queueDetail(self::detail(self::day(3), [$b]));
+        };
+        $job = $this->job(self::A2A, 2);
+        $queue();
+        $job->runOnce(new RecordingJobContext());
+        $queue();
+
+        self::assertFalse($job->runOnce(new RecordingJobContext())->hadWork);
+        self::assertSame(2, $job->lastPreImageSize());
     }
 
     public function testChangeOfSharedKeyRowAcrossCyclesIsWork(): void
