@@ -18,7 +18,8 @@ class BizScannerService
 {
     public function __construct(
         private readonly BizRepository $repo,
-        private readonly FlussiRendicontazioniRepository $flussiRepo
+        private readonly FlussiRendicontazioniRepository $flussiRepo,
+        private readonly ?\GuzzleHttp\ClientInterface $httpClient = null
     ) {}
 
     /**
@@ -145,7 +146,7 @@ class BizScannerService
             ->setApiKey('Ocp-Apim-Subscription-Key', $apiKey);
 
         return new \PagoPA\BizEvents\Api\PaymentReceiptsRESTAPIsApi(
-            new \GuzzleHttp\Client(['connect_timeout' => 5, 'timeout' => 20]),
+            $this->httpClient ?? new \GuzzleHttp\Client(['connect_timeout' => 5, 'timeout' => 20]),
             $config
         );
     }
