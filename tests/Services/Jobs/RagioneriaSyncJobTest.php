@@ -434,11 +434,10 @@ final class RagioneriaSyncJobTest extends DbTestCase
         self::assertSame(0, $r->skipped);
     }
 
-    public function testFlussoWithoutIdOrWithEmptyDominioIsIgnored(): void
+    public function testFlussoWithoutIdIsIgnored(): void
     {
         $this->queueList([
             ['dataFlusso' => self::day(3) . 'T10:00:00Z'],
-            ['idFlusso' => 'FL-X', 'idDominio' => '', 'dataFlusso' => self::day(3)],
             'non-array',
         ]);
 
@@ -446,6 +445,23 @@ final class RagioneriaSyncJobTest extends DbTestCase
 
         self::assertCount(1, $this->requests);
         self::assertSame(0, $r->processed);
+    }
+
+    public function testEmptyDominioFallsBackLikeMissing(): void
+    {
+        // R5: idDominio '' (chiave presente ma vuota) vale come assente -> fallback al dominio configurato
+        $this->queueList([
+            ['idFlusso' => 'FL-X', 'idDominio' => '', 'dataFlusso' => self::day(3)],
+            ['idFlusso' => 'FL-Y', 'dominio' => ['idDominio' => ''], 'idDominio' => '99999999999', 'dataFlusso' => self::day(2)],
+        ]);
+        $this->queueDetail(self::detail(self::day(3), [self::rend(1)]));
+        $this->queueDetail(self::detail(self::day(2), [self::rend(2)]));
+
+        $r = $this->job()->runOnce(new RecordingJobContext());
+
+        self::assertSame(2, $r->processed);
+        self::assertSame('/backend/api/backoffice/v1/flussiRendicontazione/' . self::DOMINIO . '/FL-X', $this->path(1));
+        self::assertSame('/backend/api/backoffice/v1/flussiRendicontazione/99999999999/FL-Y', $this->path(2));
     }
 
     public function testDetailUsesFlussoDominioWhenPresent(): void

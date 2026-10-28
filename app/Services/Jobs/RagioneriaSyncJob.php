@@ -203,7 +203,11 @@ final class RagioneriaSyncJob
             $scanIndex++;
 
             $idFlusso = (string)($flussoItem['idFlusso'] ?? '');
-            $dominioFlusso = (string)($flussoItem['dominio']['idDominio'] ?? $flussoItem['idDominio'] ?? $idDominio);
+            $dominioFlusso = self::firstNonEmpty(
+                $flussoItem['dominio']['idDominio'] ?? null,
+                $flussoItem['idDominio'] ?? null,
+                $idDominio
+            );
             $dataFlussoScan = (string)($flussoItem['dataFlusso'] ?? '');
             if ($idFlusso === '' || $dominioFlusso === '') {
                 continue;
@@ -369,6 +373,17 @@ final class RagioneriaSyncJob
             return 'HTTP ' . $e->getResponse()->getStatusCode();
         }
         return 'Errore chiamata GovPay';
+    }
+
+    /** Primo valore non vuoto (null e '' valgono come assenti, R5); '' se nessuno. */
+    private static function firstNonEmpty(mixed ...$values): string
+    {
+        foreach ($values as $v) {
+            if (is_scalar($v) && trim((string)$v) !== '') {
+                return (string)$v;
+            }
+        }
+        return '';
     }
 
     /** Motivo errore della lista (pagina 1): status HTTP se c'e' una risposta, altrimenti classe eccezione. */
