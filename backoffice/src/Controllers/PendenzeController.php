@@ -1681,7 +1681,11 @@ class PendenzeController
         }
 
         try {
-            $httpClient = $this->makePlainHttpClient($guzzleOptions);
+            // GovPayClientFactory: TLS 1.2, Connection: close, retry cURL 35/28/56. Il retry di rete
+            // e' sicuro anche sulla PUT: PUT /pendenze/{idA2A}/{idPendenza} e' idempotente
+            // sull'idPendenza (spec GovPay addPendenza: id gia' presente -> aggiornamento) e il
+            // retry riusa la stessa richiesta (stesso idPendenza generato qui sotto).
+            $httpClient = $this->makeHttpClient($guzzleOptions);
             // Genera idPendenza se non fornito
             $idP = trim((string)($idPendenza ?? ($payload['idPendenza'] ?? '')));
             if ($idP === '') {
@@ -2541,15 +2545,6 @@ class PendenzeController
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
         return GovPayClientFactory::makeBackofficeClient($guzzleOptions);
-    }
-
-    /**
-     * Client Guzzle "nudo" (new Client, SENZA GovPayClientFactory: niente TLS forzato/retry cURL 35)
-     * usato da sendPendenzaToBackoffice. Seam per i test (GovPay simulato al confine HTTP).
-     */
-    protected function makePlainHttpClient(array $guzzleOptions = []): Client
-    {
-        return new Client($guzzleOptions);
     }
 
     /**

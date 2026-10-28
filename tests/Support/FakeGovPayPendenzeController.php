@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Controllers\PendenzeController;
+use App\Services\GovPayClientFactory;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -13,7 +14,7 @@ use Slim\Views\Twig;
 
 /**
  * PendenzeController reale con GovPay simulato al confine HTTP: tutti i client Guzzle del
- * controller (makeHttpClient = GovPayClientFactory, makePlainHttpClient = `new Client` usato da
+ * controller (makeHttpClient, che in produzione e' GovPayClientFactory, usato anche da
  * sendPendenzaToBackoffice) puntano allo stesso MockHandler e ogni richiesta finisce in $requests.
  *
  * Le notifiche di creazione (email/App IO) sono un effetto esterno separato: qui vengono solo
@@ -34,6 +35,12 @@ final class FakeGovPayPendenzeController extends PendenzeController
     /** Se impostato, fetchPendenzaById lancia questa eccezione (ramo "eccezione durante annullamento"). */
     public ?\Throwable $fetchByIdThrows = null;
 
+    /**
+     * Se true, makeHttpClient passa dalla vera GovPayClientFactory (TLS, Connection: close, retry
+     * cURL 35/28/56, circuit breaker) con il MockHandler come handler finale.
+     */
+    public bool $realFactory = false;
+
     private HandlerStack $stack;
 
     public function __construct()
@@ -46,11 +53,13 @@ final class FakeGovPayPendenzeController extends PendenzeController
 
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
-        return new Client(array_merge($guzzleOptions, ['handler' => $this->stack]));
-    }
-
-    protected function makePlainHttpClient(array $guzzleOptions = []): Client
-    {
+        if ($this->realFactory) {
+            // stack nuovo a ogni client (la factory vi aggiunge i propri middleware); history avvolge
+            // direttamente il MockHandler (piu' interno di tutto) cosi' registra OGNI tentativo,
+            // anche quelli ripetuti dal retry della factory.
+            $stack = HandlerStack::create(Middleware::history($this->requests)($this->mock));
+            return GovPayClientFactory::makeBackofficeClient(array_merge($guzzleOptions, ['handler' => $stack]));
+        }
         return new Client(array_merge($guzzleOptions, ['handler' => $this->stack]));
     }
 

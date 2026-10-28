@@ -8,6 +8,7 @@ use App\Database\MassivePendenzeRepository;
 use App\Services\Jobs\JobResult;
 use App\Services\Jobs\MassivePendenzeProcessor;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
@@ -377,6 +378,36 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame('ERROR', $row['stato']);
         self::assertSame('cURL error 7: connessione rifiutata', $row['errore']);
         self::assertSame([['ref' => (string)$id, 'reason' => 'Invio a GovPay fallito']], $r->errorDetails);
+    }
+
+    /**
+     * P5 (fix 8b): la PUT di creazione passa da GovPayClientFactory (Connection: close, retry di rete).
+     * Nota: con Guzzle 7 cURL 35/28 arrivano come ConnectException (non RequestException) e il
+     * decider della factory oggi le scarta; qui si esercita il retry con cURL 56 (RequestException).
+     * PUT /pendenze/{idA2A}/{idPendenza} e' idempotente (spec GovPay addPendenza: stesso id -> update),
+     * quindi il retry di rete riusa lo STESSO idPendenza: una sola creazione registrata, una notifica.
+     */
+    public function testCreatePutUsesGovPayClientFactoryWithNetworkRetry(): void
+    {
+        $cb = dirname(__DIR__, 3) . '/backoffice/storage/tmp/govpay_circuit_breaker.json';
+        @unlink($cb);
+        $this->gp->realFactory = true;
+        $id = $this->insertRow('PENDING', self::payload(16));
+        $this->gp->mock->append(new RequestException('cURL error 56: Connection reset by peer', new Request('PUT', self::BASE), null, null, ['errno' => 56]));
+        $this->queue(201, ['numeroAvviso' => '301000000000000160']);
+
+        $r = $this->processor()->processRow($id, $this->ctx);
+
+        $calls = $this->gp->calls();
+        self::assertCount(2, $calls, 'un tentativo fallito (cURL 56) + un retry');
+        self::assertSame($calls[0], $calls[1], 'retry sullo stesso idPendenza');
+        self::assertStringStartsWith('PUT ' . self::P . 'GIL-', $calls[0]);
+        self::assertSame('close', $this->gp->requests[1]['request']->getHeaderLine('Connection'));
+        $row = $this->row($id);
+        self::assertSame('SUCCESS', $row['stato']);
+        self::assertSame(1, $r->ok);
+        self::assertCount(1, $this->gp->notifications, 'una sola creazione registrata/notificata');
+        self::assertFileDoesNotExist($cb);
     }
 
     public function testMissingBackofficeUrlGoesToErrorWithoutCall(): void
