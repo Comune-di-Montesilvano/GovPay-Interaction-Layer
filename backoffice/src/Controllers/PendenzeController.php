@@ -13,6 +13,7 @@ use App\Database\EntrateRepository;
 use App\Logger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Middleware;
 use GovPay\Backoffice\Api\PendenzeApi as BackofficePendenzeApi;
@@ -29,6 +30,9 @@ use App\Services\ValidationService;
 
 class PendenzeController
 {
+    /** Timeout (s) della PUT di creazione/aggiornamento pendenza in sendPendenzaToBackoffice. */
+    public const CREATE_PUT_TIMEOUT = 90;
+
     public function __construct(private readonly Twig $twig, private ?TracciatoService $tracciatoService = null)
     {
     }
@@ -1680,8 +1684,9 @@ class PendenzeController
             }
         }
 
+        $idP = '';
         try {
-            // GovPayClientFactory: TLS 1.2, Connection: close, retry cURL 35/28/56. Il retry di rete
+            // GovPayClientFactory: TLS 1.2, Connection: close, retry di rete. Il retry di rete
             // e' sicuro anche sulla PUT: PUT /pendenze/{idA2A}/{idPendenza} e' idempotente
             // sull'idPendenza (spec GovPay addPendenza: id gia' presente -> aggiornamento) e il
             // retry riusa la stessa richiesta (stesso idPendenza generato qui sotto).
@@ -1781,6 +1786,9 @@ class PendenzeController
             $requestOptions = [
                 'headers' => ['Accept' => 'application/json'],
                 'json' => $payload,
+                // Override per richiesta del timeout della factory (15s): una creazione lenta ma
+                // riuscita non deve diventare un errore (pendenza orfana su GovPay).
+                'timeout' => self::CREATE_PUT_TIMEOUT,
             ];
             if ($username !== '' && $password !== '') {
                 $requestOptions['auth'] = [$username, $password];
@@ -1831,6 +1839,21 @@ class PendenzeController
         } catch (\Throwable $e) {
             $errors[] = $e->getMessage();
             $out = ['success' => false, 'errors' => $errors, 'exceptionClass' => get_class($e)];
+            if ($e instanceof ConnectException || ($e instanceof RequestException && $e->getResponse() === null)) {
+                // Errore di trasporto senza risposta HTTP: la PUT puo' essere arrivata a GovPay
+                // (es. timeout cURL 28). Esito incerto: si restituisce l'idPendenza usato (e il
+                // numeroAvviso per IUV vincolato) cosi' un nuovo tentativo aggiorna la stessa
+                // pendenza (PUT idempotente) invece di crearne una nuova.
+                $handlerCtx = $e->getHandlerContext();
+                $out['esitoIncerto'] = true;
+                $out['curlErrno'] = isset($handlerCtx['errno']) ? (int)$handlerCtx['errno'] : null;
+                if ($idP !== '') {
+                    $out['idPendenza'] = $idP;
+                    if (isset($payload['numeroAvviso']) && is_scalar($payload['numeroAvviso']) && (string)$payload['numeroAvviso'] !== '') {
+                        $out['numeroAvviso'] = (string)$payload['numeroAvviso'];
+                    }
+                }
+            }
             if ($e instanceof RequestException && $e->getResponse() !== null) {
                 $out['httpStatus'] = $e->getResponse()->getStatusCode();
                 try {

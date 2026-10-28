@@ -249,7 +249,19 @@ final class MassivePendenzeProcessor
         $dDa['sorgente']         = 'GIL-Massivo';
         $payload['datiAllegati'] = $dDa;
 
-        $res = $this->controller->sendPendenzaToBackoffice($payload);
+        // Riprova dopo un esito incerto: riusa l'idPendenza (e il numeroAvviso IUV vincolato)
+        // salvati sulla riga, cosi' la PUT aggiorna la stessa pendenza invece di crearne un'altra.
+        $retryId = null;
+        $stored = $row['response_json'] ? json_decode((string)$row['response_json'], true) : null;
+        if (is_array($stored) && isset($stored['idPendenza']) && is_string($stored['idPendenza']) && trim($stored['idPendenza']) !== '') {
+            $retryId = trim($stored['idPendenza']);
+            if (isset($stored['numeroAvviso']) && is_string($stored['numeroAvviso']) && $stored['numeroAvviso'] !== '') {
+                $payload['numeroAvviso'] = $stored['numeroAvviso'];
+            }
+            $log("  [$batchId:$numeroRiga] ID-$id riprova sullo stesso idPendenza: $retryId");
+        }
+
+        $res = $this->controller->sendPendenzaToBackoffice($payload, $retryId);
 
         if ($res['success'] === true) {
             $log("  [$batchId:$numeroRiga] ID-$id OK (Creato: " . ($res['idPendenza'] ?? 'sconosciuto') . ')');
@@ -293,6 +305,13 @@ final class MassivePendenzeProcessor
         $errorMsg = self::createErrore($res);
         // response_json: solo i campi ProblemJson (categoria/codice/descrizione), mai il corpo intero.
         $response = array_key_exists('response', $res) ? (($res['problem'] ?? []) ?: null) : null;
+        if (!empty($res['esitoIncerto']) && isset($res['idPendenza'])) {
+            // Esito incerto: si conserva l'id usato (vedi riprova sopra), mai corpi upstream.
+            $response = array_filter([
+                'idPendenza' => (string)$res['idPendenza'],
+                'numeroAvviso' => isset($res['numeroAvviso']) ? (string)$res['numeroAvviso'] : null,
+            ], static fn($v) => $v !== null);
+        }
         $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
         $this->repo->setResult($id, false, $response, $errorMsg);
         return self::error($ref, self::createFailureReason($res));
@@ -308,6 +327,10 @@ final class MassivePendenzeProcessor
      */
     private static function createErrore(array $res): string
     {
+        if (!empty($res['esitoIncerto'])) {
+            $errno = isset($res['curlErrno']) ? (string)(int)$res['curlErrno'] : 'n/d';
+            return "Esito incerto: timeout/errore di rete verso GovPay (cURL $errno) \u{2014} verificare prima di ripetere";
+        }
         if (isset($res['httpStatus'])) {
             $msg = 'HTTP ' . (int)$res['httpStatus'];
             $problem = is_array($res['problem'] ?? null) ? $res['problem'] : [];
@@ -335,6 +358,9 @@ final class MassivePendenzeProcessor
      */
     private static function createFailureReason(array $res): string
     {
+        if (!empty($res['esitoIncerto'])) {
+            return 'Esito incerto: errore di rete (cURL ' . (isset($res['curlErrno']) ? (int)$res['curlErrno'] : 'n/d') . ')';
+        }
         if (array_key_exists('response', $res) && (is_array($res['response']) || $res['response'] === null)) {
             return 'HTTP 4xx';
         }

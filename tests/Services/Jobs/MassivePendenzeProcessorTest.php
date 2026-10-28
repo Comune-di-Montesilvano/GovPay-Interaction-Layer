@@ -373,18 +373,94 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 500']], $r->errorDetails);
     }
 
-    /** P6 (fix 8b): errore di rete -> classe dell'eccezione, mai il messaggio (puo' contenere URL). */
-    public function testNetworkErrorGoesToErrorWithExceptionClassOnly(): void
+    private const ESITO_INCERTO = "Esito incerto: timeout/errore di rete verso GovPay (cURL %s) \u{2014} verificare prima di ripetere";
+
+    /**
+     * Fix round 1 (P5+P6): errore di trasporto senza risposta HTTP (la PUT puo' aver raggiunto
+     * GovPay) -> 'Esito incerto' con errno cURL (mai messaggio/URL), idPendenza salvato sulla riga.
+     */
+    public function testNetworkErrorIsEsitoIncertoAndStoresIdPendenza(): void
     {
         $id = $this->insertRow('PENDING', self::payload(13));
-        $this->gp->mock->append(new ConnectException('cURL error 7: connessione rifiutata', new Request('PUT', self::BASE)));
+        $this->gp->mock->append(new ConnectException('cURL error 7: connessione rifiutata https://x/?q=segreto', new Request('PUT', self::BASE), null, ['errno' => 7]));
 
         $r = $this->processor()->processRow($id, $this->ctx);
 
         $row = $this->row($id);
         self::assertSame('ERROR', $row['stato']);
-        self::assertSame('Invio a GovPay fallito (ConnectException)', $row['errore']);
-        self::assertSame([['ref' => (string)$id, 'reason' => 'Invio a GovPay fallito']], $r->errorDetails);
+        self::assertSame(sprintf(self::ESITO_INCERTO, '7'), $row['errore']);
+        $stored = $this->json($row['response_json']);
+        self::assertMatchesRegularExpression('/^GIL-[0-9a-f]{16}$/', (string)($stored['idPendenza'] ?? ''));
+        self::assertSame('PUT ' . self::P . $stored['idPendenza'], $this->gp->calls()[0]);
+        self::assertSame([['ref' => (string)$id, 'reason' => 'Esito incerto: errore di rete (cURL 7)']], $r->errorDetails);
+    }
+
+    /**
+     * Fix round 1: create lenta (cURL 28) -> esito incerto, 1 PUT, id salvato; la riga rimessa in
+     * PENDING ("riprova") fa la PUT sullo STESSO idPendenza (update idempotente, nessun duplicato).
+     */
+    public function testTimeoutThenRetryReusesStoredIdPendenza(): void
+    {
+        $id = $this->insertRow('PENDING', self::payload(17));
+        $this->gp->mock->append(new ConnectException('cURL error 28: Operation timed out', new Request('PUT', self::BASE), null, ['errno' => 28]));
+
+        $this->processor()->processRow($id, $this->ctx);
+
+        self::assertCount(1, $this->gp->calls(), 'esattamente 1 PUT');
+        $row = $this->row($id);
+        self::assertSame('ERROR', $row['stato']);
+        self::assertSame(sprintf(self::ESITO_INCERTO, '28'), $row['errore']);
+        $storedId = (string)($this->json($row['response_json'])['idPendenza'] ?? '');
+        self::assertNotSame('', $storedId);
+        self::assertSame([], $this->gp->notifications);
+
+        // riprova: la riga torna PENDING
+        self::pdo()->prepare("UPDATE pendenze_massive SET stato = 'PENDING' WHERE id = ?")->execute([$id]);
+        $this->queue(201, ['numeroAvviso' => '301000000000000170']);
+        $r = $this->processor()->processRow($id, $this->ctx);
+
+        self::assertSame(['PUT ' . self::P . $storedId, 'PUT ' . self::P . $storedId], $this->gp->calls(), 'stesso idPendenza');
+        $row = $this->row($id);
+        self::assertSame('SUCCESS', $row['stato']);
+        self::assertNull($row['errore']);
+        self::assertSame($storedId, $this->json($row['response_json'])['idPendenza']);
+        self::assertCount(1, $this->gp->notifications, 'una sola creazione registrata');
+        self::assertSame($storedId, $this->gp->notifications[0]['idPendenza']);
+        self::assertSame(1, $r->ok);
+    }
+
+    /** Fix round 1: IUV vincolato -> il retry riusa anche il numeroAvviso, senza nuovi GET di verifica candidati. */
+    public function testTimeoutThenRetryVincolatoReusesIdAndNumeroAvviso(): void
+    {
+        self::pdo()->exec("INSERT INTO entrate_tipologie (id_dominio, id_entrata, iuv_prefix, updated_at, created_at) VALUES ('" . self::DOMINIO . "', 'AFFITTO', '07', NOW(), NOW())");
+        $id = $this->insertRow('PENDING', self::payload(18, ['idTipoPendenza' => 'AFFITTO']));
+        $this->queue(404, ['categoria' => 'OPERAZIONE']);
+        $this->gp->mock->append(new ConnectException('cURL error 28: timeout', new Request('PUT', self::BASE), null, ['errno' => 28]));
+
+        $this->processor()->processRow($id, $this->ctx);
+        $candidate = substr($this->gp->calls()[0], strlen('GET ' . self::P));
+        $stored = $this->json($this->row($id)['response_json']);
+        self::assertSame(['idPendenza' => $candidate, 'numeroAvviso' => $candidate], $stored);
+
+        self::pdo()->prepare("UPDATE pendenze_massive SET stato = 'PENDING' WHERE id = ?")->execute([$id]);
+        $this->queue(201, []);
+        $this->processor()->processRow($id, $this->ctx);
+
+        $calls = $this->gp->calls();
+        self::assertSame(['GET ' . self::P . $candidate, 'PUT ' . self::P . $candidate, 'PUT ' . self::P . $candidate], $calls);
+        self::assertSame($candidate, $this->gp->body(2)['numeroAvviso']);
+        self::assertSame('SUCCESS', $this->row($id)['stato']);
+    }
+
+    /** Fix round 1: la PUT di creazione porta timeout=90 (override per richiesta, factory invariata). */
+    public function testCreatePutCarriesTimeout90(): void
+    {
+        $id = $this->insertRow('PENDING', self::payload(19));
+        $this->queue(201, []);
+
+        $this->processor()->processRow($id, $this->ctx);
+
+        self::assertSame(90, $this->gp->requests[0]['options']['timeout'] ?? null);
     }
 
     /**
