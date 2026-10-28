@@ -16,7 +16,7 @@ use App\Services\TefaScannerService;
  * Il gate `tefa_enabled`, l'allineamento retroattivo all'avvio, la pausa di idle (15 minuti)
  * e lo stop file restano nello script.
  */
-final class TefaScanJob
+final class TefaScanJob implements PeriodicJob
 {
     /** Le righe ERROR tornano PENDING solo dopo questo intervallo dall'errore (backoff). */
     public const ERROR_RETRY_MINUTES = 60;
@@ -159,5 +159,16 @@ final class TefaScanJob
 
         $ctx->debug('Nuovi elementi classificati. Avvio ciclo successivo immediato...');
         return new JobResult($processed, $ok, $skipped, $errors, true, $details);
+    }
+
+    public function name(): string
+    {
+        return 'tefa';
+    }
+
+    /** Coda vuota: 15 minuti. */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return 900;
     }
 }

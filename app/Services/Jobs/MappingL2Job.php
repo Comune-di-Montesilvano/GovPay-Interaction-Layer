@@ -15,7 +15,7 @@ use App\Database\MappingPendenzeRepository;
  * refresh diagnostics. Loop, pause (15 min a vuoto), stop file, log e gestione errore di
  * caricamento vocabolario restano nello script.
  */
-final class MappingL2Job
+final class MappingL2Job implements PeriodicJob
 {
     public function __construct(
         private readonly MappingPendenzeRepository $repo,
@@ -114,5 +114,16 @@ final class MappingL2Job
         }
 
         return new JobResult($ok + $skipped, $ok, $skipped, $errors, $ok > 0, $details);
+    }
+
+    public function name(): string
+    {
+        return 'vocab';
+    }
+
+    /** Nessuna classificazione: 15 minuti. */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return 900;
     }
 }

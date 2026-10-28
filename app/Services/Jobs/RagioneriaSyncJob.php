@@ -27,7 +27,7 @@ use GuzzleHttp\Exception\RequestException;
  * dettaglio scaricato e righe upsertate, skipped = flussi gia' in DB piu' vecchi di 15 giorni,
  * errors = errori di lista/dettaglio. Le eccezioni non di rete (DB/settings) si propagano.
  */
-final class RagioneriaSyncJob
+final class RagioneriaSyncJob implements PeriodicJob
 {
     private ?Client $client;
 
@@ -511,5 +511,16 @@ final class RagioneriaSyncJob
         }
 
         return \App\Services\GovPayClientFactory::makeBackofficeClient($opts);
+    }
+
+    public function name(): string
+    {
+        return 'ragioneria';
+    }
+
+    /** Nessuna riga nuova/modificata: 30 minuti. */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return 1800;
     }
 }

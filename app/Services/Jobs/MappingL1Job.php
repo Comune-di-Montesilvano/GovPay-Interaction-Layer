@@ -17,7 +17,7 @@ use App\Database\MappingPendenzeRepository;
  * Ordine di applicazione: MappingPendenzeRepository::sortForAssignment() (prefisso piu' lungo
  * prima, a parita' di lunghezza il custom; transazioni_count non conta).
  */
-final class MappingL1Job
+final class MappingL1Job implements PeriodicJob
 {
     public function __construct(
         private readonly MappingPendenzeRepository $repo,
@@ -92,5 +92,16 @@ final class MappingL1Job
         }
 
         return new JobResult($ok + $skipped, $ok, $skipped, $errors, $ok > 0, $details);
+    }
+
+    public function name(): string
+    {
+        return 'mapping';
+    }
+
+    /** Nessuna assegnazione: 15 minuti (la discovery e' il lavoro separato `mapping-discovery`). */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return 900;
     }
 }

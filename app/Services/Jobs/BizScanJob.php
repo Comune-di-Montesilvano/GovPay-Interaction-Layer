@@ -16,7 +16,7 @@ use App\Services\BizScannerService;
  * Pause di idle (15 minuti) e stop file restano nello script: se hadWork e' false
  * lo script attende prima di richiamare runOnce().
  */
-final class BizScanJob
+final class BizScanJob implements PeriodicJob
 {
     /** Le righe ERROR tornano PENDING solo dopo questo intervallo dall'errore (backoff). */
     public const ERROR_RETRY_MINUTES = 60;
@@ -189,5 +189,16 @@ final class BizScanJob
 
         $ctx->debug('Nuovi elementi processati. Avvio ciclo successivo immediato...');
         return new JobResult($processed, $ok, $skipped, $errors, true, $details);
+    }
+
+    public function name(): string
+    {
+        return 'biz';
+    }
+
+    /** Coda vuota: 15 minuti. */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return 900;
     }
 }

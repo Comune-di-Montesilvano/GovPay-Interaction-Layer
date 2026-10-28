@@ -27,7 +27,7 @@ use App\Services\RendicontazioneEngineService;
  * Il job non rilancia le eccezioni dei sotto-passi (come il loop originale): le segnala in
  * errorDetails (solo id/fase, mai testi upstream).
  */
-final class RendicontazioneJob
+final class RendicontazioneJob implements PeriodicJob
 {
     public const COUNTER_SECTION = 'rendicontazione';
     public const COUNTER_KEY = 'scansioni_senza_novita';
@@ -280,5 +280,19 @@ final class RendicontazioneJob
             // Best-effort come la lettura: un errore DB sul contatore non deve interrompere il ciclo.
             \App\Logger::getInstance()->warning('Rendicontazione: salvataggio contatore cicli quieti fallito', ['error' => $e->getMessage()]);
         }
+    }
+
+    public function name(): string
+    {
+        return 'rendicontazione-govpay';
+    }
+
+    /**
+     * rendicontazione.scan_interval_minuti (default 15, minimo 1), letto a ogni giro: JobRunner lo
+     * chiama a fine esecuzione, dopo il flush dei settings fatto da runOnce().
+     */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return max(1, (int)SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15')) * 60;
     }
 }

@@ -16,7 +16,7 @@ use App\Services\GovPayDebitoreService;
  * log + sleep 30s) restano nello script: un'eccezione di getBatch si propaga da
  * runOnce(). Se hadWork e' false lo script attende prima di richiamare runOnce().
  */
-final class GovPayDebitoreJob
+final class GovPayDebitoreJob implements PeriodicJob
 {
     public const BATCH_SIZE = 100;
 
@@ -115,5 +115,16 @@ final class GovPayDebitoreJob
 
         $ctx->debug("Batch completato ({$total} record). Avvio ciclo successivo...");
         return new JobResult($processed, $ok, $skipped, $errors, true, $details);
+    }
+
+    public function name(): string
+    {
+        return 'govpay-debitore';
+    }
+
+    /** Coda vuota: 15 minuti. */
+    public function emptyQueueIntervalSeconds(): int
+    {
+        return 900;
     }
 }
