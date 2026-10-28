@@ -1,5 +1,7 @@
 # GovPay Interaction Layer (GIL)
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/badge)](https://scorecard.dev/viewer/?uri=github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer)
+
 Piattaforma containerizzata (PHP/Apache + UI) per migliorare il flusso di lavoro degli enti che usano GovPay come soluzione PagoPA.
 
 Include:
@@ -145,6 +147,11 @@ Le variabili obbligatorie prima del primo avvio:
 | `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD` | Credenziali database |
 | `APP_ENCRYPTION_KEY` | Chiave cifratura segreti in DB — esattamente 32 caratteri (`openssl rand -hex 16`) |
 | `MASTER_TOKEN` | Token Bearer per comunicazione interna backoffice ↔ frontoffice (`openssl rand -hex 24`) |
+| `FRONTOFFICE_LINK_SIGNING_KEY` | Chiave firma link pubblici frontoffice (`openssl rand -hex 32`) |
+
+Se una di queste variabili manca o è vuota, `docker compose` si rifiuta di avviare lo stack con un errore che la nomina (es. `required variable MASTER_TOKEN is missing a value: MASTER_TOKEN obbligatoria: vedi .env.example`).
+
+Opzionale: `VERIFY_IMAGES` (default `false`) — vedi [Verifica delle immagini prima del deploy](#verifica-delle-immagini-prima-del-deploy).
 
 ---
 
@@ -345,7 +352,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` su:
+Le immagini sono pubblicate automaticamente a ogni tag `vX.Y.Z` (tag immagine `X.Y.Z`, `X.Y`, `latest`), firmate e verificabili con `scripts/verify-images.sh` (vedi [Rilasci e immagini Docker](#rilasci-e-immagini-docker-ghcr)), su:
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice`
 - `ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db`
@@ -358,15 +365,77 @@ Per un server di produzione sono sufficienti: il `docker-compose.yml` e le varia
 
 ### Flusso di rilascio
 
-Ogni release è associata a un tag Git `vX.Y.Z`. Al push del tag, il workflow GitHub Actions `.github/workflows/docker-publish.yml` builda e pubblica automaticamente le immagini Docker su GHCR con i tag `:vX.Y.Z`, `:X.Y` e `:latest`.
+Ogni release è associata a un tag Git `vX.Y.Z`, creato su un commit già presente su `main` (altrimenti il workflow rifiuta il rilascio). Al push del tag, il workflow GitHub Actions `.github/workflows/docker-publish.yml`:
+
+1. builda le 3 immagini e le pusha su GHCR **solo per digest** (nessun tag);
+2. le scansiona con Trivy (bloccante su HIGH/CRITICAL con fix);
+3. genera l'SBOM CycloneDX, le attestazioni GitHub (provenance SLSA + SBOM) e firma ogni digest con cosign (keyless, identità OIDC del workflow);
+4. avvia lo stack di produzione (`docker-compose.yml`) con i 3 digest ed esegue lo smoke test (`scripts/smoke-stack.sh`);
+5. solo se tutto è passato, applica i tag a **tutte e 3** le immagini insieme: `:X.Y.Z` (senza `v`, es. `1.6.8`), `:X.Y` e `:latest`.
+
+Il rebuild automatico giornaliero di `latest` (solo con una causa reale: commit su `main`, patch di sistema, CVE con fix) segue la stessa pipeline e pubblica `:latest` + `:latest-YYYYMMDD`. Un'immagine che fallisce un passo resta un digest senza tag (rimosso da `ghcr-cleanup.yml`) e i tag esistenti non si spostano.
 
 ```bash
-# Avanzare di versione
+# Avanzare di versione (dal commit di main da rilasciare)
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
 Il workflow parte automaticamente. Puoi seguire l'avanzamento su GitHub → Actions → "Docker Publish".
+
+### Verifica delle immagini prima del deploy
+
+Prima di aggiornare uno stack verifica che le immagini del tag da installare siano state prodotte e firmate da `docker-publish.yml` di questo repository:
+
+```bash
+scripts/verify-images.sh 1.6.9        # stesso valore di APP_VERSION
+scripts/verify-images.sh latest
+CONTAINER_CLI=podman scripts/verify-images.sh 1.6.9
+```
+
+Lo script non richiede cosign installato (usa l'immagine ufficiale `ghcr.io/sigstore/cosign/cosign` fissata per digest) e verifica la firma di backoffice, frontoffice e db con l'identità `https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/.github/workflows/docker-publish.yml@refs/(tags/v*|heads/main)`. Se la CLI `gh` è presente verifica anche le attestazioni (provenance SLSA e SBOM CycloneDX). Stampa i digest verificati; **exit ≠ 0 = non aggiornare lo stack**. Le immagini pubblicate prima dell'introduzione della firma non passano la verifica.
+
+**Verifica automatica all'avvio (`VERIFY_IMAGES`).** Il compose include il servizio one-shot `verify-images` (cosign, stessa identità): con `VERIFY_IMAGES=true` verifica la firma delle 3 immagini di `APP_VERSION` prima di avviarle; firma assente/non valida o tag inesistente → `backoffice`, `frontoffice` e `db` restano creati ma **non partono** e il deploy (anche da Portainer) va in errore: rimettere il tag precedente. Default `false` (il servizio esce subito con successo). Per attivarla:
+
+1. installare prima un rilascio firmato (le immagini precedenti non sono firmate e bloccherebbero l'avvio): verificarlo con `scripts/verify-images.sh <APP_VERSION>`;
+2. impostare `VERIFY_IMAGES=true` nel `.env` o nelle *Environment variables* di Portainer, poi `docker compose up -d`;
+3. il server deve raggiungere in HTTPS `ghcr.io`, `tuf-repo-cdn.sigstore.dev` e `rekor.sigstore.dev`.
+
+La verifica controlla il tag **nel registry**: esegui `docker compose pull` prima di `docker compose up -d` (oppure fissa `APP_VERSION` a un rilascio), altrimenti un `latest` locale obsoleto può non coincidere con quanto verificato.
+
+La verifica avviene solo quando compose (ri)crea/avvia lo stack: i riavvii dei container già creati (riavvio host, restart policy) non ripassano da `verify-images`.
+
+### Note di rilascio: hardening runtime (cambio incompatibile)
+
+> [!WARNING]
+> Da questa versione **i segreti di bootstrap sono obbligatori**: `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD`, `APP_ENCRYPTION_KEY`, `MASTER_TOKEN`, `FRONTOFFICE_LINK_SIGNING_KEY`. Un'istanza con una di queste variabili vuota o assente **non riparte** dopo l'upgrade (`docker compose` termina con `required variable ... is missing a value`). **Prima dell'upgrade** controllare il `.env` (o le *Environment variables* di Portainer) e compilarle con i valori **già in uso** — non generarne di nuovi per un'istanza esistente: `APP_ENCRYPTION_KEY` diversa rende illeggibili i segreti cifrati nel DB, password DB diverse non corrispondono a quelle già nel volume. Solo se `MASTER_TOKEN` o `FRONTOFFICE_LINK_SIGNING_KEY` erano davvero vuote se ne può generare una nuova (`openssl rand -hex 24` / `-hex 32`): con chiave vuota nessun link firmato era stato emesso.
+
+Altre modifiche del compose, senza azioni richieste: `no-new-privileges` e `cap_drop: ALL` su tutti i servizi con le sole capability necessarie (backoffice/frontoffice: `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER, KILL`; db: `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER`); servizio `verify-images` (spento di default, vedi sopra). Chi usa un compose personalizzato con processi aggiuntivi nei container deve verificare che non servano altre capability.
+
+> [!WARNING]
+> **Altri cambi incompatibili.** `composer` non è più nell'immagine runtime: le istanze che montano `composer.json`/`vendor` o contano sul `composer update` all'avvio devono usare il `vendor` dell'immagine; con `vendor` assente il container si ferma con un errore esplicito. L'immagine cosign `ghcr.io/sigstore/cosign/cosign` viene scaricata sempre, anche con `VERIFY_IMAGES=false`: i registry mirror/offline devono includerla. È richiesto Docker Compose v2 (`service_completed_successfully`, liste con merge YAML): un Portainer datato con compose v1 non funziona.
+
+### Upgrade: backup del DB obbligatorio
+
+> [!WARNING]
+> **Prima di ogni upgrade (cambio di `APP_VERSION` o pull di un nuovo `latest`) esegui un backup del database.** Le migrazioni dello schema sono **irreversibili**: una volta avviata la nuova versione, il DB non torna allo stato precedente senza un restore.
+
+```bash
+# Dump logico (stack attivo)
+docker exec gil-db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction --routines --all-databases' \
+  > gil_db_$(date +%Y%m%d_%H%M).sql
+```
+
+In alternativa (o in aggiunta) il backup a freddo del volume descritto in [Volumi: regola aurea in produzione](#volumi-regola-aurea-in-produzione).
+
+> [!NOTE]
+> Il servizio `db` ha un healthcheck (`healthcheck.sh --connect`) e backoffice/frontoffice partono solo con il DB *healthy*, cioè quando MariaDB accetta connessioni (init completato). Il check non usa credenziali: funziona anche su volumi creati da immagini vecchie o ripristinati da un dump. `MARIADB_AUTO_UPGRADE=1` resta disponibile come opzione (esegue `mariadb-upgrade` all'avvio, dopo il backup) ma non è necessario per l'healthcheck.
+
+### Rollback
+
+- Reimposta `APP_VERSION=<tag precedente>` (es. `1.6.8`) nel `.env` o nelle *Environment variables* di Portainer, poi `docker compose pull && docker compose up -d`. I tag `latest-YYYYMMDD` esistono solo per i rebuild automatici giornalieri: utili per tornare a un `latest` precedente, non sostituiscono i tag di versione.
+- `APP_VERSION` seleziona **tutte e 3** le immagini, quindi il rollback cambia anche l'immagine `db`. Il downgrade di `db` (nuova versione di MariaDB) o di uno schema già migrato è possibile **solo insieme al restore del backup** fatto prima dell'upgrade: fermare lo stack, ripristinare dump/volume, poi avviare con la `APP_VERSION` precedente. Mai avviare una versione vecchia su un DB già migrato.
+- Prima del rollback verifica le immagini del tag di destinazione con `scripts/verify-images.sh`.
 
 ### Immagini disponibili
 

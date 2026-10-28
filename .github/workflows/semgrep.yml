@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # Merge queue: scan diff-aware sul commit della coda, bloccante come sulle PR.
+  merge_group:
   schedule:
     - cron: '0 5 * * *'  # ogni giorno 05:00 UTC: nuove regole su codice invariato
   workflow_dispatch:
@@ -38,8 +40,11 @@ jobs:
       # realmente non quotato, nessun href costruito senza escaping — Twig autoescape e' sempre
       # attivo, mai disabilitato, ogni {{ var }} in un attributo e' dentro virgolette). Le regole
       # scattavano su testo dentro tag <span>/<div> scambiato per attributi dal motore generic.
-      - name: Run Semgrep (diff-aware, bloccante) · pull_request
-        if: github.event_name == 'pull_request'
+      - name: Run Semgrep (diff-aware, bloccante) · pull_request/merge_group
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          # PR: base della PR; merge queue: base_sha del gruppo (tip di main all'accodamento).
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           semgrep scan \
             --config p/php \
@@ -48,12 +53,12 @@ jobs:
             --config p/secrets \
             --exclude-rule generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var \
             --exclude-rule generic.html-templates.security.var-in-href.var-in-href \
-            --baseline-commit "${{ github.event.pull_request.base.sha }}" \
+            --baseline-commit "$BASE_SHA" \
             --sarif --output=semgrep.sarif \
             --error
 
       - name: Run Semgrep (scan completo, report-only) · push/schedule
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
         run: |
           semgrep scan \
             --config p/php \

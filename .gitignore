@@ -72,3 +72,6 @@ plans/
 
 # Node (package.json asset frontend: installati solo nello stage Docker)
 /node_modules/
+
+# Override generato dal job smoke di docker-publish.yml (image@sha256 dei 3 servizi)
+/docker-compose.smoke.yml

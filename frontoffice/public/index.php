@@ -2929,12 +2929,7 @@ if (!function_exists('frontoffice_sign_link')) {
      */
     function frontoffice_sign_link(array $params, int $ttlSeconds = 31536000 /* 60*60*24*365 = 1 anno */): array
     {
-        $expires = time() + $ttlSeconds;
-        $params['expires'] = (string)$expires;
-        ksort($params);
-        $payload = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
-        $sig = hash_hmac('sha256', $payload, frontoffice_link_signing_key());
-        return array_merge($params, ['sig' => $sig]);
+        return \App\Security\SignedLink::sign($params, frontoffice_link_signing_key(), $ttlSeconds, time());
     }
 }
 
@@ -2946,20 +2941,7 @@ if (!function_exists('frontoffice_verify_link')) {
      */
     function frontoffice_verify_link(array $params): bool
     {
-        $sig = $params['sig'] ?? '';
-        if ($sig === '') {
-            return false;
-        }
-        $expires = (int)($params['expires'] ?? 0);
-        if ($expires === 0 || time() > $expires) {
-            return false;
-        }
-        $check = $params;
-        unset($check['sig']);
-        ksort($check);
-        $payload = http_build_query($check, '', '&', PHP_QUERY_RFC3986);
-        $expected = hash_hmac('sha256', $payload, frontoffice_link_signing_key());
-        return hash_equals($expected, $sig);
+        return \App\Security\SignedLink::verify($params, frontoffice_link_signing_key(), time());
     }
 }
 

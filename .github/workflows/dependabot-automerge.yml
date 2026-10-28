@@ -1,6 +1,7 @@
 name: Dependabot auto-merge
-# Minor/patch di dependabot: auto-merge (GitHub, squash: unico metodo ammesso dal repo) appena i
-# required check sono verdi.
+# Minor/patch di dependabot: auto-merge (GitHub, squash: unico metodo ammesso dal repo). Con la
+# merge queue attiva `gh pr merge --auto` accoda la PR appena i required check sono verdi; la
+# coda testa ogni PR sul tip aggiornato di main, quindi non serve piu' aggiornare i branch behind.
 # Major: nessuna azione, la PR resta aperta come promemoria per l'upgrade manuale.
 # Eccezione: cambio di tag immagine php/mariadb (es. php 8.5 -> 8.6, mariadb 12.3 -> 12.4) —
 # dependabot li classifica minor ma sono upgrade di runtime/DB, restano manuali come le major.
@@ -8,9 +9,7 @@ name: Dependabot auto-merge
 # in auto-merge: e' la patch di sicurezza che il rebuild-check deve portare in latest.
 #
 # Token GitHub App (secret GIL_BOT_CLIENT_ID / GIL_BOT_PRIVATE_KEY) invece di GITHUB_TOKEN:
-# merge e update-branch fatti con GITHUB_TOKEN non triggerano altri workflow, quindi la CI
-# non girerebbe sul branch aggiornato e la PR resterebbe bloccata dal ruleset (strict:
-# branch deve essere aggiornato con main). Sul trigger pull_request di dependabot sono
+# le azioni di merge fatte con GITHUB_TOKEN non triggerano altri workflow (CI sul merge). Sul trigger pull_request di dependabot sono
 # visibili solo i secret Dependabot: i due secret vanno salvati sia come Actions che come
 # Dependabot secret.
 # Permessi App (repo): Contents RW, Pull requests RW, Workflows RW (le PR github-actions
@@ -18,13 +17,6 @@ name: Dependabot auto-merge
 on:
   pull_request:
     types: [opened, reopened, synchronize]
-  # Dopo ogni merge su main le altre PR auto-merge restano "behind": le si aggiorna qui.
-  # Il push generato dal merge col token App triggera questo evento (con GITHUB_TOKEN no).
-  push:
-    branches: [main]
-  # Fallback se un evento push si perde.
-  schedule:
-    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -78,39 +70,3 @@ jobs:
           DEPS: ${{ steps.meta.outputs.dependency-names }}
         run: |
           echo "::notice::Nessun auto-merge (${UPDATE_TYPE}, ${DEPS}) - PR lasciata aperta per revisione manuale."
-
-  update-behind:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
-      # post-step e nella pagina insights StepSecurity della run.
-      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-      - name: Token GitHub App
-        id: app
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.GIL_BOT_CLIENT_ID }}
-          private-key: ${{ secrets.GIL_BOT_PRIVATE_KEY }}
-
-      # Una PR alla volta (la piu' vecchia): aggiornarle tutte insieme farebbe ripartire N CI
-      # in parallelo e dopo il primo merge le altre tornerebbero comunque behind. Il merge di
-      # questa genera un push su main, che rilancia questo job per la successiva.
-      - name: Aggiorna la prima PR dependabot behind con auto-merge attivo
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          n=$(gh pr list -R "$REPO" --author 'app/dependabot' --state open \
-            --json number,autoMergeRequest,mergeStateStatus \
-            -q '[.[] | select(.autoMergeRequest != null and .mergeStateStatus == "BEHIND")] | sort_by(.number) | .[0].number // empty')
-          if [ -z "$n" ]; then
-            echo "Nessuna PR dependabot behind."
-            exit 0
-          fi
-          echo "Aggiorno PR #$n con main"
-          gh api -X PUT "repos/$REPO/pulls/$n/update-branch" >/dev/null
