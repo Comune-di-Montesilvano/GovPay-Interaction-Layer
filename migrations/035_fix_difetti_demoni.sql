@@ -27,3 +27,10 @@ CREATE TABLE IF NOT EXISTS pendenze_massive (
   INDEX idx_batch (file_batch_id),
   INDEX idx_stato (stato)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- N2 (rendicontazione): cap tentativi anche per il ponte DILAZIONE (stesso limite di GERI,
+-- rendicontazione.geri_max_tentativi), con contatore dedicato: la colonna GERI non viene
+-- rinominata (nessun lettore da migrare, nessun rischio per le immagini vecchie).
+ALTER TABLE flussi_rendicontazioni
+  ADD COLUMN IF NOT EXISTS rendicontazione_tentativi_dilazione TINYINT UNSIGNED NOT NULL DEFAULT 0
+    AFTER rendicontazione_tentativi_geri;

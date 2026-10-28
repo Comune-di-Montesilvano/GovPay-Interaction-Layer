@@ -105,6 +105,12 @@ class RendicontazioneEngineService
                     $this->repo->markErrore($rigaId, 'Cap tentativi Geri raggiunto, richiede intervento manuale');
                     return;
                 }
+                // Stesso cap per DILAZIONE (contatore dedicato): senza, il ponte verrebbe richiamato
+                // a ogni ciclo finche' la riga resta nella finestra max_giorni_retry.
+                if ($decision->handler === 'DILAZIONE' && (int)($riga['rendicontazione_tentativi_dilazione'] ?? 0) >= $geriMaxTentativi) {
+                    $this->repo->markErrore($rigaId, 'Cap tentativi Dilazione raggiunto, richiede intervento manuale');
+                    return;
+                }
 
                 $idAtto = (string)($pendenza['documento']['identificativo'] ?? '');
                 $dataPagamento = (string)($pendenza['dataPagamento'] ?? '');
@@ -133,7 +139,7 @@ class RendicontazioneEngineService
                     if ($decision->handler === 'GERI') {
                         $this->repo->markErroreGeri($rigaId, "Bridge GERI: " . $esito['messaggio']);
                     } else {
-                        $this->repo->markErrore($rigaId, "Bridge DILAZIONE: " . $esito['messaggio']);
+                        $this->repo->markErroreDilazione($rigaId, "Bridge DILAZIONE: " . $esito['messaggio']);
                     }
                     return;
                 }

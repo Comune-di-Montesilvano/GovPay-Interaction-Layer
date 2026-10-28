@@ -507,24 +507,54 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->assertSame(3, (int)$r['rendicontazione_tentativi_geri']);
     }
 
-    public function testDilazioneEsitoNegativoRitentataSenzaCapDifettoNoto(): void
+    public function testDilazioneEsitoNegativoRispettaLoStessoCapDiGeri(): void
     {
-        // Difetto noto: solo GERI ha un cap tentativi; DILAZIONE viene richiamata a ogni ciclo
-        // finche' la riga resta nella finestra max_giorni_retry.
+        // N2 (fix 8b): DILAZIONE usa lo stesso cap di GERI (rendicontazione.geri_max_tentativi),
+        // con un contatore dedicato: ponte chiamato esattamente cap volte, poi mai piu'.
         $this->setting('scansioni_quiete_soglia', '99');
+        $this->setting('geri_max_tentativi', '3');
         $this->regola('IUV_PREFIX', '006', 'DILAZIONE');
         $this->bridgeResponses = [new Response(200, [], json_encode(['esito' => false, 'messaggio' => 'KO']))];
         $id = $this->riga(1, ['id_pendenza' => 'EXT-1', 'iuv' => '00607000007021733']);
 
-        for ($i = 1; $i <= 5; $i++) {
+        for ($i = 1; $i <= 3; $i++) {
+            $this->runJob();
+            $this->assertCount($i, $this->bridgeCalls);
+            $r = $this->row($id);
+            $this->assertSame('ERRORE', $r['rendicontazione_stato']);
+            $this->assertSame('Bridge DILAZIONE: KO', $r['rendicontazione_note']);
+            $this->assertSame($i, (int)$r['rendicontazione_tentativi_dilazione']);
+        }
+
+        for ($i = 0; $i < 3; $i++) {
             $this->runJob();
         }
 
-        $this->assertCount(5, $this->bridgeCalls);
+        $this->assertCount(3, $this->bridgeCalls, 'cap raggiunto: nessuna chiamata ulteriore al ponte');
         $r = $this->row($id);
         $this->assertSame('ERRORE', $r['rendicontazione_stato']);
-        $this->assertSame('Bridge DILAZIONE: KO', $r['rendicontazione_note']);
+        $this->assertSame('Cap tentativi Dilazione raggiunto, richiede intervento manuale', $r['rendicontazione_note']);
+        $this->assertSame(3, (int)$r['rendicontazione_tentativi_dilazione']);
         $this->assertSame(0, (int)$r['rendicontazione_tentativi_geri']);
+    }
+
+    public function testDilazioneSuccessoDopoUnFallimentoUnaSolaRegistrazione(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '99');
+        $this->setting('geri_max_tentativi', '3');
+        $this->regola('IUV_PREFIX', '006', 'DILAZIONE');
+        $this->bridgeResponses = [
+            new Response(200, [], json_encode(['esito' => false, 'messaggio' => 'KO'])),
+            new Response(200, [], json_encode(['esito' => true, 'messaggio' => 'ok'])),
+        ];
+        $id = $this->riga(1, ['id_pendenza' => 'EXT-1', 'iuv' => '00607000007021733']);
+
+        for ($i = 0; $i < 4; $i++) {
+            $this->runJob();
+        }
+
+        $this->assertCount(2, $this->bridgeCalls, 'un fallimento + un successo, mai rinviata dopo GESTITO');
+        $this->assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
     }
 
     public function testBridgeEccezioneDiRetePerGeriContaComeTentativo(): void

@@ -68,6 +68,20 @@ class RendicontazioneRepository
         )->execute([':id' => $id, ':note' => $note]);
     }
 
+    /**
+     * Come markErroreGeri() per il ponte DILAZIONE: incrementa rendicontazione_tentativi_dilazione
+     * (stesso cap di GERI, cfr. migrations/035_fix_difetti_demoni.sql).
+     */
+    public function markErroreDilazione(int $id, string $note): void
+    {
+        $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni
+             SET rendicontazione_stato = \'ERRORE\', rendicontazione_note = :note,
+                 rendicontazione_tentativi_dilazione = rendicontazione_tentativi_dilazione + 1
+             WHERE id = :id'
+        )->execute([':id' => $id, ':note' => $note]);
+    }
+
     public function markAppioEsito(int $id, string $stato): void
     {
         $this->pdo->prepare(
