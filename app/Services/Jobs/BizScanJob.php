@@ -121,7 +121,7 @@ final class BizScanJob
                 if ($enriched['status'] === 'RATE_LIMITED') {
                     for ($attempt = 1; $attempt < 6 && $enriched['status'] === 'RATE_LIMITED'; $attempt++) {
                         $ctx->debug("  IUR={$iur}: rate limit 429 (tentativo {$attempt}/6) - pausa " . ($attempt + 1) . "s...");
-                        $sleep($attempt + 1); // 2s, 3s, 4s, 5s
+                        $sleep($attempt + 1); // 2s, 3s, 4s, 5s, 6s
                         try {
                             $enriched = $this->service->enrichOne($row, $idDominio);
                         } catch (\Throwable $e) {
@@ -133,11 +133,13 @@ final class BizScanJob
                     }
                     if ($enriched['status'] === 'RATE_LIMITED') {
                         $ctx->debug("  IUR={$iur}: rate limit persistente - errore");
-                        $this->repo->markError((int)$row['id'], 'Rate limit Biz Events (429) dopo 5 tentativi');
+                        // 6 chiamate in tutto: la prima + 5 ritentativi.
+                        $msg = 'Rate limit Biz Events (429) dopo 6 tentativi';
+                        $this->repo->markError((int)$row['id'], $msg);
                         $sleep(10);
                         $processed++;
                         $errors++;
-                        $details[] = ['ref' => $iur, 'reason' => 'Rate limit Biz Events (429) dopo 5 tentativi'];
+                        $details[] = ['ref' => $iur, 'reason' => $msg];
                         continue;
                     }
                 }

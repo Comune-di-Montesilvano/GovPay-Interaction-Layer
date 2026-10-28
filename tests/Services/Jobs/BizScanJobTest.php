@@ -319,11 +319,11 @@ final class BizScanJobTest extends DbTestCase
 
         $row = $this->biz($iur);
         self::assertSame('ERROR', $row['stato']);
-        self::assertSame('Rate limit Biz Events (429) dopo 5 tentativi', $row['error_msg']);
+        self::assertSame('Rate limit Biz Events (429) dopo 6 tentativi', $row['error_msg']);
         self::assertSame([2, 3, 4, 5, 6, 10], $this->sleeps, 'backoff attempt+1 per 5 tentativi, poi 10s (nessuna pausa da 5s: continue)');
         self::assertCount(6, $this->requests);
         self::assertSame([1, 0, 0, 1], [$res->processed, $res->ok, $res->skipped, $res->errors]);
-        self::assertSame([['ref' => $iur, 'reason' => 'Rate limit Biz Events (429) dopo 5 tentativi']], $res->errorDetails);
+        self::assertSame([['ref' => $iur, 'reason' => 'Rate limit Biz Events (429) dopo 6 tentativi']], $res->errorDetails);
     }
 
     /**
