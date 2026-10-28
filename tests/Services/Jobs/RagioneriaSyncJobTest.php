@@ -709,7 +709,8 @@ final class RagioneriaSyncJobTest extends DbTestCase
      * il 26-esimo dettaglio: il job esce prima dell'aggiornamento di fine ciclo, quindi resta visibile
      * solo il salvataggio periodico fatto al 25-esimo flusso.
      */
-    private function runUntilStopAfter26thDetail(int $oldestAgo, RecordingJobContext $ctx): void
+    /** @param ?callable(int):?Response $override risposta alternativa per il dettaglio $i (null = normale) */
+    private function runUntilStopAfter26thDetail(int $oldestAgo, RecordingJobContext $ctx, ?callable $override = null): void
     {
         $items = [];
         for ($i = 0; $i < 27; $i++) {
@@ -719,7 +720,10 @@ final class RagioneriaSyncJobTest extends DbTestCase
         for ($i = 0; $i < 27; $i++) {
             $n = $i + 1;
             $body = self::detail(self::day($oldestAgo - $i), [self::rend($n)]);
-            if ($i === 25) {
+            $alt = $override !== null ? $override($i) : null;
+            if ($alt !== null) {
+                $this->mock->append($alt);
+            } elseif ($i === 25) {
                 $this->mock->append(function () use ($ctx, $body): Response {
                     $ctx->stop = true;
                     return new Response(200, [], json_encode($body));
@@ -738,6 +742,52 @@ final class RagioneriaSyncJobTest extends DbTestCase
         // il 25-esimo flusso (indice 24) ha data day(60-24); progresso = data - 2 giorni
         self::assertSame(date('Y-m-d', strtotime(self::day(36) . ' -2 days')), $this->setting('ragioneria_progress_rolling_from'));
         self::assertSame(self::SCAN_DA, $this->setting('ragioneria_progress_scan_da'));
+    }
+
+    public function testPeriodicProgressSavedAt25thIndexEvenWhenThatFlussoFails(): void
+    {
+        // R7: il salvataggio ogni 25 indici non dipende dall'esito del 25-esimo flusso
+        $this->runUntilStopAfter26thDetail(60, new RecordingJobContext(), static fn(int $i): ?Response => $i === 24 ? new Response(500) : null);
+
+        self::assertSame(date('Y-m-d', strtotime(self::day(36) . ' -2 days')), $this->setting('ragioneria_progress_rolling_from'));
+    }
+
+    public function testPeriodicProgressSavedAt25thIndexEvenWhenThatFlussoHasNoRows(): void
+    {
+        $this->runUntilStopAfter26thDetail(60, new RecordingJobContext(), static fn(int $i): ?Response => $i === 24
+            ? new Response(200, [], json_encode(self::detail(self::day(36), [])))
+            : null);
+
+        self::assertSame(date('Y-m-d', strtotime(self::day(36) . ' -2 days')), $this->setting('ragioneria_progress_rolling_from'));
+    }
+
+    public function testPeriodicProgressSavedAt25thIndexEvenWhenThatFlussoIsSkipped(): void
+    {
+        // flusso 25 gia' in DB e piu' vecchio di 15 giorni -> skip senza richiesta di dettaglio
+        $this->insertFlusso('FL-24', self::day(36), 900);
+        $items = [];
+        for ($i = 0; $i < 27; $i++) {
+            $items[] = self::item(sprintf('FL-%02d', $i), self::day(60 - $i));
+        }
+        $this->queueList($items);
+        $ctx = new RecordingJobContext();
+        for ($i = 0; $i < 27; $i++) {
+            if ($i === 24) {
+                continue;
+            }
+            $body = self::detail(self::day(60 - $i), [self::rend($i + 1)]);
+            if ($i === 25) {
+                $this->mock->append(function () use ($ctx, $body): Response {
+                    $ctx->stop = true;
+                    return new Response(200, [], json_encode($body));
+                });
+            } else {
+                $this->queueDetail($body);
+            }
+        }
+        $this->job()->runOnce($ctx);
+
+        self::assertSame(date('Y-m-d', strtotime(self::day(36) . ' -2 days')), $this->setting('ragioneria_progress_rolling_from'));
     }
 
     public function testPeriodicProgressIsClampedToConfiguredScanDa(): void

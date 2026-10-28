@@ -209,6 +209,12 @@ final class RagioneriaSyncJob
                 $idDominio
             );
             $dataFlussoScan = (string)($flussoItem['dataFlusso'] ?? '');
+
+            // R7: salvataggio periodico ogni 25 indici a prescindere dall'esito di questo flusso
+            // (skip/errore/senza righe). Fatto prima di elaborarlo: progresso = data - 2 giorni, quindi
+            // dopo un riavvio la lista lo ripropone comunque (ordine cronologico).
+            $this->saveProgressIfDue($scanIndex, $dataFlussoScan, $scanDaConfig);
+
             if ($idFlusso === '' || $dominioFlusso === '') {
                 continue;
             }
@@ -279,19 +285,6 @@ final class RagioneriaSyncJob
                 max(0, $flussoRowsTotal - $flussoGovPayYes),
                 $affected
             ));
-
-            // Salvataggio periodico del progresso (ogni 25 flussi processati)
-            if ($dataFlussoScan !== '' && $scanIndex % 25 === 0) {
-                $progressDate = date('Y-m-d', strtotime($dataFlussoScan . ' -2 days'));
-                if ($progressDate < $scanDaConfig) {
-                    $progressDate = $scanDaConfig;
-                }
-                $savedRollingFrom = SettingsRepository::get('backoffice', 'ragioneria_progress_rolling_from');
-                if ($savedRollingFrom === null || $savedRollingFrom === '' || $progressDate > $savedRollingFrom) {
-                    SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', $scanDaConfig);
-                    SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', $progressDate);
-                }
-            }
         }
 
         $ctx->debug(sprintf(
@@ -323,6 +316,23 @@ final class RagioneriaSyncJob
         }
 
         return new JobResult($processed, $ok, $skipped, $errors, $hadWork, $details);
+    }
+
+    /** Salvataggio periodico del progresso ogni 25 flussi della lista (mai all'indietro). */
+    private function saveProgressIfDue(int $scanIndex, string $dataFlussoScan, string $scanDaConfig): void
+    {
+        if ($dataFlussoScan === '' || $scanIndex % 25 !== 0) {
+            return;
+        }
+        $progressDate = date('Y-m-d', strtotime($dataFlussoScan . ' -2 days'));
+        if ($progressDate < $scanDaConfig) {
+            $progressDate = $scanDaConfig;
+        }
+        $savedRollingFrom = SettingsRepository::get('backoffice', 'ragioneria_progress_rolling_from');
+        if ($savedRollingFrom === null || $savedRollingFrom === '' || $progressDate > $savedRollingFrom) {
+            SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', $scanDaConfig);
+            SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', $progressDate);
+        }
     }
 
     /** Ripristina il progresso della scansione dopo un riavvio (equivale al blocco pre-loop dello script). */
