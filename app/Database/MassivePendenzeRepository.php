@@ -198,6 +198,18 @@ class MassivePendenzeRepository
     }
 
     /**
+     * Una riga per id (stesse colonne di fetchCancelPending), null se non esiste.
+     * @return array<string,mixed>|null
+     */
+    public function findById(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT id, file_batch_id, riga, stato, payload_json, response_json FROM pendenze_massive WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    /**
      * Marca una riga in elaborazione per l'annullamento.
      */
     public function setCancelProcessing(int $id): void

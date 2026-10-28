@@ -1681,7 +1681,7 @@ class PendenzeController
         }
 
         try {
-            $httpClient = new Client($guzzleOptions);
+            $httpClient = $this->makePlainHttpClient($guzzleOptions);
             // Genera idPendenza se non fornito
             $idP = trim((string)($idPendenza ?? ($payload['idPendenza'] ?? '')));
             if ($idP === '') {
@@ -2536,6 +2536,15 @@ class PendenzeController
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
         return GovPayClientFactory::makeBackofficeClient($guzzleOptions);
+    }
+
+    /**
+     * Client Guzzle "nudo" (new Client, SENZA GovPayClientFactory: niente TLS forzato/retry cURL 35)
+     * usato da sendPendenzaToBackoffice. Seam per i test (GovPay simulato al confine HTTP).
+     */
+    protected function makePlainHttpClient(array $guzzleOptions = []): Client
+    {
+        return new Client($guzzleOptions);
     }
 
     /**
