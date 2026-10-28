@@ -41,7 +41,23 @@ final class MassivoCsvParser
         $s = str_replace("\xC2\xA0", ' ', $s); // NBSP -> spazio
         $s = str_replace(' ', '', $s);
         $s = preg_replace('/[^\d,.\-]/', '', $s) ?? ''; // via simboli valuta (€, $, ecc.)
-        $s = str_replace(',', '.', $s);
+
+        // Separatore decimale = l'ultimo tra ',' e '.'; gli altri sono migliaia (1.234,56 e
+        // 1,234.56). Un solo separatore seguito da esattamente 3 cifre (1.234, 1,234) o
+        // ripetuto (1.234.567) e' di migliaia: in euro non esistono 3 decimali.
+        $last = max((int) strrpos($s, ','), (int) strrpos($s, '.'));
+        $hasSep = strpbrk($s, ',.') !== false;
+        if ($hasSep) {
+            $sep = $s[$last];
+            $other = $sep === ',' ? '.' : ',';
+            $isThousands = !str_contains($s, $other)
+                && (substr_count($s, $sep) > 1 || preg_match('/^-?\d{1,3}[.,]\d{3}$/', $s) === 1);
+            if ($isThousands) {
+                $s = str_replace($sep, '', $s);
+            } else {
+                $s = str_replace([',', '.'], '', substr($s, 0, $last)) . '.' . substr($s, $last + 1);
+            }
+        }
         return $s;
     }
 }

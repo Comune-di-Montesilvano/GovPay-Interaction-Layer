@@ -94,13 +94,29 @@ final class MassivoCsvParserPropertyTest extends TestCase
         $this->assertSame($canonico, MassivoCsvParser::cleanImportoRaw("\xC2\xA0" . $euro . ',' . $dec . "\xC2\xA0€"), $msg . ' (NBSP)');
         $this->assertSame('-' . $canonico, MassivoCsvParser::cleanImportoRaw('-' . $euro . ',' . $dec), $msg . ' (negativo)');
 
-        // Formato italiano con punto delle migliaia (1.234,56): il comportamento ATTUALE
-        // trasforma ogni separatore in punto ("1.234.56", che (float) legge come 1.234).
-        // Difetto noto, fissato qui come caratterizzazione: correggerlo in un task dedicato
-        // aggiornando questa asserzione (regressione voluta).
-        $migliaia = number_format($euro, 0, '', '.') . ',' . $dec;
-        $atteso = $euro < 1000 ? $canonico : number_format($euro, 0, '', '.') . '.' . $dec;
-        $this->assertSame($atteso, MassivoCsvParser::cleanImportoRaw($migliaia), $msg . ' (1.234,56)');
+        // Separatore delle migliaia: italiano (1.234,56) e inglese (1,234.56).
+        $it = number_format($euro, 0, '', '.') . ',' . $dec;
+        $en = number_format($euro, 0, '', ',') . '.' . $dec;
+        $this->assertSame($canonico, MassivoCsvParser::cleanImportoRaw($it), $msg . ' (1.234,56)');
+        $this->assertSame($canonico, MassivoCsvParser::cleanImportoRaw($en), $msg . ' (1,234.56)');
+        $this->assertSame('-' . $canonico, MassivoCsvParser::cleanImportoRaw('€ -' . $it), $msg . ' (negativo 1.234,56)');
+
+        // Importo intero con migliaia (1.234 / 1,234 / 1.234.567): un solo separatore seguito da
+        // esattamente 3 cifre non puo' essere un decimale in euro → migliaia.
+        if ($euro >= 1000) {
+            $this->assertSame((string) $euro, MassivoCsvParser::cleanImportoRaw(number_format($euro, 0, '', '.')), $msg . ' (1.234)');
+            $this->assertSame((string) $euro, MassivoCsvParser::cleanImportoRaw(number_format($euro, 0, '', ',')), $msg . ' (1,234)');
+        }
+    }
+
+    public function testCleanImportoRawDecimaliBrevi(): void
+    {
+        $this->assertSame('12.5', MassivoCsvParser::cleanImportoRaw('12,5'));
+        $this->assertSame('12.5', MassivoCsvParser::cleanImportoRaw('12.5'));
+        $this->assertSame('0.05', MassivoCsvParser::cleanImportoRaw('0,05'));
+        $this->assertSame('1234', MassivoCsvParser::cleanImportoRaw('1234'));
+        $this->assertSame('1234.5', MassivoCsvParser::cleanImportoRaw('1.234,5'));
+        $this->assertSame('1234567.89', MassivoCsvParser::cleanImportoRaw('1 234 567,89'));
     }
 
     public function testCleanImportoRawStringaVuotaENonNumerica(): void
