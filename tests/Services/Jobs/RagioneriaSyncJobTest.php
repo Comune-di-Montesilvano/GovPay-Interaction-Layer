@@ -472,6 +472,36 @@ final class RagioneriaSyncJobTest extends DbTestCase
         self::assertSame([['ref' => 'FL-A', 'reason' => 'HTTP 503']], $r->errorDetails);
     }
 
+    public function testDetailFailureIsSentToSentryLikeListFailure(): void
+    {
+        // R3: il fallimento del dettaglio va a Sentry come quello della lista
+        $captured = [];
+        \Sentry\init([
+            'dsn' => 'http://public@sentry.invalid/1',
+            'default_integrations' => false, // niente handler globali di errori/eccezioni
+            'before_send' => static function (\Sentry\Event $event) use (&$captured): ?\Sentry\Event {
+                foreach ($event->getExceptions() as $ex) {
+                    $captured[] = $ex->getType();
+                }
+                return null; // scarta: nessun invio di rete
+            },
+        ]);
+        try {
+            $this->queueList([self::item('FL-A', self::day(4)), self::item('FL-B', self::day(3))]);
+            $this->mock->append(new Response(503, [], 'dettagli interni upstream'));
+            $this->mock->append(new ConnectException('cURL error 7', new Request('GET', 'x')));
+
+            $this->job()->runOnce(new RecordingJobContext());
+        } finally {
+            \Sentry\SentrySdk::setCurrentHub(new \Sentry\State\Hub());
+        }
+
+        self::assertSame(
+            ['GuzzleHttp\Exception\ServerException', 'GuzzleHttp\Exception\ConnectException'],
+            $captured
+        );
+    }
+
     public function testDetailConnectionErrorHasGenericReason(): void
     {
         $this->queueList([self::item('FL-A', self::day(3))]);

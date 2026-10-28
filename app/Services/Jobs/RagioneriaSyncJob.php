@@ -233,6 +233,7 @@ final class RagioneriaSyncJob
                 $detailResp = $client->request('GET', $detailUrl);
                 $detail = json_decode((string)$detailResp->getBody(), true);
             } catch (\Throwable $e) {
+                \Sentry\captureException($e);
                 $ctx->debug('Errore dettaglio flusso ' . $idFlusso . ': ' . $e->getMessage());
                 $errors++;
                 $details[] = ['ref' => $idFlusso, 'reason' => self::safeReason($e)];
