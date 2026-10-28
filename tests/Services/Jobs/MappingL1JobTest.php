@@ -83,7 +83,7 @@ final class MappingL1JobTest extends DbTestCase
     public function testDiscoverShortIuvsFeedFourAndThreeCharPatterns(): void
     {
         // 4-char/3-char nascono solo da IUV lunghi esattamente 4 / 3: ogni IUV >=5 forma gia' un prefisso 5-char
-        // (difetto noto rispetto alla doc, che li presenta come livelli utili per IUV a 17 cifre).
+        // M2: comportamento accettato e documentato in CLAUDE.md ("Discovery pattern L1"), nessun redesign.
         $this->riga(1, '55555000000000001');
         $this->riga(2, '4444');
         $this->riga(3, '4444');

@@ -351,7 +351,7 @@ Pause "coda vuota" standardizzate a 15 minuti su tutti i demoni (eccetto ragione
 
 **`cron_tefa_scanner.php`** — Legge `biz_ricevute` (PROCESSED, non ancora in `tefa_ricevute`) e classifica ogni IUR come TEFA (`stato = 'PROCESSED'`) o non-TEFA (`stato = 'SKIPPED'`). Non chiama Biz Events — usa i dati già salvati dal demone Biz. Attivo solo se `tefa_enabled = true`.
 
-**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV a cascata 5→4→3 char ogni 60s, (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15 minuti se nessuna assegnazione, 1s altrimenti.
+**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV ogni 60s (di fatto solo 5-char, vedi "Discovery pattern L1"), (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15 minuti se nessuna assegnazione, 1s altrimenti.
 
 **`cron_vocab_mapping.php`** — Demone L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`. Per ogni pendenza: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
 
@@ -374,14 +374,14 @@ Una pendenza è `NO_MATCH` solo se ha completato l'intero giro (1 → 2 → 3). 
 
 ### Discovery pattern L1 — logica a cascata
 
-`MappingPendenzeRepository::discoverPatterns()` genera auto-pattern (`is_custom = 0`) a **3 lunghezze**: 5, 4, 3 char.
+`MappingPendenzeRepository::discoverPatterns()` genera auto-pattern (`is_custom = 0`) interrogando 3 lunghezze: 5, 4, 3 char (nessuna soglia in discovery: nasce anche un pattern con count 1; la soglia ≥ 5 si applica solo al matching).
 
-**Regola di esclusione a cascata:**
-- Pattern 5-char: conta tutti gli IUV con quel prefisso
-- Pattern 4-char: conta solo IUV dove `LEFT(iuv, 5)` NON è già un pattern 5-char scoperto
-- Pattern 3-char: conta solo IUV dove `LEFT(iuv, 5)` e `LEFT(iuv, 4)` NON sono pattern scoperti
+**Cosa fa davvero la cascata** (ogni livello esclude gli IUV il cui `LEFT(iuv, n)` è già un prefisso scoperto ai livelli più lunghi):
+- 5-char: tutti gli IUV con `CHAR_LENGTH >= 5`, raggruppati per `LEFT(iuv, 5)`
+- 4-char: siccome ogni IUV ≥ 5 char ha già formato il proprio prefisso 5-char, restano solo gli IUV lunghi **esattamente 4** char
+- 3-char: per lo stesso motivo restano solo gli IUV lunghi **esattamente 3** char
 
-Così `transazioni_count` riflette le righe **non coperte da prefissi più lunghi**. La soglia attiva è ≥ 5 transazioni (o `is_custom = 1` per bypass). Il matching L1 (demone e "Applica mapping" da UI) applica le regole attive nell'ordine di `MappingPendenzeRepository::sortForAssignment()`: prefisso più lungo prima (5 → 4 → 3 char sui PENDING/NO_MATCH rimanenti), a parità di lunghezza vince il custom (`is_custom = 1`); `transazioni_count` NON entra nell'ordine. `getRules()` resta nell'ordine di visualizzazione UI (non usarlo come ordine di matching).
+Con IUV reali (17/18 cifre) quindi nascono **solo auto-pattern 5-char** (in prod 0 auto-pattern 4/3-char): i livelli 4/3 non raggruppano IUV lunghi per prefisso più corto. Pattern più corti di 5 char esistono solo come custom (UI). `transazioni_count` di un pattern 5-char = tutti gli IUV con quel prefisso; l'upsert aggiorna count/importo anche dei pattern custom omonimi (mai `is_custom`/`fornitore`/`cod_entrata`), e i pattern auto non più scoperti vengono cancellati. La soglia attiva è ≥ 5 transazioni (o `is_custom = 1` per bypass). Il matching L1 (demone e "Applica mapping" da UI) applica le regole attive nell'ordine di `MappingPendenzeRepository::sortForAssignment()`: prefisso più lungo prima (5 → 4 → 3 char sui PENDING/NO_MATCH rimanenti), a parità di lunghezza vince il custom (`is_custom = 1`); `transazioni_count` NON entra nell'ordine. `getRules()` resta nell'ordine di visualizzazione UI (non usarlo come ordine di matching).
 
 Non modificare questa logica senza aggiornare anche la soglia e il rendering UI (filtri "5 char / 4 char / 3 char" in `mapping_pendenze.html.twig`).
 

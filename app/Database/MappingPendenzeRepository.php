@@ -779,7 +779,8 @@ class MappingPendenzeRepository
      * Esegue la scoperta automatica dei pattern analizzando le pendenze esterne.
      * Discovery a cascata: 5-char prima, poi 4-char escludendo IUV già coperti da 5-char,
      * poi 3-char escludendo IUV già coperti da 5 o 4-char.
-     * Così transazioni_count riflette solo le righe non ancora coperte da un prefisso più lungo.
+     * Nota: ogni IUV >= 5 char forma già un prefisso 5-char, quindi i livelli 4/3 vedono solo
+     * IUV lunghi esattamente 4/3 char (con IUV reali nascono solo pattern 5-char).
      */
     public function discoverPatterns(string $idDominio): int
     {
