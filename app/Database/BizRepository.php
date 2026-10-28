@@ -303,20 +303,25 @@ class BizRepository
 
     /**
      * Inserisce dati debitore GovPay direttamente come PROCESSED (senza passare per la coda PENDING).
-     * Usato dal demone cron_govpay_debitore_scanner.php.
+     * Usato dal demone cron_govpay_debitore_scanner.php. Con $stato = 'NOT_FOUND' registra una
+     * pendenza assente in GovPay (404): esito definitivo, mai ritentato.
      * @param array{id_dominio:string,anno:int,mese:int,id_flusso:?string,iur:string,iuv:?string,data_pagamento:?string,importo:?float,descrizione:?string,cf_debitore:?string,nominativo_debitore:?string} $data
+     * @param 'PROCESSED'|'NOT_FOUND' $stato
      */
-    public function insertGovPayProcessed(array $data): void
+    public function insertGovPayProcessed(array $data, string $stato = 'PROCESSED'): void
     {
+        if ($stato !== 'PROCESSED' && $stato !== 'NOT_FOUND') {
+            throw new \InvalidArgumentException('Stato non ammesso: ' . $stato);
+        }
         $stmt = $this->pdo->prepare(
             'INSERT INTO biz_ricevute
                 (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, importo,
                  stato, descrizione, cf_debitore, nominativo_debitore, created_at, updated_at)
              VALUES
                 (:id_dominio, :anno, :mese, :id_flusso, :iur, :iuv, :data_pagamento, :importo,
-                 \'PROCESSED\', :descrizione, :cf_debitore, :nominativo_debitore, NOW(), NOW())
+                 :stato, :descrizione, :cf_debitore, :nominativo_debitore, NOW(), NOW())
              ON DUPLICATE KEY UPDATE
-                stato               = \'PROCESSED\',
+                stato               = VALUES(stato),
                 descrizione         = VALUES(descrizione),
                 cf_debitore         = VALUES(cf_debitore),
                 nominativo_debitore = VALUES(nominativo_debitore),
@@ -335,6 +340,7 @@ class BizRepository
             ':descrizione'         => $data['descrizione'] ?? null,
             ':cf_debitore'         => $data['cf_debitore'] ?? null,
             ':nominativo_debitore' => $data['nominativo_debitore'] ?? null,
+            ':stato'               => $stato,
         ]);
     }
 
@@ -472,7 +478,7 @@ class BizRepository
   nominativo_pagante   VARCHAR(255),
   company_name         VARCHAR(255),
   trasferimenti        JSON,
-  stato                ENUM('PENDING','PROCESSED','ERROR','SKIPPED') NOT NULL DEFAULT 'PENDING',
+  stato                ENUM('PENDING','PROCESSED','ERROR','SKIPPED','NOT_FOUND') NOT NULL DEFAULT 'PENDING',
   error_msg            TEXT,
   created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

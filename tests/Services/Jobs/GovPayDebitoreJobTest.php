@@ -235,9 +235,9 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertNull($row['cf_debitore']);
     }
 
-    public function testNotFound404InsertsBaseRecordAndCountsAsSkipped(): void
+    public function testNotFound404InsertsNotFoundRecordAndCountsAsSkipped(): void
     {
-        // Difetto noto: 404 -> riga marcata PROCESSED (senza debitore) e quindi mai piu' ritentata.
+        // D2: 404 -> riga NOT_FOUND (non PROCESSED senza dati), mai ritentata.
         $iur = $this->flusso(1);
         $ctx = new RecordingJobContext();
         $res = $this->job([self::http(404)])->runOnce($ctx);
@@ -250,7 +250,8 @@ final class GovPayDebitoreJobTest extends DbTestCase
 
         $row = $this->biz($iur);
         self::assertNotNull($row);
-        self::assertSame('PROCESSED', $row['stato']);
+        self::assertSame('NOT_FOUND', $row['stato']);
+        self::assertNull($row['error_msg']);
         self::assertNull($row['descrizione']);
         self::assertNull($row['cf_debitore']);
         self::assertNull($row['nominativo_debitore']);
@@ -258,9 +259,44 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertSame(Synthetic::iuv('GIL', 1), $row['iuv']);
         self::assertContains("  IUR={$iur}: skip - Pendenza non trovata in GovPay (404)", $ctx->messages);
 
-        // Secondo giro: coda vuota.
+        // Secondo giro: coda vuota, anche molto dopo (NOT_FOUND non e' mai ritentato).
         $res2 = $this->job([])->runOnce(new RecordingJobContext());
         self::assertFalse($res2->hadWork);
+        $this->backdateBiz($iur, 600);
+        self::assertFalse($this->job([])->runOnce(new RecordingJobContext())->hadWork);
+        self::assertCount(1, $this->requests);
+        self::assertSame(0, (new FlussiRendicontazioniRepository(self::pdo()))->countUnprocessedGovPayForDebitore(self::DOMINIO));
+    }
+
+    public function testNotFoundRowStillAppearsInRagioneriaCsvWithoutDebitore(): void
+    {
+        // Lettore a valle (CSV ragioneria, LEFT JOIN biz stato='PROCESSED'): la riga c'e' ancora,
+        // con debitore NULL come prima del fix (quando era PROCESSED senza dati).
+        $iur = $this->flusso(1);
+        $this->job([self::http(404)])->runOnce(new RecordingJobContext());
+
+        $rows = iterator_to_array((new FlussiRendicontazioniRepository(self::pdo()))
+            ->getForCsvWithBiz(self::DOMINIO, '2026-03-01', '2026-03-31', []), false);
+
+        self::assertCount(1, $rows);
+        self::assertSame($iur, $rows[0]['iur']);
+        self::assertNull($rows[0]['cf_debitore']);
+        self::assertNull($rows[0]['nominativo_debitore']);
+        self::assertNull($rows[0]['biz_descrizione']);
+    }
+
+    public function testNotFoundAfterEarlierErrorReplacesErrorRow(): void
+    {
+        $iur = $this->flusso(1);
+        $this->job([self::http(503)])->runOnce(new RecordingJobContext());
+        $this->backdateBiz($iur, 61);
+
+        $res = $this->job([self::http(404)])->runOnce(new RecordingJobContext());
+
+        self::assertSame(1, $res->skipped);
+        $row = $this->biz($iur);
+        self::assertSame('NOT_FOUND', $row['stato']);
+        self::assertNull($row['error_msg']);
     }
 
     private function backdateBiz(string $iur, int $minutes): void

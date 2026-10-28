@@ -58,7 +58,8 @@ class GovPayDebitoreService
         } catch (ClientException $e) {
             $code = $e->getResponse()->getStatusCode();
             if ($code === 404) {
-                $this->bizRepo->insertGovPayProcessed($this->baseRecord($row));
+                // Esito definitivo: NOT_FOUND (mai ritentato), distinto da PROCESSED con dati.
+                $this->bizRepo->insertGovPayProcessed($this->baseRecord($row), 'NOT_FOUND');
                 return ['status' => 'SKIPPED', 'reason' => 'Pendenza non trovata in GovPay (404)'];
             }
             return $this->fail($row, "HTTP $code: " . mb_substr($e->getMessage(), 0, 200));
