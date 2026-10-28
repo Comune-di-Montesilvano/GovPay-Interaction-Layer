@@ -19,8 +19,8 @@ use GuzzleHttp\Exception\RequestException;
  *    runOnce() viene ripristinato da li' se ragioneria_progress_scan_da coincide con la config.
  *  - flag di rescan forzato: requestRescan() lo imposta, la prossima runOnce() lo consuma.
  *
- * hadWork = almeno una riga INSERITA in questo ciclo (un update di righe esistenti non conta):
- * se true lo script rilancia subito runOnce(), altrimenti attende 30 minuti.
+ * hadWork = almeno una riga inserita o aggiornata con modifiche in questo ciclo (righe identiche non
+ * contano): se true lo script rilancia subito runOnce(), altrimenti attende 30 minuti.
  * Pausa, stop file, guardie di avvio e requestRescan da file restano nello script.
  *
  * Conteggi: processed = flussi validi esaminati (dopo i controlli su id/dominio), ok = flussi con
@@ -104,6 +104,7 @@ final class RagioneriaSyncJob
         $ctx->debug("Ciclo scan da {$scanDa}" . ($this->rollingFrom !== null ? ' [finestra scorrevole]' : ' [scan completo]') . '...');
 
         $newRows = 0;
+        $changedRows = 0;
         $cycleRowsTotal = 0;
         $cycleGovPayYes = 0;
         $page = 1;
@@ -117,7 +118,7 @@ final class RagioneriaSyncJob
 
         while (true) {
             if ($ctx->shouldStop()) {
-                return new JobResult($processed, $ok, $skipped, $errors, $newRows > 0, $details);
+                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $changedRows) > 0, $details);
             }
 
             $query = [
@@ -185,7 +186,7 @@ final class RagioneriaSyncJob
         $scanIndex = 0;
         foreach ($flussiToScan as $flussoItem) {
             if ($ctx->shouldStop()) {
-                return new JobResult($processed, $ok, $skipped, $errors, $newRows > 0, $details);
+                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $changedRows) > 0, $details);
             }
 
             $scanIndex++;
@@ -249,8 +250,10 @@ final class RagioneriaSyncJob
             $cycleRowsTotal += $flussoRowsTotal;
             $cycleGovPayYes += $flussoGovPayYes;
 
-            $affected = $repo->upsertBatch($rows);
-            $newRows += max(0, $affected);
+            $counts = $repo->upsertBatchCounts($rows);
+            $affected = $counts['inserted'] + $counts['updated'];
+            $newRows += $counts['inserted'];
+            $changedRows += $counts['updated'];
             $ok++;
             $ctx->debug(sprintf(
                 '  [scan] flusso %s: rendicontazioni=%d govpay_si=%d govpay_no=%d upsert_affected=%d',
@@ -276,13 +279,14 @@ final class RagioneriaSyncJob
         }
 
         $ctx->debug(sprintf(
-            'Ciclo completato. Flussi letti=%d skippati=%d, righe_parse_totali=%d, govpay_si=%d, govpay_no=%d, righe_upsert=%d',
+            'Ciclo completato. Flussi letti=%d skippati=%d, righe_parse_totali=%d, govpay_si=%d, govpay_no=%d, righe_inserite=%d, righe_aggiornate=%d',
             $flussiCount,
             $skipped,
             $cycleRowsTotal,
             $cycleGovPayYes,
             max(0, $cycleRowsTotal - $cycleGovPayYes),
-            $newRows
+            $newRows,
+            $changedRows
         ));
 
         // Update rolling window: max synced date - 15 days (overlap to catch late-arriving flussi).
@@ -293,13 +297,14 @@ final class RagioneriaSyncJob
             SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', $this->rollingFrom);
         }
 
-        if ($newRows > 0) {
+        $hadWork = ($newRows + $changedRows) > 0;
+        if ($hadWork) {
             $ctx->debug("Nuovi dati trovati, prossimo ciclo da {$this->rollingFrom} [finestra scorrevole].");
         } else {
             $ctx->debug('Nessun dato nuovo, sleep 30 minuti...');
         }
 
-        return new JobResult($processed, $ok, $skipped, $errors, $newRows > 0, $details);
+        return new JobResult($processed, $ok, $skipped, $errors, $hadWork, $details);
     }
 
     /** Ripristina il progresso della scansione dopo un riavvio (equivale al blocco pre-loop dello script). */

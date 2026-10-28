@@ -545,9 +545,45 @@ final class RagioneriaSyncJobTest extends DbTestCase
         unset($first[0]['synced_at'], $second[0]['synced_at']);
         self::assertSame($first, $second);
         self::assertTrue($r1->hadWork);
-        // hadWork == "righe INSERITE" (rowCount()==1): un update di righe esistenti non conta
+        // R1: nessun campo cambiato -> nessun lavoro (altrimenti il demone rilancerebbe senza pausa)
         self::assertFalse($r2->hadWork);
         self::assertSame(1, $r2->ok);
+    }
+
+    public function testUnchangedRescanIsNoWorkEvenWhenSyncedAtIsOld(): void
+    {
+        // R1: synced_at non deve contare come "modifica", altrimenti ogni rescan dei flussi recenti
+        // (sempre riletti, < 15 giorni) produrrebbe hadWork=true e un loop senza pausa.
+        $d = self::day(3);
+        $job = $this->job();
+        $this->queueOneFlusso('FL-A', $d);
+        $job->runOnce(new RecordingJobContext());
+        self::pdo()->exec("UPDATE flussi_rendicontazioni SET synced_at = '2020-01-01 00:00:00'");
+
+        $this->queueOneFlusso('FL-A', $d);
+        $r2 = $job->runOnce(new RecordingJobContext());
+
+        self::assertFalse($r2->hadWork);
+        self::assertSame('2020-01-01 00:00:00', $this->rows()[0]['synced_at'], 'riga invariata: synced_at non toccato');
+    }
+
+    public function testRescanWithChangedFieldsIsWork(): void
+    {
+        // R1: hadWork = righe inserite OPPURE aggiornate con modifiche
+        $d = self::day(3);
+        $job = $this->job();
+        $this->queueOneFlusso('FL-A', $d);
+        $job->runOnce(new RecordingJobContext());
+        self::pdo()->exec("UPDATE flussi_rendicontazioni SET synced_at = '2020-01-01 00:00:00'");
+
+        $this->queueList([self::item('FL-A', $d)]);
+        $changed = self::rend(1);
+        $changed['importo'] = 99.9;
+        $this->queueDetail(self::detail($d, [$changed]));
+        $r2 = $job->runOnce(new RecordingJobContext());
+
+        self::assertTrue($r2->hadWork);
+        self::assertNotSame('2020-01-01 00:00:00', $this->rows()[0]['synced_at'], 'riga cambiata: synced_at aggiornato');
     }
 
     public function testRescanUpdatesChangedFieldsWithoutDuplicating(): void

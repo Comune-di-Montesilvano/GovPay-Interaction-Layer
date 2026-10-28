@@ -19,12 +19,27 @@ class FlussiRendicontazioniRepository
     }
 
     /**
+     * Upsert; ritorna il numero di righe INSERITE.
+     *
      * @param array<int,array<string,mixed>> $rows
      */
     public function upsertBatch(array $rows): int
     {
+        return $this->upsertBatchCounts($rows)['inserted'];
+    }
+
+    /**
+     * Upsert con conteggio separato: inserted = righe nuove, updated = righe esistenti con almeno un
+     * campo cambiato (righe identiche non contano). synced_at si aggiorna solo quando la riga cambia
+     * (ON UPDATE CURRENT_TIMESTAMP della colonna), cosi' un rescan identico non risulta "modifica".
+     *
+     * @param array<int,array<string,mixed>> $rows
+     * @return array{inserted:int,updated:int}
+     */
+    public function upsertBatchCounts(array $rows): array
+    {
         if ($rows === []) {
-            return 0;
+            return ['inserted' => 0, 'updated' => 0];
         }
 
         $sql = 'INSERT INTO flussi_rendicontazioni
@@ -54,11 +69,11 @@ class FlussiRendicontazioniRepository
              descrizione_entrata = VALUES(descrizione_entrata),
              id_pendenza = VALUES(id_pendenza),
              is_govpay = VALUES(is_govpay),
-             is_multibeneficiario = VALUES(is_multibeneficiario),
-             synced_at = CURRENT_TIMESTAMP';
+             is_multibeneficiario = VALUES(is_multibeneficiario)';
 
         $stmt = $this->pdo->prepare($sql);
         $inserted = 0;
+        $updated = 0;
 
         foreach ($rows as $row) {
             $stmt->execute([
@@ -85,14 +100,17 @@ class FlussiRendicontazioniRepository
                 ':is_multibeneficiario' => $this->normalizeBoolInt($row['is_multibeneficiario'] ?? null),
             ]);
 
-            // MySQL rowCount for INSERT ... ON DUPLICATE KEY UPDATE:
-            // 1 = inserted row, 2 = duplicate row updated.
-            if ($stmt->rowCount() === 1) {
+            // MySQL rowCount for INSERT ... ON DUPLICATE KEY UPDATE (senza CLIENT_FOUND_ROWS):
+            // 1 = inserted row, 2 = duplicate row updated, 0 = duplicate row unchanged.
+            $rc = $stmt->rowCount();
+            if ($rc === 1) {
                 $inserted++;
+            } elseif ($rc === 2) {
+                $updated++;
             }
         }
 
-        return $inserted;
+        return ['inserted' => $inserted, 'updated' => $updated];
     }
 
     /**
