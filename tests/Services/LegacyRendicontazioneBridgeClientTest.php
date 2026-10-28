@@ -53,6 +53,7 @@ final class LegacyRendicontazioneBridgeClientTest extends TestCase
         $result = $bridge->invia('GERI', '3012024000000001', 'ATTO123', '2026-07-10', 55.0);
 
         $this->assertFalse($result['esito']);
-        $this->assertStringContainsString('Connection refused', $result['messaggio']);
+        // N4 (fix 8b): il messaggio finisce in rendicontazione_note -> solo classe, mai testo Guzzle
+        $this->assertSame('ConnectException', $result['messaggio']);
     }
 }

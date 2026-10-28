@@ -60,7 +60,9 @@ class LegacyRendicontazioneBridgeClient
             ];
         } catch (\Throwable $e) {
             \Sentry\captureException($e);
-            return ['esito' => false, 'messaggio' => $e->getMessage()];
+            // messaggio finisce in rendicontazione_note: solo classe + status HTTP, mai il
+            // messaggio Guzzle (URL con query, corpo upstream).
+            return ['esito' => false, 'messaggio' => ThrowableSummary::of($e)];
         }
     }
 }

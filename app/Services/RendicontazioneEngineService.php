@@ -61,11 +61,13 @@ class RendicontazioneEngineService
                 $url = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idPendenza);
                 $response = $this->govPayClient->request('GET', $url);
                 $pendenza = json_decode((string)$response->getBody(), true);
-                if (!is_array($pendenza)) {
-                    throw new \RuntimeException('Risposta GovPay non valida');
-                }
             } catch (\Throwable $e) {
-                $this->repo->markErrore($rigaId, 'Errore fetch pendenza GovPay: ' . $e->getMessage());
+                // Classe + status HTTP: mai il messaggio (URL/corpo upstream).
+                $this->repo->markErrore($rigaId, 'Errore fetch pendenza GovPay: ' . ThrowableSummary::of($e));
+                return;
+            }
+            if (!is_array($pendenza)) {
+                $this->repo->markErrore($rigaId, 'Errore fetch pendenza GovPay: Risposta GovPay non valida');
                 return;
             }
 
@@ -160,7 +162,7 @@ class RendicontazioneEngineService
         } catch (\Throwable $e) {
             Logger::getInstance()->error("Errore durante processaRigaSpecifica per riga {$rigaId}: " . $e->getMessage());
             try {
-                $this->repo->markErrore($rigaId, 'Errore elaborazione riga: ' . $e->getMessage());
+                $this->repo->markErrore($rigaId, 'Errore elaborazione riga: ' . ThrowableSummary::of($e));
             } catch (\Throwable $_) {
                 // ignore
             }

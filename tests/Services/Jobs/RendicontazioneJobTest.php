@@ -561,13 +561,14 @@ final class RendicontazioneJobTest extends DbTestCase
     {
         $this->setting('scansioni_quiete_soglia', '99');
         $this->regola('IUV_PREFIX', '006', 'GERI');
-        $this->bridgeResponses = [new ConnectException('timeout', new Request('POST', ''))];
+        $this->bridgeResponses = [new ConnectException('timeout https://bridge.example.test/?token=segreto', new Request('POST', ''))];
         $id = $this->riga(1, ['id_pendenza' => 'EXT-1', 'iuv' => '00607000007021733']);
 
         $this->runJob();
 
         $r = $this->row($id);
         $this->assertSame('ERRORE', $r['rendicontazione_stato']);
+        $this->assertSame('Bridge GERI: ConnectException', $r['rendicontazione_note'], 'N4: mai il messaggio della eccezione');
         $this->assertSame(1, (int)$r['rendicontazione_tentativi_geri']);
         $this->assertCount(1, $this->bridgeCalls);
     }
@@ -578,13 +579,14 @@ final class RendicontazioneJobTest extends DbTestCase
     {
         $this->setting('scansioni_quiete_soglia', '99');
         $id = $this->riga(1);
-        $this->pendenze[(string)$this->row($id)['id_pendenza']] = new Response(500, [], '{"descrizione":"x"}');
+        $this->pendenze[(string)$this->row($id)['id_pendenza']] = new Response(500, [], '{"descrizione":"segreto RSSMRA"}');
 
         $res = $this->runJob();
 
         $r = $this->row($id);
         $this->assertSame('ERRORE', $r['rendicontazione_stato']);
-        $this->assertStringStartsWith('Errore fetch pendenza GovPay: ', (string)$r['rendicontazione_note']);
+        // N4 (fix 8b): classe eccezione + status HTTP, mai messaggio/URL/corpo upstream
+        $this->assertSame('Errore fetch pendenza GovPay: ServerException (HTTP 500)', (string)$r['rendicontazione_note']);
         $this->assertSame(1, $res->processed);
         $this->assertSame(0, $res->errors, 'errori per-riga restano solo su DB (stato ERRORE), non in errorDetails');
 
