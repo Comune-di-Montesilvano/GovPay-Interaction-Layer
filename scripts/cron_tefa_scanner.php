@@ -87,7 +87,7 @@ if (!$dbReady) {
     exit(1);
 }
 
-if (SettingsRepository::get('backoffice', 'tefa_enabled', 'false') !== 'true') {
+if (!TefaScanJob::isEnabled()) {
     $log('TEFA non abilitato. Uscita.');
     exit(0);
 }

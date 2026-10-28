@@ -402,44 +402,13 @@ final class TefaScanJobTest extends DbTestCase
         self::assertNotNull($t['is_multibeneficiario']);
     }
 
-    public function testScriptExitsImmediatelyWhenTefaIsNotEnabled(): void
+    public function testGateIsEnabledOnlyWhenSettingIsExactlyTrue(): void
     {
-        // Il gate `backoffice.tefa_enabled` resta nello script: lo si verifica eseguendolo come sottoprocesso
-        // sul DB di test (senza gate attivo lo script entrerebbe nel loop infinito).
-        $script = dirname(__DIR__, 3) . '/scripts/cron_tefa_scanner.php';
-        $env = array_merge(getenv(), [
-            'DB_HOST' => (string)getenv('DB_HOST'),
-            'DB_PORT' => (string)getenv('DB_PORT'),
-            'DB_NAME' => (string)getenv('DB_NAME'),
-            'DB_USER' => (string)getenv('DB_USER'),
-            'DB_PASSWORD' => (string)getenv('DB_PASSWORD'),
-            // DSN fittizio non vuoto: impedisce a Dotenv (.env locale) di impostarne uno reale.
-            'SENTRY_DSN' => 'http://key@127.0.0.1:9/1',
-        ]);
-        $args = [PHP_BINARY];
-        if (extension_loaded('pdo_mysql')) {
-            $args[] = '-d';
-            $args[] = 'extension=pdo_mysql';
-        }
-        $args[] = $script;
-
-        foreach ([null, 'false'] as $value) {
-            self::pdo()->exec('TRUNCATE TABLE settings');
-            SettingsRepository::flush();
-            if ($value !== null) {
-                SettingsRepository::set('backoffice', 'tefa_enabled', $value);
-            }
-            $proc = proc_open($args, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, dirname($script, 2), $env);
-            self::assertIsResource($proc);
-            $out = (string)stream_get_contents($pipes[1]);
-            stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            $code = proc_close($proc);
-
-            self::assertSame(0, $code, (string)$value);
-            self::assertStringContainsString('TEFA non abilitato. Uscita.', $out);
-            self::assertStringNotContainsString('Loop avviato', $out);
+        // Gate usato da cron_tefa_scanner.php prima del loop (assente/'false'/altro -> script esce).
+        self::assertFalse(TefaScanJob::isEnabled(), 'setting assente');
+        foreach (['false' => false, '' => false, 'TRUE' => false, '1' => false, 'true' => true] as $value => $expected) {
+            SettingsRepository::set('backoffice', 'tefa_enabled', (string)$value);
+            self::assertSame($expected, TefaScanJob::isEnabled(), "valore '{$value}'");
         }
     }
 }

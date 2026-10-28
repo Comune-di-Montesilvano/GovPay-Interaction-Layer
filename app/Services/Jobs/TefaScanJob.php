@@ -25,6 +25,12 @@ final class TefaScanJob
         private readonly string $idDominio
     ) {}
 
+    /** Gate del demone: attivo solo se `backoffice.tefa_enabled` vale esattamente 'true'. */
+    public static function isEnabled(): bool
+    {
+        return SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+    }
+
     public function runOnce(JobContext $ctx): JobResult
     {
         $idDominio = $this->idDominio;
