@@ -13,8 +13,10 @@ name: Pulizia immagini GHCR
 # Esclusi sempre i package di cache (*-cache, *-buildcache, php-common-cache): non sono nella
 # matrice e lo step si rifiuta di girarci sopra.
 #
-# DRY-RUN: lo schedule gira in dry-run finche' un dry-run manuale non e' stato controllato
-# (poi cambiare SCHEDULE_DRY_RUN sotto in 'false'). Il dispatch parte in dry-run per default.
+# DRY-RUN: lo schedule cancella davvero (SCHEDULE_DRY_RUN 'false' dal 2026-10-28, dopo dry-run
+# manuale controllato: solo digest senza tag). Il dispatch parte in dry-run per default.
+# Il repo deve avere ruolo Admin su ogni package (Package settings → Manage Actions access),
+# altrimenti DELETE → 403.
 on:
   schedule:
     - cron: "0 3 * * 0"
@@ -35,7 +37,7 @@ concurrency:
 
 env:
   # Schedule in dry-run finche' non validato (vedi intestazione).
-  SCHEDULE_DRY_RUN: 'true'
+  SCHEDULE_DRY_RUN: 'false'
 
 jobs:
   cleanup:
