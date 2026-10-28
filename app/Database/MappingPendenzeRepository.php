@@ -607,40 +607,50 @@ class MappingPendenzeRepository
     /**
      * Assegna in blocco il fornitore L1 a tutte le righe con IUV che inizia per $prefix.
      * Processa sia righe PENDING che NO_MATCH: se un pattern attivo le copre, vengono
-     * promosse a PROCESSED e rimesse in coda a L2 (vocab_stato = PENDING).
+     * promosse a PROCESSED; le NO_MATCH vengono anche rimesse in coda a L2
+     * (vocab_stato = PENDING, cod_entrata = NULL).
+     *
+     * Due UPDATE separati (uno per stato di partenza) invece di IF(f.mapping_stato ...) nello
+     * stesso SET: in un UPDATE multi-tabella MariaDB la IF puo' leggere il valore gia' aggiornato
+     * a seconda del piano di esecuzione, e il reset del vocab saltava (difetto M4).
      * Restituisce righe aggiornate.
      */
     public function bulkAssignL1(string $idDominio, string $prefix, string $fornitore): int
     {
         $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
 
-        if ($tefaEnabled) {
-            $sql = "UPDATE flussi_rendicontazioni f
-                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
-                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+        $joins = "INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'"
+            . ($tefaEnabled
+                ? "
+                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'"
+                : '');
+        $where = "WHERE f.id_dominio = :dom
+                      AND f.is_govpay = 0
+                      AND f.iuv LIKE :prefix";
+
+        $sqlNoMatch = "UPDATE flussi_rendicontazioni f
+                    $joins
                     SET f.mapping_stato = 'PROCESSED',
                         f.fornitore     = :fornitore,
-                        f.vocab_stato   = IF(f.mapping_stato = 'NO_MATCH', 'PENDING', f.vocab_stato),
-                        f.cod_entrata   = IF(f.mapping_stato = 'NO_MATCH', NULL, f.cod_entrata)
-                    WHERE f.id_dominio = :dom
-                      AND f.is_govpay = 0
-                      AND f.mapping_stato IN ('PENDING', 'NO_MATCH')
-                      AND f.iuv LIKE :prefix";
-        } else {
-            $sql = "UPDATE flussi_rendicontazioni f
-                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                        f.vocab_stato   = 'PENDING',
+                        f.cod_entrata   = NULL
+                    $where
+                      AND f.mapping_stato = 'NO_MATCH'";
+        $sqlPending = "UPDATE flussi_rendicontazioni f
+                    $joins
                     SET f.mapping_stato = 'PROCESSED',
-                        f.fornitore     = :fornitore,
-                        f.vocab_stato   = IF(f.mapping_stato = 'NO_MATCH', 'PENDING', f.vocab_stato),
-                        f.cod_entrata   = IF(f.mapping_stato = 'NO_MATCH', NULL, f.cod_entrata)
-                    WHERE f.id_dominio = :dom
-                      AND f.is_govpay = 0
-                      AND f.mapping_stato IN ('PENDING', 'NO_MATCH')
-                      AND f.iuv LIKE :prefix";
+                        f.fornitore     = :fornitore
+                    $where
+                      AND f.mapping_stato = 'PENDING'";
+
+        $params = [':dom' => $idDominio, ':fornitore' => $fornitore, ':prefix' => $prefix . '%'];
+        $n = 0;
+        foreach ([$sqlNoMatch, $sqlPending] as $sql) {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            $n += $stmt->rowCount();
         }
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':dom' => $idDominio, ':fornitore' => $fornitore, ':prefix' => $prefix . '%']);
-        return $stmt->rowCount();
+        return $n;
     }
 
     /**

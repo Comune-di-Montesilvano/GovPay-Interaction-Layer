@@ -279,12 +279,59 @@ final class MappingL1JobTest extends DbTestCase
 
         $res = $this->job()->runOnce(new RecordingJobContext());
 
-        // difetto noto: il reset vocab_stato->PENDING / cod_entrata->NULL dell'UPDATE multi-tabella dipende dal piano
-        // di esecuzione MariaDB (a volte la IF vede mapping_stato gia' aggiornato): non pinnato.
-        self::assertSame(['PROCESSED', 'A'], [$this->st($nm)[0], $this->st($nm)[2]], 'NO_MATCH -> PROCESSED col fornitore');
+        // M4: il reset si calcola sul valore PRECEDENTE di mapping_stato, indipendente dal piano MariaDB
+        self::assertSame(['PROCESSED', 'PENDING', 'A', null], $this->st($nm), 'NO_MATCH -> PROCESSED, vocab rimesso in coda');
         self::assertSame(['PROCESSED', 'PENDING', 'A', 'KEEP'], $this->st($pend), 'PENDING: vocab e cod invariati');
         self::assertSame(['PROCESSED', 'PROCESSED', 'Altro', 'X'], $this->st($done), 'gia PROCESSED: non toccata');
         self::assertSame(2, $res->ok);
+    }
+
+    /**
+     * M4: forme di dati diverse (solo NO_MATCH, NO_MATCH dopo/prima di PENDING, molte righe, TEFA on/off,
+     * vocab gia' PROCESSED) -> il reset deve valere sempre, non solo con certi piani di esecuzione.
+     *
+     * @return array<string,array{bool,list<array{string,string,?string}>}> nome => [tefa, righe [mapping, vocab, cod]]
+     */
+    public static function repromotionShapes(): array
+    {
+        $many = [];
+        for ($i = 0; $i < 40; $i++) {
+            $many[] = $i % 3 === 0 ? ['PENDING', 'PENDING', 'KEEP'] : ['NO_MATCH', $i % 2 ? 'NO_MATCH' : 'PROCESSED', 'OLD'];
+        }
+        return [
+            'solo NO_MATCH'            => [false, [['NO_MATCH', 'NO_MATCH', 'OLD']]],
+            'solo NO_MATCH vocab PROC' => [false, [['NO_MATCH', 'PROCESSED', 'OLD']]],
+            'NO_MATCH poi PENDING'     => [false, [['NO_MATCH', 'NO_MATCH', 'OLD'], ['PENDING', 'PENDING', 'KEEP']]],
+            'PENDING poi NO_MATCH'     => [false, [['PENDING', 'PENDING', 'KEEP'], ['NO_MATCH', 'NO_MATCH', 'OLD']]],
+            'molte righe miste'        => [false, $many],
+            'TEFA solo NO_MATCH'       => [true, [['NO_MATCH', 'NO_MATCH', 'OLD']]],
+            'TEFA misto'               => [true, [['PENDING', 'PENDING', 'KEEP'], ['NO_MATCH', 'NO_MATCH', 'OLD'], ['NO_MATCH', 'PROCESSED', 'OLD']]],
+            'TEFA molte righe'         => [true, $many],
+        ];
+    }
+
+    /** @param list<array{string,string,?string}> $rows */
+    #[\PHPUnit\Framework\Attributes\DataProvider('repromotionShapes')]
+    public function testRepromotionResetIsDeterministicAcrossDataShapes(bool $tefa, array $rows): void
+    {
+        if ($tefa) {
+            $this->tefaOn();
+        }
+        $this->pattern('11111', 'A', null, 1);
+        $iurs = [];
+        foreach ($rows as $i => [$mapping, $vocab, $cod]) {
+            $iurs[] = [$this->riga($i + 1, '11111' . str_pad((string)($i + 1), 12, '0', STR_PAD_LEFT), [
+                'mapping' => $mapping, 'vocab' => $vocab, 'cod' => $cod, 'tefa' => $tefa ? 'SKIPPED' : null,
+            ]), $mapping, $vocab, $cod];
+        }
+
+        $res = $this->job()->runOnce(new RecordingJobContext());
+
+        foreach ($iurs as [$iur, $mapping, $vocab, $cod]) {
+            $expected = $mapping === 'NO_MATCH' ? ['PROCESSED', 'PENDING', 'A', null] : ['PROCESSED', $vocab, 'A', $cod];
+            self::assertSame($expected, $this->st($iur), "riga $iur (prima: $mapping/$vocab)");
+        }
+        self::assertSame(count($rows), $res->ok);
     }
 
     public function testIneligibleRowsAreNeverTouched(): void
