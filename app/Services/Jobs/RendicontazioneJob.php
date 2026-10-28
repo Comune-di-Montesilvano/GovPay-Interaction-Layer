@@ -247,9 +247,14 @@ final class RendicontazioneJob
         if ($value === $previous) {
             return;
         }
-        $this->pdo->prepare(
-            'INSERT INTO settings (section, key_name, value, encrypted) VALUES (:s, :k, :v, 0)
-             ON DUPLICATE KEY UPDATE value = :v2'
-        )->execute([':s' => self::COUNTER_SECTION, ':k' => self::COUNTER_KEY, ':v' => (string)$value, ':v2' => (string)$value]);
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO settings (section, key_name, value, encrypted) VALUES (:s, :k, :v, 0)
+                 ON DUPLICATE KEY UPDATE value = :v2'
+            )->execute([':s' => self::COUNTER_SECTION, ':k' => self::COUNTER_KEY, ':v' => (string)$value, ':v2' => (string)$value]);
+        } catch (\Throwable $e) {
+            // Best-effort come la lettura: un errore DB sul contatore non deve interrompere il ciclo.
+            \App\Logger::getInstance()->warning('Rendicontazione: salvataggio contatore cicli quieti fallito', ['error' => $e->getMessage()]);
+        }
     }
 }

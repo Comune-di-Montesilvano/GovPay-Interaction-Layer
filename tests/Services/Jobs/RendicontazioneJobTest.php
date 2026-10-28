@@ -994,4 +994,35 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->runJob();
         $this->assertSame('1', $this->counter());
     }
+
+    public function testScritturaContatoreFallitaNonLanciaERitornaRisultato(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '99');
+        $this->riga(1);
+        $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', getenv('DB_HOST'), getenv('DB_PORT'), getenv('DB_NAME'));
+        $failing = new class($dsn, (string)getenv('DB_USER'), (string)getenv('DB_PASSWORD')) extends \PDO {
+            #[\ReturnTypeWillChange]
+            public function prepare(string $query, array $options = []): \PDOStatement|false
+            {
+                if (str_contains($query, 'INSERT INTO settings')) {
+                    throw new \PDOException('db blip');
+                }
+                return parent::prepare($query, $options);
+            }
+        };
+        $failing->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $repo = new RendicontazioneRepository(self::pdo());
+        $client = $this->govPayClient();
+        $bridge = $this->bridge();
+        $job = new RendicontazioneJob(
+            $repo,
+            static fn(): RendicontazioneEngineService => new RendicontazioneEngineService($repo, $bridge, $client),
+            new UserGroupRepository(), new UserRepository(), $this->mailer, self::DOMINIO, self::A2A, $failing
+        );
+
+        $res = $job->runOnce(new RecordingJobContext());
+
+        $this->assertSame(1, $res->processed);
+        $this->assertTrue($res->hadWork);
+    }
 }
