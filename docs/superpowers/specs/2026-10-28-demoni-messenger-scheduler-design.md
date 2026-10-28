@@ -82,8 +82,10 @@ L'utente fornisce un dump del DB di produzione per scoprire casistiche reali. Re
   struttura, esecuzione e osservabilità.
 - Redis/BullMQ o code esterne.
 - Hardening runtime (spec successiva), salvo che il worker nasce già `www-data`.
-- Correggere bug trovati dai test di caratterizzazione: si fissano come "difetto noto" nel test
-  e si segnalano all'utente (stessa prassi di `MassivoCsvParser`).
+- ~~Correggere bug trovati dai test di caratterizzazione~~ — **cambiato dall'utente il
+  2026-10-28: i difetti trovati si correggono.** Prima il test fissa il comportamento attuale
+  ("difetto noto", commit di refactor), poi un commit `fix:` dedicato per difetto capovolge il
+  test (RED→GREEN). Refactor e cambi di comportamento restano in commit separati.
 
 ## Anti-obiettivi
 
