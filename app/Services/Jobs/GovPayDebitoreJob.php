@@ -9,7 +9,8 @@ use App\Services\GovPayDebitoreService;
 /**
  * Una iterazione del demone GovPay debitore (corpo del loop di
  * cron_govpay_debitore_scanner.php): prende un batch di IUR is_govpay=1 senza
- * biz_ricevute, interroga GovPay per ogni pendenza e salva il debitore.
+ * biz_ricevute (o con un tentativo fallito ERROR piu' vecchio di 60 minuti), interroga
+ * GovPay per ogni pendenza e salva il debitore. Ogni errore registra una riga ERROR.
  *
  * Pausa di idle (15 minuti), stop file e gestione dell'errore di getBatch (Sentry +
  * log + sleep 30s) restano nello script: un'eccezione di getBatch si propaga da
@@ -69,6 +70,12 @@ final class GovPayDebitoreJob
                 $result = $this->service->enrichOne($row);
             } catch (\Throwable $e) {
                 $ctx->debug("  IUR={$iur}: eccezione - " . $e->getMessage());
+                // Registra il tentativo fallito (backoff): senza, la riga tornerebbe a ogni giro.
+                try {
+                    $this->service->recordError($row, 'Eccezione ' . get_class($e));
+                } catch (\Throwable $recordErr) {
+                    $ctx->debug("  IUR={$iur}: registrazione errore fallita - " . get_class($recordErr));
+                }
                 $processed++;
                 $errors++;
                 $details[] = ['ref' => $iur, 'reason' => 'Eccezione ' . get_class($e)];
@@ -92,7 +99,7 @@ final class GovPayDebitoreJob
                     break;
                 case 'ERROR':
                     $errors++;
-                    $details[] = ['ref' => $iur, 'reason' => self::safeReason($result['reason'])];
+                    $details[] = ['ref' => $iur, 'reason' => GovPayDebitoreService::safeReason($result['reason'])];
                     $ctx->debug("  IUR={$iur}: errore - {$result['reason']}");
                     break;
             }
@@ -104,17 +111,5 @@ final class GovPayDebitoreJob
 
         $ctx->debug("Batch completato ({$total} record). Avvio ciclo successivo...");
         return new JobResult($processed, $ok, $skipped, $errors, true, $details);
-    }
-
-    /** Riduce il motivo d'errore a testo fisso/status code: mai corpi di risposta upstream. */
-    private static function safeReason(string $reason): string
-    {
-        if (preg_match('/^HTTP (\d{3}):/', $reason, $m) === 1) {
-            return 'HTTP ' . $m[1];
-        }
-        if (str_starts_with($reason, 'Risposta GovPay non valida')) {
-            return 'Risposta GovPay non valida';
-        }
-        return 'Errore chiamata GovPay';
     }
 }

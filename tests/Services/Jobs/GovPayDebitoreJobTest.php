@@ -263,7 +263,26 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertFalse($res2->hadWork);
     }
 
-    public function testOtherClientErrorIsErrorWithoutInsertAndRowIsRetried(): void
+    private function backdateBiz(string $iur, int $minutes): void
+    {
+        self::pdo()->prepare('UPDATE biz_ricevute SET updated_at = NOW() - INTERVAL ? MINUTE WHERE iur = ?')
+            ->execute([$minutes, $iur]);
+    }
+
+    /** Riga ERROR registrata per il tentativo fallito: solo motivo sicuro, nessun dato debitore. */
+    private function assertErrorRow(string $iur, string $msg): void
+    {
+        $row = $this->biz($iur);
+        self::assertNotNull($row);
+        self::assertSame('ERROR', $row['stato']);
+        self::assertSame($msg, $row['error_msg']);
+        self::assertNull($row['descrizione']);
+        self::assertNull($row['cf_debitore']);
+        self::assertNull($row['nominativo_debitore']);
+        self::assertStringNotContainsString('segreto-upstream', (string)$row['error_msg']);
+    }
+
+    public function testOtherClientErrorIsRecordedAndRetriedOnlyAfterSixtyMinutes(): void
     {
         $iur = $this->flusso(1);
         $res = $this->job([self::http(403)])->runOnce(new RecordingJobContext());
@@ -272,38 +291,92 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertSame(1, $res->errors);
         self::assertSame(0, $res->ok);
         self::assertTrue($res->hadWork);
-        self::assertNull($this->biz($iur));
         self::assertSame([['ref' => $iur, 'reason' => 'HTTP 403']], $res->errorDetails);
         self::assertStringNotContainsString('segreto-upstream', $res->errorDetails[0]['reason']);
+        // D1: tentativo fallito registrato (ERROR + timestamp)
+        $this->assertErrorRow($iur, 'HTTP 403');
 
-        // Difetto noto: nessun backoff/stato errore, la riga resta in coda e viene richiesta al giro dopo
-        // (e a oltranza: un errore permanente tiene il demone in busy-loop con hadWork=true).
-        $res2 = $this->job([self::http(403)])->runOnce(new RecordingJobContext());
-        self::assertSame(1, $res2->errors);
-        self::assertTrue($res2->hadWork);
+        // Errore recente (< 60 min): fuori dal batch, nessuna chiamata, nessun busy-loop.
+        $res2 = $this->job([])->runOnce(new RecordingJobContext());
+        self::assertSame(0, $res2->processed);
+        self::assertFalse($res2->hadWork);
+        $this->backdateBiz($iur, 59);
+        self::assertFalse($this->job([])->runOnce(new RecordingJobContext())->hadWork);
+        self::assertCount(1, $this->requests);
+
+        // Dopo 60 minuti la riga torna nel batch; successo -> PROCESSED, error_msg azzerato.
+        $this->backdateBiz($iur, 61);
+        $res3 = $this->job([self::pendenza()])->runOnce(new RecordingJobContext());
+        self::assertSame(1, $res3->ok);
+        self::assertCount(2, $this->requests);
+        $row = $this->biz($iur);
+        self::assertSame('PROCESSED', $row['stato']);
+        self::assertNull($row['error_msg']);
+        self::assertSame(Synthetic::cf(1), $row['cf_debitore']);
     }
 
-    public function testServerErrorIsGenericErrorWithoutInsert(): void
+    public function testRecentlyErroredRowsDoNotStarveOthers(): void
+    {
+        for ($n = 1; $n <= 101; $n++) {
+            // la 101 (piu' vecchia) resta fuori dal primo batch
+            $this->flusso($n, ['data_pagamento' => $n === 101 ? '2026-01-01' : '2026-03-01']);
+        }
+        $this->job(array_fill(0, 100, self::http(500)))->runOnce(new RecordingJobContext());
+
+        $res = $this->job([self::pendenza()])->runOnce(new RecordingJobContext());
+
+        self::assertSame(1, $res->processed);
+        self::assertSame(1, $res->ok);
+        self::assertSame('PROCESSED', $this->biz(Synthetic::iur(101))['stato']);
+        self::assertCount(101, $this->requests);
+    }
+
+    public function testErroredGovPayRowsAreNotResetByBizRetry(): void
+    {
+        // Le righe ERROR del debitore (IUR is_govpay=1) non devono tornare PENDING per il demone Biz.
+        $iur = $this->flusso(1);
+        $this->job([self::http(403)])->runOnce(new RecordingJobContext());
+        $this->backdateBiz($iur, 120);
+
+        $bizRepo = new BizRepository(self::pdo());
+        self::assertSame(0, $bizRepo->resetErrors(self::DOMINIO, 60));
+        self::assertSame(0, $bizRepo->resetErrors(self::DOMINIO));
+        self::assertSame('ERROR', $this->biz($iur)['stato']);
+    }
+
+    public function testQueueCountIncludesErroredRows(): void
+    {
+        $this->flusso(1);
+        $this->flusso(2);
+        $this->job([self::http(403), self::pendenza()])->runOnce(new RecordingJobContext());
+
+        $flussi = new FlussiRendicontazioniRepository(self::pdo());
+        // la riga in errore resta "da scansionare" (anche se in backoff), quella riuscita no
+        self::assertSame(1, $flussi->countUnprocessedGovPayForDebitore(self::DOMINIO));
+        self::assertSame([], $flussi->getUnprocessedGovPayForDebitore(self::DOMINIO, 100));
+    }
+
+    public function testServerErrorIsGenericErrorAndRecorded(): void
     {
         $iur = $this->flusso(1);
         $ctx = new RecordingJobContext();
         $res = $this->job([self::http(500)])->runOnce($ctx);
 
         self::assertSame(1, $res->errors);
-        self::assertNull($this->biz($iur));
+        $this->assertErrorRow($iur, 'Errore chiamata GovPay');
         self::assertSame([['ref' => $iur, 'reason' => 'Errore chiamata GovPay']], $res->errorDetails);
         // il log (non l'errorDetails) riporta ancora il messaggio Guzzle
         self::assertNotEmpty(array_filter($ctx->messages, fn (string $m) => str_contains($m, "IUR={$iur}: errore - ")));
     }
 
-    public function testConnectionExceptionIsErrorWithoutInsert(): void
+    public function testConnectionExceptionIsErrorAndRecorded(): void
     {
         $iur = $this->flusso(1);
         $res = $this->job([new ConnectException('boom', new Request('GET', 'https://govpay.example.test'))])
             ->runOnce(new RecordingJobContext());
 
         self::assertSame(1, $res->errors);
-        self::assertNull($this->biz($iur));
+        $this->assertErrorRow($iur, 'Errore chiamata GovPay');
         self::assertSame([['ref' => $iur, 'reason' => 'Errore chiamata GovPay']], $res->errorDetails);
     }
 
@@ -317,8 +390,8 @@ final class GovPayDebitoreJobTest extends DbTestCase
         ])->runOnce(new RecordingJobContext());
 
         self::assertSame(2, $res->errors);
-        self::assertNull($this->biz($a));
-        self::assertNull($this->biz($b));
+        $this->assertErrorRow($a, 'Risposta GovPay non valida');
+        $this->assertErrorRow($b, 'Risposta GovPay non valida');
         self::assertSame('Risposta GovPay non valida', $res->errorDetails[0]['reason']);
         self::assertSame('Risposta GovPay non valida', $res->errorDetails[1]['reason']);
     }
@@ -462,6 +535,11 @@ final class GovPayDebitoreJobTest extends DbTestCase
                 }
                 return ['status' => 'PROCESSED', 'reason' => ''];
             }
+        );
+        // D1: anche l'eccezione registra il tentativo fallito (solo classe, mai il messaggio)
+        $service->expects(self::once())->method('recordError')->with(
+            self::callback(static fn (array $row): bool => $row['iur'] === Synthetic::iur(1)),
+            'Eccezione RuntimeException'
         );
 
         $res = $this->job([], $service)->runOnce(new RecordingJobContext());

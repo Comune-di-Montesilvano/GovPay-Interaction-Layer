@@ -625,8 +625,12 @@ class FlussiRendicontazioniRepository
         return $stmt->rowCount();
     }
 
+    /** Backoff del demone GovPay debitore: una riga ERROR torna in coda dopo questi minuti. */
+    public const DEBITORE_ERROR_RETRY_MINUTES = 60;
+
     /**
-     * IUR GovPay senza entry in biz_ricevute — coda per il demone cron_govpay_debitore_scanner.
+     * IUR GovPay senza entry in biz_ricevute, o con un tentativo fallito (ERROR) piu' vecchio di
+     * DEBITORE_ERROR_RETRY_MINUTES — coda per il demone cron_govpay_debitore_scanner.
      * @return array<int,array<string,mixed>>
      */
     public function getUnprocessedGovPayForDebitore(string $idDominio, int $limit, ?string $minDate = null): array
@@ -643,7 +647,9 @@ class FlussiRendicontazioniRepository
                   AND f.is_govpay = 1
                   AND f.id_pendenza IS NOT NULL
                   AND f.id_pendenza != \'\'
-                  AND b.id IS NULL';
+                  AND (b.id IS NULL
+                       OR (b.stato = \'ERROR\'
+                           AND b.updated_at < NOW() - INTERVAL ' . self::DEBITORE_ERROR_RETRY_MINUTES . ' MINUTE))';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND f.data_pagamento >= :min_date';
@@ -662,6 +668,7 @@ class FlussiRendicontazioniRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /** Da arricchire: senza biz_ricevute o con tentativo fallito (ERROR, anche se in backoff). */
     public function countUnprocessedGovPayForDebitore(string $idDominio, ?string $minDate = null): int
     {
         $sql = 'SELECT COUNT(DISTINCT f.iur)
@@ -673,7 +680,7 @@ class FlussiRendicontazioniRepository
                   AND f.is_govpay = 1
                   AND f.id_pendenza IS NOT NULL
                   AND f.id_pendenza != \'\'
-                  AND b.id IS NULL';
+                  AND (b.id IS NULL OR b.stato = \'ERROR\')';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND f.data_pagamento >= :min_date';

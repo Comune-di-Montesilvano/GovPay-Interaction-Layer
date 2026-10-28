@@ -61,13 +61,13 @@ class GovPayDebitoreService
                 $this->bizRepo->insertGovPayProcessed($this->baseRecord($row));
                 return ['status' => 'SKIPPED', 'reason' => 'Pendenza non trovata in GovPay (404)'];
             }
-            return ['status' => 'ERROR', 'reason' => "HTTP $code: " . mb_substr($e->getMessage(), 0, 200)];
+            return $this->fail($row, "HTTP $code: " . mb_substr($e->getMessage(), 0, 200));
         } catch (\Throwable $e) {
-            return ['status' => 'ERROR', 'reason' => mb_substr($e->getMessage(), 0, 200)];
+            return $this->fail($row, mb_substr($e->getMessage(), 0, 200));
         }
 
         if (!is_array($data)) {
-            return ['status' => 'ERROR', 'reason' => 'Risposta GovPay non valida (non JSON array)'];
+            return $this->fail($row, 'Risposta GovPay non valida (non JSON array)');
         }
 
         $soggetto    = is_array($data['soggettoPagatore'] ?? null) ? $data['soggettoPagatore'] : null;
@@ -91,6 +91,39 @@ class GovPayDebitoreService
         ]);
 
         return ['status' => 'PROCESSED', 'reason' => ''];
+    }
+
+    /**
+     * Registra un tentativo fallito (riga biz_ricevute ERROR + timestamp): la riga esce dalla coda
+     * per FlussiRendicontazioniRepository::DEBITORE_ERROR_RETRY_MINUTES, poi viene ritentata.
+     * @param array<string,mixed> $row
+     * @param string $safeReason motivo gia' ripulito (mai corpi/messaggi upstream)
+     */
+    public function recordError(array $row, string $safeReason): void
+    {
+        $this->bizRepo->upsertGovPayError($this->baseRecord($row), $safeReason);
+    }
+
+    /** Riduce il motivo d'errore a testo fisso/status code: mai corpi di risposta upstream. */
+    public static function safeReason(string $reason): string
+    {
+        if (preg_match('/^HTTP (\d{3}):/', $reason, $m) === 1) {
+            return 'HTTP ' . $m[1];
+        }
+        if (str_starts_with($reason, 'Risposta GovPay non valida')) {
+            return 'Risposta GovPay non valida';
+        }
+        return 'Errore chiamata GovPay';
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array{status:string,reason:string}
+     */
+    private function fail(array $row, string $reason): array
+    {
+        $this->recordError($row, self::safeReason($reason));
+        return ['status' => 'ERROR', 'reason' => $reason];
     }
 
     /**
