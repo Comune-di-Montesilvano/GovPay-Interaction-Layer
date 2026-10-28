@@ -6,6 +6,7 @@
     "license": "proprietary",
     "require": {
         "php": "^8.3",
+        "doctrine/dbal": "^4.0",
         "govpay/backoffice-client": "dev-main",
         "govpay/pagamenti-client": "dev-main",
         "govpay/pendenze-client": "dev-main",
@@ -20,8 +21,13 @@
         "slim/psr7": "^1.6",
         "slim/slim": "^4.13",
         "slim/twig-view": "^3.3",
+        "symfony/console": "^8.0",
+        "symfony/doctrine-messenger": "^8.0",
+        "symfony/lock": "^8.0",
         "symfony/mailer": "^8.0",
+        "symfony/messenger": "^8.0",
         "symfony/mime": "^8.0",
+        "symfony/scheduler": "^8.0",
         "twig/twig": "^3.0",
         "vlucas/phpdotenv": "^5.6"
     },
