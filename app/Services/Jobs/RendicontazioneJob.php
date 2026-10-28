@@ -150,11 +150,14 @@ final class RendicontazioneJob
         $gestite      = array_values(array_filter($nonNotificate, static fn($r) => $r['rendicontazione_stato'] !== 'IN_ATTESA_CONFERMA'));
 
         $righeOperatoreInviate = 0;
-        // Id delle righe effettivamente incluse in un digest INVIATO (operatore o admin).
-        // Solo queste vengono marcate rendicontazione_notificato=1: una riga il cui
-        // cod_entrata non matcha alcun gruppo (o GESTITO con notifica_admin_auto=false)
-        // resta non marcata e ricompare a ogni ciclo finche' la configurazione non la copre.
+        // Id delle righe effettivamente incluse in un digest INVIATO (operatore o admin): marcate
+        // rendicontazione_notificato=1. Le righe destinate a qualcuno ma con invio fallito/SKIPPED
+        // restano non marcate (ritentate al prossimo digest).
         $idsNotificati = [];
+        // Id delle righe che, con la configurazione attuale, hanno almeno un destinatario (gruppo
+        // o admin). Le altre (N1) vengono marcate notificate senza mail: altrimenti verrebbero
+        // ripescate a ogni digest per sempre.
+        $idsDestinati = [];
 
         $baseUrlVista = rtrim((string)Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''), '/') . '/rendicontazione/da-confermare';
 
@@ -177,6 +180,9 @@ final class RendicontazioneJob
 
             if (empty($righeDaConfermareGruppo) && empty($righeInformativeGruppo)) {
                 continue;
+            }
+            foreach (array_merge($righeDaConfermareGruppo, $righeInformativeGruppo) as $r) {
+                $idsDestinati[(int)$r['id']] = true;
             }
 
             $emails = $this->groupRepo->getMemberEmails($groupId);
@@ -208,6 +214,9 @@ final class RendicontazioneJob
             $rawAdminEmails = (string)SettingsRepository::get('rendicontazione', 'admin_emails', '');
             $adminEmails = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/', $rawAdminEmails))));
             if (!empty($adminEmails) && !empty($gestite)) {
+                foreach ($gestite as $r) {
+                    $idsDestinati[(int)$r['id']] = true;
+                }
                 $esitoAdmin = $this->mailer->sendRendicontazioneAdminDigest(array_values($adminEmails), $gestite);
                 if (($esitoAdmin['esito'] ?? '') === 'OK') {
                     $righeAdminInviate = count($gestite);
@@ -221,7 +230,18 @@ final class RendicontazioneJob
             }
         }
 
+        foreach ($nonNotificate as $r) {
+            if (!isset($idsDestinati[(int)$r['id']])) {
+                $idsNotificati[(int)$r['id']] = true; // nessun destinatario: marcata una volta sola
+            }
+        }
         $this->repo->marcaNotificate(array_keys($idsNotificati));
+
+        if ($idsDestinati === []) {
+            // Niente da notificare a nessuno: nessuna riga (0,0) nel log.
+            $ctx->debug(sprintf('Digest: %d righe senza destinatari marcate notificate', count($nonNotificate)));
+            return;
+        }
         $this->pdo->prepare(
             'INSERT INTO rendicontazione_digest_log (righe_operatore, righe_admin) VALUES (:ro, :ra)'
         )->execute([':ro' => $righeOperatoreInviate, ':ra' => $righeAdminInviate]);

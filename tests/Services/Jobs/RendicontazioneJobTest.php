@@ -819,22 +819,26 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->assertSame(1, (int)$this->row($conf)['rendicontazione_notificato']);
         $this->assertSame([[2, 0]], $this->digestLog());
         $unmarked = (int)self::pdo()->query("SELECT COUNT(*) FROM flussi_rendicontazioni WHERE is_govpay = 1 AND rendicontazione_notificato = 0 AND rendicontazione_stato <> 'PENDING'")->fetchColumn();
-        $this->assertSame(1, $unmarked, 'riga XYZ: nessun gruppo la copre, resta non notificata');
+        $this->assertSame(0, $unmarked, 'N1: riga XYZ non coperta da alcun gruppo/admin -> marcata notificata senza mail');
     }
 
-    public function testDigestRigheNonCopertePersistentiLogZeroZeroAdOgniSogliaDifettoNoto(): void
+    public function testDigestRigheNonCoperteMarcateUnaVoltaSenzaMailNeLogZeroZero(): void
     {
-        // Difetto noto (quirk prod): le righe non coperte da alcun gruppo non vengono mai marcate;
-        // a ogni raggiungimento della soglia viene scritta una riga (0,0) in rendicontazione_digest_log.
+        // N1 (fix 8b): una riga che nessun destinatario riceverebbe (nessun gruppo, admin non
+        // configurato) viene marcata notificata al primo digest: i digest successivi non la
+        // ripescano, nessuna mail e nessuna riga (0,0) in rendicontazione_digest_log.
         $this->setting('scansioni_quiete_soglia', '2');
         $id = $this->riga(1, ['rendicontazione_stato' => 'GESTITO', 'cod_entrata' => 'SENZA-GRUPPO']);
 
-        for ($i = 0; $i < 6; $i++) {
-            $this->runJob($this->job());
+        $this->runJob($this->job());
+        $this->runJob($this->job()); // primo digest
+        $this->assertSame(1, (int)$this->row($id)['rendicontazione_notificato']);
+
+        for ($i = 0; $i < 4; $i++) {
+            $this->runJob($this->job()); // altri due digest, nessuna riga nuova
         }
 
-        $this->assertSame([[0, 0], [0, 0], [0, 0]], $this->digestLog());
-        $this->assertSame(0, (int)$this->row($id)['rendicontazione_notificato']);
+        $this->assertSame([], $this->digestLog(), 'nessuna riga (0,0)');
         $this->assertSame([], $this->opCalls);
         $this->assertSame([], $this->adminCalls);
     }
@@ -881,32 +885,37 @@ final class RendicontazioneJobTest extends DbTestCase
     public function testDigestAdminSoloConNotificaAdminAutoEDestinatariEGestite(): void
     {
         $this->setting('scansioni_quiete_soglia', '1');
-        $a = $this->riga(1, ['rendicontazione_stato' => 'GESTITO', 'cod_entrata' => 'XYZ']);
-        $b = $this->riga(2, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'cod_entrata' => 'XYZ']);
 
-        // notifica_admin_auto assente: nessuna mail admin
+        // notifica_admin_auto assente: nessuna mail admin; la riga non e' coperta da nessuno -> marcata (N1)
+        $a1 = $this->riga(1, ['rendicontazione_stato' => 'GESTITO', 'cod_entrata' => 'XYZ']);
         $this->runJob();
         $this->assertSame([], $this->adminCalls);
-        $this->assertSame([[0, 0]], $this->digestLog());
+        $this->assertSame(1, (int)$this->row($a1)['rendicontazione_notificato']);
 
         // true ma senza admin_emails: nessuna mail admin
         $this->setting('notifica_admin_auto', 'true');
+        $a2 = $this->riga(2, ['rendicontazione_stato' => 'GESTITO', 'cod_entrata' => 'XYZ']);
         $this->runJob();
         $this->assertSame([], $this->adminCalls);
+        $this->assertSame(1, (int)$this->row($a2)['rendicontazione_notificato']);
+        $this->assertSame([], $this->digestLog());
 
         // true + admin_emails con separatori misti
         $this->setting('admin_emails', ' a1@example.test ; a2@example.test,a3@example.test  a1b@example.test');
+        $a = $this->riga(3, ['rendicontazione_stato' => 'GESTITO', 'cod_entrata' => 'XYZ']);
+        $b = $this->riga(4, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'cod_entrata' => 'XYZ']);
         $this->runJob();
         $this->assertCount(1, $this->adminCalls);
         $this->assertSame(['a1@example.test', 'a2@example.test', 'a3@example.test', 'a1b@example.test'], $this->adminCalls[0]['destinatari']);
         $this->assertSame([$a], array_map(static fn($r) => (int)$r['id'], $this->adminCalls[0]['righe']), 'solo righe gestite (non IN_ATTESA_CONFERMA)');
         $this->assertSame(1, (int)$this->row($a)['rendicontazione_notificato']);
-        $this->assertSame(0, (int)$this->row($b)['rendicontazione_notificato']);
-        $this->assertSame([[0, 0], [0, 0], [0, 1]], $this->digestLog());
+        $this->assertSame(1, (int)$this->row($b)['rendicontazione_notificato'], 'IN_ATTESA senza gruppo: nessun destinatario -> marcata');
+        $this->assertSame([[0, 1]], $this->digestLog());
 
         // gia' notificata: nessun invio admin ripetuto
         $this->runJob();
         $this->assertCount(1, $this->adminCalls);
+        $this->assertSame([[0, 1]], $this->digestLog());
     }
 
     public function testDigestAdminErroreNonMarcaEDettaglio(): void
