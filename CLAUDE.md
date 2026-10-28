@@ -322,7 +322,7 @@ File SQL in `migrations/` (numerati `003_...sql` → `030_...sql`). Nessun runne
 
 `phpunit.xml` nella root (bootstrap `vendor/autoload.php`, suite `app` su `tests/`: Database, Monitoring, Security, Services, `LoggerTest`). Esecuzione: `php vendor/bin/phpunit` (in CI dal job `build-test`). Test dei client generati: `cd govpay-clients/generated-clients/pendenze-v2/pendenze-client && vendor/bin/phpunit`.
 
-Note: `App\Security\SignedLink` firma i link pubblici frontoffice (HMAC, `FRONTOFFICE_LINK_SIGNING_KEY`). `App\Services\MassivoCsvParser` ha un difetto noto sul separatore delle migliaia, fissato (pinned) da `MassivoCsvParserPropertyTest`: da correggere in una PR separata (aggiornando il test).
+Note: `App\Security\SignedLink` firma i link pubblici frontoffice (HMAC, `FRONTOFFICE_LINK_SIGNING_KEY`). `App\Services\MassivoCsvParser::cleanImportoRaw()` normalizza gli importi CSV: decimale = ultimo tra `,`/`.`, gli altri migliaia (`1.234,56`, `1,234.56`); un solo separatore + esattamente 3 cifre (`1.234`) = migliaia (in euro non esistono 3 decimali). Proprieta' in `MassivoCsvParserPropertyTest`.
 
 ## Demoni Cron
 
