@@ -273,8 +273,14 @@ final class MassivePendenzeProcessor
         }
 
         $errorMsg = is_array($res['errors']) ? implode('; ', $res['errors']) : 'Errore sconosciuto';
+        $response = $res['response'] ?? null;
+        if ($response !== null && !is_array($response)) {
+            // Corpo 4xx non JSON (es. pagina HTML di un proxy): solo lo status, mai il corpo.
+            $errorMsg = isset($res['httpStatus']) ? 'HTTP ' . (int)$res['httpStatus'] : 'HTTP 4xx';
+            $response = null;
+        }
         $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
-        $this->repo->setResult($id, false, $res['response'] ?? null, $errorMsg);
+        $this->repo->setResult($id, false, $response, $errorMsg);
         return self::error($ref, self::createFailureReason($res, $errorMsg));
     }
 
@@ -288,7 +294,9 @@ final class MassivePendenzeProcessor
     private static function createFailureReason(array $res, string $errorMsg): string
     {
         if (array_key_exists('response', $res)) {
-            return 'HTTP 4xx';
+            return isset($res['httpStatus']) && !is_array($res['response'] ?? null) && $res['response'] !== null
+                ? 'HTTP ' . (int)$res['httpStatus']
+                : 'HTTP 4xx';
         }
         if (preg_match('/resulted in a `(\d{3})/', $errorMsg, $m) === 1) {
             return 'HTTP ' . $m[1];

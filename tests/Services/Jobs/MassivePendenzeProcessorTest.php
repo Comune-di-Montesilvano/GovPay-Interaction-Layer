@@ -328,23 +328,24 @@ final class MassivePendenzeProcessorTest extends DbTestCase
     }
 
     /**
-     * Difetto noto: 4xx con corpo NON JSON (es. pagina HTML di un proxy) -> sendPendenzaToBackoffice
-     * ritorna response stringa -> setResult(?array) lancia TypeError: la riga resta PROCESSING per
-     * sempre (nessun recupero) e nel demone l'eccezione arriva al gestore globale (exit 1).
+     * P1 (fix 8b): 4xx con corpo NON JSON (es. pagina HTML di un proxy) -> ERROR con 'HTTP <code>'
+     * (mai il corpo), response_json NULL, nessuna eccezione, una sola PUT, nessuna notifica.
      */
-    public function testGovPay4xxNonJsonBodyThrowsAndLeavesRowProcessing(): void
+    public function testGovPay4xxNonJsonBodyGoesToErrorWithStatusOnly(): void
     {
         $id = $this->insertRow('PENDING', self::payload(11));
-        $this->queue(400, '<html>Bad Request</html>');
+        $this->queue(400, '<html>Bad Request segreto</html>');
 
-        try {
-            $this->processor()->processRow($id, $this->ctx);
-            self::fail('TypeError atteso');
-        } catch (\TypeError $e) {
-            self::assertStringContainsString('setResult', $e->getMessage());
-        }
-        self::assertCount(1, $this->gp->calls());
-        self::assertSame('PROCESSING', $this->row($id)['stato']);
+        $r = $this->processor()->processRow($id, $this->ctx);
+
+        self::assertCount(1, $this->gp->calls(), 'una sola PUT');
+        $row = $this->row($id);
+        self::assertSame('ERROR', $row['stato']);
+        self::assertSame('HTTP 400', $row['errore']);
+        self::assertNull($row['response_json']);
+        self::assertSame([], $this->gp->notifications);
+        self::assertResult($r, 1, 0, 0, 1, true);
+        self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 400']], $r->errorDetails);
     }
 
     /** 5xx: ServerException -> ERROR con il messaggio Guzzle (URL + corpo troncato), response_json NULL, nessun retry. */

@@ -1817,7 +1817,12 @@ class PendenzeController
                 $tmp = json_decode($detail, true);
                 $parsed = (json_last_error() === JSON_ERROR_NONE) ? $tmp : $detail;
             }
-            return ['success' => false, 'errors' => $errors, 'response' => $parsed];
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'response' => $parsed,
+                'httpStatus' => $resp ? $resp->getStatusCode() : null,
+            ];
         } catch (\Throwable $e) {
             $errors[] = $e->getMessage();
             return ['success' => false, 'errors' => $errors];
