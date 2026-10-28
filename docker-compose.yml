@@ -13,8 +13,11 @@ x-hardening: &hardening
 # backoffice/frontoffice: Apache master root, worker www-data; docker-setup.sh fa chown/chmod
 # su directory non di root; i demoni cron (docker exec, root) scrivono in directory setgid.
 # KILL serve al master per segnalare i worker www-data (graceful reload, stop).
+# NET_BIND_SERVICE: Apache fa bind su :80 da root. Docker >=20.10 abbassa
+# ip_unprivileged_port_start a 0 e lo nasconde, altri runtime/host no (prod: bind :80 negato).
 x-php-caps: &php-caps
   cap_add:
+    - NET_BIND_SERVICE
     - CHOWN
     - SETUID
     - SETGID
