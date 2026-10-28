@@ -107,6 +107,8 @@ final class BizScanJob
                     $enriched = $this->service->enrichOne($row, $idDominio);
                 } catch (\Throwable $e) {
                     $ctx->debug("  IUR={$iur}: eccezione - " . $e->getMessage());
+                    // Riga in ERROR: se restasse PENDING il loop interno la riselezionerebbe all'infinito.
+                    $this->repo->markError((int)$row['id'], 'Eccezione ' . get_class($e));
                     $processed++;
                     $errors++;
                     $details[] = ['ref' => $iur, 'reason' => 'Eccezione ' . get_class($e)];
@@ -120,7 +122,9 @@ final class BizScanJob
                         try {
                             $enriched = $this->service->enrichOne($row, $idDominio);
                         } catch (\Throwable $e) {
-                            $enriched = ['status' => 'ERROR', 'reason' => $e->getMessage()];
+                            $ctx->debug("  IUR={$iur}: eccezione - " . $e->getMessage());
+                            $enriched = ['status' => 'ERROR', 'reason' => 'Eccezione ' . get_class($e)];
+                            $this->repo->markError((int)$row['id'], $enriched['reason']);
                             break;
                         }
                     }

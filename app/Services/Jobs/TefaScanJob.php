@@ -103,6 +103,8 @@ final class TefaScanJob
                     $result = $this->service->enrichOne($row, $idDominio);
                 } catch (\Throwable $e) {
                     $ctx->debug("  IUR={$iur}: eccezione - " . $e->getMessage());
+                    // Riga in ERROR: se restasse PENDING il loop interno la riselezionerebbe all'infinito.
+                    $this->repo->markError((int)$row['id'], 'Eccezione ' . get_class($e));
                     $processed++;
                     $errors++;
                     $details[] = ['ref' => $iur, 'reason' => 'Eccezione ' . get_class($e)];

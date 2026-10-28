@@ -314,13 +314,15 @@ final class TefaScanJobTest extends DbTestCase
         self::assertSame(1, $res->ok);
     }
 
-    public function testEnrichOneExceptionIsCountedAndRowStaysPending(): void
+    public function testEnrichOneExceptionMarksRowErrorAndLoopMovesOn(): void
     {
         $iur = $this->pagamento(1, self::tefaPair());
         $ctx = new RecordingJobContext();
         $repo = new TefaRepository(self::pdo());
         $biz = new BizRepository(self::pdo());
         $service = new class ($repo, $biz, $ctx) extends TefaScannerService {
+            public int $calls = 0;
+
             public function __construct(TefaRepository $r, BizRepository $b, private RecordingJobContext $ctx)
             {
                 parent::__construct($r, $b);
@@ -328,14 +330,19 @@ final class TefaScanJobTest extends DbTestCase
 
             public function enrichOne(array $row, string $idDominioProvincia): array
             {
-                $this->ctx->stop = true; // senza stop il loop riproverebbe all'infinito (riga resta PENDING)
+                if (++$this->calls >= 3) {
+                    $this->ctx->stop = true; // salvagente: senza fix il loop riproverebbe all'infinito
+                }
                 throw new \RuntimeException('boom');
             }
         };
 
         $res = (new TefaScanJob($repo, $biz, $service, self::PROV))->runOnce($ctx);
 
-        self::assertSame('PENDING', $this->tefa($iur)['stato']);
+        // B2: la riga in eccezione passa a ERROR, il loop interno non la riseleziona
+        self::assertSame(1, $service->calls);
+        self::assertSame('ERROR', $this->tefa($iur)['stato']);
+        self::assertSame('Eccezione RuntimeException', $this->tefa($iur)['error_msg']);
         self::assertSame([['ref' => $iur, 'reason' => 'Eccezione RuntimeException']], $res->errorDetails);
         self::assertSame(1, $res->errors);
     }

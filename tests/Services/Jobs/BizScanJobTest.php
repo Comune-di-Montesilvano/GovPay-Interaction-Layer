@@ -307,30 +307,70 @@ final class BizScanJobTest extends DbTestCase
         self::assertSame([['ref' => $iur, 'reason' => 'Rate limit Biz Events (429) dopo 5 tentativi']], $res->errorDetails);
     }
 
-    public function testExceptionFromServiceLeavesRowPendingAndIsCountedAsError(): void
+    /**
+     * Servizio che risponde con la sequenza data: array = esito, Throwable = eccezione.
+     * Salvagente: dalla 4a chiamata attiva lo stop (senza fix B2 il loop girerebbe all'infinito).
+     *
+     * @param list<array{status:string,reason:string}|\Throwable> $script
+     */
+    private function scriptedService(RecordingJobContext $ctx, FlussiRendicontazioniRepository $flussi, array $script): BizScannerService
     {
-        $iur = $this->flusso(1);
-        $ctx = new RecordingJobContext();
-        $repo = new BizRepository(self::pdo());
-        $flussi = new FlussiRendicontazioniRepository(self::pdo());
-        $service = new class ($repo, $flussi, $ctx) extends BizScannerService {
-            public function __construct(BizRepository $r, FlussiRendicontazioniRepository $f, private RecordingJobContext $ctx)
+        return new class (new BizRepository(self::pdo()), $flussi, $ctx, $script) extends BizScannerService {
+            public int $calls = 0;
+
+            /** @param list<array{status:string,reason:string}|\Throwable> $script */
+            public function __construct(BizRepository $r, FlussiRendicontazioniRepository $f, private RecordingJobContext $ctx, private array $script)
             {
                 parent::__construct($r, $f);
             }
 
             public function enrichOne(array $row, string $idDominio): array
             {
-                $this->ctx->stop = true; // senza stop il loop riproverebbe all'infinito (riga resta PENDING)
-                throw new \RuntimeException('boom');
+                if (++$this->calls >= 4) {
+                    $this->ctx->stop = true;
+                }
+                $next = $this->script[min($this->calls - 1, count($this->script) - 1)];
+                if ($next instanceof \Throwable) {
+                    throw $next;
+                }
+                return $next;
             }
         };
-        $job = $this->job([], $flussi, $service);
+    }
 
-        $res = $job->runOnce($ctx);
+    public function testExceptionFromServiceMarksRowErrorAndLoopMovesOn(): void
+    {
+        $iur = $this->flusso(1);
+        $ctx = new RecordingJobContext();
+        $flussi = new FlussiRendicontazioniRepository(self::pdo());
+        $service = $this->scriptedService($ctx, $flussi, [new \RuntimeException('boom')]);
 
-        self::assertSame('PENDING', $this->biz($iur)['stato']);
+        $res = $this->job([], $flussi, $service)->runOnce($ctx);
+
+        // B2: la riga in eccezione passa a ERROR, il loop interno non la riseleziona
+        self::assertSame(1, $service->calls);
+        self::assertSame('ERROR', $this->biz($iur)['stato']);
+        self::assertSame('Eccezione RuntimeException', $this->biz($iur)['error_msg']);
         self::assertSame(1, $res->errors);
+        self::assertSame([['ref' => $iur, 'reason' => 'Eccezione RuntimeException']], $res->errorDetails);
+    }
+
+    public function testExceptionDuringRateLimitRetryMarksRowErrorAndLoopMovesOn(): void
+    {
+        $iur = $this->flusso(1);
+        $ctx = new RecordingJobContext();
+        $flussi = new FlussiRendicontazioniRepository(self::pdo());
+        $service = $this->scriptedService($ctx, $flussi, [
+            ['status' => 'RATE_LIMITED', 'reason' => '429'],
+            new \RuntimeException('dati personali'),
+        ]);
+
+        $res = $this->job([], $flussi, $service)->runOnce($ctx);
+
+        self::assertSame(2, $service->calls);
+        self::assertSame('ERROR', $this->biz($iur)['stato']);
+        self::assertSame('Eccezione RuntimeException', $this->biz($iur)['error_msg']);
+        self::assertSame([1, 0, 0, 1], [$res->processed, $res->ok, $res->skipped, $res->errors]);
         self::assertSame([['ref' => $iur, 'reason' => 'Eccezione RuntimeException']], $res->errorDetails);
     }
 
