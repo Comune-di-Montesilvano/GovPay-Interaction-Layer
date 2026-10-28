@@ -225,7 +225,7 @@ final class BizScanJobTest extends DbTestCase
         self::assertSame('NO_MATCH', $this->flussoMappingStato($iur));
     }
 
-    public function testServerErrorMarksErrorThenIdleIterationResetsToPendingAndRestartsImmediately(): void
+    public function testServerErrorMarksErrorAndIsResetToPendingOnlyAfterSixtyMinutes(): void
     {
         $iur = $this->flusso(1);
         $job = $this->job([self::http(500), self::http(500)]);
@@ -238,17 +238,36 @@ final class BizScanJobTest extends DbTestCase
         self::assertSame([1, 0, 0, 1, true], [$res->processed, $res->ok, $res->skipped, $res->errors, $res->hadWork]);
         self::assertSame([['ref' => $iur, 'reason' => mb_substr((string)$row['error_msg'], 0, 200)]], $res->errorDetails);
 
-        // Iterazione successiva: coda vuota -> resetErrors (ERROR -> PENDING), ciclo immediato (hadWork).
+        // B3: iterazione successiva a coda vuota, errore recente (< 60 min): nessun reset, idle.
         $res2 = $job->runOnce(new RecordingJobContext());
+        self::assertSame('ERROR', $this->biz($iur)['stato']);
+        self::assertSame([0, 0, 0, 0, false], [$res2->processed, $res2->ok, $res2->skipped, $res2->errors, $res2->hadWork]);
+
+        $this->backdateBiz($iur, 59);
+        $res2b = $job->runOnce(new RecordingJobContext());
+        self::assertSame('ERROR', $this->biz($iur)['stato'], '59 minuti: ancora in backoff');
+        self::assertFalse($res2b->hadWork);
+        self::assertCount(1, $this->requests);
+
+        // Errore piu' vecchio di 60 minuti: resetErrors (ERROR -> PENDING), ciclo immediato (hadWork).
+        $this->backdateBiz($iur, 61);
+        $res2c = $job->runOnce(new RecordingJobContext());
         $row = $this->biz($iur);
         self::assertSame('PENDING', $row['stato']);
         self::assertNull($row['error_msg']);
-        self::assertSame([0, 0, 0, 0, true], [$res2->processed, $res2->ok, $res2->skipped, $res2->errors, $res2->hadWork]);
+        self::assertSame([0, 0, 0, 0, true], [$res2c->processed, $res2c->ok, $res2c->skipped, $res2c->errors, $res2c->hadWork]);
 
-        // Terza iterazione: il PENDING viene riprovato (qui ancora 500) e torna ERROR.
+        // Iterazione dopo: il PENDING viene riprovato (qui ancora 500) e torna ERROR.
         $res3 = $job->runOnce(new RecordingJobContext());
         self::assertSame('ERROR', $this->biz($iur)['stato']);
         self::assertSame(1, $res3->errors);
+        self::assertCount(2, $this->requests);
+    }
+
+    private function backdateBiz(string $iur, int $minutes): void
+    {
+        self::pdo()->prepare('UPDATE biz_ricevute SET updated_at = NOW() - INTERVAL ? MINUTE WHERE iur = ?')
+            ->execute([$minutes, $iur]);
     }
 
     public function testNotConfiguredBizEventsMarksRowError(): void

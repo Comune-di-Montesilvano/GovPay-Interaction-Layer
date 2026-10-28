@@ -18,6 +18,9 @@ use App\Services\BizScannerService;
  */
 final class BizScanJob
 {
+    /** Le righe ERROR tornano PENDING solo dopo questo intervallo dall'errore (backoff). */
+    public const ERROR_RETRY_MINUTES = 60;
+
     /** @var callable(int):mixed */
     private $sleeper;
 
@@ -163,7 +166,7 @@ final class BizScanJob
         }
 
         if ((int)$queueResult['queued'] === 0 && (int)$pendingInScope === 0) {
-            $resetErrors = $this->repo->resetErrors($idDominio);
+            $resetErrors = $this->repo->resetErrors($idDominio, self::ERROR_RETRY_MINUTES);
             if ($resetErrors > 0) {
                 $ctx->debug("Reset ERROR Biz -> PENDING: {$resetErrors} record. Riavvio ciclo immediato...");
                 // Nessuna pausa: lo script richiama subito runOnce() (hadWork = true).
