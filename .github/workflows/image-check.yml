@@ -40,6 +40,27 @@ jobs:
         image: [backoffice, frontoffice, db]
         include:
           - image: backoffice
+            # Allowlist copiate da docker-publish.yml: build-php per backoffice/frontoffice,
+            # build-services per db. Run fallita per "blocked" → aggiungere l'host se legittimo.
+            endpoints: >
+              github.com:443
+              api.github.com:443
+              codeload.github.com:443
+              release-assets.githubusercontent.com:443
+              objects.githubusercontent.com:443
+              *.githubapp.com:443
+              ghcr.io:443
+              pkg-containers.githubusercontent.com:443
+              registry-1.docker.io:443
+              auth.docker.io:443
+              production.cloudfront.docker.com:443
+              production.cloudflare.docker.com:443
+              mirror.gcr.io:443
+              registry.npmjs.org:443
+              repo.packagist.org:443
+              deb.debian.org:80
+              deb.debian.org:443
+              check.trivy.dev:443
             context: .
             file: Dockerfile
             target: runtime-backoffice
@@ -49,6 +70,25 @@ jobs:
               type=gha,scope=backoffice
               type=registry,ref=ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice-buildcache:main
           - image: frontoffice
+            endpoints: >
+              github.com:443
+              api.github.com:443
+              codeload.github.com:443
+              release-assets.githubusercontent.com:443
+              objects.githubusercontent.com:443
+              *.githubapp.com:443
+              ghcr.io:443
+              pkg-containers.githubusercontent.com:443
+              registry-1.docker.io:443
+              auth.docker.io:443
+              production.cloudfront.docker.com:443
+              production.cloudflare.docker.com:443
+              mirror.gcr.io:443
+              registry.npmjs.org:443
+              repo.packagist.org:443
+              deb.debian.org:80
+              deb.debian.org:443
+              check.trivy.dev:443
             context: .
             file: Dockerfile
             target: runtime-frontoffice
@@ -58,6 +98,23 @@ jobs:
               type=gha,scope=frontoffice
               type=registry,ref=ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice-buildcache:main
           - image: db
+            endpoints: >
+              github.com:443
+              api.github.com:443
+              release-assets.githubusercontent.com:443
+              objects.githubusercontent.com:443
+              *.githubapp.com:443
+              ghcr.io:443
+              pkg-containers.githubusercontent.com:443
+              registry-1.docker.io:443
+              auth.docker.io:443
+              production.cloudfront.docker.com:443
+              production.cloudflare.docker.com:443
+              mirror.gcr.io:443
+              check.trivy.dev:443
+              archive.ubuntu.com:80
+              security.ubuntu.com:80
+              archive.mariadb.org:80
             context: docker
             file: docker/db/Dockerfile
             target: ''
@@ -65,54 +122,13 @@ jobs:
               type=gha,scope=db
               type=registry,ref=ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db-cache:main
     steps:
-      # Allowlist copiate da docker-publish.yml: build-php per backoffice/frontoffice,
-      # build-services per db. Run fallita per "blocked" → aggiungere l'host se legittimo.
-      - name: Harden runner · php
-        if: matrix.image != 'db'
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      # Un solo harden-runner con l'allowlist della matrice: i pre-step delle action girano
+      # anche quando lo step ha un `if:` falso, quindi due step condizionali avviavano due
+      # agent nello stesso job (job db appeso fino al timeout dopo il cleanup).
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
-          allowed-endpoints: >
-            github.com:443
-            api.github.com:443
-            codeload.github.com:443
-            release-assets.githubusercontent.com:443
-            objects.githubusercontent.com:443
-            *.githubapp.com:443
-            ghcr.io:443
-            pkg-containers.githubusercontent.com:443
-            registry-1.docker.io:443
-            auth.docker.io:443
-            production.cloudfront.docker.com:443
-            production.cloudflare.docker.com:443
-            mirror.gcr.io:443
-            registry.npmjs.org:443
-            repo.packagist.org:443
-            deb.debian.org:80
-            deb.debian.org:443
-            check.trivy.dev:443
-      - name: Harden runner · db
-        if: matrix.image == 'db'
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: block
-          allowed-endpoints: >
-            github.com:443
-            api.github.com:443
-            release-assets.githubusercontent.com:443
-            objects.githubusercontent.com:443
-            *.githubapp.com:443
-            ghcr.io:443
-            pkg-containers.githubusercontent.com:443
-            registry-1.docker.io:443
-            auth.docker.io:443
-            production.cloudfront.docker.com:443
-            production.cloudflare.docker.com:443
-            mirror.gcr.io:443
-            check.trivy.dev:443
-            archive.ubuntu.com:80
-            security.ubuntu.com:80
-            archive.mariadb.org:80
+          allowed-endpoints: ${{ matrix.endpoints }}
 
       # Sulla PR (e' solo il segnaposto del check) gli step seguenti sono saltati;
       # merge_group e workflow_dispatch fanno build e scan completi.
