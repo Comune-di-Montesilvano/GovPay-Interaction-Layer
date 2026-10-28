@@ -18,6 +18,8 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 use App\Config\SettingsRepository;
 use App\Database\Connection;
 use App\Database\MappingPendenzeRepository;
+use App\Services\Jobs\MappingL1Job;
+use App\Services\Jobs\ScriptJobContext;
 use Dotenv\Dotenv;
 
 if (file_exists(dirname(__DIR__) . '/.env')) {
@@ -101,6 +103,8 @@ if (function_exists('pcntl_async_signals')) {
 }
 
 $repo = new MappingPendenzeRepository();
+$job  = new MappingL1Job($repo, (string)$idDominio);
+$ctx  = new ScriptJobContext($stopFile);
 
 $log("Demone mapping L1 (fornitore) avviato. Approccio: bulk UPDATE per prefisso IUV.");
 
@@ -113,7 +117,7 @@ while (true) {
     // 1. Pattern Discovery ogni 60 secondi
     if ($now - $lastDiscoveryTime >= 60) {
         try {
-            $discovered = $repo->discoverPatterns((string)$idDominio);
+            $discovered = $job->discover();
             $pending    = $repo->countTotalPendingMapping((string)$idDominio);
             $log("Discovery: {$discovered} prefissi IUV aggiornati. Coda PENDING: {$pending}.");
             $lastDiscoveryTime = $now;
@@ -133,10 +137,9 @@ while (true) {
 
     $checkStop();
 
-    // 2. Carica regole attive (già ordinate per CHAR_LENGTH DESC → longest-prefix-first)
-    $rules = [];
+    // 2-4. Un ciclo di assegnazione: regole attive (bulk UPDATE per prefisso), poi PENDING rimaste → NO_MATCH
     try {
-        $rules = $repo->getRules((string)$idDominio);
+        $result = $job->runOnce($ctx);
     } catch (\Throwable $e) {
         \Sentry\captureException($e);
         $log("ERRORE caricamento regole: " . $e->getMessage());
@@ -144,39 +147,9 @@ while (true) {
         continue;
     }
 
-    $activeRules = array_filter($rules, fn(array $r): bool =>
-        (!empty($r['fornitore']) && ((bool)($r['is_custom'] ?? false) || (int)($r['transazioni_count'] ?? 0) >= 5)) ||
-        (!empty($r['accorpato_a']) && !empty($r['fornitore']))
-    );
-
     $checkStop();
 
-    // 3. Bulk UPDATE per ogni pattern attivo (longest first = longest-prefix-match garantito)
-    $totalAssigned = 0;
-    foreach ($activeRules as $rule) {
-        $checkStop();
-        try {
-            $n = $repo->bulkAssignL1((string)$idDominio, (string)$rule['pattern_iuv'], (string)$rule['fornitore']);
-            if ($n > 0) {
-                $log("'{$rule['pattern_iuv']}' → '{$rule['fornitore']}': {$n} righe assegnate.");
-                $totalAssigned += $n;
-            }
-        } catch (\Throwable $e) {
-            $log("ERRORE pattern '{$rule['pattern_iuv']}': " . $e->getMessage());
-        }
-    }
-
-    // 4. Righe PENDING rimaste senza pattern attivo → NO_MATCH
-    try {
-        $noMatch = $repo->bulkSetL1NoMatch((string)$idDominio);
-        if ($noMatch > 0) {
-            $log("{$noMatch} righe senza pattern corrispondente → NO_MATCH.");
-        }
-    } catch (\Throwable $e) {
-        \Sentry\captureException($e);
-        $log("ERRORE bulk NO_MATCH: " . $e->getMessage());
-    }
-
+    $totalAssigned = $result->ok;
     if ($totalAssigned === 0) {
         $log('Nessuna nuova pendenza. Pausa 15 minuti...');
         for ($s = 0; $s < 900; $s += 10) {
