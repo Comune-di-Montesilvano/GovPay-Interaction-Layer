@@ -18,6 +18,9 @@ use App\Services\TefaScannerService;
  */
 final class TefaScanJob
 {
+    /** Le righe ERROR tornano PENDING solo dopo questo intervallo dall'errore (backoff). */
+    public const ERROR_RETRY_MINUTES = 60;
+
     public function __construct(
         private readonly TefaRepository $repo,
         private readonly BizRepository $bizRepo,
@@ -135,6 +138,13 @@ final class TefaScanJob
         }
 
         if ((int)$queueResult['queued'] === 0 && (int)$pendingInScope === 0) {
+            $resetErrors = $this->repo->resetErrors($idDominio, self::ERROR_RETRY_MINUTES);
+            if ($resetErrors > 0) {
+                $ctx->debug("Reset ERROR TEFA -> PENDING: {$resetErrors} record. Riavvio ciclo immediato...");
+                // Nessuna pausa: lo script richiama subito runOnce() (hadWork = true).
+                return new JobResult($processed, $ok, $skipped, $errors, true, $details);
+            }
+
             if ((int)$counts['PENDING'] > 0) {
                 $ctx->debug('Nessun elemento nuovo e nessun PENDING in-scope. Restano PENDING fuori filtro data. Prossimo tra 15 minuti...');
             } else {

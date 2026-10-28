@@ -347,6 +347,38 @@ final class TefaScanJobTest extends DbTestCase
         self::assertSame(1, $res->errors);
     }
 
+    public function testIdleIterationResetsErrorRowsOnlyAfterSixtyMinutes(): void
+    {
+        $iur = $this->pagamento(1, self::tefaPair());
+        self::pdo()->prepare(
+            'INSERT INTO tefa_ricevute (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, stato, error_msg, is_govpay)
+             VALUES (?, 2026, 3, ?, ?, ?, ?, \'ERROR\', \'Eccezione RuntimeException\', 0)'
+        )->execute([self::PROV, '2026-03-01TEST-0001', $iur, Synthetic::iuv('02', 1), '2026-03-01']);
+        $backdate = static function (int $minutes) use ($iur): void {
+            self::pdo()->prepare('UPDATE tefa_ricevute SET updated_at = NOW() - INTERVAL ? MINUTE WHERE iur = ?')
+                ->execute([$minutes, $iur]);
+        };
+        $job = $this->job();
+
+        // Errore recente: resta ERROR, iterazione idle.
+        $backdate(59);
+        $res = $job->runOnce(new RecordingJobContext());
+        self::assertSame('ERROR', $this->tefa($iur)['stato']);
+        self::assertFalse($res->hadWork);
+
+        // B5: errore piu' vecchio di 60 minuti -> PENDING, ciclo immediato.
+        $backdate(61);
+        $res = $job->runOnce(new RecordingJobContext());
+        self::assertSame('PENDING', $this->tefa($iur)['stato']);
+        self::assertNull($this->tefa($iur)['error_msg']);
+        self::assertSame([0, 0, 0, 0, true], [$res->processed, $res->ok, $res->skipped, $res->errors, $res->hadWork]);
+
+        // Iterazione dopo: la riga viene riclassificata.
+        $res = $job->runOnce(new RecordingJobContext());
+        self::assertSame('PROCESSED', $this->tefa($iur)['stato']);
+        self::assertSame(1, $res->ok);
+    }
+
     public function testStopSignalAfterQueueingLeavesRowsPending(): void
     {
         $iur = $this->pagamento(1, self::tefaPair());
