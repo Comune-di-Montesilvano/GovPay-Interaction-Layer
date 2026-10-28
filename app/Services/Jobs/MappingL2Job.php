@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services\Jobs;
 
+use App\Config\SettingsRepository;
 use App\Database\MappingPendenzeRepository;
 
 /**
@@ -29,6 +30,10 @@ final class MappingL2Job
      */
     public function runOnce(JobContext $ctx): JobResult
     {
+        // Ogni iterazione rilegge i settings: in un processo longevo la cache statica
+        // resterebbe ferma ai valori dell'avvio (modifiche da UI ignorate fino al riavvio).
+        SettingsRepository::flush();
+
         $ok = 0;
         $skipped = 0;
         $errors = 0;

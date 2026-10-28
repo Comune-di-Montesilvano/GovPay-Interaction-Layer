@@ -92,6 +92,10 @@ final class RagioneriaSyncJob
 
     public function runOnce(JobContext $ctx): JobResult
     {
+        // Ogni iterazione rilegge i settings: in un processo longevo la cache statica
+        // resterebbe ferma ai valori dell'avvio (modifiche da UI ignorate fino al riavvio).
+        SettingsRepository::flush();
+
         $repo = $this->repo ??= new FlussiRendicontazioniRepository();
         $client = $this->client ??= self::buildDefaultClient();
         $idDominio = $this->idDominio;

@@ -36,6 +36,10 @@ final class TefaScanJob
 
     public function runOnce(JobContext $ctx): JobResult
     {
+        // Ogni iterazione rilegge i settings: in un processo longevo la cache statica
+        // resterebbe ferma ai valori dell'avvio (modifiche da UI ignorate fino al riavvio).
+        SettingsRepository::flush();
+
         $idDominio = $this->idDominio;
         $processed = 0;
         $ok = 0;

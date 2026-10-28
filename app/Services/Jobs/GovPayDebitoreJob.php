@@ -37,6 +37,10 @@ final class GovPayDebitoreJob
     /** @throws \Throwable se il recupero del batch fallisce */
     public function runOnce(JobContext $ctx): JobResult
     {
+        // Ogni iterazione rilegge i settings: in un processo longevo la cache statica
+        // resterebbe ferma ai valori dell'avvio (modifiche da UI ignorate fino al riavvio).
+        SettingsRepository::flush();
+
         $processed = 0;
         $ok = 0;
         $skipped = 0;

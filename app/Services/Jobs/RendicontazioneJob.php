@@ -57,6 +57,10 @@ final class RendicontazioneJob
 
     public function runOnce(JobContext $ctx): JobResult
     {
+        // Ogni iterazione rilegge i settings: in un processo longevo la cache statica
+        // resterebbe ferma ai valori dell'avvio (modifiche da UI ignorate fino al riavvio).
+        SettingsRepository::flush();
+
         $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
         $soglia = max(1, (int)SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'));
         $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'));

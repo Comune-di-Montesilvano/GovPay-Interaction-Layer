@@ -344,6 +344,24 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
     }
 
+    public function testImpostazioneCambiataSuDbTraDueRunOnceVieneVista(): void
+    {
+        // N5 (fix 8b): stesso job (processo longevo), impostazione cambiata da UI tra due iterazioni
+        // (scritta su DB senza passare dalla cache statica di questo processo).
+        $this->setting('scansioni_quiete_soglia', '99');
+        $job = $this->job();
+        $this->riga(1);
+        $this->runJob($job);
+        $this->assertSame(1, $this->callsOf('pendenza'));
+
+        self::pdo()->exec("UPDATE settings SET value = '' WHERE section = 'govpay' AND key_name = 'backoffice_url'");
+        $this->riga(2);
+        $res = $this->runJob($job);
+
+        $this->assertSame(1, $this->callsOf('pendenza'), 'backoffice_url vuoto: nessuna chiamata GovPay nella seconda iterazione');
+        $this->assertFalse($res->hadWork);
+    }
+
     public function testBackofficeUrlVuotoNonFaNullaNeToccaContatore(): void
     {
         SettingsRepository::set('govpay', 'backoffice_url', '');
