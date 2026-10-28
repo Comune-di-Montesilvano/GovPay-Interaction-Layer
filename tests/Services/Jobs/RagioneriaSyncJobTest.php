@@ -342,16 +342,37 @@ final class RagioneriaSyncJobTest extends DbTestCase
         self::assertCount(2, $this->requests); // una sola pagina lista + dettaglio
     }
 
-    public function testListFailureOnFirstPageEndsCycleSilentlyAsNoWork(): void
+    public function testListFailureOnFirstPageIsReportedAsListError(): void
     {
+        // R2: un errore sulla prima pagina non deve sembrare un ciclo "a vuoto"
         $this->mock->append(new ConnectException('boom', new Request('GET', 'x')));
         $ctx = new RecordingJobContext();
 
         $r = $this->job()->runOnce($ctx);
 
         self::assertSame([0, 0, 0, 1, false], [$r->processed, $r->ok, $r->skipped, $r->errors, $r->hadWork]);
-        self::assertSame([['ref' => 'pagina 1', 'reason' => 'Errore chiamata GovPay']], $r->errorDetails);
+        self::assertSame([['ref' => 'lista', 'reason' => 'Eccezione GuzzleHttp\Exception\ConnectException']], $r->errorDetails);
         self::assertSame([], $this->rows());
+    }
+
+    public function testListHttpFailureOnFirstPageReportsStatusCode(): void
+    {
+        $this->mock->append(new Response(502, [], 'corpo upstream riservato'));
+
+        $r = $this->job()->runOnce(new RecordingJobContext());
+
+        self::assertSame(1, $r->errors);
+        self::assertSame([['ref' => 'lista', 'reason' => 'HTTP 502']], $r->errorDetails);
+    }
+
+    public function testNonJsonListOnFirstPageIsReportedAsListError(): void
+    {
+        $this->mock->append(new Response(200, [], '<html>proxy</html>'));
+
+        $r = $this->job()->runOnce(new RecordingJobContext());
+
+        self::assertSame([1, false], [$r->errors, $r->hadWork]);
+        self::assertSame([['ref' => 'lista', 'reason' => 'Risposta GovPay non valida']], $r->errorDetails);
     }
 
     public function testListFailureOnLaterPageStillScansFlussiAlreadyCollected(): void

@@ -137,7 +137,18 @@ final class RagioneriaSyncJob
                 \Sentry\captureException($e);
                 $ctx->debug('Errore lista flussi pagina ' . $page . ': ' . $e->getMessage());
                 $errors++;
-                $details[] = ['ref' => 'pagina ' . $page, 'reason' => self::safeReason($e)];
+                // R2: sulla prima pagina il ciclo non ha nulla da scansionare: errore di lista esplicito
+                // (status HTTP o classe eccezione), non un ciclo "a vuoto".
+                $details[] = $page === 1
+                    ? ['ref' => 'lista', 'reason' => self::listReason($e)]
+                    : ['ref' => 'pagina ' . $page, 'reason' => self::safeReason($e)];
+                break;
+            }
+
+            if ($page === 1 && !is_array($payload)) {
+                $ctx->debug('Errore lista flussi pagina 1: risposta non JSON.');
+                $errors++;
+                $details[] = ['ref' => 'lista', 'reason' => 'Risposta GovPay non valida'];
                 break;
             }
 
@@ -298,7 +309,9 @@ final class RagioneriaSyncJob
         }
 
         $hadWork = ($newRows + $changedRows) > 0;
-        if ($hadWork) {
+        if ($flussiCount === 0 && $errors > 0) {
+            $ctx->debug('Lista flussi non disponibile: ciclo senza scansione, nuovo tentativo tra 30 minuti.');
+        } elseif ($hadWork) {
             $ctx->debug("Nuovi dati trovati, prossimo ciclo da {$this->rollingFrom} [finestra scorrevole].");
         } else {
             $ctx->debug('Nessun dato nuovo, sleep 30 minuti...');
@@ -355,6 +368,15 @@ final class RagioneriaSyncJob
             return 'HTTP ' . $e->getResponse()->getStatusCode();
         }
         return 'Errore chiamata GovPay';
+    }
+
+    /** Motivo errore della lista (pagina 1): status HTTP se c'e' una risposta, altrimenti classe eccezione. */
+    private static function listReason(\Throwable $e): string
+    {
+        if ($e instanceof RequestException && $e->getResponse() !== null) {
+            return 'HTTP ' . $e->getResponse()->getStatusCode();
+        }
+        return 'Eccezione ' . get_class($e);
     }
 
     /** Most recent data_flusso stored in DB for the given domain, or null if none. */
