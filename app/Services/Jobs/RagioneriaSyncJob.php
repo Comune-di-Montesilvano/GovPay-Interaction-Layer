@@ -105,6 +105,11 @@ final class RagioneriaSyncJob
 
         $newRows = 0;
         $changedRows = 0;
+        $rawUpdated = 0;
+        // Impronta di ogni chiave PRIMA della sua prima scrittura in questo ciclo (null = riga nuova).
+        // "Aggiornata" = riga diversa a fine ciclo rispetto all'inizio: due flussi con la stessa chiave
+        // che la riscrivono avanti e indietro non contano come lavoro se l'upstream e' invariato.
+        $preImage = [];
         $cycleRowsTotal = 0;
         $cycleGovPayYes = 0;
         $page = 1;
@@ -118,7 +123,7 @@ final class RagioneriaSyncJob
 
         while (true) {
             if ($ctx->shouldStop()) {
-                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $changedRows) > 0, $details);
+                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $rawUpdated) > 0, $details);
             }
 
             $query = [
@@ -197,7 +202,7 @@ final class RagioneriaSyncJob
         $scanIndex = 0;
         foreach ($flussiToScan as $flussoItem) {
             if ($ctx->shouldStop()) {
-                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $changedRows) > 0, $details);
+                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $rawUpdated) > 0, $details);
             }
 
             $scanIndex++;
@@ -272,10 +277,24 @@ final class RagioneriaSyncJob
             $cycleRowsTotal += $flussoRowsTotal;
             $cycleGovPayYes += $flussoGovPayYes;
 
+            $unseen = [];
+            foreach ($rows as $mappedRow) {
+                $k = FlussiRendicontazioniRepository::rowKey($mappedRow);
+                if (!array_key_exists($k, $preImage)) {
+                    $unseen[] = $k;
+                }
+            }
+            if ($unseen !== []) {
+                $fp = $repo->fingerprints($unseen);
+                foreach ($unseen as $k) {
+                    $preImage[$k] = $fp[$k] ?? null;
+                }
+            }
+
             $counts = $repo->upsertBatchCounts($rows);
             $affected = $counts['inserted'] + $counts['updated'];
             $newRows += $counts['inserted'];
-            $changedRows += $counts['updated'];
+            $rawUpdated += $counts['updated'];
             $ok++;
             $ctx->debug(sprintf(
                 '  [scan] flusso %s: rendicontazioni=%d govpay_si=%d govpay_no=%d upsert_affected=%d',
@@ -285,6 +304,16 @@ final class RagioneriaSyncJob
                 max(0, $flussoRowsTotal - $flussoGovPayYes),
                 $affected
             ));
+        }
+
+        if ($rawUpdated > 0) {
+            $existing = array_keys(array_filter($preImage, static fn(?string $v): bool => $v !== null));
+            $final = $repo->fingerprints(array_map('strval', $existing));
+            foreach ($existing as $k) {
+                if (($final[(string)$k] ?? null) !== $preImage[$k]) {
+                    $changedRows++;
+                }
+            }
         }
 
         $ctx->debug(sprintf(

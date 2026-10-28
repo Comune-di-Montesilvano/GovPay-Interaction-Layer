@@ -672,6 +672,58 @@ final class RagioneriaSyncJobTest extends DbTestCase
         self::assertSame('Nuova', $rows[0]['descrizione_entrata']);
     }
 
+    public function testTwoFlussiSharingKeyDoNotKeepHadWorkTrueForever(): void
+    {
+        // Fix round 1 (R1): due flussi nella finestra con la stessa chiave (iur, id_dominio, indice) e valori
+        // diversi (es. pagamento + revoca / revisione FdR) riscrivono la riga avanti e indietro a ogni rescan.
+        // Con dati upstream invariati il secondo ciclo non deve risultare lavoro; la riga finale resta
+        // quella dell'ultima scrittura (FL-B, piu' recente).
+        $queue = function (): void {
+            $this->queueList([self::item('FL-A', self::day(4)), self::item('FL-B', self::day(3))]);
+            $a = self::rend(1);
+            $a['importo'] = 10.0;
+            $b = self::rend(1);
+            $b['importo'] = -10.0;
+            $b['esito'] = 3;
+            $this->queueDetail(self::detail(self::day(4), [$a]));
+            $this->queueDetail(self::detail(self::day(3), [$b]));
+        };
+        $job = $this->job();
+
+        $queue();
+        $r1 = $job->runOnce(new RecordingJobContext());
+        $queue();
+        $r2 = $job->runOnce(new RecordingJobContext());
+        $queue();
+        $r3 = $job->runOnce(new RecordingJobContext());
+
+        self::assertTrue($r1->hadWork);
+        self::assertFalse($r2->hadWork, 'dati upstream invariati: nessun lavoro');
+        self::assertFalse($r3->hadWork);
+        $rows = $this->rows();
+        self::assertCount(1, $rows);
+        self::assertSame(['-10.00', 'FL-B'], [$rows[0]['importo'], $rows[0]['id_flusso']], 'vince ultima scrittura');
+    }
+
+    public function testChangeOfSharedKeyRowAcrossCyclesIsWork(): void
+    {
+        // la guardia non deve nascondere un cambio reale: FL-B cambia importo tra un ciclo e l'altro
+        $queue = function (float $importoB): void {
+            $this->queueList([self::item('FL-A', self::day(4)), self::item('FL-B', self::day(3))]);
+            $a = self::rend(1);
+            $b = self::rend(1);
+            $b['importo'] = $importoB;
+            $this->queueDetail(self::detail(self::day(4), [$a]));
+            $this->queueDetail(self::detail(self::day(3), [$b]));
+        };
+        $job = $this->job();
+        $queue(-10.0);
+        $job->runOnce(new RecordingJobContext());
+        $queue(-20.0);
+        self::assertTrue($job->runOnce(new RecordingJobContext())->hadWork);
+        self::assertSame('-20.00', $this->rows()[0]['importo']);
+    }
+
     public function testUpsertKeepsExistingCodEntrataForNonGovPayRowWithEmptyNewValue(): void
     {
         $d = self::day(3);

@@ -29,6 +29,53 @@ class FlussiRendicontazioniRepository
     }
 
     /**
+     * Chiave univoca (id_dominio|iur|indice) di una riga mappata, normalizzata come in upsertBatchCounts.
+     *
+     * @param array<string,mixed> $row
+     */
+    public static function rowKey(array $row): string
+    {
+        $v = $row['indice'] ?? null;
+        $indice = ($v === null || $v === '') ? 1 : (int)$v;   // come normalizeInt(...) ?? 1
+        return (string)($row['id_dominio'] ?? '') . '|' . (string)($row['iur'] ?? '') . '|' . $indice;
+    }
+
+    /**
+     * Impronta (MD5) dei campi aggiornati dall'upsert per le chiavi date (formato rowKey()).
+     * Le chiavi assenti in DB non compaiono nel risultato.
+     *
+     * @param list<string> $keys
+     * @return array<string,string> rowKey => md5
+     */
+    public function fingerprints(array $keys): array
+    {
+        $out = [];
+        foreach (array_chunk(array_values(array_unique($keys)), 200) as $chunk) {
+            $tuples = [];
+            $params = [];
+            foreach ($chunk as $k) {
+                [$dom, $iur, $indice] = array_pad(explode('|', $k, 3), 3, '');
+                $tuples[] = '(?, ?, ?)';
+                array_push($params, $iur, $dom, (int)$indice);
+            }
+            $cols = ['id_flusso', 'data_flusso', 'data_regolamento', 'trn', 'id_psp', 'ragione_psp', 'anno', 'mese',
+                'iuv', 'importo', 'esito', 'stato_rend', 'data_pagamento', 'cod_entrata', 'descrizione_entrata',
+                'id_pendenza', 'is_govpay', 'is_multibeneficiario'];
+            $concat = implode(', ', array_map(static fn(string $c): string => "IFNULL($c, '\0')", $cols));
+            $stmt = $this->pdo->prepare(
+                "SELECT id_dominio, iur, indice, MD5(CONCAT_WS('|', $concat)) AS fp
+                 FROM flussi_rendicontazioni
+                 WHERE (iur, id_dominio, indice) IN (" . implode(',', $tuples) . ')'
+            );
+            $stmt->execute($params);
+            while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $out[$r['id_dominio'] . '|' . $r['iur'] . '|' . (int)$r['indice']] = (string)$r['fp'];
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Upsert con conteggio separato: inserted = righe nuove, updated = righe esistenti con almeno un
      * campo cambiato (righe identiche non contano). synced_at si aggiorna solo quando la riga cambia
      * (ON UPDATE CURRENT_TIMESTAMP della colonna), cosi' un rescan identico non risulta "modifica".
