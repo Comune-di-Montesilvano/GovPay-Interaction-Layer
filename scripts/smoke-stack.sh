@@ -6,6 +6,7 @@
 #   - frontoffice 200 su /;
 #   - query su `settings` (schema init del DB applicato);
 #   - nessun `Fatal`/`Parse error` nei log;
+# con porte privilegiate riservate a root+NET_BIND_SERVICE come sull'host di produzione.
 # e lo distrugge sempre (down -v) all'uscita.
 #
 # Isolamento da uno stack di sviluppo sulla stessa macchina:
@@ -56,7 +57,21 @@ DB_NAME=govpay
   echo "SENTRY_ENVIRONMENT=smoke"
 } > "$ENV_FILE"
 
-COMPOSE=(docker compose -p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.yml -f "$SMOKE_FILE")
+# Porte privilegiate come in produzione: Docker >=20.10 mette ip_unprivileged_port_start=0 nel
+# netns del container e cosi' nasconde un NET_BIND_SERVICE mancante (Apache bind :80 negato in
+# prod, incidente 2026-10-28). Qui si rimette il default del kernel (1024).
+PORTS_FILE=$(mktemp --suffix=.yml)
+cat > "$PORTS_FILE" <<'EOF'
+services:
+  backoffice:
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 1024
+  frontoffice:
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 1024
+EOF
+
+COMPOSE=(docker compose -p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.yml -f "$SMOKE_FILE" -f "$PORTS_FILE")
 
 cleanup() {
   local rc=$?
@@ -65,7 +80,7 @@ cleanup() {
     "${COMPOSE[@]}" logs --no-color --tail 100 || true
   fi
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -f "$ENV_FILE"
+  rm -f "$ENV_FILE" "$PORTS_FILE"
   exit "$rc"
 }
 trap cleanup EXIT
