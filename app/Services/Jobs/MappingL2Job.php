@@ -9,7 +9,8 @@ use App\Database\MappingPendenzeRepository;
  * Mapping L2 (cod_entrata): corpo del loop di cron_vocab_mapping.php.
  *
  * Un ciclo: per ogni pattern con fornitore risolto, keyword in ordine di priorita' (bulk UPDATE),
- * poi fallback default; le righe L1-processate rimaste vocab PENDING passano a NO_MATCH; infine
+ * poi fallback default; le righe L1-processate rimaste vocab PENDING dei pattern valutati passano a
+ * NO_MATCH (righe senza pattern con fornitore restano PENDING); infine
  * refresh diagnostics. Loop, pause (15 min a vuoto), stop file, log e gestione errore di
  * caricamento vocabolario restano nello script.
  */
@@ -86,7 +87,8 @@ final class MappingL2Job
         }
 
         try {
-            $skipped = $this->repo->bulkSetVocabNoMatch($this->idDominio);
+            // solo righe dei pattern valutati in questo giro (M5)
+            $skipped = $this->repo->bulkSetVocabNoMatch($this->idDominio, array_map('strval', array_keys($vocabIndex)));
             if ($skipped > 0) {
                 $ctx->debug("{$skipped} righe L1-processate senza keyword match → vocab NO_MATCH.");
             }

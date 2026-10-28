@@ -279,7 +279,7 @@ class MappingPendenzeController
                     $l2Assigned += $repo->bulkAssignVocabDefault($idDominio, (string)$patternIuv, $defaultCod);
                 }
             }
-            $l2NoMatch = $repo->bulkSetVocabNoMatch($idDominio);
+            $l2NoMatch = $repo->bulkSetVocabNoMatch($idDominio, array_map('strval', array_keys($vocabIndex)));
 
             $_SESSION['flash'][] = [
                 'type' => 'success',

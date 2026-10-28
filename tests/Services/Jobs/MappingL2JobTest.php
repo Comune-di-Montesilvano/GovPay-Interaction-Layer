@@ -151,24 +151,50 @@ final class MappingL2JobTest extends DbTestCase
         self::assertSame([1, 0, 1, false], [$res->processed, $res->ok, $res->skipped, $res->hadWork], 'NO_MATCH non e hadWork');
     }
 
-    public function testPatternWithoutFornitoreIsNotEvaluatedButRowGetsNoMatch(): void
+    public function testPatternWithoutFornitoreIsNotEvaluatedAndRowStaysPending(): void
     {
-        // difetto noto: un pattern senza fornitore risolto non entra nel vocab, ma bulkSetVocabNoMatch
-        // marca NO_MATCH ogni riga mapping PROCESSED / vocab PENDING, a prescindere dal pattern.
+        // M5: un pattern senza fornitore risolto non entra nel vocab -> L2 non valuta le sue righe e non le
+        // marca NO_MATCH (restano PENDING finche' il pattern non ha un fornitore).
         $this->pattern('11111', null, 'DEF');
         $this->vocab('11111', 'tari', 'C');
         $r = $this->l1(1, '11111000000000001', 'tari');
 
-        $this->job()->runOnce(new RecordingJobContext());
-        self::assertSame(['NO_MATCH', null], $this->vc($r));
+        $res = $this->job()->runOnce(new RecordingJobContext());
+        self::assertSame(['PENDING', null], $this->vc($r));
+        self::assertSame([0, 0, 0, false], [$res->processed, $res->ok, $res->skipped, $res->hadWork]);
     }
 
-    public function testRowWithoutAnyPatternGetsNoMatch(): void
+    public function testRowWithoutAnyPatternIsNotEvaluatedAndStaysPending(): void
     {
+        // M5: nessun pattern copre la riga -> L2 non l'ha valutata -> resta PENDING
         $r = $this->l1(1, '99999000000000001', 'tari');
         $res = $this->job()->runOnce(new RecordingJobContext());
-        self::assertSame('NO_MATCH', $this->stato($r)['vocab_stato']);
-        self::assertFalse($res->hadWork);
+        self::assertSame('PENDING', $this->stato($r)['vocab_stato']);
+        self::assertSame([0, false], [$res->skipped, $res->hadWork]);
+    }
+
+    public function testOnlyRowsOfEvaluatedPatternsBecomeNoMatch(): void
+    {
+        $this->pattern('11111', 'F');                 // valutato: keyword senza match -> NO_MATCH
+        $this->vocab('11111', 'tari', 'C');
+        $this->pattern('22222', null, 'DEF');         // senza fornitore: non valutato
+        $this->pattern('33333', null, null, 0, 1, '11111');   // accorpato a un pattern con fornitore: valutato
+        $a = $this->l1(1, '11111000000000001', 'altro');
+        $b = $this->l1(2, '22222000000000002', 'altro');
+        $c = $this->l1(3, '33333000000000003', 'altro');
+
+        $res = $this->job()->runOnce(new RecordingJobContext());
+        self::assertSame(['NO_MATCH', null], $this->vc($a));
+        self::assertSame(['PENDING', null], $this->vc($b));
+        self::assertSame(['NO_MATCH', null], $this->vc($c));
+        self::assertSame(2, $res->skipped);
+    }
+
+    public function testRepositoryNoMatchWithEmptyPrefixListTouchesNothing(): void
+    {
+        $r = $this->l1(1, '11111000000000001', 'x');
+        self::assertSame(0, (new MappingPendenzeRepository(self::pdo()))->bulkSetVocabNoMatch(self::DOM, []));
+        self::assertSame('PENDING', $this->stato($r)['vocab_stato']);
     }
 
     public function testEmptyKeywordOrCodEntrataAreSkipped(): void
@@ -314,7 +340,7 @@ final class MappingL2JobTest extends DbTestCase
                 throw new \RuntimeException('boom');
             }
 
-            public function bulkSetVocabNoMatch(string $idDominio): int
+            public function bulkSetVocabNoMatch(string $idDominio, ?array $prefixes = null): int
             {
                 throw new \RuntimeException('boom');
             }
