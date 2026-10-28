@@ -222,17 +222,19 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertSame('Causale sintetica', $row['descrizione']);
     }
 
-    public function testEmptyJsonObjectIsTreatedAsSuccessWithAllNull(): void
+    public function testEmptyJsonObjectIsTreatedAsError(): void
     {
-        // Difetto noto: `{}` e' un array valido -> riga PROCESSED senza alcun dato.
-        $iur = $this->flusso(1);
-        $res = $this->job([new Response(200, [], '{}')])->runOnce(new RecordingJobContext());
+        // D3: `{}` (o `[]`) non e' una pendenza -> stesso percorso degli errori (ERROR + backoff).
+        $a = $this->flusso(1);
+        $b = $this->flusso(2);
+        $res = $this->job([new Response(200, [], '{}'), new Response(200, [], '[]')])->runOnce(new RecordingJobContext());
 
-        self::assertSame(1, $res->ok);
-        $row = $this->biz($iur);
-        self::assertSame('PROCESSED', $row['stato']);
-        self::assertNull($row['descrizione']);
-        self::assertNull($row['cf_debitore']);
+        self::assertSame(0, $res->ok);
+        self::assertSame(2, $res->errors);
+        self::assertSame('Risposta GovPay non valida', $res->errorDetails[0]['reason']);
+        $this->assertErrorRow($a, 'Risposta GovPay non valida');
+        $this->assertErrorRow($b, 'Risposta GovPay non valida');
+        self::assertFalse($this->job([])->runOnce(new RecordingJobContext())->hadWork);
     }
 
     public function testNotFound404InsertsNotFoundRecordAndCountsAsSkipped(): void

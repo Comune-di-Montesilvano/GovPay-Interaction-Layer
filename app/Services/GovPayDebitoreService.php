@@ -70,6 +70,10 @@ class GovPayDebitoreService
         if (!is_array($data)) {
             return $this->fail($row, 'Risposta GovPay non valida (non JSON array)');
         }
+        if ($data === []) {
+            // `{}`/`[]`: nessuna pendenza nel corpo, non salvarla come PROCESSED senza dati.
+            return $this->fail($row, 'Risposta GovPay non valida (vuota)');
+        }
 
         $soggetto    = is_array($data['soggettoPagatore'] ?? null) ? $data['soggettoPagatore'] : null;
         $cfDebitore  = null;
