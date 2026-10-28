@@ -775,8 +775,14 @@ jobs:
               [[ "$t" == "$image:"* ]] || { echo "::error::tag inatteso per $img: $t"; exit 1; }
               args+=(-t "$t")
             done < "handoff/$img.tags"
-            docker buildx imagetools create "${args[@]}" "$image@$(cat "handoff/$img.digest")"
-            echo "::notice::$image@$(cat "handoff/$img.digest") → $(tr '\n' ' ' < "handoff/$img.tags")"
+            digest=$(cat "handoff/$img.digest")
+            # --prefer-index=false: copia identica del manifest firmato. Di default imagetools
+            # create avvolge un manifest singolo in un nuovo index (digest diverso, non firmato).
+            docker buildx imagetools create --prefer-index=false "${args[@]}" "$image@$digest"
+            first=$(head -n1 "handoff/$img.tags")
+            tagged=$(docker buildx imagetools inspect "$first" --format '{{json .Manifest}}' | jq -r .digest)
+            [ "$tagged" = "$digest" ] || { echo "::error::$first punta a $tagged, non al digest firmato $digest"; exit 1; }
+            echo "::notice::$image@$digest → $(tr '\n' ' ' < "handoff/$img.tags")"
           done
 
   # ── Rebuild automatico fallito: issue (latest resta la build precedente) ───
