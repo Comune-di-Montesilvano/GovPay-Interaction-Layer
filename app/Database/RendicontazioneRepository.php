@@ -451,6 +451,10 @@ class RendicontazioneRepository
             "SELECT DISTINCT id_flusso FROM flussi_rendicontazioni
              WHERE id_dominio = :dom AND id_flusso IS NOT NULL AND id_flusso != ''
                AND rendicontazione_regolarizzato = 0
+               AND id_flusso IN (
+                   SELECT DISTINCT id_flusso FROM flussi_rendicontazioni
+                   WHERE id_dominio = :dom_gp AND is_govpay = 1
+               )
                AND id_flusso NOT IN (
                    SELECT DISTINCT id_flusso FROM flussi_rendicontazioni
                    WHERE id_dominio = :dom_sub AND id_flusso IS NOT NULL AND id_flusso != ''
@@ -458,7 +462,7 @@ class RendicontazioneRepository
                      AND rendicontazione_stato IN ('PENDING', 'IN_ATTESA_CONFERMA', 'ERRORE')
                )"
         );
-        $stmt->execute([':dom' => $idDominio, ':dom_sub' => $idDominio]);
+        $stmt->execute([':dom' => $idDominio, ':dom_gp' => $idDominio, ':dom_sub' => $idDominio]);
         return array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'id_flusso');
     }
 

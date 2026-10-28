@@ -727,15 +727,22 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->assertSame(0, (int)$this->row($a)['rendicontazione_regolarizzato']);
     }
 
-    public function testSweepFlussoSoloNonGovpayVieneRegolarizzatoComunqueDifettoNoto(): void
+    public function testSweepFlussoSoloNonGovpayNonVieneRegolarizzato(): void
     {
-        // Difetto noto: getFlussiDaRegolarizzare non richiede righe is_govpay=1 nel flusso
-        // (hasGovPayPayments esiste ma lo sweep non lo usa): un flusso interamente esterno con
-        // regolarizzato=0 genera un POST /incassi verso GovPay.
+        // N3 (fix 8b): un flusso composto solo da righe esterne (is_govpay=0) non genera mai
+        // un POST /incassi verso GovPay; un flusso misto completo si' (una sola volta).
         $this->setting('scansioni_quiete_soglia', '99');
-        $this->riga(1, ['id_flusso' => 'FEXT', 'is_govpay' => 0, 'rendicontazione_regolarizzato' => 0, 'importo' => 9.0]);
+        $ext = $this->riga(1, ['id_flusso' => 'FEXT', 'is_govpay' => 0, 'rendicontazione_regolarizzato' => 0, 'importo' => 9.0]);
+        $this->riga(2, ['id_flusso' => 'FMIX', 'is_govpay' => 0, 'rendicontazione_regolarizzato' => 0, 'importo' => 9.0]);
+        $this->riga(3, ['id_flusso' => 'FMIX', 'rendicontazione_stato' => 'GESTITO', 'rendicontazione_regolarizzato' => 0, 'importo' => 1.0]);
+
         $this->runJob();
-        $this->assertSame(1, $this->callsOf('incasso'));
+        $this->runJob();
+
+        $incassi = array_values(array_filter($this->calls, static fn($c) => $c['kind'] === 'incasso'));
+        $this->assertCount(1, $incassi, 'solo il flusso misto');
+        $this->assertStringContainsString('FMIX', $incassi[0]['body']);
+        $this->assertSame(0, (int)$this->row($ext)['rendicontazione_regolarizzato']);
     }
 
     public function testSweepErroreNonFermaIlCicloEIndicaFase(): void
