@@ -93,6 +93,8 @@ class BizScannerService
             if ($code === 404) {
                 $msg = 'Ricevuta non trovata in Biz Events (404)';
                 $this->repo->markSkipped($id, $msg);
+                // Senza ricevuta Biz la riga non potra' mai essere mappata da L1: non lasciarla PENDING.
+                $this->flussiRepo->markMappingNoMatchByIur($idDominio, $iur);
                 return ['status' => 'SKIPPED', 'reason' => $msg];
             }
             $msg = "Errore API Biz Events HTTP $code: " . mb_substr($e->getMessage(), 0, 300);

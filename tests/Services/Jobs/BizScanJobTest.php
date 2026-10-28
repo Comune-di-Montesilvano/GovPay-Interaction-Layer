@@ -210,7 +210,7 @@ final class BizScanJobTest extends DbTestCase
         self::assertSame(0, $res->processed);
     }
 
-    public function test404IsSkippedAndFlussoMappingStaysPending(): void
+    public function test404IsSkippedAndFlussoMappingIsNoMatch(): void
     {
         $iur = $this->flusso(1);
         $job = $this->job([self::http(404)]);
@@ -221,8 +221,8 @@ final class BizScanJobTest extends DbTestCase
         self::assertSame('SKIPPED', $row['stato']);
         self::assertSame('Ricevuta non trovata in Biz Events (404)', $row['error_msg']);
         self::assertSame([1, 0, 1, 0, true], [$res->processed, $res->ok, $res->skipped, $res->errors, $res->hadWork]);
-        // difetto noto: le righe SKIPPED (404) lasciano flussi_rendicontazioni.mapping_stato = PENDING per sempre
-        self::assertSame('PENDING', $this->flussoMappingStato($iur));
+        // B1: la riga 404 non potra' mai essere mappata -> flusso NO_MATCH (non resta PENDING per sempre)
+        self::assertSame('NO_MATCH', $this->flussoMappingStato($iur));
     }
 
     public function testServerErrorMarksErrorThenIdleIterationResetsToPendingAndRestartsImmediately(): void

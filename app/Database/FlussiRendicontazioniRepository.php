@@ -612,6 +612,20 @@ class FlussiRendicontazioniRepository
     }
 
     /**
+     * Marca mapping_stato = NO_MATCH le righe non-GovPay ancora PENDING di uno IUR che non potra'
+     * mai essere mappato (ricevuta assente in Biz Events, biz_ricevute SKIPPED).
+     */
+    public function markMappingNoMatchByIur(string $idDominio, string $iur): int
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni SET mapping_stato = \'NO_MATCH\'
+             WHERE id_dominio = :dom AND iur = :iur AND is_govpay = 0 AND mapping_stato = \'PENDING\''
+        );
+        $stmt->execute([':dom' => $idDominio, ':iur' => $iur]);
+        return $stmt->rowCount();
+    }
+
+    /**
      * IUR GovPay senza entry in biz_ricevute — coda per il demone cron_govpay_debitore_scanner.
      * @return array<int,array<string,mixed>>
      */
