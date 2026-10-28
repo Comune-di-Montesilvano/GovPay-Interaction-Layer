@@ -998,7 +998,7 @@ final class RendicontazioneJobTest extends DbTestCase
     public function testScritturaContatoreFallitaNonLanciaERitornaRisultato(): void
     {
         $this->setting('scansioni_quiete_soglia', '99');
-        $this->riga(1);
+        $this->riga(1, ['rendicontazione_stato' => 'ERRORE']); // non nuova: il contatore cambia e va scritto
         $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', getenv('DB_HOST'), getenv('DB_PORT'), getenv('DB_NAME'));
         $failing = new class($dsn, (string)getenv('DB_USER'), (string)getenv('DB_PASSWORD')) extends \PDO {
             #[\ReturnTypeWillChange]
