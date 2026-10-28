@@ -398,15 +398,16 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertSame([], $flussi->getUnprocessedGovPayForDebitore(self::DOMINIO, 100));
     }
 
-    public function testServerErrorIsGenericErrorAndRecorded(): void
+    public function testServerErrorKeepsStatusCodeAndIsRecorded(): void
     {
         $iur = $this->flusso(1);
         $ctx = new RecordingJobContext();
         $res = $this->job([self::http(500)])->runOnce($ctx);
 
         self::assertSame(1, $res->errors);
-        $this->assertErrorRow($iur, 'Errore chiamata GovPay');
-        self::assertSame([['ref' => $iur, 'reason' => 'Errore chiamata GovPay']], $res->errorDetails);
+        // D5: il motivo riporta lo status code (mai il corpo)
+        $this->assertErrorRow($iur, 'HTTP 500');
+        self::assertSame([['ref' => $iur, 'reason' => 'HTTP 500']], $res->errorDetails);
         // il log (non l'errorDetails) riporta ancora il messaggio Guzzle
         self::assertNotEmpty(array_filter($ctx->messages, fn (string $m) => str_contains($m, "IUR={$iur}: errore - ")));
     }

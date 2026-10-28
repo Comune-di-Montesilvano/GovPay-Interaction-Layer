@@ -7,7 +7,7 @@ use App\Config\SettingsRepository;
 use App\Database\BizRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\BadResponseException;
 
 /**
  * Recupera dati debitore da GovPay Backoffice API per IUR is_govpay=1
@@ -55,7 +55,8 @@ class GovPayDebitoreService
         try {
             $resp = $this->buildClient()->request('GET', $url, ['headers' => ['Accept' => 'application/json']]);
             $data = json_decode((string)$resp->getBody(), true);
-        } catch (ClientException $e) {
+        } catch (BadResponseException $e) {
+            // 4xx e 5xx: il motivo conserva lo status code (safeReason -> "HTTP <code>", mai il corpo).
             $code = $e->getResponse()->getStatusCode();
             if ($code === 404) {
                 // Esito definitivo: NOT_FOUND (mai ritentato), distinto da PROCESSED con dati.
