@@ -1,0 +1,140 @@
+name: Pulizia immagini GHCR
+# docker-publish.yml pusha ogni immagine per digest e la tagga solo dopo Trivy + firma + smoke:
+# un build fallito, e ogni latest sostituito, lascia su GHCR versioni senza tag, insieme alle
+# firme cosign e alle attestazioni (GHCR non ha la referrers API: stanno sotto tag
+# `sha256-<digest>`, che il filtro "untagged" non toccherebbe mai). Qui si tengono:
+#   - ogni versione con un tag "vero" (1.6.8, 1.6, latest, latest-YYYYMMDD, …);
+#   - le sotto-versioni (manifest per piattaforma, attestazioni BuildKit) di quelle tenute;
+#   - firme/attestazioni (tag sha256-<hex>[.sig|.att|…]) delle sole immagini tenute, con i
+#     loro figli;
+#   - tutto cio' che e' nato nelle ultime 6 ore (build/publish in corso: i figli arrivano
+#     prima dell'indice, il digest prima del tag).
+# Il resto (digest orfani + loro firme/attestazioni) viene cancellato.
+# Esclusi sempre i package di cache (*-cache, *-buildcache, php-common-cache): non sono nella
+# matrice e lo step si rifiuta di girarci sopra.
+#
+# DRY-RUN: lo schedule gira in dry-run finche' un dry-run manuale non e' stato controllato
+# (poi cambiare SCHEDULE_DRY_RUN sotto in 'false'). Il dispatch parte in dry-run per default.
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo elenco, nessuna cancellazione"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Mai in parallelo con un'altra pulizia (stesse versioni).
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+env:
+  # Schedule in dry-run finche' non validato (vedi intestazione).
+  SCHEDULE_DRY_RUN: 'true'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        image: [backoffice, frontoffice, db]
+    env:
+      ORG: comune-di-montesilvano
+      PKG: govpay-interaction-layer-${{ matrix.image }}
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pulizia ${{ matrix.image }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Dispatch: secondo l'input (default dry-run). Schedule: SCHEDULE_DRY_RUN.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || github.event_name != 'workflow_dispatch' && env.SCHEDULE_DRY_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          case "$PKG" in
+            # *-cache copre anche *-buildcache e php-common-cache.
+            *-cache)
+              echo "::error::$PKG e' un package di cache: escluso dalla pulizia"; exit 1 ;;
+          esac
+          api="orgs/$ORG/packages/container/$PKG/versions"
+          image="ghcr.io/$ORG/$PKG"
+
+          gh api --paginate "$api?per_page=100" \
+            -q '.[] | [.id, .name, .created_at, (.metadata.container.tags | join(","))] | @tsv' > versions.tsv
+          echo "Versioni totali: $(wc -l < versions.tsv)"
+
+          # Figli di un manifest (indice → manifest per piattaforma/attestazioni/referrer). Un
+          # manifest singolo non ha .manifests: nessun figlio. Mai `|| true`: se la lettura
+          # fallisce i figli resterebbero fuori da keep.txt e verrebbero cancellati, rompendo
+          # l'immagine taggata — meglio fermare tutto.
+          children() {
+            local raw
+            raw=$(docker buildx imagetools inspect --raw "$image@$1")
+            jq -r '.manifests[]?.digest' <<<"$raw"
+          }
+
+          # 1) Versioni con almeno un tag che non sia di firma/attestazione, e i loro figli.
+          : > keep.txt
+          while IFS=$'\t' read -r id digest created tags; do
+            [ -n "$tags" ] || continue
+            keep=false
+            for t in ${tags//,/ }; do
+              [[ "$t" =~ ^sha256-[0-9a-f]{64} ]] && continue
+              keep=true
+            done
+            $keep || continue
+            echo "$digest" >> keep.txt
+            children "$digest" >> keep.txt
+          done < versions.tsv
+          sort -u -o keep.txt keep.txt
+
+          # 2) Firme/attestazioni: tag sha256-<hex>[.suffisso] → si tengono (con i figli) solo se
+          #    l'immagine sha256:<hex> e' tenuta; quelle di digest orfani se ne vanno con loro.
+          cp keep.txt keep-images.txt
+          while IFS=$'\t' read -r id digest created tags; do
+            for t in ${tags//,/ }; do
+              [[ "$t" =~ ^sha256-([0-9a-f]{64}) ]] || continue
+              grep -qx "sha256:${BASH_REMATCH[1]}" keep-images.txt || continue
+              echo "$digest" >> keep.txt
+              children "$digest" >> keep.txt
+            done
+          done < versions.tsv
+          sort -u -o keep.txt keep.txt
+
+          cutoff=$(date -u -d '6 hours ago' +%FT%TZ)
+          deleted=0
+          while IFS=$'\t' read -r id digest created tags; do
+            grep -qx "$digest" keep.txt && continue
+            [[ "$created" > "$cutoff" ]] && continue
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY-RUN elimina $id $digest ${tags:-<senza tag>} ($created)"
+            else
+              gh api -X DELETE "$api/$id" >/dev/null
+            fi
+            deleted=$((deleted + 1))
+          done < versions.tsv
+
+          kept=$(( $(wc -l < versions.tsv) - deleted ))
+          echo "::notice::$PKG: $deleted versioni da eliminare, $kept tenute (dry_run=$DRY_RUN)"

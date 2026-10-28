@@ -38,6 +38,7 @@ COPY --link composer.json composer.lock* ./
 COPY --link govpay-clients/ ./govpay-clients/
 COPY --link pagopa-clients/ ./pagopa-clients/
 RUN --mount=type=cache,target=/root/.composer,sharing=locked \
+    composer validate --no-check-publish --no-check-all && \
     composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
 
@@ -71,8 +72,6 @@ WORKDIR /var/www/html
 
 # Copia vendor dal builder (strato pesante, teniamolo in alto in modo che non venga invalidato)
 COPY --link --from=vendor_builder /app/vendor /var/www/html/vendor
-# Reintroduco composer solo per script di setup (dump-autoload scenario)
-COPY --link --from=vendor_builder /usr/bin/composer /usr/local/bin/composer
 
 # ----------------------------------------------------------------------
 # COPIA ASSET FRONT-END
