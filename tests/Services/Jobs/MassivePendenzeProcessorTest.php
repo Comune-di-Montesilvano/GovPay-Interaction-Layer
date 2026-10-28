@@ -308,11 +308,14 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame([['ref' => (string)$id, 'reason' => 'Errore contabilità']], $r->errorDetails);
     }
 
-    /** P8: 4xx con corpo JSON -> ERROR, errore = corpo upstream, response_json = corpo decodificato. */
-    public function testGovPay4xxJsonGoesToErrorWithUpstreamBodyAndOnePut(): void
+    /**
+     * P8 + P6 (fix 8b): 4xx con corpo JSON -> ERROR, errore = 'HTTP <code> - <codice>: <descrizione>'
+     * (solo campi ProblemJson, mai il corpo intero), response_json = solo categoria/codice/descrizione.
+     */
+    public function testGovPay4xxJsonGoesToErrorWithStatusAndProblemFieldsOnlyAndOnePut(): void
     {
         $id = $this->insertRow('PENDING', self::payload(10));
-        $upstream = ['categoria' => 'RICHIESTA', 'codice' => 'SINTASSI', 'descrizione' => 'segreto upstream'];
+        $upstream = ['categoria' => 'RICHIESTA', 'codice' => 'SINTASSI', 'descrizione' => 'Richiesta non valida', 'dettaglio' => 'segreto upstream RSSMRA'];
         $this->queue(422, $upstream);
 
         $r = $this->processor()->processRow($id, $this->ctx);
@@ -320,8 +323,9 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertCount(1, $this->gp->calls(), 'nessun retry: una sola PUT');
         $row = $this->row($id);
         self::assertSame('ERROR', $row['stato']);
-        self::assertSame(json_encode($upstream), $row['errore']);
-        self::assertSame($upstream, $this->json($row['response_json']));
+        self::assertSame('HTTP 422 - SINTASSI: Richiesta non valida', $row['errore']);
+        self::assertSame(['categoria' => 'RICHIESTA', 'codice' => 'SINTASSI', 'descrizione' => 'Richiesta non valida'], $this->json($row['response_json']));
+        self::assertStringNotContainsString('segreto', (string)$row['errore'] . (string)$row['response_json']);
         self::assertSame([], $this->gp->notifications);
         self::assertResult($r, 1, 0, 0, 1, true);
         self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 4xx']], $r->errorDetails);
@@ -349,25 +353,28 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 400']], $r->errorDetails);
     }
 
-    /** 5xx: ServerException -> ERROR con il messaggio Guzzle (URL + corpo troncato), response_json NULL, nessun retry. */
-    public function testGovPay5xxGoesToErrorWithGuzzleMessageAndOnePut(): void
+    /** 5xx + P6 (fix 8b): ERROR con 'HTTP 500 - <codice>: <descrizione>' (mai URL/corpo), response_json NULL, nessun retry. */
+    public function testGovPay5xxGoesToErrorWithStatusAndProblemFieldsAndOnePut(): void
     {
         $id = $this->insertRow('PENDING', self::payload(12));
-        $this->queue(500, ['descrizione' => 'segreto upstream']);
+        $this->queue(500, ['categoria' => 'INTERNO', 'codice' => 'ERR_500', 'descrizione' => str_repeat('x', 400), 'dettaglio' => 'segreto upstream']);
 
         $r = $this->processor()->processRow($id, $this->ctx);
 
         self::assertCount(1, $this->gp->calls());
         $row = $this->row($id);
         self::assertSame('ERROR', $row['stato']);
-        self::assertStringStartsWith('Server error: `PUT ' . self::BASE . '/pendenze/' . self::A2A . '/GIL-', (string)$row['errore']);
-        self::assertStringContainsString('500 Internal Server Error', (string)$row['errore']);
+        self::assertStringStartsWith('HTTP 500 - ERR_500: xxx', (string)$row['errore']);
+        self::assertSame(255, mb_strlen((string)$row['errore']), 'troncato a 255');
+        self::assertStringNotContainsString('segreto', (string)$row['errore']);
+        self::assertStringNotContainsString(self::BASE, (string)$row['errore']);
         self::assertNull($row['response_json']);
         self::assertSame([], $this->gp->notifications);
         self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 500']], $r->errorDetails);
     }
 
-    public function testNetworkErrorGoesToErrorWithExceptionMessage(): void
+    /** P6 (fix 8b): errore di rete -> classe dell'eccezione, mai il messaggio (puo' contenere URL). */
+    public function testNetworkErrorGoesToErrorWithExceptionClassOnly(): void
     {
         $id = $this->insertRow('PENDING', self::payload(13));
         $this->gp->mock->append(new ConnectException('cURL error 7: connessione rifiutata', new Request('PUT', self::BASE)));
@@ -376,7 +383,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
 
         $row = $this->row($id);
         self::assertSame('ERROR', $row['stato']);
-        self::assertSame('cURL error 7: connessione rifiutata', $row['errore']);
+        self::assertSame('Invio a GovPay fallito (ConnectException)', $row['errore']);
         self::assertSame([['ref' => (string)$id, 'reason' => 'Invio a GovPay fallito']], $r->errorDetails);
     }
 
@@ -482,7 +489,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertCount(4, $this->gp->calls());
         $row = $this->row($id);
         self::assertSame('SUCCESS', $row['stato']);
-        self::assertSame("Errore API di Annullamento: Errore nell'aggiornamento dello stato: HTTP 500 - dettaglio upstream", $row['errore']);
+        self::assertSame('Errore API di Annullamento: HTTP 500', $row['errore'], 'P6: mai il corpo upstream');
         self::assertResult($r, 1, 0, 0, 1, true);
         self::assertSame([['ref' => (string)$id, 'reason' => 'Annullamento rifiutato: HTTP 500']], $r->errorDetails);
     }
@@ -634,7 +641,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         $r = $this->processor()->processRow($id, $this->ctx);
 
         self::assertSame('SUCCESS', $this->row($id)['stato']);
-        self::assertSame('Errore di Annullamento: esplosione', $this->row($id)['errore']);
+        self::assertSame('Errore di Annullamento: RuntimeException', $this->row($id)['errore'], 'P6: mai il messaggio');
         self::assertSame([['ref' => (string)$id, 'reason' => 'Eccezione RuntimeException']], $r->errorDetails);
     }
 

@@ -162,10 +162,13 @@ final class MassivePendenzeProcessor
                             $log("  [$batchId:$numeroRiga] ID-$id ANNULLATO OK");
                             return self::ok();
                         }
-                        $this->repo->updateRowStatus($id, 'SUCCESS', 'Errore API di Annullamento: ' . ($result['error'] ?? 'Errore sconosciuto'), true);
-                        $log("  [$batchId:$numeroRiga] ID-$id ERRORE API ANNULLAMENTO: " . ($result['error'] ?? 'Errore sconosciuto'));
-                        $reason = preg_match('/HTTP (\d{3})/', (string)($result['error'] ?? ''), $m) === 1
-                            ? 'Annullamento rifiutato: HTTP ' . $m[1]
+                        // P6: solo lo status HTTP, mai il corpo upstream che il controller accoda.
+                        $httpCode = preg_match('/HTTP (\d{3})/', (string)($result['error'] ?? ''), $m) === 1 ? $m[1] : null;
+                        $errText = $httpCode !== null ? 'HTTP ' . $httpCode : 'Errore sconosciuto';
+                        $this->repo->updateRowStatus($id, 'SUCCESS', 'Errore API di Annullamento: ' . $errText, true);
+                        $log("  [$batchId:$numeroRiga] ID-$id ERRORE API ANNULLAMENTO: " . $errText);
+                        $reason = $httpCode !== null
+                            ? 'Annullamento rifiutato: HTTP ' . $httpCode
                             : 'Annullamento rifiutato';
                         return self::error($ref, $reason);
                     } elseif ($statoGP === 'ANNULLATA') {
@@ -185,7 +188,9 @@ final class MassivePendenzeProcessor
             $log("  [$batchId:$numeroRiga] ID-$id ERRORE (ID Pendenza non trovato)");
             return self::error($ref, 'ID pendenza non risolto');
         } catch (\Throwable $e) {
-            $this->repo->updateRowStatus($id, 'SUCCESS', 'Errore di Annullamento: ' . $e->getMessage(), true);
+            // P6: solo la classe dell'eccezione (il messaggio puo' contenere URL/corpi upstream).
+            $short = (new \ReflectionClass($e))->getShortName();
+            $this->repo->updateRowStatus($id, 'SUCCESS', 'Errore di Annullamento: ' . $short, true);
             $log("  [$batchId:$numeroRiga] ID-$id ECCEZIONE: " . $e->getMessage());
             return self::error($ref, 'Eccezione ' . get_class($e));
         }
@@ -280,34 +285,56 @@ final class MassivePendenzeProcessor
             return self::ok();
         }
 
-        $errorMsg = is_array($res['errors']) ? implode('; ', $res['errors']) : 'Errore sconosciuto';
-        $response = $res['response'] ?? null;
-        if ($response !== null && !is_array($response)) {
-            // Corpo 4xx non JSON (es. pagina HTML di un proxy): solo lo status, mai il corpo.
-            $errorMsg = isset($res['httpStatus']) ? 'HTTP ' . (int)$res['httpStatus'] : 'HTTP 4xx';
-            $response = null;
-        }
+        $errorMsg = self::createErrore($res);
+        // response_json: solo i campi ProblemJson (categoria/codice/descrizione), mai il corpo intero.
+        $response = array_key_exists('response', $res) ? (($res['problem'] ?? []) ?: null) : null;
         $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
         $this->repo->setResult($id, false, $response, $errorMsg);
-        return self::error($ref, self::createFailureReason($res, $errorMsg));
+        return self::error($ref, self::createFailureReason($res));
     }
 
     /**
-     * Motivo sintetico del fallimento di creazione, senza corpi upstream:
-     * risposta 4xx (ClientException: il controller restituisce la chiave 'response') -> "HTTP 4xx";
-     * messaggio Guzzle con status (es. 5xx) -> "HTTP NNN"; altrimenti testo fisso.
+     * Testo per la colonna `errore` di una creazione fallita, senza dati personali: status HTTP +
+     * codice/descrizione del ProblemJson GovPay; errore di rete -> sola classe dell'eccezione (il
+     * messaggio contiene URL/corpo); errori di configurazione interni -> testo fisso del controller.
+     * Troncato a 255 caratteri.
      *
      * @param array<string,mixed> $res
      */
-    private static function createFailureReason(array $res, string $errorMsg): string
+    private static function createErrore(array $res): string
     {
-        if (array_key_exists('response', $res)) {
-            return isset($res['httpStatus']) && !is_array($res['response'] ?? null) && $res['response'] !== null
-                ? 'HTTP ' . (int)$res['httpStatus']
-                : 'HTTP 4xx';
+        if (isset($res['httpStatus'])) {
+            $msg = 'HTTP ' . (int)$res['httpStatus'];
+            $problem = is_array($res['problem'] ?? null) ? $res['problem'] : [];
+            $codice = (string)($problem['codice'] ?? '');
+            $descrizione = (string)($problem['descrizione'] ?? '');
+            if ($codice !== '' || $descrizione !== '') {
+                $msg .= ' - ' . $codice . ($codice !== '' && $descrizione !== '' ? ': ' : '') . $descrizione;
+            }
+        } elseif (isset($res['exceptionClass'])) {
+            $class = (string)$res['exceptionClass'];
+            $pos = strrpos($class, '\\');
+            $msg = 'Invio a GovPay fallito (' . ($pos === false ? $class : substr($class, $pos + 1)) . ')';
+        } else {
+            $msg = is_array($res['errors'] ?? null) ? implode('; ', $res['errors']) : 'Errore sconosciuto';
         }
-        if (preg_match('/resulted in a `(\d{3})/', $errorMsg, $m) === 1) {
-            return 'HTTP ' . $m[1];
+        return mb_substr($msg, 0, 255);
+    }
+
+    /**
+     * Motivo sintetico del fallimento di creazione (errorDetails), senza corpi upstream:
+     * risposta 4xx JSON (ClientException) -> "HTTP 4xx"; 4xx non JSON / 5xx -> "HTTP NNN";
+     * altrimenti testo fisso.
+     *
+     * @param array<string,mixed> $res
+     */
+    private static function createFailureReason(array $res): string
+    {
+        if (array_key_exists('response', $res) && (is_array($res['response']) || $res['response'] === null)) {
+            return 'HTTP 4xx';
+        }
+        if (isset($res['httpStatus'])) {
+            return 'HTTP ' . (int)$res['httpStatus'];
         }
         return 'Invio a GovPay fallito';
     }

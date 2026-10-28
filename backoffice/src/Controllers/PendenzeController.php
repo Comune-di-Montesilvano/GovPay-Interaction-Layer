@@ -1826,11 +1826,41 @@ class PendenzeController
                 'errors' => $errors,
                 'response' => $parsed,
                 'httpStatus' => $resp ? $resp->getStatusCode() : null,
+                'problem' => self::problemJsonFields($parsed),
             ];
         } catch (\Throwable $e) {
             $errors[] = $e->getMessage();
-            return ['success' => false, 'errors' => $errors];
+            $out = ['success' => false, 'errors' => $errors, 'exceptionClass' => get_class($e)];
+            if ($e instanceof RequestException && $e->getResponse() !== null) {
+                $out['httpStatus'] = $e->getResponse()->getStatusCode();
+                try {
+                    $out['problem'] = self::problemJsonFields(json_decode((string)$e->getResponse()->getBody(), true));
+                } catch (\Throwable $_) {
+                    $out['problem'] = [];
+                }
+            }
+            return $out;
         }
+    }
+
+    /**
+     * Solo i campi "codice" di un ProblemJson GovPay (categoria/codice/descrizione), stringhe
+     * troncate a 255. Mai 'dettaglio' ne' il resto del corpo (puo' riecheggiare dati personali).
+     *
+     * @return array<string,string>
+     */
+    public static function problemJsonFields(mixed $decoded): array
+    {
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $out = [];
+        foreach (['categoria', 'codice', 'descrizione'] as $k) {
+            if (isset($decoded[$k]) && is_scalar($decoded[$k]) && trim((string)$decoded[$k]) !== '') {
+                $out[$k] = mb_substr(trim((string)$decoded[$k]), 0, 255);
+            }
+        }
+        return $out;
     }
 
     /**
