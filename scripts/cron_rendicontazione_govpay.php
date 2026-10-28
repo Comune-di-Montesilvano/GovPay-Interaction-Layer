@@ -11,7 +11,8 @@ declare(strict_types=1);
  * rendicontazione.max_giorni_retry (default 14 giorni: oltre non si ritenta piu',
  * evita retry infinito su flussi irrecuperabili) tramite RendicontazioneEngineService.
  * Il digest (mail operatori + admin) parte quando N cicli consecutivi non trovano
- * righe nuove PENDING (rendicontazione.scansioni_quiete_soglia, default 3).
+ * righe nuove PENDING (rendicontazione.scansioni_quiete_soglia, default 3); contatore
+ * persistito in DB. Logica dell'iterazione in App\Services\Jobs\RendicontazioneJob.
  * Si ferma ricevendo il segnale /tmp/cron-stop-rendicontazione-govpay.
  */
 
@@ -25,6 +26,8 @@ use App\Database\UserGroupRepository;
 use App\Services\GovPayClientFactory;
 use App\Services\LegacyRendicontazioneBridgeClient;
 use App\Services\MailerService;
+use App\Services\Jobs\RendicontazioneJob;
+use App\Services\Jobs\ScriptJobContext;
 use App\Services\RendicontazioneEngineService;
 use Dotenv\Dotenv;
 
@@ -122,157 +125,29 @@ $bridge = new LegacyRendicontazioneBridgeClient();
 $groupRepo = new UserGroupRepository();
 $mailer = MailerService::forSuite('backoffice');
 
-$scansioniSenzaNovita = 0;
+// Il contatore dei cicli senza novita' (digest) e' persistito in DB da RendicontazioneJob
+// (settings rendicontazione.scansioni_senza_novita): sopravvive al riavvio del processo.
+$job = new RendicontazioneJob(
+    $repo,
+    static fn(): RendicontazioneEngineService => new RendicontazioneEngineService($repo, $bridge, buildGovPayClientForRendicontazione()),
+    $groupRepo,
+    new UserRepository(),
+    $mailer,
+    $idDominio,
+    $idA2A
+);
+$jobCtx = new ScriptJobContext($stopFile);
+
 $log('Loop avviato.');
 
 while (true) {
     $checkStop();
 
-    $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
-    $scanInterval  = max(1, (int)SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'));
-    $soglia        = max(1, (int)SettingsRepository::get('rendicontazione', 'scansioni_quiete_soglia', '3'));
-    $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'));
-    $minDataPagamento = date('Y-m-d', strtotime("-{$maxGiorniRetry} days"));
-    $geriMaxTentativi = max(1, (int)SettingsRepository::get('rendicontazione', 'geri_max_tentativi', '3'));
+    $scanInterval = max(1, (int)SettingsRepository::get('rendicontazione', 'scan_interval_minuti', '15'));
 
-    if ($backofficeUrl === '') {
-        $log('govpay.backoffice_url non configurato. Riprovo tra ' . $scanInterval . ' minuti...');
-        for ($s = 0; $s < $scanInterval * 60; $s += 10) {
-            $checkStop();
-            sleep(10);
-        }
-        continue;
-    }
-
-    try {
-        $govPayClient = buildGovPayClientForRendicontazione();
-        $engine = new RendicontazioneEngineService($repo, $bridge, $govPayClient);
-        $result = $engine->processaCiclo($idDominio, $idA2A, $backofficeUrl, 2000, $minDataPagamento, $geriMaxTentativi);
-        $log(sprintf('Ciclo: processate=%d nuove=%d', $result['processate'], $result['nuove']));
-
-        // Sweep per tentare/ritentare la regolarizzazione di tutti i flussi completi non ancora regolarizzati
-        try {
-            $flussiDaRegolarizzare = $repo->getFlussiDaRegolarizzare($idDominio);
-            if (!empty($flussiDaRegolarizzare)) {
-                $log(sprintf('Trovati %d flussi completati da regolarizzare in sweep...', count($flussiDaRegolarizzare)));
-                foreach ($flussiDaRegolarizzare as $flussoId) {
-                    $checkStop();
-                    $rigaFlusso = $repo->getUnaRigaPerFlusso($idDominio, $flussoId);
-                    if ($rigaFlusso) {
-                        $engine->controllaERegolarizzaFlussoPerRiga($idDominio, (int)$rigaFlusso['id'], $backofficeUrl);
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            \Sentry\captureException($e);
-            $log('ERRORE sweep regolarizzazione flussi: ' . $e->getMessage());
-        }
-
-        if ($result['nuove'] > 0) {
-            $scansioniSenzaNovita = 0;
-        } else {
-            $scansioniSenzaNovita++;
-        }
-    } catch (\Throwable $e) {
-        \Sentry\captureException($e);
-        $log('ERRORE ciclo processaCiclo: ' . $e->getMessage());
-        $scansioniSenzaNovita++;
-    }
+    $job->runOnce($jobCtx);
 
     $checkStop();
-
-    if ($scansioniSenzaNovita >= $soglia) {
-        try {
-            $nonNotificate = $repo->getNonNotificate($idDominio);
-            if (!empty($nonNotificate)) {
-                $daConfermare = array_values(array_filter($nonNotificate, static fn($r) => $r['rendicontazione_stato'] === 'IN_ATTESA_CONFERMA'));
-                $gestite      = array_values(array_filter($nonNotificate, static fn($r) => $r['rendicontazione_stato'] !== 'IN_ATTESA_CONFERMA'));
-
-                $righeOperatoreInviate = 0;
-                // Id delle righe effettivamente incluse in un digest INVIATO (operatore o admin).
-                // Solo queste vengono marcate rendicontazione_notificato=1: una riga il cui
-                // cod_entrata non matcha alcun gruppo (o GESTITO con notifica_admin_auto=false)
-                // resta non marcata e ricompare a ogni ciclo finche' la configurazione non la copre.
-                $idsNotificati = [];
-
-                $baseUrlVista = rtrim((string)\App\Config\Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''), '/') . '/rendicontazione/da-confermare';
-
-                // Digest per gruppo: si assume una risoluzione gruppo->tipologie già a carico
-                // della UI (Task 9); qui si notificano tutti i destinatari via query diretta.
-                $userRepo = new UserRepository();
-                $globalEmails = $userRepo->getGlobalNotificationEmails();
-
-                $pdo = Connection::getPDO();
-                $stmtGruppi = $pdo->prepare(
-                    'SELECT DISTINCT group_id FROM rendicontazione_gruppo_tipologie WHERE id_dominio = :dom'
-                );
-                $stmtGruppi->execute([':dom' => $idDominio]);
-                foreach ($stmtGruppi->fetchAll(\PDO::FETCH_ASSOC) as $g) {
-                    $groupId = (int)$g['group_id'];
-                    $tipologie = $groupRepo->getRendicontazioneTipologie($groupId, $idDominio);
-                    $entrateSoloNotifica = array_column(array_filter($tipologie, static fn($t) => $t['modalita'] === 'SOLO_NOTIFICA'), 'id_entrata');
-                    $entrateSmarcatura   = array_column(array_filter($tipologie, static fn($t) => $t['modalita'] === 'NOTIFICA_E_SMARCATURA'), 'id_entrata');
-
-                    $righeDaConfermareGruppo = array_values(array_filter($daConfermare, static fn($r) => in_array((string)($r['cod_entrata'] ?? ''), $entrateSmarcatura, true)));
-                    $righeInformativeGruppo  = array_values(array_filter($gestite, static fn($r) => in_array((string)($r['cod_entrata'] ?? ''), $entrateSoloNotifica, true)));
-
-                    if (empty($righeDaConfermareGruppo) && empty($righeInformativeGruppo)) {
-                        continue;
-                    }
-
-                    $emails = $groupRepo->getMemberEmails($groupId);
-                    if (!empty($globalEmails)) {
-                        $emails = array_unique(array_merge($emails, $globalEmails));
-                    }
-                    $groupInfo = $groupRepo->findById($groupId);
-                    $esitoOperatore = $mailer->sendRendicontazioneOperatoreDigest(
-                        $emails,
-                        (string)($groupInfo['nome'] ?? "Gruppo {$groupId}"),
-                        $righeDaConfermareGruppo,
-                        $righeInformativeGruppo,
-                        $baseUrlVista
-                    );
-                    if (($esitoOperatore['esito'] ?? '') === 'OK') {
-                        $righeOperatoreInviate += count($righeDaConfermareGruppo) + count($righeInformativeGruppo);
-                        foreach (array_merge($righeDaConfermareGruppo, $righeInformativeGruppo) as $r) {
-                            $idsNotificati[(int)$r['id']] = true;
-                        }
-                    } else if (($esitoOperatore['esito'] ?? '') === 'ERRORE') {
-                        $log('ERRORE invio digest operatore: ' . ($esitoOperatore['errore'] ?? 'Errore sconosciuto'));
-                    }
-                }
-
-                $notificaAdmin = (string)SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false') === 'true';
-                $righeAdminInviate = 0;
-                if ($notificaAdmin) {
-                    $rawAdminEmails = (string)SettingsRepository::get('rendicontazione', 'admin_emails', '');
-                    $adminEmails = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/', $rawAdminEmails))));
-                    if (!empty($adminEmails) && !empty($gestite)) {
-                        $esitoAdmin = $mailer->sendRendicontazioneAdminDigest(array_values($adminEmails), $gestite);
-                        if (($esitoAdmin['esito'] ?? '') === 'OK') {
-                            $righeAdminInviate = count($gestite);
-                            foreach ($gestite as $r) {
-                                $idsNotificati[(int)$r['id']] = true;
-                            }
-                        } else if (($esitoAdmin['esito'] ?? '') === 'ERRORE') {
-                            $log('ERRORE invio digest admin: ' . ($esitoAdmin['errore'] ?? 'Errore sconosciuto'));
-                        }
-                    }
-                }
-
-                $repo->marcaNotificate(array_keys($idsNotificati));
-                $pdo->prepare(
-                    'INSERT INTO rendicontazione_digest_log (righe_operatore, righe_admin) VALUES (:ro, :ra)'
-                )->execute([':ro' => $righeOperatoreInviate, ':ra' => $righeAdminInviate]);
-
-                $log(sprintf('Digest inviato: operatore=%d admin=%d', $righeOperatoreInviate, $righeAdminInviate));
-            }
-        } catch (\Throwable $e) {
-            \Sentry\captureException($e);
-            $log('ERRORE invio digest: ' . $e->getMessage());
-        }
-        $scansioniSenzaNovita = 0;
-    }
 
     $log("Prossimo ciclo tra {$scanInterval} minuti...");
     for ($s = 0; $s < $scanInterval * 60; $s += 10) {
