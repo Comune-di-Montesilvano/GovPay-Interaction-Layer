@@ -148,15 +148,22 @@ final class MappingL1JobTest extends DbTestCase
         self::assertSame(['88888'], $this->patternKeys());
     }
 
-    public function testDiscoverOverwritesCountOfExistingCustomPatternKeepingFlags(): void
+    public function testDiscoverUpdatesCountOfExistingCustomPatternKeepingFlags(): void
     {
-        // difetto noto: l'upsert ON DUPLICATE KEY non guarda is_custom; sovrascrive il count anche di un custom
+        // M3 (accettato): il count e' una statistica mostrata in UI, l'upsert la aggiorna anche per un custom;
+        // is_custom, fornitore, cod_entrata e accorpato_a non vengono mai toccati.
         $this->pattern('11111', 'Forn', 'COD', 1, 99);
+        $this->pattern('22222', null, null, 1, 42, '11111');
         $this->riga(1, '11111000000000001');
+        $this->riga(2, '22222000000000002');
+        $this->riga(3, '22222000000000003');
 
         $this->job()->discover();
-        $row = self::pdo()->query("SELECT fornitore, cod_entrata, is_custom, transazioni_count FROM mapping_pendenze_pattern WHERE pattern_iuv='11111'")->fetch(\PDO::FETCH_ASSOC);
-        self::assertSame(['fornitore' => 'Forn', 'cod_entrata' => 'COD', 'is_custom' => 1, 'transazioni_count' => 1], $row);
+        $rows = self::pdo()->query("SELECT pattern_iuv, fornitore, cod_entrata, accorpato_a, is_custom, transazioni_count FROM mapping_pendenze_pattern ORDER BY pattern_iuv")->fetchAll(\PDO::FETCH_ASSOC);
+        self::assertSame([
+            ['pattern_iuv' => '11111', 'fornitore' => 'Forn', 'cod_entrata' => 'COD', 'accorpato_a' => null, 'is_custom' => 1, 'transazioni_count' => 1],
+            ['pattern_iuv' => '22222', 'fornitore' => null, 'cod_entrata' => null, 'accorpato_a' => '11111', 'is_custom' => 1, 'transazioni_count' => 2],
+        ], $rows);
     }
 
     // ------------------------------------------------------------ runOnce(): regole attive
