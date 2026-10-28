@@ -3,9 +3,10 @@ name: Image Check
 # Scan Trivy PRE-merge delle immagini backoffice/frontoffice/db, nella merge queue: la build
 # Docker completa gira sul commit temporaneo della coda, cosi' una CVE introdotta da un cambio
 # di Dockerfile/dipendenze blocca il merge invece di rompere docker-publish dopo.
-# Sulla PR i job risultano verdi con tutti gli step di build/scan saltati: serve solo a far
-# esistere i check `trivy-image (<img>)` richiesti dal ruleset (un job matrice saltato per
-# `if:` a livello di job non crea alcun check e bloccherebbe la coda).
+# Sulla PR gira solo `placeholder`: crea i check `trivy-image (<img>)` richiesti dal ruleset
+# (un job matrice saltato per `if:` a livello di job non crea alcun check e bloccherebbe la
+# coda), senza build ne' harden-runner. Un job con harden-runner e tutti gli step saltati
+# restava appeso dopo "Cleaning up orphan processes" fino al timeout (gamba db, 2 run su 2).
 # workflow_dispatch: debug e misura dei tempi a cache fredda (stessi step della merge queue).
 on:
   pull_request:
@@ -23,9 +24,23 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  placeholder:
+    # Stesso nome del job reale: deve coincidere col required check del ruleset.
+    name: trivy-image (${{ matrix.image }})
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    strategy:
+      matrix:
+        image: [backoffice, frontoffice, db]
+    steps:
+      - run: echo "Build e scan Trivy di ${{ matrix.image }} nella merge queue (merge_group)."
+
   trivy-image:
     # Nome esplicito: deve coincidere col required check del ruleset.
     name: trivy-image (${{ matrix.image }})
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -130,15 +145,11 @@ jobs:
           egress-policy: block
           allowed-endpoints: ${{ matrix.endpoints }}
 
-      # Sulla PR (e' solo il segnaposto del check) gli step seguenti sono saltati;
-      # merge_group e workflow_dispatch fanno build e scan completi.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: github.event_name != 'pull_request'
         with:
           persist-credentials: false
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
@@ -146,19 +157,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        if: github.event_name != 'pull_request'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       # Data del giorno: come docker-publish, invalida il layer apt di runtime-base.
       - name: Resolve apt refresh key
         id: apt
-        if: github.event_name != 'pull_request'
         run: echo "apt_refresh=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       # Solo build locale: nessun push, nessun cache-to (la cache la scrive docker-publish).
       - name: Build (load) · ${{ matrix.image }}
         id: build
-        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: ${{ matrix.context }}
@@ -182,7 +190,6 @@ jobs:
       # Immagine locale (docker daemon del runner). Output table: nessun upload SARIF qui,
       # il tab Security e' alimentato da docker-publish.yml sulle immagini pubblicate.
       - name: Trivy scan · ${{ matrix.image }}
-        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.75.0
