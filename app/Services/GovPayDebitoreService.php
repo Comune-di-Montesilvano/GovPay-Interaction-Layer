@@ -85,7 +85,11 @@ class GovPayDebitoreService
             $nomDebitore = $v !== '' ? mb_substr($v, 0, 255) : null;
         }
 
-        $causale     = trim((string)($data['causale'] ?? $data['nome'] ?? ''));
+        // Causale vuota/solo spazi: fallback su nome come se fosse assente.
+        $causale     = trim((string)($data['causale'] ?? ''));
+        if ($causale === '') {
+            $causale = trim((string)($data['nome'] ?? ''));
+        }
         $descrizione = $causale !== '' ? mb_substr($causale, 0, 512) : null;
 
         $this->bizRepo->insertGovPayProcessed([

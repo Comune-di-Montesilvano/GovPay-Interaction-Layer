@@ -200,14 +200,18 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertSame('PROCESSED', $row['stato']);
     }
 
-    public function testBlankCausaleDoesNotFallBackToNome(): void
+    public function testBlankCausaleFallsBackToNome(): void
     {
-        // Difetto noto: `causale ?? nome` cade su nome solo se causale e' assente/null, non se vuota.
-        $iur = $this->flusso(1);
-        $this->job([new Response(200, [], json_encode(['causale' => '  ', 'nome' => 'Nome pendenza'], JSON_THROW_ON_ERROR))])
-            ->runOnce(new RecordingJobContext());
+        // D4: causale vuota/solo spazi cade su nome come se fosse assente.
+        $a = $this->flusso(1, ['data_pagamento' => '2026-03-02']); // coda: data DESC -> $a per prima
+        $b = $this->flusso(2);
+        $this->job([
+            new Response(200, [], json_encode(['causale' => '  ', 'nome' => ' Nome pendenza '], JSON_THROW_ON_ERROR)),
+            new Response(200, [], json_encode(['causale' => '', 'nome' => 'Altro nome'], JSON_THROW_ON_ERROR)),
+        ])->runOnce(new RecordingJobContext());
 
-        self::assertNull($this->biz($iur)['descrizione']);
+        self::assertSame('Nome pendenza', $this->biz($a)['descrizione']);
+        self::assertSame('Altro nome', $this->biz($b)['descrizione']);
     }
 
     public function testBlankSoggettoFieldsStoredAsNull(): void
