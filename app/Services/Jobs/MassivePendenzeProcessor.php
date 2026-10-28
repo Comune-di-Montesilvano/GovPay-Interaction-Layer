@@ -147,7 +147,15 @@ final class MassivePendenzeProcessor
                 if ($currentPendenza) {
                     $statoGP = $currentPendenza['stato'] ?? '';
                     if ($statoGP === 'NON_ESEGUITA') {
-                        $this->controller->fallbackFullPutUpdate($idPendenza, [], 'Annullamento');
+                        $putRes = $this->controller->fallbackFullPutUpdate($idPendenza, [], 'Annullamento');
+                        if (($putRes['success'] ?? false) !== true) {
+                            // Storico non registrato: niente PATCH (la pendenza resta NON_ESEGUITA su GovPay).
+                            $status = isset($putRes['httpStatus']) ? (int)$putRes['httpStatus'] : null;
+                            $suffix = $status !== null ? " (HTTP $status)" : '';
+                            $this->repo->updateRowStatus($id, 'SUCCESS', 'Errore di Annullamento: aggiornamento storico rifiutato' . $suffix, true);
+                            $log("  [$batchId:$numeroRiga] ID-$id ERRORE AGGIORNAMENTO STORICO$suffix");
+                            return self::error($ref, 'Annullamento rifiutato' . ($status !== null ? ": HTTP $status" : ''));
+                        }
                         $result = $this->controller->updatePendenzaStatus($idPendenza, 'ANNULLATA');
                         if ($result['success'] ?? false) {
                             $this->repo->updateRowStatus($id, 'CANCELLED', null, true);

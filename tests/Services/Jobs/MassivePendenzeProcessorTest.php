@@ -456,20 +456,30 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame([['ref' => (string)$id, 'reason' => 'Annullamento rifiutato: HTTP 500']], $r->errorDetails);
     }
 
-    /** Difetto noto: l'esito della PUT completa (storico) e' ignorato: anche se fallisce si procede con la PATCH. */
-    public function testCancelIgnoresFailedFullPutAndStillPatches(): void
+    /**
+     * P3 (fix 8b): se la PUT completa (storico annullamento) fallisce NON si fa la PATCH: la riga va nel
+     * percorso di errore degli altri annullamenti falliti (SUCCESS + errore, mai il corpo upstream).
+     */
+    public function testCancelFailedFullPutDoesNotPatch(): void
     {
         $id = $this->insertRow('CANCEL_PENDING', self::payload(22), ['idPendenza' => 'GIL-q']);
         $pendenza = ['stato' => 'NON_ESEGUITA', 'idDominio' => self::DOMINIO];
         $this->queue(200, $pendenza);
         $this->queue(200, $pendenza);
-        $this->queue(422, ['descrizione' => 'put rifiutata']);
-        $this->queue(200, null);
+        $this->queue(422, ['descrizione' => 'put rifiutata segreto']);
+        $this->queue(200, null); // PATCH: non deve essere consumata
 
-        $this->processor()->processRow($id, $this->ctx);
+        $r = $this->processor()->processRow($id, $this->ctx);
 
-        self::assertSame(['GET', 'GET', 'PUT', 'PATCH'], array_map(static fn(string $c) => strtok($c, ' '), $this->gp->calls()));
-        self::assertSame('CANCELLED', $this->row($id)['stato']);
+        $methods = array_map(static fn(string $c) => strtok($c, ' '), $this->gp->calls());
+        self::assertSame(['GET', 'GET', 'PUT'], $methods, 'PUT 1, PATCH 0');
+        self::assertSame(1, count(array_filter($methods, static fn($m) => $m === 'PUT')));
+        $row = $this->row($id);
+        self::assertSame('SUCCESS', $row['stato']);
+        self::assertSame("Errore di Annullamento: aggiornamento storico rifiutato (HTTP 422)", $row['errore']);
+        self::assertStringNotContainsString('segreto', (string)$row['errore']);
+        self::assertResult($r, 1, 0, 0, 1, true);
+        self::assertSame([['ref' => (string)$id, 'reason' => 'Annullamento rifiutato: HTTP 422']], $r->errorDetails);
     }
 
     /** P12 */
