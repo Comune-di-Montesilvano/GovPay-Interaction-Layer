@@ -24,8 +24,8 @@ use Tests\Support\Synthetic;
  * GovPay simulato al confine HTTP (MockHandler dentro un PendenzeController reale, vedi
  * FakeGovPayPendenzeController): ogni scrittura su GovPay (PUT creazione, PUT+PATCH annullamento)
  * e' verificata con il numero ESATTO di chiamate, cosi' un doppio invio verrebbe rilevato.
- * DB MariaDB reale (usa-e-getta). La tabella pendenze_massive non e' nello schema iniziale ne'
- * nelle migrazioni: la crea MassivePendenzeRepository::ensureTable() (come in produzione).
+ * DB MariaDB reale (usa-e-getta). La tabella pendenze_massive e' creata dalla migrazione 035 e,
+ * per le immagini vecchie, da MassivePendenzeRepository::ensureTable().
  */
 #[Group('db')]
 final class MassivePendenzeProcessorTest extends DbTestCase

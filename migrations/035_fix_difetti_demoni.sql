@@ -10,3 +10,20 @@
 -- righe: nessun cambio di output. Le righe 404 storiche restano PROCESSED (non distinguibili).
 ALTER TABLE biz_ricevute
   MODIFY COLUMN stato ENUM('PENDING','PROCESSED','ERROR','SKIPPED','NOT_FOUND') NOT NULL DEFAULT 'PENDING';
+
+-- P7 (pendenze massive): la tabella era creata solo da MassivePendenzeRepository::ensureTable().
+-- Stessa definizione di ensureTable() (che resta per le immagini vecchie): nessun cambio di
+-- comportamento, solo la tabella creata anche dalle migrazioni.
+CREATE TABLE IF NOT EXISTS pendenze_massive (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  file_batch_id VARCHAR(64) NOT NULL,
+  riga INT UNSIGNED NOT NULL,
+  stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED','CANCEL_PENDING','CANCEL_PROCESSING') NOT NULL DEFAULT 'PENDING',
+  errore TEXT NULL,
+  payload_json JSON NULL,
+  response_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_batch (file_batch_id),
+  INDEX idx_stato (stato)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
