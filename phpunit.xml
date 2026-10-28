@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
          colors="true">
   <testsuites>
     <testsuite name="app">
       <directory>tests</directory>
     </testsuite>
   </testsuites>
+  <!-- Test che richiedono MariaDB: gruppo "db" (Tests\Support\DbTestCase). Saltati senza DB_HOST.
+       Con DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD girano su un DB usa-e-getta (porta 3307).
+       Filtro per gruppo: opzioni CLI group / exclude-group con valore db. -->
   <source>
     <include>
       <directory>app</directory>
