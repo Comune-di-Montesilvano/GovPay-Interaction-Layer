@@ -204,30 +204,29 @@ final class MappingL1JobTest extends DbTestCase
         self::assertSame('NO_MATCH', $this->stato($r)['mapping_stato']);
     }
 
-    public function testRuleOrderIsCustomThenCountNotPrefixLength(): void
+    public function testLongestPrefixWinsOverShorterCustom(): void
     {
-        // difetto noto: doc/commenti dicono "longest-prefix-first", ma getRules ordina
-        // is_custom DESC, transazioni_count DESC, CHAR_LENGTH DESC: un custom corto batte un auto lungo.
+        // M1 (decisione utente): prefisso piu' lungo prima; un custom corto non batte un auto lungo.
         $this->pattern('12345', 'Lungo', null, 0, 50);
         $this->pattern('123', 'Corto', null, 1, 0);
         $r = $this->riga(1, '12345000000000001');
 
         $this->job()->runOnce(new RecordingJobContext());
-        self::assertSame('Corto', $this->stato($r)['fornitore']);
+        self::assertSame('Lungo', $this->stato($r)['fornitore']);
     }
 
-    public function testRuleOrderByCountAmongAutoPatterns(): void
+    public function testLongestPrefixWinsOverHigherCountAmongAutoPatterns(): void
     {
-        // difetto noto (stesso): anche tra auto vince il count piu' alto, non il prefisso piu' lungo
+        // M1: transazioni_count non conta per l'ordine
         $this->pattern('1234', 'Quattro', null, 0, 20);
         $this->pattern('12345', 'Cinque', null, 0, 6);
         $r = $this->riga(1, '12345000000000001');
 
         $this->job()->runOnce(new RecordingJobContext());
-        self::assertSame('Quattro', $this->stato($r)['fornitore']);
+        self::assertSame('Cinque', $this->stato($r)['fornitore']);
     }
 
-    public function testLongestPrefixWinsOnlyWhenCustomAndCountTie(): void
+    public function testLongestPrefixWinsAmongCustomPatterns(): void
     {
         $this->pattern('123', 'Tre', null, 1, 0);
         $this->pattern('12345', 'Cinque', null, 1, 0);
@@ -235,6 +234,31 @@ final class MappingL1JobTest extends DbTestCase
 
         $this->job()->runOnce(new RecordingJobContext());
         self::assertSame('Cinque', $this->stato($r)['fornitore']);
+    }
+
+    public function testShorterCustomStillCoversRowsTheLongerPatternMisses(): void
+    {
+        $this->pattern('12345', 'Lungo', null, 0, 50);
+        $this->pattern('123', 'Corto', null, 1, 0);
+        $r = $this->riga(1, '12399000000000001');
+
+        $this->job()->runOnce(new RecordingJobContext());
+        self::assertSame('Corto', $this->stato($r)['fornitore']);
+    }
+
+    public function testSortForAssignmentOrdersByLengthThenCustomIgnoringCount(): void
+    {
+        $rules = [
+            ['pattern_iuv' => '123',   'is_custom' => 1, 'transazioni_count' => 0],
+            ['pattern_iuv' => '99999', 'is_custom' => 0, 'transazioni_count' => 1],
+            ['pattern_iuv' => '1234',  'is_custom' => 0, 'transazioni_count' => 900],
+            ['pattern_iuv' => '12345', 'is_custom' => 1, 'transazioni_count' => 0],
+            ['pattern_iuv' => '88888', 'is_custom' => 0, 'transazioni_count' => 500],
+            ['pattern_iuv' => '9999',  'is_custom' => 1, 'transazioni_count' => 0],
+        ];
+        $sorted = array_column(MappingPendenzeRepository::sortForAssignment($rules), 'pattern_iuv');
+        // 5 char: custom prima, poi auto in ordine di pattern (count ignorato); poi 4 char (custom prima); poi 3
+        self::assertSame(['12345', '88888', '99999', '9999', '1234', '123'], array_map('strval', $sorted));
     }
 
     // ------------------------------------------------------------ runOnce(): transizioni di stato

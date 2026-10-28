@@ -250,12 +250,12 @@ class MappingPendenzeController
             // Aggiorna transazioni_count prima di filtrare per >= 5
             try { $repo->discoverPatterns($idDominio); } catch (\Throwable $_) {}
 
-            // L1: patterns ordinati longest-first da getRules
+            // L1: stesso ordine del demone (prefisso piu' lungo prima, a parita' il custom)
             $rules = $repo->getRules($idDominio);
-            $activeRules = array_filter($rules, fn(array $r): bool =>
+            $activeRules = MappingPendenzeRepository::sortForAssignment(array_filter($rules, fn(array $r): bool =>
                 (!empty($r['fornitore']) && ((bool)($r['is_custom'] ?? false) || (int)($r['transazioni_count'] ?? 0) >= 5)) ||
                 (!empty($r['accorpato_a']) && !empty($r['fornitore']))
-            );
+            ));
 
             $l1Assigned = 0;
             foreach ($activeRules as $rule) {

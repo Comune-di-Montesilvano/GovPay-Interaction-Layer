@@ -107,6 +107,26 @@ class MappingPendenzeRepository
     }
 
     /**
+     * Ordine di applicazione delle regole L1 (bulkAssignL1): prefisso piu' lungo prima; a parita'
+     * di lunghezza vince il custom (is_custom=1); poi pattern_iuv per determinismo.
+     * transazioni_count non entra nell'ordine. getRules() resta nell'ordine di visualizzazione UI.
+     *
+     * @param array<int,array<string,mixed>> $rules
+     * @return list<array<string,mixed>>
+     */
+    public static function sortForAssignment(array $rules): array
+    {
+        $rules = array_values($rules);
+        usort($rules, static function (array $a, array $b): int {
+            $pa = (string)($a['pattern_iuv'] ?? '');
+            $pb = (string)($b['pattern_iuv'] ?? '');
+            return [mb_strlen($pb), (int)(bool)($b['is_custom'] ?? false), $pa]
+                <=> [mb_strlen($pa), (int)(bool)($a['is_custom'] ?? false), $pb];
+        });
+        return $rules;
+    }
+
+    /**
      * Aggiunge o aggiorna un pattern IUV (Livello 1).
      */
     public function savePatternRule(string $idDominio, string $patternIuv, ?string $fornitore, ?string $codEntrata, int $isCustom = 1): void

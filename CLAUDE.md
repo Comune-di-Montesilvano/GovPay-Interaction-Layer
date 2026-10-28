@@ -381,7 +381,7 @@ Una pendenza è `NO_MATCH` solo se ha completato l'intero giro (1 → 2 → 3). 
 - Pattern 4-char: conta solo IUV dove `LEFT(iuv, 5)` NON è già un pattern 5-char scoperto
 - Pattern 3-char: conta solo IUV dove `LEFT(iuv, 5)` e `LEFT(iuv, 4)` NON sono pattern scoperti
 
-Così `transazioni_count` riflette le righe **non coperte da prefissi più lunghi**. La soglia attiva è ≥ 5 transazioni (o `is_custom = 1` per bypass). Il matching nel demone L1 è longest-prefix-first (regole ordinate per `CHAR_LENGTH DESC`): i pattern da 5 char vengono applicati prima, poi i 4-char sui PENDING rimanenti, poi i 3-char.
+Così `transazioni_count` riflette le righe **non coperte da prefissi più lunghi**. La soglia attiva è ≥ 5 transazioni (o `is_custom = 1` per bypass). Il matching L1 (demone e "Applica mapping" da UI) applica le regole attive nell'ordine di `MappingPendenzeRepository::sortForAssignment()`: prefisso più lungo prima (5 → 4 → 3 char sui PENDING/NO_MATCH rimanenti), a parità di lunghezza vince il custom (`is_custom = 1`); `transazioni_count` NON entra nell'ordine. `getRules()` resta nell'ordine di visualizzazione UI (non usarlo come ordine di matching).
 
 Non modificare questa logica senza aggiornare anche la soglia e il rendering UI (filtri "5 char / 4 char / 3 char" in `mapping_pendenze.html.twig`).
 

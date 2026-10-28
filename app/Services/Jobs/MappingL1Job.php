@@ -13,8 +13,8 @@ use App\Database\MappingPendenzeRepository;
  * attiva, poi le PENDING rimaste passano a NO_MATCH. Loop, pause (15 min a vuoto), stop file,
  * log e gestione errore di caricamento regole restano nello script.
  *
- * Nota: getRules() ordina per is_custom DESC, transazioni_count DESC, CHAR_LENGTH DESC, non
- * per lunghezza prefisso (difetto noto, pinnato nei test).
+ * Ordine di applicazione: MappingPendenzeRepository::sortForAssignment() (prefisso piu' lungo
+ * prima, a parita' di lunghezza il custom; transazioni_count non conta).
  */
 final class MappingL1Job
 {
@@ -48,10 +48,10 @@ final class MappingL1Job
 
         $rules = $this->repo->getRules($this->idDominio);
 
-        $activeRules = array_filter($rules, static fn(array $r): bool =>
+        $activeRules = MappingPendenzeRepository::sortForAssignment(array_filter($rules, static fn(array $r): bool =>
             (!empty($r['fornitore']) && ((bool)($r['is_custom'] ?? false) || (int)($r['transazioni_count'] ?? 0) >= 5)) ||
             (!empty($r['accorpato_a']) && !empty($r['fornitore']))
-        );
+        ));
 
         foreach ($activeRules as $rule) {
             if ($ctx->shouldStop()) {
