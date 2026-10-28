@@ -19,6 +19,8 @@ use App\Database\BizRepository;
 use App\Database\Connection;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Services\GovPayDebitoreService;
+use App\Services\Jobs\GovPayDebitoreJob;
+use App\Services\Jobs\ScriptJobContext;
 use Dotenv\Dotenv;
 
 if (file_exists(dirname(__DIR__) . '/.env')) {
@@ -116,70 +118,30 @@ $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
 $initialBacklog = $service->countPending($idDominio, $minDate);
 $log('Loop avviato. Fonte: flussi_rendicontazioni (is_govpay=1, data_pagamento >= ' . ($minDate ?? '-') . ', backlog iniziale=' . $initialBacklog . ').');
 
-const BATCH_SIZE   = 100;
 const SLEEP_IDLE_S = 900; // 15 min quando coda vuota
+
+$job = new GovPayDebitoreJob($service, $idDominio);
+$ctx = new ScriptJobContext($stopFile);
 
 while (true) {
     $checkStop();
 
-    $scanDa  = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
-    $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
-
     try {
-        $batch = $service->getBatch($idDominio, BATCH_SIZE, $minDate);
+        $result = $job->runOnce($ctx);
     } catch (\Throwable $e) {
+        // Solo getBatch puo' propagare: enrichOne e' gia' protetto dal job.
         \Sentry\captureException($e);
         $log('ERRORE getBatch: ' . $e->getMessage());
         sleep(30);
         continue;
     }
 
-    if (count($batch) === 0) {
-        $log('Coda vuota. Prossimo controllo tra ' . (SLEEP_IDLE_S / 60) . ' minuti...');
+    $checkStop();
+    if (!$result->hadWork) {
+        // Coda vuota: pausa 15 minuti (il job ha gia' loggato il motivo).
         for ($s = 0; $s < SLEEP_IDLE_S; $s += 10) {
             $checkStop();
             sleep(10);
         }
-        continue;
     }
-
-    $total = count($batch);
-    $log("Batch: {$total} pendenze GovPay da arricchire.");
-
-    foreach ($batch as $i => $row) {
-        $checkStop();
-        $n   = $i + 1;
-        $iur = (string)$row['iur'];
-        $idP = (string)($row['id_pendenza'] ?? '');
-        $log("  {$n}/{$total} IUR={$iur} id_pendenza={$idP}");
-
-        try {
-            $result = $service->enrichOne($row);
-        } catch (\Throwable $e) {
-            $log("  IUR={$iur}: eccezione - " . $e->getMessage());
-            sleep(2);
-            continue;
-        }
-
-        switch ($result['status']) {
-            case 'PROCESSED':
-                $log("  IUR={$iur}: OK — debitore salvato");
-                break;
-            case 'SKIPPED':
-                $log("  IUR={$iur}: skip - {$result['reason']}");
-                break;
-            case 'SKIP':
-                $log("  IUR={$iur}: configurazione mancante - {$result['reason']}");
-                break;
-            case 'ERROR':
-                $log("  IUR={$iur}: errore - {$result['reason']}");
-                break;
-        }
-
-        if ($i < $total - 1) {
-            sleep(1);
-        }
-    }
-
-    $log("Batch completato ({$total} record). Avvio ciclo successivo...");
 }

@@ -18,7 +18,8 @@ class GovPayDebitoreService
 {
     public function __construct(
         private readonly BizRepository $bizRepo,
-        private readonly FlussiRendicontazioniRepository $flussiRepo
+        private readonly FlussiRendicontazioniRepository $flussiRepo,
+        private readonly ?Client $http = null
     ) {}
 
     public function countPending(string $idDominio, ?string $minDate = null): int
@@ -115,6 +116,11 @@ class GovPayDebitoreService
 
     private function buildClient(): Client
     {
+        // Client iniettato (test): bypassa factory/credenziali.
+        if ($this->http !== null) {
+            return $this->http;
+        }
+
         $opts = [
             'connect_timeout' => 5,
             'timeout'         => 20,
