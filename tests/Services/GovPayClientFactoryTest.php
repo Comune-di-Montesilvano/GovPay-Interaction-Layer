@@ -112,6 +112,29 @@ final class GovPayClientFactoryTest extends DbTestCase
         self::assertSame('close', $this->history[1]['request']->getHeaderLine('Connection'));
     }
 
+    /**
+     * Fix round 2 (B1): i redirect non si seguono MAI (lo stack nudo di prima non li seguiva): un 302
+     * su POST/PUT non diventa un GET "riuscito" e il certificato mTLS non va a un altro host.
+     * Nemmeno se un chiamante passa allow_redirects (client o singola richiesta).
+     */
+    public function testRedirectIsNeverFollowedEvenIfCallerAsksForIt(): void
+    {
+        $redirect = static fn() => new Response(302, ['Location' => 'https://altro.example.test/x']);
+        $mock = new MockHandler([$redirect(), $redirect(), $redirect(), new Response(200), new Response(200), new Response(200)]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, ['allow_redirects' => true]);
+
+        $r1 = $client->request('PUT', self::BASE . '/pendenze/A2A/X', ['json' => ['a' => 1]]);
+        $r2 = $client->request('POST', self::BASE . '/incassi/D', ['allow_redirects' => ['max' => 5]]);
+        $r3 = $client->request('GET', self::BASE . '/info', ['allow_redirects' => true]);
+
+        self::assertSame([302, 302, 302], [$r1->getStatusCode(), $r2->getStatusCode(), $r3->getStatusCode()]);
+        self::assertCount(3, $this->history, 'una sola richiesta per chiamata, nessun redirect seguito');
+        self::assertSame(['PUT', 'POST', 'GET'], array_map(static fn(array $h): string => $h['request']->getMethod(), $this->history));
+        foreach ($this->history as $h) {
+            self::assertSame('govpay.example.test', $h['request']->getUri()->getHost());
+        }
+    }
+
     /** Client OpenAPI generato: RequestException dello stack -> ApiException con codice e corpo. */
     public function testGeneratedClientMapsHttpErrorToApiException(): void
     {

@@ -35,6 +35,7 @@ class GovPayClientFactory
      * Stack di default Guzzle incluso (http_errors): un 4xx/5xx GovPay lancia
      * ClientException/ServerException come un `new Client()` (salvo 'http_errors' => false
      * per richiesta). $extra['handler']: HandlerStack usato com'e', altro callable avvolto.
+     * Redirect mai seguiti: un 3xx torna come risposta (non-2xx), allow_redirects ignorato.
      *
      * @param array $extra Opzioni Guzzle aggiuntive (es. auth, headers specifici)
      */
@@ -72,7 +73,7 @@ class GovPayClientFactory
             $guzzleOptions['curl'] = ($guzzleOptions['curl'] ?? []) + $defaultCurlOptions;
         }
 
-        // Stack di default Guzzle (http_errors, redirect, cookies, prepare_body) come `new Client()`:
+        // Stack di default Guzzle (http_errors, cookies, prepare_body; redirect tolto sotto) come `new Client()`:
         // senza http_errors un 4xx/5xx GovPay NON lancerebbe e i chiamanti (che si aspettano
         // ClientException/ServerException, come prima della factory) lo tratterebbero come risposta
         // valida. I middleware della factory vanno dopo: http_errors resta il piu' esterno, quindi
@@ -85,6 +86,12 @@ class GovPayClientFactory
         } else {
             $handlerStack = \GuzzleHttp\HandlerStack::create($handler ?? new \GuzzleHttp\Handler\CurlHandler());
         }
+        // Redirect MAI seguiti (come lo stack nudo di prima): Guzzle trasformerebbe POST/PUT in un
+        // GET "riuscito" su 301/302/303 (incasso, aggiornamento pendenza persi) e presenterebbe il
+        // certificato mTLS a un host diverso. Middleware tolto (non riattivabile con allow_redirects
+        // del chiamante, nemmeno per richiesta) e opzione a false: un 3xx torna come risposta non-2xx.
+        $handlerStack->remove('allow_redirects');
+        $guzzleOptions['allow_redirects'] = false;
 
         $handlerStack->push(Middleware::mapRequest(
             static function (HttpRequest $request): HttpRequest {

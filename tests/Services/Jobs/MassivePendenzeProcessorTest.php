@@ -530,6 +530,44 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertArrayNotHasKey('esitoIncerto', $res);
     }
 
+    /**
+     * Fix round 2 (B1): un 3xx sulla PUT di creazione/aggiornamento non e' seguito ed e' un
+     * fallimento CON dettaglio ('HTTP 302', httpStatus): mai errors=[] (che il percorso rate e
+     * fallbackFullPutUpdate/addNotificationToPendenza prenderebbero per un successo).
+     */
+    public function testUiCreate3xxIsNotFollowedAndIsAFailureWithDetail(): void
+    {
+        $this->gp->mock->append(new Response(302, ['Location' => self::BASE . '/pendenze/' . self::A2A . '/GIL-UI-32']));
+        $this->gp->mock->append(new Response(200, ['Content-Type' => 'application/json'], '{}'));
+
+        $res = $this->gp->sendPendenzaToBackoffice(self::payload(32), 'GIL-UI-32');
+
+        self::assertSame(['PUT ' . self::P . 'GIL-UI-32'], $this->gp->calls(), 'redirect non seguito');
+        self::assertFalse($res['success']);
+        self::assertSame(['HTTP 302'], $res['errors']);
+        self::assertSame(302, $res['httpStatus'] ?? null);
+    }
+
+    /** Fix round 2 (B1): download avviso/ricevuta operatore con 3xx GovPay -> errore 502, mai un "PDF" vuoto, 1 sola GET. */
+    public function testOperatorPdfDownload3xxIsAnErrorNotAnAttachment(): void
+    {
+        $this->gp->mock->append(new Response(302, ['Location' => 'https://altro.example.test/a.pdf']));
+        $this->gp->mock->append(new Response(301, ['Location' => 'https://altro.example.test/r.pdf']));
+
+        $a = $this->gp->downloadAvviso(self::request(), new \Slim\Psr7\Response(), ['idDominio' => self::DOMINIO, 'numeroAvviso' => '301000000000000001']);
+        $r = $this->gp->downloadRicevuta(self::request(), new \Slim\Psr7\Response(), ['idDominio' => self::DOMINIO, 'iuv' => 'IUV1', 'ccp' => 'CCP1']);
+
+        self::assertSame([502, 'Errore scaricamento avviso: HTTP 302'], [$a->getStatusCode(), (string)$a->getBody()]);
+        self::assertSame([502, 'Errore scaricamento ricevuta: HTTP 301'], [$r->getStatusCode(), (string)$r->getBody()]);
+        self::assertSame('', $a->getHeaderLine('Content-Disposition'));
+        self::assertCount(2, $this->gp->calls(), 'nessun redirect seguito');
+    }
+
+    private static function request(): \Psr\Http\Message\ServerRequestInterface
+    {
+        return (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('GET', '/x');
+    }
+
     public function testMissingBackofficeUrlGoesToErrorWithoutCall(): void
     {
         SettingsRepository::set('govpay', 'backoffice_url', '');

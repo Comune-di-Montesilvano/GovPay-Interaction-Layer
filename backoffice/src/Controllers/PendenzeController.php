@@ -1737,7 +1737,19 @@ class PendenzeController
             $code = $resp->getStatusCode();
             $body = (string)$resp->getBody();
             $data = json_decode($body, true);
-            return ['success' => $code >= 200 && $code < 300, 'idPendenza' => $idP, 'errors' => [], 'response' => $data];
+            if ($code < 200 || $code >= 300) {
+                // Con http_errors resta solo il 3xx (redirect mai seguiti dalla factory): fallimento
+                // CON dettaglio, mai errors=[] (il percorso rate e i chiamanti che leggono solo
+                // 'errors' lo prenderebbero per un successo).
+                return [
+                    'success' => false,
+                    'idPendenza' => $idP,
+                    'errors' => ['HTTP ' . $code],
+                    'httpStatus' => $code,
+                    'problem' => self::problemJsonFields($data),
+                ];
+            }
+            return ['success' => true, 'idPendenza' => $idP, 'errors' => [], 'response' => $data];
         } catch (ClientException $ce) {
             $detail = '';
             $resp = $ce->getResponse();
@@ -3091,6 +3103,11 @@ class PendenzeController
 
         try {
             $govResp     = $this->fetchAvvisoPdfResponse($idDominio, $numeroAvviso);
+            if ($govResp->getStatusCode() < 200 || $govResp->getStatusCode() >= 300) {
+                // 3xx (redirect mai seguiti dalla factory): non e' un PDF, non servirlo come allegato
+                $response->getBody()->write('Errore scaricamento avviso: HTTP ' . $govResp->getStatusCode());
+                return $response->withStatus(502);
+            }
             $contentType = $govResp->getHeaderLine('Content-Type') ?: 'application/pdf';
             $filename    = 'avviso-' . $idDominio . '-' . $numeroAvviso . '.pdf';
             $response    = $response
@@ -3242,6 +3259,11 @@ class PendenzeController
 
         try {
             $govResp     = $this->fetchRicevutaPdfResponse($idDominio, $iuv, $ccp);
+            if ($govResp->getStatusCode() < 200 || $govResp->getStatusCode() >= 300) {
+                // 3xx (redirect mai seguiti dalla factory): non e' un PDF, non servirlo come allegato
+                $response->getBody()->write('Errore scaricamento ricevuta: HTTP ' . $govResp->getStatusCode());
+                return $response->withStatus(502);
+            }
             $contentType = $govResp->getHeaderLine('Content-Type') ?: 'application/pdf';
             $filename    = 'rt-' . $iuv . '-' . $ccp . '.pdf';
             $response    = $response

@@ -145,6 +145,10 @@ final class RendicontazioneJobTest extends DbTestCase
             } elseif ($req->getMethod() === 'POST' && str_contains($path, '/incassi/')) {
                 $kind = 'incasso';
                 $resp = $this->incassoResponse;
+            } elseif ($req->getMethod() === 'GET' && str_contains($path, '/incassi/')) {
+                // lista incassi GovPay: 200 (cio' che un redirect POST->GET otterrebbe)
+                $kind = 'incasso-get';
+                $resp = new Response(200, ['Content-Type' => 'application/json'], '{"risultati":[]}');
             } else {
                 throw new \LogicException('Richiesta GovPay inattesa: ' . $req->getMethod() . ' ' . $path);
             }
@@ -740,6 +744,23 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->runJob();
         $this->assertSame(0, (int)$this->row($b)['rendicontazione_regolarizzato']);
         $this->assertSame(3, $this->callsOf('incasso'), '1 (422) + 2 tentativi sul flusso in errore');
+    }
+
+    /**
+     * Fix round 2 (B1): POST /incassi con 302 same-origin non diventa un GET "riuscito" (redirect
+     * mai seguiti): una sola chiamata, flusso NON marcato regolarizzato.
+     */
+    public function testSweepIncassoRedirectIsNotFollowedAndNotRegolarizzato(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '99');
+        $a = $this->riga(1, ['id_flusso' => 'F302', 'rendicontazione_stato' => 'GESTITO', 'rendicontazione_regolarizzato' => 0]);
+        $this->incassoResponse = new Response(302, ['Location' => '/incassi/' . self::DOMINIO . '/']);
+
+        $this->runJob();
+
+        $this->assertSame(1, $this->callsOf('incasso'));
+        $this->assertSame(0, $this->callsOf('incasso-get'), 'redirect non seguito');
+        $this->assertSame(0, (int)$this->row($a)['rendicontazione_regolarizzato']);
     }
 
     public function testSweepImportoNulloNonInviaIncasso(): void
