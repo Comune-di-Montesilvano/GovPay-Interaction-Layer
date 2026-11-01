@@ -90,6 +90,29 @@ final class RagioneriaSyncJob implements PeriodicJob
         $this->rescanRequested = true;
     }
 
+    /** Setting del rescan chiesto da UI (sostituisce /tmp/cron-rescan-ragioneria). */
+    public const RESCAN_SETTING = 'ragioneria_rescan_richiesto';
+
+    /**
+     * Rescan chiesto dalla pagina Cron: flag persistito in settings, consumato dal prossimo giro
+     * (JobCatalog::registry() -> takeRescanRequest() -> requestRescan()). Un flag e non un reset
+     * diretto di ragioneria_progress_rolling_from: un giro in corso lo riscriverebbe a fine ciclo.
+     */
+    public static function storeRescanRequest(): void
+    {
+        SettingsRepository::set('backoffice', self::RESCAN_SETTING, '1');
+    }
+
+    /** Legge e azzera il flag di rescan chiesto da UI. */
+    public static function takeRescanRequest(): bool
+    {
+        if ((string)SettingsRepository::get('backoffice', self::RESCAN_SETTING, '') !== '1') {
+            return false;
+        }
+        SettingsRepository::set('backoffice', self::RESCAN_SETTING, null);
+        return true;
+    }
+
     public function runOnce(JobContext $ctx): JobResult
     {
         // Ogni iterazione rilegge i settings: in un processo longevo la cache statica

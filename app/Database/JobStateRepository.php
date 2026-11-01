@@ -166,6 +166,42 @@ final class JobStateRepository
         $st->execute([$at->format(self::DT), $job]);
     }
 
+    /** Il prossimo tick (entro 5 s) fa partire il lavoro, se abilitato. */
+    public function scheduleNow(string $job): void
+    {
+        $st = $this->pdo()->prepare('UPDATE gil_jobs SET next_run_at = NULL WHERE name = ?');
+        $st->execute([$job]);
+    }
+
+    /** @return array<string, array<string, mixed>> righe gil_jobs per nome (marker escluso) */
+    public function allStates(): array
+    {
+        $st = $this->pdo()->prepare('SELECT * FROM gil_jobs WHERE name <> ?');
+        $st->execute([self::IMPORT_MARKER]);
+        $out = [];
+        foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $out[(string)$row['name']] = $row;
+        }
+        return $out;
+    }
+
+    /**
+     * Lavori con un giro in corso: lock `job:<name>` (JobRunner) tenuto e non scaduto, con
+     * l'orologio DB come DoctrineDbalStore. Un worker ucciso lo lascia fino al TTL (900 s).
+     *
+     * @return list<string>
+     */
+    public function runningJobs(): array
+    {
+        $st = $this->pdo()->query("SELECT key_id FROM lock_keys WHERE key_id LIKE 'job:%' AND key_expiration > UNIX_TIMESTAMP(NOW(6))");
+        $names = [];
+        foreach ($st->fetchAll(\PDO::FETCH_COLUMN) as $key) {
+            $names[] = substr((string)$key, 4);
+        }
+        sort($names);
+        return $names;
+    }
+
     /** @return list<array<string, mixed>> esecuzioni piu' recenti prima */
     public function recentRuns(string $job, int $limit): array
     {

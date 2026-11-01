@@ -310,10 +310,28 @@ class MassivePendenzeRepository
      * su GovPay. Conserva response_json (idPendenza/numeroAvviso salvati: la PUT aggiorna la stessa
      * pendenza) e azzera il claim. Gli annullamenti falliti (tornano SUCCESS) non sono toccati.
      */
-    public function retry(int $rowId): void
+    public function retry(int $rowId): bool
     {
         $stmt = $this->pdo->prepare("UPDATE pendenze_massive SET stato = 'PENDING', claimed_at = NULL, claim_token = NULL, updated_at = NOW() WHERE id = :id AND stato = 'ERROR' AND claimed_at IS NOT NULL");
         $stmt->execute([':id' => $rowId]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Motivo per cui "riprova" non si applica alla riga (stessa condizione di retry()), null se
+     * riprovabile. $row = findById()/listByBatch().
+     *
+     * @param array<string, mixed> $row
+     */
+    public static function retryBlockReason(array $row): ?string
+    {
+        if (($row['stato'] ?? '') !== 'ERROR') {
+            return "la riga non e' in errore";
+        }
+        if (($row['claimed_at'] ?? null) === null || $row['claimed_at'] === '') {
+            return "scartata in validazione all'import: mai inviata a GovPay, correggere il CSV e ricaricarla";
+        }
+        return null;
     }
 
     /**
