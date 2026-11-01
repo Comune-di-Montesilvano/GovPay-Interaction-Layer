@@ -175,6 +175,8 @@ CMD ["apache2-foreground"]
 FROM runtime-base AS runtime-backoffice
 COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
 COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
+# Worker dei lavori periodici (servizio `worker` del compose): accanto agli script di backoffice/bin.
+COPY --chown=www-app:www-data bin/worker /var/www/html/bin/worker
 COPY --chown=www-app:www-data scripts/ /var/www/html/scripts/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \
