@@ -76,6 +76,8 @@ final class MassiveMessengerTest extends DbTestCase
         $this->dbal = DbalConnectionFactory::create();
         $this->out = [];
         $this->reported = [];
+        // lavoro attivo: con `pendenze-massive` disabilitato il gestore rilascia le righe (pausa)
+        $this->state->setEnabled(MassiveEnqueueJob::NAME, true);
     }
 
     protected function tearDown(): void
@@ -591,6 +593,70 @@ final class MassiveMessengerTest extends DbTestCase
         self::assertSame('SUCCESS', $this->row($id)['stato']);
         self::assertCount(1, $this->gp->notifications);
         self::assertSame(0, self::messages());
+    }
+
+    // ============================================================ pausa (lavoro disabilitato)
+
+    /**
+     * Fix round 1: con `pendenze-massive` disabilitato anche le righe gia' in coda si fermano. Il
+     * gestore non chiama GovPay, rilascia il claim (PENDING / CANCEL_PENDING, id conservato) e
+     * conferma il messaggio; riattivato, ogni riga e' elaborata una sola volta.
+     */
+    public function testDisabledJobReleasesQueuedRowsWithoutGovPayCalls(): void
+    {
+        $create = $this->insertRow('PENDING', self::payload(1), ['idPendenza' => 'GIL-p'], riga: 1);
+        $cancel = $this->insertRow('CANCEL_PENDING', null, ['idPendenza' => 'GIL-c'], riga: 2);
+        $job = $this->enqueueJob();
+        self::assertSame(1, $job->claimAndDispatch([$create], 'create'));
+        self::assertSame(1, $job->claimAndDispatch([$cancel], 'cancel'));
+        $this->state->setEnabled(MassiveEnqueueJob::NAME, false);
+
+        $this->drain();
+
+        self::assertSame([], $this->gp->calls(), 'pausa: nessuna chiamata GovPay');
+        self::assertSame(0, self::messages(), 'messaggi confermati');
+        $r = $this->row($create);
+        self::assertSame(['PENDING', null, null], [$r['stato'], $r['claimed_at'], $r['claim_token']]);
+        self::assertSame(['idPendenza' => 'GIL-p'], $this->json($r['response_json']));
+        self::assertSame('CANCEL_PENDING', $this->row($cancel)['stato'], 'annullamento resta annullamento');
+        self::assertNull($this->row($cancel)['claim_token']);
+
+        $this->state->setEnabled(MassiveEnqueueJob::NAME, true);
+        $this->queue(200, ['stato' => 'ANNULLATA']);
+        $this->queue(201, []);
+        $this->enqueueJob()->runOnce(new RecordingJobContext()); // annullamenti per primi
+        $this->drain();
+        $this->enqueueJob()->runOnce(new RecordingJobContext());
+        $this->drain();
+
+        self::assertSame(['GET ' . self::P . 'GIL-c', 'PUT ' . self::P . 'GIL-p'], $this->gp->calls());
+        self::assertSame('SUCCESS', $this->row($create)['stato']);
+        self::assertSame('CANCELLED', $this->row($cancel)['stato']);
+    }
+
+    /** Un retry (RedeliveryStamp 2) rilasciato in pausa non consuma tentativi: riattivato, 1 + 3 retry. */
+    public function testRowReleasedDuringPauseKeepsFullRetryBudget(): void
+    {
+        $id = $this->insertRow('PENDING', self::payload(1));
+        $this->enqueueJob()->runOnce(new RecordingJobContext());
+        $token = (string)$this->row($id)['claim_token'];
+        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'massive'");
+        WorkerKernel::createMassiveTransport($this->dbal)->send(
+            (new Envelope(new ProcessMassiveRow($id, $token)))->with(new \Symfony\Component\Messenger\Stamp\RedeliveryStamp(2))
+        );
+        $this->state->setEnabled(MassiveEnqueueJob::NAME, false);
+
+        $this->drain();
+        self::assertSame([], $this->gp->calls());
+        self::assertSame('PENDING', $this->row($id)['stato']);
+
+        $this->state->setEnabled(MassiveEnqueueJob::NAME, true);
+        $this->enqueueJob()->runOnce(new RecordingJobContext());
+        $this->queueTimeout(4);
+        $this->drain();
+
+        self::assertCount(4, $this->putIds(), 'tentativi completi dopo la pausa');
+        self::assertSame('ERROR', $this->row($id)['stato']);
     }
 
     // ============================================================ reset claim abbandonati / upgrade

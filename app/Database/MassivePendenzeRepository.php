@@ -288,6 +288,22 @@ class MassivePendenzeRepository
     }
 
     /**
+     * Pausa (lavoro `pendenze-massive` disabilitato): rilascia un claim ancora valido senza esito.
+     * Creazione -> PENDING, annullamento -> CANCEL_PENDING; response_json (idPendenza salvato) ed
+     * errore restano; claim azzerato (il prossimo claim riparte con un messaggio nuovo e tutti i
+     * tentativi). true se la riga e' stata rilasciata.
+     */
+    public function releaseClaim(int $id, string $token): bool
+    {
+        $stmt = $this->pdo->prepare("UPDATE pendenze_massive
+            SET stato = CASE stato WHEN 'CANCEL_PROCESSING' THEN 'CANCEL_PENDING' ELSE 'PENDING' END,
+                claimed_at = NULL, claim_token = NULL, updated_at = NOW()
+            WHERE id = :id AND claim_token = :t AND stato IN ('PROCESSING','CANCEL_PROCESSING')");
+        $stmt->execute([':id' => $id, ':t' => $token]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
      * "Riprova" (UI): rimette in coda una creazione fallita. Solo da ERROR e solo per righe gia'
      * elaborate dal worker (claimed_at valorizzato): le righe ERROR scartate in validazione
      * all'import (duplicati, CF non valido, ...) non hanno mai avuto un claim e non devono finire

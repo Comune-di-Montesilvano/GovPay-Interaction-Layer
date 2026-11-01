@@ -141,6 +141,12 @@ final class MassivePendenzeProcessor
             : $this->processCreate($row, $log, $claimToken);
     }
 
+    /** Pausa: rilascia il claim senza chiamare GovPay (vedi MassivePendenzeRepository::releaseClaim()). */
+    public function releaseClaimedRow(int $rowId, string $claimToken): bool
+    {
+        return $this->repo->releaseClaim($rowId, $claimToken);
+    }
+
     /**
      * Esito finale di un messaggio fallito (tentativi esauriti o errore non ritentabile): vedi
      * MassivePendenzeRepository::failClaim(). $errore null = resta quello dell'ultimo tentativo.

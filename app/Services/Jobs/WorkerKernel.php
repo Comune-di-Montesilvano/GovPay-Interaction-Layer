@@ -179,7 +179,11 @@ final class WorkerKernel
                 $line
             )],
             RunJob::class => [new RunJobHandler($this->registry, $this->runner, $this->state, $this->clock, $line)],
-            ProcessMassiveRow::class => [new ProcessMassiveRowHandler($this->massiveProcessorFactory, $massiveLine)],
+            ProcessMassiveRow::class => [new ProcessMassiveRowHandler(
+                $this->massiveProcessorFactory,
+                $massiveLine,
+                fn(): bool => $this->state->isEnabled(MassiveEnqueueJob::NAME)
+            )],
         ]))]);
     }
 
