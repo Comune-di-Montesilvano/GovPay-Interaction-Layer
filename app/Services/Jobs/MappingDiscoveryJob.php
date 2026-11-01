@@ -12,6 +12,7 @@ use App\Database\MappingPendenzeRepository;
  * refresh diagnostics). hadWork sempre false: il prossimo giro e' tra 60 s.
  *
  * processed/ok = prefissi scoperti; errors = passi falliti (ref discovery/diagnostics).
+ * Giro senza errori = JobResult silent (nessuna riga gil_job_runs ne' stdout); gli errori no.
  */
 final class MappingDiscoveryJob implements PeriodicJob
 {
@@ -52,6 +53,8 @@ final class MappingDiscoveryJob implements PeriodicJob
             $details[] = ['ref' => 'diagnostics', 'reason' => 'Errore refresh diagnostics pattern'];
         }
 
-        return new JobResult($discovered, $discovered, 0, count($details), false, $details);
+        // Senza errori il giro e' silenzioso: girando ogni 60 s scriverebbe 1440 righe storico e
+        // stdout al giorno senza informazione (i pattern sono visibili in UI). Gli errori no.
+        return new JobResult($discovered, $discovered, 0, count($details), false, $details, $details === []);
     }
 }

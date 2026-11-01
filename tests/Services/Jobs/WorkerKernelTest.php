@@ -181,6 +181,54 @@ final class WorkerKernelTest extends DbTestCase
         self::assertCount(1, self::runs());
     }
 
+    private function insertRun(string $job, string $startedAt): void
+    {
+        $start = new \DateTimeImmutable($startedAt);
+        $this->state->recordRun($job, $start, $start->modify('+1 second'), 1, new JobResult(1, 1, 0, 0, false), 'ok', null, [], $start->modify('+15 minutes'), false);
+    }
+
+    public function testStartupPurgesOldRunHistoryAndLogsOneLine(): void
+    {
+        $this->insertRun('vecchio', '2026-09-01 10:00:00');
+        $this->insertRun('vecchio', '2026-09-02 10:00:00');
+        $this->insertRun('recente', '2026-10-20 10:00:00');
+        $kernel = $this->kernel(new JobRegistry());
+
+        $kernel->run(2.0);
+
+        self::assertSame(['recente'], array_column(self::runs(), 'job'));
+        $purgeLines = array_values(array_filter($this->out, static fn(string $l): bool => str_contains($l, 'storico')));
+        self::assertCount(1, $purgeLines);
+        self::assertStringContainsString('2 esecuzioni', $purgeLines[0]);
+    }
+
+    public function testPurgeWritesNoLineWhenNothingDeleted(): void
+    {
+        $this->insertRun('recente', '2026-10-20 10:00:00');
+        $kernel = $this->kernel(new JobRegistry());
+
+        $kernel->run(2.0);
+
+        self::assertCount(1, self::runs());
+        self::assertSame([], array_values(array_filter($this->out, static fn(string $l): bool => str_contains($l, 'storico'))));
+    }
+
+    public function testPurgeRepeatsRoughlyEvery24Hours(): void
+    {
+        $kernel = $this->kernel(new JobRegistry());
+        $kernel->purgeHistoryIfDue();
+        $this->insertRun('vecchio', '2026-09-01 10:00:00');
+
+        $this->clock->sleep(3600);
+        $kernel->purgeHistoryIfDue();
+        self::assertCount(1, self::runs(), 'non ancora trascorse 24 ore');
+
+        $this->clock->sleep(23 * 3600);
+        $kernel->purgeHistoryIfDue();
+        self::assertCount(0, self::runs());
+        self::assertCount(1, array_filter($this->out, static fn(string $l): bool => str_contains($l, 'storico')));
+    }
+
     public function testStopSignalFinishesCurrentBatchAndExitsWorker(): void
     {
         $kernel = null;

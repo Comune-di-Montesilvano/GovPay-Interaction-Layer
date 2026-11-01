@@ -32,6 +32,7 @@ use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection as Doctrine
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
@@ -67,7 +68,8 @@ use Symfony\Component\Scheduler\Schedule;
  *   il lock `job:<name>` di JobRunner.
  * - Una sola connessione DBAL condivisa per trasporto e store del lock.
  * - Avvio: attende DB e tabelle (riprova ogni 5 s, una riga per tentativo, mai resa), poi
- *   import una tantum dei file .autostart.
+ *   import una tantum dei file .autostart e pulizia dello storico esecuzioni oltre 30 giorni
+ *   (ripetuta circa ogni 24 ore).
  * - SIGTERM/SIGINT: requestStop(); il batch in corso finisce, il giro si chiude (JobRunner
  *   rilegge lo stop tra un batch e l'altro), il Worker esce, exit 0.
  * - stdout: riepiloghi di JobRunner, errori, righe di avvio/arresto; tick silenzioso.
@@ -83,6 +85,10 @@ final class WorkerKernel
     public const DEFAULT_CACHE_DIR = '/var/www/cache';
     /** Pausa del Worker quando nessun ricevitore ha messaggi (poll del trasporto Doctrine). */
     public const IDLE_SLEEP_MICROSECONDS = 1_000_000;
+    /** Giorni di storico esecuzioni (gil_job_runs) conservati; il resto e' eliminato. */
+    public const HISTORY_RETENTION_DAYS = 30;
+    /** Intervallo minimo tra due pulizie dello storico. */
+    public const HISTORY_PURGE_INTERVAL_SECONDS = 86400;
 
     /** Tabelle senza le quali il worker non parte (migrazione 036 non ancora applicata = attesa). */
     public const REQUIRED_TABLES = ['gil_jobs', 'gil_job_runs', 'gil_job_run_errors', 'messenger_messages', 'lock_keys'];
@@ -92,6 +98,7 @@ final class WorkerKernel
 
     private bool $stopRequested = false;
     private ?Worker $worker = null;
+    private ?\DateTimeImmutable $lastHistoryPurge = null;
 
     private readonly ClockInterface $clock;
     /** @var \Closure(string): void */
@@ -166,6 +173,8 @@ final class WorkerKernel
         ));
         // Dopo il listener di retry (priorita' 100): willRetry() e' gia' deciso.
         $this->events->addListener(WorkerMessageFailedEvent::class, fn(WorkerMessageFailedEvent $e) => $this->onMassiveFailed($e), -100);
+        // Ad ogni giro del Worker (anche a vuoto): la pulizia dello storico e' a cadenza giornaliera.
+        $this->events->addListener(WorkerRunningEvent::class, fn() => $this->purgeHistoryIfDue());
 
         $line = fn(string $msg) => $this->line($msg);
         $massiveLine = fn(string $msg) => ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . ProcessMassiveRowHandler::SUITE . '] ' . $msg);
@@ -415,6 +424,8 @@ final class WorkerKernel
             $this->line('ERRORE import .autostart: ' . JobRunner::errorMessage($e));
         }
 
+        $this->purgeHistoryIfDue();
+
         $started = $this->clock->now();
         while (!$this->stopRequested) {
             $remaining = null;
@@ -444,6 +455,31 @@ final class WorkerKernel
 
         $this->line('worker arrestato.');
         return 0;
+    }
+
+    /**
+     * Elimina lo storico esecuzioni oltre HISTORY_RETENTION_DAYS: all'avvio e poi al massimo una
+     * volta ogni HISTORY_PURGE_INTERVAL_SECONDS. Una riga di log solo se ha eliminato qualcosa.
+     * Non lancia: un errore e' segnalato e riprovato alla pulizia successiva.
+     */
+    public function purgeHistoryIfDue(): void
+    {
+        $now = $this->clock->now();
+        if ($this->lastHistoryPurge !== null
+            && $now->getTimestamp() - $this->lastHistoryPurge->getTimestamp() < self::HISTORY_PURGE_INTERVAL_SECONDS) {
+            return;
+        }
+        $this->lastHistoryPurge = $now;
+        try {
+            $deleted = $this->state->purgeRunsOlderThan(self::HISTORY_RETENTION_DAYS);
+        } catch (\Throwable $e) {
+            ($this->reportException)('worker', $e);
+            $this->line('ERRORE pulizia storico esecuzioni: ' . JobRunner::errorMessage($e));
+            return;
+        }
+        if ($deleted > 0) {
+            $this->line(sprintf('pulizia storico: %d esecuzioni oltre %d giorni eliminate', $deleted, self::HISTORY_RETENTION_DAYS));
+        }
     }
 
     private function buildWorker(): Worker

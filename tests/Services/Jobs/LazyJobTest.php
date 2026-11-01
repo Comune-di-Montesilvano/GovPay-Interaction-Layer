@@ -102,6 +102,7 @@ final class LazyJobTest extends TestCase
         $r = $job->runOnce(new RecordingJobContext());
 
         self::assertFalse($r->hadWork);
+        self::assertFalse($r->silent, 'un errore va sempre registrato');
         self::assertSame(1, $r->errors);
         self::assertSame('discovery', $r->errorDetails[0]['ref']);
         self::assertSame(60, $job->emptyQueueIntervalSeconds());
@@ -114,5 +115,6 @@ final class LazyJobTest extends TestCase
         $r = (new MappingDiscoveryJob(new MappingL1Job($repo, 'D'), $repo, 'D'))->runOnce(new RecordingJobContext());
 
         self::assertSame([7, 7, 0, false], [$r->processed, $r->ok, $r->errors, $r->hadWork]);
+        self::assertTrue($r->silent, 'giro senza errori ogni 60 s: nessuna riga storico ne stdout');
     }
 }
