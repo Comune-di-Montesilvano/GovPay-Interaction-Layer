@@ -97,11 +97,12 @@ class BizScannerService
                 $this->flussiRepo->markMappingNoMatchByIur($idDominio, $iur);
                 return ['status' => 'SKIPPED', 'reason' => $msg];
             }
-            $msg = "Errore API Biz Events HTTP $code: " . mb_substr($e->getMessage(), 0, 300);
+            $msg = self::apiErrorReason($e);
             $this->repo->markError($id, $msg);
             return ['status' => 'ERROR', 'reason' => $msg];
         } catch (\Throwable $e) {
-            $msg = 'Eccezione Biz Events: ' . mb_substr($e->getMessage(), 0, 300);
+            // Mai il messaggio (URL con CF ente e IUR, estratto del corpo upstream).
+            $msg = 'Eccezione Biz Events: ' . ThrowableSummary::of($e);
             $this->repo->markError($id, $msg);
             return ['status' => 'ERROR', 'reason' => $msg];
         }
@@ -132,6 +133,33 @@ class BizScannerService
         ]);
 
         return ['status' => 'PROCESSED', 'reason' => ''];
+    }
+
+    /**
+     * Motivo errore persistito (riga biz_ricevute + dettaglio run): solo 'HTTP <code>' e, se il
+     * corpo e' un ProblemJson, title/status. Mai getMessage(): Guzzle vi mette l'URL
+     * (/organizations/{CF ente}/receipts/{IUR}) e un estratto del corpo upstream.
+     */
+    private static function apiErrorReason(\PagoPA\BizEvents\ApiException $e): string
+    {
+        $code = (int)$e->getCode();
+        if ($code <= 0) {
+            return 'Errore API Biz Events: nessuna risposta HTTP (errore di rete)';
+        }
+        $msg = 'Errore API Biz Events HTTP ' . $code;
+        $body = $e->getResponseBody();
+        $problem = is_string($body) ? json_decode($body, true) : json_decode((string)json_encode($body), true);
+        if (is_array($problem)) {
+            $title = $problem['title'] ?? null;
+            if (is_string($title) && trim($title) !== '') {
+                $msg .= ' - ' . mb_substr(trim((string)preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $title)), 0, 100);
+            }
+            $status = $problem['status'] ?? null;
+            if (is_int($status)) {
+                $msg .= ' (status ' . $status . ')';
+            }
+        }
+        return $msg;
     }
 
     private function buildBizEventsClient(): ?\PagoPA\BizEvents\Api\PaymentReceiptsRESTAPIsApi

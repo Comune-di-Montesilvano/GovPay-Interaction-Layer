@@ -234,7 +234,7 @@ final class BizScanJobTest extends DbTestCase
 
         $row = $this->biz($iur);
         self::assertSame('ERROR', $row['stato']);
-        self::assertStringStartsWith('Errore API Biz Events HTTP 500:', (string)$row['error_msg']);
+        self::assertSame('Errore API Biz Events HTTP 500 - x (status 500)', $row['error_msg']);
         // Etichetta "Reset errori Biz (N)": l'errore di una pendenza esterna conta.
         self::assertSame(1, (new \App\Database\BizRepository(self::pdo()))->countResettableErrors(self::DOMINIO));
         self::assertSame([1, 0, 0, 1, true], [$res->processed, $res->ok, $res->skipped, $res->errors, $res->hadWork]);
@@ -296,7 +296,39 @@ final class BizScanJobTest extends DbTestCase
 
         $row = $this->biz($iur);
         self::assertSame('ERROR', $row['stato']);
-        self::assertStringStartsWith('Errore API Biz Events HTTP 0:', (string)$row['error_msg']);
+        self::assertSame('Errore API Biz Events: nessuna risposta HTTP (errore di rete)', $row['error_msg']);
+    }
+
+    /**
+     * Fix round 1: motivo errore (riga + dettaglio run) = solo 'HTTP <code>' + title/status del
+     * ProblemJson. Mai URL (contiene CF ente e IUR) ne' altro testo del corpo upstream.
+     */
+    public function testHttpErrorReasonHasOnlyStatusAndProblemTitleNeverUrlOrBody(): void
+    {
+        $iur = $this->flusso(1);
+        $body = '{"status":503,"title":"Service Unavailable","detail":"segreto RSSMRA80A01H501U"}';
+        $job = $this->job([new Response(503, ['Content-Type' => 'application/json'], $body)]);
+
+        $res = $job->runOnce(new RecordingJobContext());
+
+        $row = $this->biz($iur);
+        self::assertSame('Errore API Biz Events HTTP 503 - Service Unavailable (status 503)', $row['error_msg']);
+        self::assertSame([['ref' => $iur, 'reason' => 'Errore API Biz Events HTTP 503 - Service Unavailable (status 503)']], $res->errorDetails);
+        foreach ([(string)$row['error_msg'], json_encode($res->errorDetails)] as $text) {
+            self::assertStringNotContainsString('biz.example.test', $text);
+            self::assertStringNotContainsString(self::DOMINIO, $text);
+            self::assertStringNotContainsString('segreto', $text);
+        }
+    }
+
+    public function testHttpErrorWithNonJsonBodyHasOnlyStatus(): void
+    {
+        $iur = $this->flusso(1);
+        $job = $this->job([new Response(502, ['Content-Type' => 'text/html'], '<html>proxy segreto</html>')]);
+
+        $job->runOnce(new RecordingJobContext());
+
+        self::assertSame('Errore API Biz Events HTTP 502', $this->biz($iur)['error_msg']);
     }
 
     public function testRateLimitRetriesThenSucceeds(): void
