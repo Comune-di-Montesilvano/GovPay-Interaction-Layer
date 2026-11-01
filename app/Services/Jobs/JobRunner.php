@@ -27,8 +27,10 @@ use Symfony\Component\Lock\Store\DoctrineDbalStore;
  *   ha effetto entro un batch) e rinnova il TTL del lock.
  * - Cap per esecuzione (MAX_BATCHES_PER_RUN / MAX_RUN_SECONDS): difesa da un hadWork che non
  *   torna mai false; il prossimo giro e' pianificato subito e riprende da dove era.
- * - Eccezione: Sentry (tag suite=cron-<name>), esito `error`, nessun retry (prossimo giro a
+ * - Eccezione: Sentry (tag suite, vedi suiteFor), esito `error`, nessun retry (prossimo giro a
  *   intervallo normale). run() non lancia mai: gli errori sono registrati/riportati.
+ * - L'intero giro gira in uno scope Sentry con tag `suite` (withSuiteScope): anche le catture
+ *   dirette dei lavori e Logger::error/warning portano la suite del lavoro.
  * - stdout: una riga di riepilogo per esecuzione + una per errore (solo ref/motivo).
  * - Esecuzione non manuale con soli batch `silent` (JobResult::$silent): nessuna riga storico ne'
  *   stdout, solo next_run_at.
@@ -102,9 +104,38 @@ final class JobRunner
         }
     }
 
+    /**
+     * Suite Sentry/GlitchTip per slug: i nomi dei vecchi demoni (scripts/cron_*.php) restano
+     * invariati, cosi' ricerche salvate e alert su GlitchTip continuano a funzionare. Un lavoro
+     * senza voce usa `cron-<slug>`.
+     */
+    public const LEGACY_SUITES = [
+        'biz' => 'cron-biz-scanner',
+        'tefa' => 'cron-tefa-scanner',
+        'mapping' => 'cron-mapping-pendenze',
+        'vocab' => 'cron-vocab-mapping',
+        'govpay-debitore' => 'cron-govpay-debitore-scanner',
+    ];
+
     public static function suiteFor(string $jobName): string
     {
-        return 'cron-' . $jobName;
+        return self::LEGACY_SUITES[$jobName] ?? 'cron-' . $jobName;
+    }
+
+    /**
+     * Esegue $fn con il tag Sentry `suite` sullo scope: ogni cattura durante $fn (Sentry diretto e
+     * Logger::error/warning) porta la suite del lavoro, non quella del processo (`worker`).
+     *
+     * @template T
+     * @param callable(): T $fn
+     * @return T
+     */
+    public static function withSuiteScope(string $suite, callable $fn): mixed
+    {
+        return \Sentry\withScope(static function (Scope $scope) use ($suite, $fn): mixed {
+            $scope->setTag('suite', $suite);
+            return $fn();
+        });
     }
 
     /** Motivo dell'ultimo run() che ha restituito null (SKIP_*), null se l'ultimo e' partito. */
@@ -145,7 +176,7 @@ final class JobRunner
         }
 
         try {
-            return $this->loop($job, $lock, $manual, $enabledAtStart, $suite);
+            return self::withSuiteScope($suite, fn(): JobResult => $this->loop($job, $lock, $manual, $enabledAtStart, $suite));
         } finally {
             try {
                 $lock->release();

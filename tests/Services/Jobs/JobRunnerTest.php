@@ -319,6 +319,55 @@ final class JobRunnerTest extends DbTestCase
         self::assertStringContainsString('RuntimeException', implode("\n", $this->out));
     }
 
+    /** Tag `suite` dello scope Sentry corrente (null se assente). */
+    private static function currentSuiteTag(): ?string
+    {
+        $tag = null;
+        \Sentry\configureScope(static function (\Sentry\State\Scope $scope) use (&$tag): void {
+            $tag = $scope->applyToEvent(\Sentry\Event::createEvent())?->getTags()['suite'] ?? null;
+        });
+        return $tag;
+    }
+
+    public function testWholeRunIsTaggedWithLegacySuiteAndScopeIsRestored(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $seen = [];
+        $job = new FakePeriodicJob([
+            function () use (&$seen): JobResult {
+                $seen[] = self::currentSuiteTag();
+                return self::res(1, false);
+            },
+        ]);
+        $before = self::currentSuiteTag();
+
+        $this->runner()->run($job);
+
+        self::assertSame(['cron-fake'], $seen, 'ogni cattura durante il giro porta la suite del lavoro');
+        self::assertSame($before, self::currentSuiteTag(), 'lo scope torna quello di prima');
+    }
+
+    public function testSuiteNamesKeepLegacyDaemonNamesForGlitchTipFilters(): void
+    {
+        $expected = [
+            'ragioneria' => 'cron-ragioneria',
+            'biz' => 'cron-biz-scanner',
+            'tefa' => 'cron-tefa-scanner',
+            'mapping' => 'cron-mapping-pendenze',
+            'vocab' => 'cron-vocab-mapping',
+            'govpay-debitore' => 'cron-govpay-debitore-scanner',
+            'rendicontazione-govpay' => 'cron-rendicontazione-govpay',
+            'pendenze-massive' => 'cron-pendenze-massive',
+            'mapping-discovery' => 'cron-mapping-discovery',
+        ];
+        foreach ($expected as $slug => $suite) {
+            self::assertSame($suite, JobRunner::suiteFor($slug), $slug);
+        }
+        foreach (\App\Services\Jobs\JobCatalog::NAMES as $slug) {
+            self::assertArrayHasKey($slug, $expected, 'slug del catalogo senza suite attesa');
+        }
+    }
+
     public function testErrorMessageOmitsHttpBodies(): void
     {
         $this->repo->setEnabled('fake', true);

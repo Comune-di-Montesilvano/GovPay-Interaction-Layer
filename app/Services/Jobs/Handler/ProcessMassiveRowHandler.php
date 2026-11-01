@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace App\Services\Jobs\Handler;
 
 use App\Config\SettingsRepository;
+use App\Services\Jobs\JobRunner;
+use App\Services\Jobs\MassiveEnqueueJob;
 use App\Services\Jobs\MassivePendenzeProcessor;
 use App\Services\Jobs\Message\ProcessMassiveRow;
 use App\Services\Jobs\TransientMassiveFailure;
@@ -18,12 +20,12 @@ use App\Services\Jobs\TransientMassiveFailure;
  * - Errore transitorio: TransientMassiveFailure esce dal gestore -> nuovo tentativo della coda
  *   `massive` (vedi WorkerKernel). Ogni altro esito e' gia' scritto sulla riga: ack.
  * - $output: una riga per errore definitivo o tentativo fallito (id riga + motivo, mai dati
- *   personali); il worker antepone data e suite (SUITE).
+ *   personali); il worker antepone data e suite (JobRunner::suiteFor).
+ * - L'intero corpo gira in uno scope Sentry con tag `suite` del lavoro: ogni cattura (anche
+ *   Logger::error/warning di PendenzeController, App IO, mail) porta `cron-pendenze-massive`.
  */
 final class ProcessMassiveRowHandler
 {
-    public const SUITE = 'cron-pendenze-massive';
-
     /**
      * @param \Closure(): MassivePendenzeProcessor $processorFactory
      * @param \Closure(string): void $output
@@ -36,6 +38,14 @@ final class ProcessMassiveRowHandler
     ) {}
 
     public function __invoke(ProcessMassiveRow $message): void
+    {
+        JobRunner::withSuiteScope(
+            JobRunner::suiteFor(MassiveEnqueueJob::NAME),
+            fn() => $this->handle($message)
+        );
+    }
+
+    private function handle(ProcessMassiveRow $message): void
     {
         SettingsRepository::flush();
         if (!$this->enabled()) {

@@ -177,7 +177,7 @@ final class WorkerKernel
         $this->events->addListener(WorkerRunningEvent::class, fn() => $this->purgeHistoryIfDue());
 
         $line = fn(string $msg) => $this->line($msg);
-        $massiveLine = fn(string $msg) => ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . ProcessMassiveRowHandler::SUITE . '] ' . $msg);
+        $massiveLine = fn(string $msg) => ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . JobRunner::suiteFor(MassiveEnqueueJob::NAME) . '] ' . $msg);
         $this->bus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
             SchedulerTick::class => [new SchedulerTickHandler(
                 $this->state,
@@ -233,7 +233,7 @@ final class WorkerKernel
         if (!$message instanceof ProcessMassiveRow) {
             return;
         }
-        $suite = ProcessMassiveRowHandler::SUITE;
+        $suite = JobRunner::suiteFor(MassiveEnqueueJob::NAME);
         $transient = TransientOnlyRetryStrategy::isTransient($event->getThrowable());
         $cause = TransientOnlyRetryStrategy::unwrap($event->getThrowable());
         $short = (new \ReflectionClass($cause))->getShortName();
