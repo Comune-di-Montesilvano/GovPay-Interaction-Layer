@@ -11,6 +11,7 @@ use App\Auth\UserRepository;
 use App\Config\SettingsRepository;
 use App\Controllers\PendenzeController;
 use App\Database\BizRepository;
+use App\Database\DbalConnectionFactory;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\MappingPendenzeRepository;
 use App\Database\MassivePendenzeRepository;
@@ -155,10 +156,11 @@ final class JobCatalog
             ));
         });
 
-        $r->register('pendenze-massive', MassivePendenzeProcessor::IDLE_SECONDS, static function (): PeriodicJob {
-            // PendenzeController richiede un Twig nel costruttore: qui non renderizza nulla (solo chiamate GovPay).
-            $controller = new PendenzeController(Twig::create(dirname(__DIR__, 3) . '/backoffice/templates'), null);
-            return new MassivePendenzeJob(new MassivePendenzeProcessor($controller, new MassivePendenzeRepository()));
+        // Solo presa in carico + accodamento (coda `massive`): l'elaborazione GovPay e' nel
+        // gestore ProcessMassiveRowHandler del worker.
+        $r->register(MassiveEnqueueJob::NAME, MassiveEnqueueJob::IDLE_SECONDS, static function (): PeriodicJob {
+            $dbal = DbalConnectionFactory::get();
+            return new MassiveEnqueueJob($dbal, WorkerKernel::createMassiveTransport($dbal));
         });
 
         return $r;

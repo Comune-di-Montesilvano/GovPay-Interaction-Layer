@@ -310,7 +310,8 @@ final class MassivePendenzeProcessorTest extends DbTestCase
 
     /**
      * P8 + P6 (fix 8b): 4xx con corpo JSON -> ERROR, errore = 'HTTP <code> - <codice>: <descrizione>'
-     * (solo campi ProblemJson, mai il corpo intero), response_json = solo categoria/codice/descrizione.
+     * (solo campi ProblemJson, mai il corpo intero), response_json = solo categoria/codice/descrizione
+     * + idPendenza usato (Task 11: la "riprova" aggiorna la stessa pendenza, mai un id nuovo).
      */
     public function testGovPay4xxJsonGoesToErrorWithStatusAndProblemFieldsOnlyAndOnePut(): void
     {
@@ -324,7 +325,8 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         $row = $this->row($id);
         self::assertSame('ERROR', $row['stato']);
         self::assertSame('HTTP 422 - SINTASSI: Richiesta non valida', $row['errore']);
-        self::assertSame(['categoria' => 'RICHIESTA', 'codice' => 'SINTASSI', 'descrizione' => 'Richiesta non valida'], $this->json($row['response_json']));
+        $idPendenza = substr($this->gp->calls()[0], strlen('PUT ' . self::P));
+        self::assertSame(['categoria' => 'RICHIESTA', 'codice' => 'SINTASSI', 'descrizione' => 'Richiesta non valida', 'idPendenza' => $idPendenza], $this->json($row['response_json']));
         self::assertStringNotContainsString('segreto', (string)$row['errore'] . (string)$row['response_json']);
         self::assertSame([], $this->gp->notifications);
         self::assertResult($r, 1, 0, 0, 1, true);
@@ -334,7 +336,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
 
     /**
      * P1 (fix 8b): 4xx con corpo NON JSON (es. pagina HTML di un proxy) -> ERROR con 'HTTP <code>'
-     * (mai il corpo), response_json NULL, nessuna eccezione, una sola PUT, nessuna notifica.
+     * (mai il corpo), response_json = solo l'idPendenza usato, nessuna eccezione, una sola PUT, nessuna notifica.
      */
     public function testGovPay4xxNonJsonBodyGoesToErrorWithStatusOnly(): void
     {
@@ -347,13 +349,13 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         $row = $this->row($id);
         self::assertSame('ERROR', $row['stato']);
         self::assertSame('HTTP 400', $row['errore']);
-        self::assertNull($row['response_json']);
+        self::assertSame(['idPendenza' => substr($this->gp->calls()[0], strlen('PUT ' . self::P))], $this->json($row['response_json']));
         self::assertSame([], $this->gp->notifications);
         self::assertResult($r, 1, 0, 0, 1, true);
         self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 400']], $r->errorDetails);
     }
 
-    /** 5xx + P6 (fix 8b): ERROR con 'HTTP 500 - <codice>: <descrizione>' (mai URL/corpo), response_json NULL, nessun retry. */
+    /** 5xx + P6 (fix 8b): ERROR con 'HTTP 500 - <codice>: <descrizione>' (mai URL/corpo), response_json = solo idPendenza, nessun retry (percorso legacy). */
     public function testGovPay5xxGoesToErrorWithStatusAndProblemFieldsAndOnePut(): void
     {
         $id = $this->insertRow('PENDING', self::payload(12));
@@ -368,7 +370,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame(255, mb_strlen((string)$row['errore']), 'troncato a 255');
         self::assertStringNotContainsString('segreto', (string)$row['errore']);
         self::assertStringNotContainsString(self::BASE, (string)$row['errore']);
-        self::assertNull($row['response_json']);
+        self::assertSame(['idPendenza' => substr($this->gp->calls()[0], strlen('PUT ' . self::P))], $this->json($row['response_json']));
         self::assertSame([], $this->gp->notifications);
         self::assertSame([['ref' => (string)$id, 'reason' => 'HTTP 500']], $r->errorDetails);
     }
@@ -749,6 +751,35 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         $this->processor()->processRow($id, $this->ctx);
 
         self::assertSame('PROCESSING', $seen);
+    }
+
+    /**
+     * Task 11: l'idPendenza (e il numeroAvviso per IUV vincolato) e' salvato sulla riga PRIMA della
+     * PUT: un processo ucciso durante la PUT lascia l'id per il nuovo tentativo.
+     */
+    public function testIdPendenzaIsStoredOnRowBeforeThePut(): void
+    {
+        self::pdo()->exec("INSERT INTO entrate_tipologie (id_dominio, id_entrata, iuv_prefix, updated_at, created_at) VALUES ('" . self::DOMINIO . "', 'AFFITTO', '07', NOW(), NOW())");
+        $plain = $this->insertRow('PENDING', self::payload(31), null, null, 'B1', 1);
+        $vinc = $this->insertRow('PENDING', self::payload(32, ['idTipoPendenza' => 'AFFITTO']), null, null, 'B1', 2);
+        $seen = [];
+        $this->gp->mock->append(function () use ($plain, &$seen) {
+            $seen[] = $this->json($this->row($plain)['response_json']);
+            return new Response(201, [], '{}');
+        });
+        $this->queue(404, []);
+        $this->gp->mock->append(function () use ($vinc, &$seen) {
+            $seen[] = $this->json($this->row($vinc)['response_json']);
+            return new Response(201, [], '{}');
+        });
+
+        $this->processor()->processRow($plain, $this->ctx);
+        $this->processor()->processRow($vinc, $this->ctx);
+
+        $calls = $this->gp->calls();
+        self::assertSame(['idPendenza' => substr($calls[0], strlen('PUT ' . self::P))], $seen[0]);
+        $candidate = substr($calls[2], strlen('PUT ' . self::P));
+        self::assertSame(['idPendenza' => $candidate, 'numeroAvviso' => $candidate], $seen[1]);
     }
 
     // ============================================================ processRow: stati non lavorabili

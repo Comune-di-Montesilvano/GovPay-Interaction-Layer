@@ -1656,33 +1656,13 @@ class PendenzeController
      */
     public function sendPendenzaToBackoffice(array $payload, ?string $idPendenza = null): array
     {
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
+        $ctx = $this->createRequestContext();
+        if (isset($ctx['errors'])) {
+            return ['success' => false, 'errors' => $ctx['errors']];
+        }
+        [$backofficeUrl, $idA2A, $guzzleOptions] = [$ctx['backofficeUrl'], $ctx['idA2A'], $ctx['guzzleOptions']];
         $errors = [];
         $warnings = [];
-        if (empty($backofficeUrl)) {
-            $errors[] = 'GOVPAY_BACKOFFICE_URL non impostata';
-            return ['success' => false, 'errors' => $errors];
-        }
-        if ($idA2A === '') {
-            $errors[] = 'ID_A2A non impostata';
-            return ['success' => false, 'errors' => $errors];
-        }
-
-        $guzzleOptions = [];
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-            if (!empty($cert) && !empty($key)) {
-                $guzzleOptions['cert'] = $cert;
-                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-            } else {
-                $errors[] = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
-                return ['success' => false, 'errors' => $errors];
-            }
-        }
 
         $idP = '';
         try {
@@ -1694,58 +1674,13 @@ class PendenzeController
             // Genera idPendenza se non fornito
             $idP = trim((string)($idPendenza ?? ($payload['idPendenza'] ?? '')));
             if ($idP === '') {
-                $iuvPrefix = null;
-                $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
-                $idDominioPayload = trim((string)($payload['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
-                if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
-                    try {
-                        $details = (new EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
-                        $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
-                    } catch (\Throwable $_) {
-                        // fallback to GIL-
-                    }
+                $gen = $this->generateIdPendenza($httpClient, $backofficeUrl, $idA2A, $payload);
+                if (isset($gen['errors'])) {
+                    return ['success' => false, 'errors' => $gen['errors']];
                 }
-
-                if ($iuvPrefix !== null) {
-                    $chkUser = SettingsRepository::get('govpay', 'user', '');
-                    $chkPass = SettingsRepository::get('govpay', 'password', '');
-                    $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
-                    if ($chkUser !== '' && $chkPass !== '') {
-                        $chkOpts['auth'] = [$chkUser, $chkPass];
-                    }
-                    $maxAttempts = 10;
-                    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-                        $candidate = $this->generateVincolatoId($iuvPrefix);
-                        $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
-                        try {
-                            $chkResp = $httpClient->request('GET', $chkUrl, $chkOpts);
-                            $chkCode = $chkResp->getStatusCode();
-                            if ($chkCode === 404) {
-                                $idP = $candidate;
-                                break;
-                            } elseif ($chkCode !== 200) {
-                                $idP = $candidate;
-                                break;
-                            }
-                            // 200 = exists, try another candidate
-                        } catch (\Throwable $_) {
-                            $idP = $candidate;
-                            break;
-                        }
-                    }
-                    if ($idP === '') {
-                        $errors[] = 'Impossibile generare ID univoco per IUV vincolato dopo ' . $maxAttempts . ' tentativi';
-                        return ['success' => false, 'errors' => $errors];
-                    }
-                    $payload['numeroAvviso'] = $idP;
-                } else {
-                    try {
-                        $rand = bin2hex(random_bytes(8));
-                    } catch (\Throwable $_) {
-                        $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid());
-                    }
-                    $idPCand = 'GIL-' . substr($rand, 0, 16);
-                    $idP = preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35));
+                $idP = $gen['idPendenza'];
+                if ($gen['numeroAvviso'] !== null) {
+                    $payload['numeroAvviso'] = $gen['numeroAvviso'];
                 }
             }
 
@@ -1864,6 +1799,135 @@ class PendenzeController
             }
             return $out;
         }
+    }
+
+    /**
+     * Assegna l'idPendenza di una nuova pendenza SENZA crearla (stessa regola di
+     * sendPendenzaToBackoffice: idPendenza esplicito nel payload; IUV vincolato -> candidato
+     * verificato con GET e numeroAvviso = idPendenza; altrimenti 'GIL-' + 16 hex). Serve al
+     * chiamante per salvare l'id PRIMA della PUT e poi passarlo a sendPendenzaToBackoffice
+     * (con payload['numeroAvviso'] = numeroAvviso), cosi' un nuovo tentativo dopo un processo
+     * interrotto aggiorna la stessa pendenza (PUT idempotente) invece di crearne un'altra.
+     *
+     * @return array{success:true,idPendenza:string,numeroAvviso:?string}|array{success:false,errors:list<string>,exceptionClass?:string}
+     */
+    public function allocateIdPendenza(array $payload): array
+    {
+        $ctx = $this->createRequestContext();
+        if (isset($ctx['errors'])) {
+            return ['success' => false, 'errors' => $ctx['errors']];
+        }
+        $explicit = trim((string)($payload['idPendenza'] ?? ''));
+        if ($explicit !== '') {
+            return ['success' => true, 'idPendenza' => $explicit, 'numeroAvviso' => null];
+        }
+        try {
+            $httpClient = $this->makeHttpClient($ctx['guzzleOptions']);
+            $gen = $this->generateIdPendenza($httpClient, $ctx['backofficeUrl'], $ctx['idA2A'], $payload);
+        } catch (\Throwable $e) {
+            return ['success' => false, 'errors' => [$e->getMessage()], 'exceptionClass' => get_class($e)];
+        }
+        if (isset($gen['errors'])) {
+            return ['success' => false, 'errors' => $gen['errors']];
+        }
+        return ['success' => true, 'idPendenza' => $gen['idPendenza'], 'numeroAvviso' => $gen['numeroAvviso']];
+    }
+
+    /**
+     * URL backoffice, idA2A e opzioni mTLS per le chiamate di creazione, oppure gli errori di
+     * configurazione (stessi testi di sempre).
+     *
+     * @return array{backofficeUrl:string,idA2A:string,guzzleOptions:array<string,mixed>}|array{errors:list<string>}
+     */
+    private function createRequestContext(): array
+    {
+        $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
+        if (empty($backofficeUrl)) {
+            return ['errors' => ['GOVPAY_BACKOFFICE_URL non impostata']];
+        }
+        if ($idA2A === '') {
+            return ['errors' => ['ID_A2A non impostata']];
+        }
+
+        $guzzleOptions = [];
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
+            if (!empty($cert) && !empty($key)) {
+                $guzzleOptions['cert'] = $cert;
+                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
+            } else {
+                return ['errors' => ['mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati']];
+            }
+        }
+        return ['backofficeUrl' => $backofficeUrl, 'idA2A' => $idA2A, 'guzzleOptions' => $guzzleOptions];
+    }
+
+    /**
+     * Genera un nuovo idPendenza: IUV vincolato (iuv_prefix della tipologia) -> candidato a 18
+     * cifre verificato con GET (404/altro = libero, 200 = gia' usato, max 10 tentativi) e
+     * numeroAvviso = idPendenza; altrimenti 'GIL-' + 16 hex.
+     *
+     * @return array{idPendenza:string,numeroAvviso:?string}|array{errors:list<string>}
+     */
+    private function generateIdPendenza(Client $httpClient, string $backofficeUrl, string $idA2A, array $payload): array
+    {
+        $idP = '';
+        $iuvPrefix = null;
+        $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
+        $idDominioPayload = trim((string)($payload['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
+        if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
+            try {
+                $details = (new EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
+                $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
+            } catch (\Throwable $_) {
+                // fallback to GIL-
+            }
+        }
+
+        if ($iuvPrefix !== null) {
+            $chkUser = SettingsRepository::get('govpay', 'user', '');
+            $chkPass = SettingsRepository::get('govpay', 'password', '');
+            $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
+            if ($chkUser !== '' && $chkPass !== '') {
+                $chkOpts['auth'] = [$chkUser, $chkPass];
+            }
+            $maxAttempts = 10;
+            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                $candidate = $this->generateVincolatoId($iuvPrefix);
+                $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
+                try {
+                    $chkResp = $httpClient->request('GET', $chkUrl, $chkOpts);
+                    $chkCode = $chkResp->getStatusCode();
+                    if ($chkCode === 404) {
+                        $idP = $candidate;
+                        break;
+                    } elseif ($chkCode !== 200) {
+                        $idP = $candidate;
+                        break;
+                    }
+                    // 200 = exists, try another candidate
+                } catch (\Throwable $_) {
+                    $idP = $candidate;
+                    break;
+                }
+            }
+            if ($idP === '') {
+                return ['errors' => ['Impossibile generare ID univoco per IUV vincolato dopo ' . $maxAttempts . ' tentativi']];
+            }
+            return ['idPendenza' => $idP, 'numeroAvviso' => $idP];
+        }
+
+        try {
+            $rand = bin2hex(random_bytes(8));
+        } catch (\Throwable $_) {
+            $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid());
+        }
+        $idPCand = 'GIL-' . substr($rand, 0, 16);
+        return ['idPendenza' => (string)preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35)), 'numeroAvviso' => null];
     }
 
     /**

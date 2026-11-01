@@ -312,6 +312,15 @@ final class WorkerKernelTest extends DbTestCase
         WorkerKernel::probeTables($this->dbal, ['gil_jobs', 'tabella_migrazione_mancante']);
     }
 
+    /** Task 11: senza le colonne di claim (migrazione 037 non applicata) il worker attende. */
+    public function testMissingClaimColumnsCountAsNotReady(): void
+    {
+        WorkerKernel::probeColumns($this->dbal, WorkerKernel::REQUIRED_COLUMNS);
+
+        $this->expectException(\Throwable::class);
+        WorkerKernel::probeColumns($this->dbal, ['pendenze_massive' => ['claimed_at', 'colonna_mancante']]);
+    }
+
     public function testManualMessageIsNotStarvedByBusyScheduler(): void
     {
         $kernel = null;

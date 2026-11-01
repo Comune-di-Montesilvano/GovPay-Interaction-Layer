@@ -7,25 +7,38 @@ declare(strict_types=1);
 
 namespace App\Services\Jobs;
 
+use App\Controllers\PendenzeController;
 use App\Database\DbalConnectionFactory;
 use App\Database\JobStateRepository;
+use App\Database\MassivePendenzeRepository;
+use App\Services\Jobs\Handler\ProcessMassiveRowHandler;
 use App\Services\Jobs\Handler\RunJobHandler;
 use App\Services\Jobs\Handler\SchedulerTickHandler;
+use App\Services\Jobs\Message\ProcessMassiveRow;
 use App\Services\Jobs\Message\RunJob;
 use App\Services\Jobs\Message\SchedulerTick;
+use App\Services\Jobs\Messenger\ArrayContainer;
+use App\Services\Jobs\Messenger\FairShareReceiver;
+use App\Services\Jobs\Messenger\TransientOnlyRetryStrategy;
 use Doctrine\DBAL\Connection as DbalConnection;
 use Sentry\State\Scope;
+use Slim\Views\Twig;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\DoctrineDbalStore;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection as DoctrineTransportConnection;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
+use Symfony\Component\Messenger\Retry\RetryStrategyInterface;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
 use Symfony\Component\Scheduler\Generator\MessageGenerator;
@@ -37,11 +50,18 @@ use Symfony\Component\Scheduler\Schedule;
  * Processo worker (bin/worker): Symfony Scheduler + Messenger su MariaDB.
  *
  * - Ricevitori del Worker Messenger, in ordine: trasporto Doctrine `jobs` (RunJob manuali da UI,
- *   auto_setup disattivato: tabelle dalla migrazione 036) e scheduler (SchedulerTick ogni 5 s,
- *   in memoria, solo l'ultimo tick perso). `jobs` per primo: il Worker riparte dal primo
- *   ricevitore dopo ogni messaggio e, con un lavoro in arretrato, lo scheduler ha sempre un
- *   tick perso pronto: in seconda posizione la coda manuale non verrebbe mai letta. Nessun retry (max_retries=0: nessun listener
- *   di retry/failure transport), un messaggio fallito viene scartato.
+ *   auto_setup disattivato: tabelle dalla migrazione 036), trasporto Doctrine `massive` (un
+ *   ProcessMassiveRow per riga pendenze massive, accodati da MassiveEnqueueJob) e scheduler
+ *   (SchedulerTick ogni 5 s, in memoria, solo l'ultimo tick perso). `jobs` per primo: il Worker
+ *   riparte dal primo ricevitore dopo ogni messaggio e, con un lavoro in arretrato, lo scheduler
+ *   ha sempre un tick perso pronto: in seconda posizione la coda manuale non verrebbe mai letta.
+ *   `massive` cede il turno allo scheduler ogni MASSIVE_FAIR_SHARE messaggi (FairShareReceiver):
+ *   la coda e' limitata a BATCH_SIZE messaggi (contropressione di MassiveEnqueueJob) e ogni
+ *   messaggio dura al massimo il timeout della PUT (90 s) + verifiche IUV vincolato.
+ * - Retry: `jobs` e scheduler nessuno (max_retries=0, messaggio fallito scartato). `massive`:
+ *   solo TransientMassiveFailure, 3 retry a 30/60/120 s (TransientOnlyRetryStrategy, listener
+ *   standard di Messenger che rimette il messaggio in coda con DelayStamp). Tentativi esauriti o
+ *   errore non ritentabile: riga nello stato di errore (onMassiveFailed).
  * - SchedulerTick -> RunJob periodico per ogni lavoro scaduto, gestito subito in sequenza:
  *   un solo processo, nessun giro in parallelo nello stesso worker; tra worker diversi decide
  *   il lock `job:<name>` di JobRunner.
@@ -55,6 +75,9 @@ use Symfony\Component\Scheduler\Schedule;
 final class WorkerKernel
 {
     public const QUEUE = 'jobs';
+    public const MASSIVE_QUEUE = MassiveEnqueueJob::QUEUE;
+    /** Messaggi `massive` consecutivi prima di cedere il turno allo scheduler. */
+    public const MASSIVE_FAIR_SHARE = 10;
     public const TICK_SECONDS = 5;
     public const DB_RETRY_SECONDS = 5;
     public const DEFAULT_CACHE_DIR = '/var/www/cache';
@@ -63,6 +86,9 @@ final class WorkerKernel
 
     /** Tabelle senza le quali il worker non parte (migrazione 036 non ancora applicata = attesa). */
     public const REQUIRED_TABLES = ['gil_jobs', 'gil_job_runs', 'gil_job_run_errors', 'messenger_messages', 'lock_keys'];
+
+    /** Colonne senza le quali il worker non parte (migrazione 037: claim delle pendenze massive). */
+    public const REQUIRED_COLUMNS = ['pendenze_massive' => ['claimed_at', 'claim_token']];
 
     private bool $stopRequested = false;
     private ?Worker $worker = null;
@@ -78,11 +104,18 @@ final class WorkerKernel
     // Non readonly: il gestore del tick lo richiama da una closure creata prima dell'assegnazione.
     private MessageBus $bus;
     private readonly DoctrineTransport $jobsTransport;
+    private readonly DoctrineTransport $massiveTransport;
+    private readonly FairShareReceiver $massiveReceiver;
+    private readonly EventDispatcher $events;
+    /** @var \Closure(): MassivePendenzeProcessor */
+    private readonly \Closure $massiveProcessorFactory;
 
     /**
      * @param (\Closure(string): void)|null $output riga di log (default: stdout)
      * @param (\Closure(string, \Throwable): void)|null $reportException (suite, eccezione) (default: Sentry)
      * @param (\Closure(): void)|null $databaseProbe lancia se DB/tabelle non pronti (default: REQUIRED_TABLES)
+     * @param (\Closure(): MassivePendenzeProcessor)|null $massiveProcessorFactory processore per messaggio (default: GovPay reale)
+     * @param RetryStrategyInterface|null $massiveRetryStrategy retry della coda `massive` (default: TransientOnlyRetryStrategy)
      */
     public function __construct(
         private readonly JobRegistry $registry,
@@ -93,7 +126,9 @@ final class WorkerKernel
         ?\Closure $reportException = null,
         ?\Closure $databaseProbe = null,
         ?LockFactory $locks = null,
-        private readonly string $cacheDir = self::DEFAULT_CACHE_DIR
+        private readonly string $cacheDir = self::DEFAULT_CACHE_DIR,
+        ?\Closure $massiveProcessorFactory = null,
+        ?RetryStrategyInterface $massiveRetryStrategy = null
     ) {
         $this->clock = $clock ?? new NativeClock();
         $this->output = $output ?? static function (string $line): void {
@@ -106,7 +141,10 @@ final class WorkerKernel
                 \Sentry\captureException($e);
             });
         };
-        $this->databaseProbe = $databaseProbe ?? fn() => self::probeTables($this->dbal, self::REQUIRED_TABLES);
+        $this->databaseProbe = $databaseProbe ?? function (): void {
+            self::probeTables($this->dbal, self::REQUIRED_TABLES);
+            self::probeColumns($this->dbal, self::REQUIRED_COLUMNS);
+        };
 
         $this->runner = new JobRunner(
             $this->state,
@@ -117,8 +155,20 @@ final class WorkerKernel
             fn(): bool => $this->stopRequested
         );
         $this->jobsTransport = self::createJobsTransport($this->dbal);
+        $this->massiveTransport = self::createMassiveTransport($this->dbal);
+        $this->massiveReceiver = new FairShareReceiver($this->massiveTransport, self::MASSIVE_FAIR_SHARE);
+        $this->massiveProcessorFactory = $massiveProcessorFactory ?? static fn(): MassivePendenzeProcessor => self::defaultMassiveProcessor();
+
+        $this->events = new EventDispatcher();
+        $this->events->addSubscriber(new SendFailedMessageForRetryListener(
+            new ArrayContainer([self::MASSIVE_QUEUE => $this->massiveTransport]),
+            new ArrayContainer([self::MASSIVE_QUEUE => $massiveRetryStrategy ?? new TransientOnlyRetryStrategy()])
+        ));
+        // Dopo il listener di retry (priorita' 100): willRetry() e' gia' deciso.
+        $this->events->addListener(WorkerMessageFailedEvent::class, fn(WorkerMessageFailedEvent $e) => $this->onMassiveFailed($e), -100);
 
         $line = fn(string $msg) => $this->line($msg);
+        $massiveLine = fn(string $msg) => ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . ProcessMassiveRowHandler::SUITE . '] ' . $msg);
         $this->bus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
             SchedulerTick::class => [new SchedulerTickHandler(
                 $this->state,
@@ -129,7 +179,69 @@ final class WorkerKernel
                 $line
             )],
             RunJob::class => [new RunJobHandler($this->registry, $this->runner, $this->state, $this->clock, $line)],
+            ProcessMassiveRow::class => [new ProcessMassiveRowHandler($this->massiveProcessorFactory, $massiveLine)],
         ]))]);
+    }
+
+    /** Processore pendenze massive di produzione (GovPay reale), uno per messaggio. */
+    public static function defaultMassiveProcessor(): MassivePendenzeProcessor
+    {
+        // PendenzeController richiede un Twig nel costruttore: qui non renderizza nulla (solo chiamate GovPay).
+        $controller = new PendenzeController(Twig::create(dirname(__DIR__, 3) . '/backoffice/templates'), null);
+        return new MassivePendenzeProcessor($controller, new MassivePendenzeRepository());
+    }
+
+    /** Trasporto Doctrine `massive` (stessa tabella messenger_messages, auto_setup disattivato). */
+    public static function createMassiveTransport(DbalConnection $dbal): DoctrineTransport
+    {
+        return new DoctrineTransport(
+            new DoctrineTransportConnection([
+                'table_name' => 'messenger_messages',
+                'queue_name' => self::MASSIVE_QUEUE,
+                'auto_setup' => false,
+            ], $dbal),
+            new PhpSerializer()
+        );
+    }
+
+    /**
+     * Messaggio `massive` fallito senza ulteriori tentativi (retry esauriti o errore non
+     * ritentabile): la riga va nello stato di errore di oggi (creazione ERROR con l'errore
+     * dell'ultimo tentativo; errore imprevisto -> "Errore di elaborazione (<classe>)", mai il
+     * messaggio). Solo se il claim e' ancora quello del messaggio. Non lancia: se il DB non
+     * risponde la riga resta in lavorazione e il reset dei claim abbandonati la rimette in coda.
+     */
+    private function onMassiveFailed(WorkerMessageFailedEvent $event): void
+    {
+        if ($event->willRetry() || $event->getReceiverName() !== self::MASSIVE_QUEUE) {
+            return;
+        }
+        $message = $event->getEnvelope()->getMessage();
+        if (!$message instanceof ProcessMassiveRow) {
+            return;
+        }
+        $suite = ProcessMassiveRowHandler::SUITE;
+        $transient = TransientOnlyRetryStrategy::isTransient($event->getThrowable());
+        $cause = TransientOnlyRetryStrategy::unwrap($event->getThrowable());
+        $short = (new \ReflectionClass($cause))->getShortName();
+        $errore = $transient ? null : 'Errore di elaborazione (' . $short . ')';
+        $now = '[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . $suite . '] ';
+        try {
+            $updated = ($this->massiveProcessorFactory)()->failClaimedRow($message->rowId, $message->claimToken, $errore);
+        } catch (\Throwable $e) {
+            ($this->reportException)($suite, $e);
+            ($this->output)($now . "ERRORE esito riga {$message->rowId}: " . JobRunner::errorMessage($e));
+            return;
+        }
+        if (!$transient) {
+            ($this->reportException)($suite, $cause);
+        }
+        if ($updated) {
+            $retries = RedeliveryStamp::getRetryCountFromEnvelope($event->getEnvelope());
+            ($this->output)($now . "riga {$message->rowId}: " . ($transient
+                ? "tentativi esauriti ({$retries} retry), stato di errore"
+                : "errore non ritentabile ({$short}), stato di errore"));
+        }
     }
 
     /** Worker di produzione: catalogo lavori, connessioni applicative, stdout + Sentry. */
@@ -179,6 +291,19 @@ final class WorkerKernel
     {
         foreach ($tables as $table) {
             $dbal->executeQuery('SELECT 1 FROM ' . $dbal->quoteSingleIdentifier($table) . ' LIMIT 0')->free();
+        }
+    }
+
+    /**
+     * Lancia se manca una delle colonne (migrazione non ancora applicata).
+     *
+     * @param array<string, list<string>> $columns tabella => colonne
+     */
+    public static function probeColumns(DbalConnection $dbal, array $columns): void
+    {
+        foreach ($columns as $table => $cols) {
+            $list = implode(', ', array_map(static fn(string $c): string => $dbal->quoteSingleIdentifier($c), $cols));
+            $dbal->executeQuery('SELECT ' . $list . ' FROM ' . $dbal->quoteSingleIdentifier($table) . ' LIMIT 0')->free();
         }
     }
 
@@ -310,12 +435,13 @@ final class WorkerKernel
 
         return new Worker(
             [
-                // Ordine rilevante: vedi docblock della classe (coda manuale prima dello scheduler).
+                // Ordine rilevante: vedi docblock della classe (coda manuale, poi massive, poi scheduler).
                 self::QUEUE => $this->jobsTransport,
+                self::MASSIVE_QUEUE => $this->massiveReceiver,
                 'scheduler' => new SchedulerTransport(new MessageGenerator($schedule, 'gil', $this->clock)),
             ],
             $this->bus,
-            null,
+            $this->events,
             null,
             null,
             $this->clock

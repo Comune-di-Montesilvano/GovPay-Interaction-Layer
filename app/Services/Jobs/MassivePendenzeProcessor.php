@@ -8,7 +8,14 @@ use App\Controllers\PendenzeController;
 use App\Database\MassivePendenzeRepository;
 
 /**
- * Elaborazione della coda pendenze massive (corpo del loop di cron_pendenze_massive.php).
+ * Elaborazione della coda pendenze massive.
+ *
+ * Worker (Task 11): processClaimedRow() per ogni messaggio ProcessMassiveRow (righe prese in carico
+ * da MassiveEnqueueJob con claim atomico), failClaimedRow() per l'esito finale dei messaggi falliti.
+ * Percorso legacy (cron_pendenze_massive.php, rimosso con il passaggio al worker): runOnce().
+ * In entrambi l'idPendenza di una nuova pendenza viene assegnato e salvato sulla riga PRIMA della
+ * PUT di creazione, e resta salvato anche dopo un rifiuto: ogni nuovo tentativo aggiorna la
+ * stessa pendenza (PUT idempotente), mai una seconda creazione con un id diverso.
  *
  * - claimBatch(): selezione di oggi. Prima le righe CANCEL_PENDING (id ASC, max $limit); solo se
  *   non ce ne sono, le righe PENDING (id ASC, max $limit). NON marca nulla: oggi la marcatura
@@ -96,6 +103,51 @@ final class MassivePendenzeProcessor
         return $stato === 'CANCEL_PENDING'
             ? $this->processCancel($row, $log)
             : $this->processCreate($row, $log);
+    }
+
+    /**
+     * Elaborazione di una riga presa dal worker (messaggio ProcessMassiveRow, claim atomico di
+     * MassiveEnqueueJob): rinfresca claimed_at, rilegge la riga e la elabora solo se e' ancora
+     * in lavorazione (PROCESSING / CANCEL_PROCESSING) con lo STESSO claim_token del messaggio.
+     * Altrimenti (messaggio duplicato, riconsegnato dopo un reset del claim, riga gia' conclusa,
+     * messa in pausa, eliminata) e' un no-op senza chiamate GovPay.
+     *
+     * Creazione con errore transitorio (rete/esito incerto, GovPay 5xx): la riga resta PROCESSING
+     * con errore e id salvati, e viene lanciata TransientMassiveFailure (nuovo tentativo del
+     * messaggio). Errori definitivi (4xx, validazione, configurazione): ERROR subito, come oggi.
+     * Annullamento: invariato (mai ritentato, P4 fuori ambito).
+     *
+     * @throws TransientMassiveFailure
+     */
+    public function processClaimedRow(int $rowId, string $claimToken, ?JobContext $ctx = null): JobResult
+    {
+        $log = static function (string $msg) use ($ctx): void {
+            $ctx?->debug($msg);
+        };
+
+        $this->repo->touchClaim($rowId, $claimToken);
+        $row = $this->repo->findById($rowId);
+        $stato = is_array($row) ? (string)$row['stato'] : null;
+        if ($row === null
+            || ($stato !== 'PROCESSING' && $stato !== 'CANCEL_PROCESSING')
+            || !hash_equals((string)($row['claim_token'] ?? ''), $claimToken)
+        ) {
+            $log("  ID-$rowId messaggio obsoleto o duplicato (stato: " . ($stato ?? 'inesistente') . '), ignorato.');
+            return new JobResult(0, 0, 1, 0, false);
+        }
+
+        return $stato === 'CANCEL_PROCESSING'
+            ? $this->processCancel($row, $log)
+            : $this->processCreate($row, $log, $claimToken);
+    }
+
+    /**
+     * Esito finale di un messaggio fallito (tentativi esauriti o errore non ritentabile): vedi
+     * MassivePendenzeRepository::failClaim(). $errore null = resta quello dell'ultimo tentativo.
+     */
+    public function failClaimedRow(int $rowId, string $claimToken, ?string $errore): bool
+    {
+        return $this->repo->failClaim($rowId, $claimToken, $errore);
     }
 
     /**
@@ -204,8 +256,11 @@ final class MassivePendenzeProcessor
     /**
      * @param array<string,mixed> $row
      * @param callable(string):void $log
+     * @param string|null $claimToken null = percorso legacy (runOnce dello script), altrimenti
+     *                                claim del worker (riga gia' PROCESSING)
+     * @throws TransientMassiveFailure solo con $claimToken
      */
-    private function processCreate(array $row, callable $log): JobResult
+    private function processCreate(array $row, callable $log, ?string $claimToken = null): JobResult
     {
         $id         = (int)$row['id'];
         $batchId    = $row['file_batch_id'];
@@ -219,7 +274,9 @@ final class MassivePendenzeProcessor
             return self::error($ref, 'Payload JSON non valido o mancante');
         }
 
-        $this->repo->setProcessing($id);
+        if ($claimToken === null) {
+            $this->repo->setProcessing($id);
+        }
 
         $accErrors        = [];
         $accWarnings      = [];
@@ -249,16 +306,38 @@ final class MassivePendenzeProcessor
         $dDa['sorgente']         = 'GIL-Massivo';
         $payload['datiAllegati'] = $dDa;
 
-        // Riprova dopo un esito incerto: riusa l'idPendenza (e il numeroAvviso IUV vincolato)
-        // salvati sulla riga, cosi' la PUT aggiorna la stessa pendenza invece di crearne un'altra.
-        $retryId = null;
+        // Riprova dopo un esito incerto / processo interrotto: riusa l'idPendenza (e il
+        // numeroAvviso IUV vincolato) salvati sulla riga, cosi' la PUT aggiorna la stessa
+        // pendenza invece di crearne un'altra.
+        /** @var array<string,string> $ids idPendenza (+ numeroAvviso) usati per la PUT, salvati sulla riga */
+        $ids = [];
         $stored = $row['response_json'] ? json_decode((string)$row['response_json'], true) : null;
         if (is_array($stored) && isset($stored['idPendenza']) && is_string($stored['idPendenza']) && trim($stored['idPendenza']) !== '') {
             $retryId = trim($stored['idPendenza']);
+            $ids['idPendenza'] = $retryId;
             if (isset($stored['numeroAvviso']) && is_string($stored['numeroAvviso']) && $stored['numeroAvviso'] !== '') {
                 $payload['numeroAvviso'] = $stored['numeroAvviso'];
+                $ids['numeroAvviso'] = $stored['numeroAvviso'];
             }
             $log("  [$batchId:$numeroRiga] ID-$id riprova sullo stesso idPendenza: $retryId");
+        } else {
+            // Prima creazione: l'id viene assegnato e SALVATO sulla riga PRIMA della PUT. Se il
+            // processo muore durante la PUT (la pendenza puo' essere gia' su GovPay), il nuovo
+            // tentativo dopo il reset del claim riusa lo stesso id: mai due id per una riga.
+            $alloc = $this->controller->allocateIdPendenza($payload);
+            if ($alloc['success'] !== true) {
+                $errorMsg = self::createErrore($alloc);
+                $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
+                $this->repo->setResult($id, false, null, $errorMsg);
+                return self::error($ref, self::createFailureReason($alloc));
+            }
+            $retryId = $alloc['idPendenza'];
+            $ids['idPendenza'] = $retryId;
+            if ($alloc['numeroAvviso'] !== null) {
+                $payload['numeroAvviso'] = $alloc['numeroAvviso'];
+                $ids['numeroAvviso'] = $alloc['numeroAvviso'];
+            }
+            $this->repo->storeAllocatedId($id, $ids);
         }
 
         $res = $this->controller->sendPendenzaToBackoffice($payload, $retryId);
@@ -303,18 +382,36 @@ final class MassivePendenzeProcessor
         }
 
         $errorMsg = self::createErrore($res);
-        // response_json: solo i campi ProblemJson (categoria/codice/descrizione), mai il corpo intero.
-        $response = array_key_exists('response', $res) ? (($res['problem'] ?? []) ?: null) : null;
-        if (!empty($res['esitoIncerto']) && isset($res['idPendenza'])) {
-            // Esito incerto: si conserva l'id usato (vedi riprova sopra), mai corpi upstream.
-            $response = array_filter([
-                'idPendenza' => (string)$res['idPendenza'],
-                'numeroAvviso' => isset($res['numeroAvviso']) ? (string)$res['numeroAvviso'] : null,
-            ], static fn($v) => $v !== null);
+        // response_json: solo i campi ProblemJson (categoria/codice/descrizione), mai il corpo
+        // intero, piu' l'idPendenza/numeroAvviso usati: anche dopo un rifiuto la "riprova"
+        // aggiorna la stessa pendenza (puo' esistere su GovPay se un tentativo precedente era
+        // arrivato), mai un id nuovo.
+        $problem = array_key_exists('response', $res) && is_array($res['problem'] ?? null) ? $res['problem'] : [];
+        $response = array_merge($problem, $ids) ?: null;
+        $reason = self::createFailureReason($res);
+        if ($claimToken !== null && self::isTransient($res)) {
+            $log("  [$batchId:$numeroRiga] ID-$id ERRORE TRANSITORIO ($errorMsg): nuovo tentativo");
+            $this->repo->recordTransientFailure($id, $claimToken, $response, $errorMsg);
+            throw new TransientMassiveFailure($reason);
         }
         $log("  [$batchId:$numeroRiga] ID-$id ERRORE ($errorMsg)");
         $this->repo->setResult($id, false, $response, $errorMsg);
-        return self::error($ref, self::createFailureReason($res));
+        return self::error($ref, $reason);
+    }
+
+    /**
+     * Errore ritentabile della PUT di creazione: trasporto senza risposta HTTP (esito incerto:
+     * timeout, connessione rifiutata/interrotta, circuit breaker aperto) o GovPay 5xx. Tutto il
+     * resto (4xx, validazione, configurazione, altre eccezioni) e' definitivo.
+     *
+     * @param array<string,mixed> $res
+     */
+    private static function isTransient(array $res): bool
+    {
+        if (!empty($res['esitoIncerto'])) {
+            return true;
+        }
+        return isset($res['httpStatus']) && (int)$res['httpStatus'] >= 500;
     }
 
     /**

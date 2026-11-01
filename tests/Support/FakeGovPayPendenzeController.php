@@ -35,6 +35,9 @@ final class FakeGovPayPendenzeController extends PendenzeController
     /** Se impostato, fetchPendenzaById lancia questa eccezione (ramo "eccezione durante annullamento"). */
     public ?\Throwable $fetchByIdThrows = null;
 
+    /** Se impostato, allocateIdPendenza lancia questa eccezione (errore imprevisto, non ritentabile). */
+    public ?\Throwable $allocateThrows = null;
+
     /**
      * Se true, makeHttpClient passa dalla vera GovPayClientFactory (TLS, Connection: close, retry
      * cURL 35/28/56, circuit breaker) con il MockHandler come handler finale.
@@ -69,6 +72,14 @@ final class FakeGovPayPendenzeController extends PendenzeController
             throw $this->fetchByIdThrows;
         }
         return parent::fetchPendenzaById($idPendenza);
+    }
+
+    public function allocateIdPendenza(array $payload): array
+    {
+        if ($this->allocateThrows !== null) {
+            throw $this->allocateThrows;
+        }
+        return parent::allocateIdPendenza($payload);
     }
 
     public function sendCreationNotifications(
