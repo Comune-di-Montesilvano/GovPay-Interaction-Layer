@@ -30,6 +30,8 @@ use Symfony\Component\Lock\Store\DoctrineDbalStore;
  * - Eccezione: Sentry (tag suite=cron-<name>), esito `error`, nessun retry (prossimo giro a
  *   intervallo normale). run() non lancia mai: gli errori sono registrati/riportati.
  * - stdout: una riga di riepilogo per esecuzione + una per errore (solo ref/motivo).
+ * - Esecuzione non manuale con soli batch `silent` (JobResult::$silent): nessuna riga storico ne'
+ *   stdout, solo next_run_at.
  */
 final class JobRunner
 {
@@ -210,6 +212,7 @@ final class JobRunner
         $details = [];
         $batches = 0;
         $lastHadWork = false;
+        $allSilent = true;
         $status = 'ok';
         $errorMessage = null;
 
@@ -229,6 +232,7 @@ final class JobRunner
                     $details[] = $d;
                 }
                 $lastHadWork = $r->hadWork;
+                $allSilent = $allSilent && $r->silent;
 
                 if (!$r->hadWork || ($this->stopSignal)()) {
                     break;
@@ -260,6 +264,15 @@ final class JobRunner
             ? $finishedAt
             : $finishedAt->modify('+' . max(0, $job->emptyQueueIntervalSeconds()) . ' seconds');
         $totals = new JobResult($processed, $ok, $skipped, $errors, $lastHadWork, $details);
+
+        if ($status === 'ok' && $allSilent && !$manual) {
+            try {
+                $this->state->setNextRunAt($name, $nextRunAt);
+            } catch (\Throwable $e) {
+                ($this->reportException)($suite, $e);
+            }
+            return $totals;
+        }
 
         $runId = null;
         try {

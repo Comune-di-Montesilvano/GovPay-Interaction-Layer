@@ -8,6 +8,10 @@ namespace App\Services\Jobs;
  *
  * errorDetails: lista di ['ref' => string, 'reason' => string]; ref = IUV/IUR/id,
  * mai dati personali (CF, nominativi).
+ *
+ * silent: giro "a vuoto" senza nulla da registrare (es. contropressione): se tutti i batch di
+ * un'esecuzione non manuale sono silent, JobRunner non scrive gil_job_runs ne' stdout e aggiorna
+ * solo il prossimo giro.
  */
 final class JobResult
 {
@@ -20,6 +24,7 @@ final class JobResult
         public readonly int $skipped,
         public readonly int $errors,
         public readonly bool $hadWork,
-        public readonly array $errorDetails = []
+        public readonly array $errorDetails = [],
+        public readonly bool $silent = false
     ) {}
 }

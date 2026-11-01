@@ -9,6 +9,8 @@ namespace App\Services\Jobs;
 
 use App\Services\Jobs\Message\ProcessMassiveRow;
 use Doctrine\DBAL\Connection as DbalConnection;
+use Psr\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
 
@@ -28,7 +30,9 @@ use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
  *    GovPay con un id sconosciuto, un nuovo invio ne creerebbe una seconda).
  * 2. Contropressione: al massimo BATCH_SIZE messaggi `massive` in coda (compresi quelli in
  *    attesa di retry). Coda piena con righe in attesa -> nessun claim, prossimo giro dopo
- *    BACKPRESSURE_SECONDS.
+ *    BACKPRESSURE_SECONDS. Il giro a coda piena (senza reset) e' `silent`: nessuna riga storico ne'
+ *    stdout (altrimenti una riga ogni pochi secondi per tutta la durata di un caricamento).
+ *    Il reset del punto 1 gira al piu' una volta ogni STALE_RESET_EVERY_SECONDS per processo.
  * 3. Claim atomico, nella STESSA transazione DBAL dell'inserimento dei messaggi (il trasporto
  *    usa la stessa connessione): UPDATE ... WHERE id = ? AND stato = 'PENDING' (o
  *    CANCEL_PENDING), messaggio solo se la riga e' cambiata. Due giri concorrenti non prendono mai
@@ -45,17 +49,32 @@ final class MassiveEnqueueJob implements PeriodicJob
     public const QUEUE = 'massive';
     public const BATCH_SIZE = MassivePendenzeProcessor::BATCH_SIZE;
     public const IDLE_SECONDS = MassivePendenzeProcessor::IDLE_SECONDS;
-    public const BACKPRESSURE_SECONDS = 5;
+    public const BACKPRESSURE_SECONDS = 30;
     public const STALE_SECONDS = 3600;
+    public const STALE_RESET_EVERY_SECONDS = 60;
 
     public const LEGACY_INTERRUPTED_ERRORE = "Esito incerto: elaborazione interrotta (vecchio demone) \u{2014} verificare su GovPay prima di ripetere";
 
     private bool $backpressure = false;
 
+    /** Ultimo reset dei claim abbandonati (timestamp, per processo: il lavoro e' ricostruito a ogni giro). */
+    private static ?int $lastStaleResetAt = null;
+
+    private readonly ClockInterface $clock;
+
     public function __construct(
         private readonly DbalConnection $dbal,
-        private readonly SenderInterface $sender
-    ) {}
+        private readonly SenderInterface $sender,
+        ?ClockInterface $clock = null
+    ) {
+        $this->clock = $clock ?? new NativeClock();
+    }
+
+    /** Solo test: il prossimo runOnce esegue il reset dei claim abbandonati. */
+    public static function forgetStaleReset(): void
+    {
+        self::$lastStaleResetAt = null;
+    }
 
     public function name(): string
     {
@@ -69,17 +88,23 @@ final class MassiveEnqueueJob implements PeriodicJob
 
     public function runOnce(JobContext $ctx): JobResult
     {
-        $reset = $this->resetStaleClaims();
-        foreach ($reset as $what => $n) {
-            if ($n > 0) {
-                $ctx->debug("Claim abbandonati: {$n} {$what}");
+        $resetRows = 0;
+        $now = $this->clock->now()->getTimestamp();
+        if (self::$lastStaleResetAt === null || $now - self::$lastStaleResetAt >= self::STALE_RESET_EVERY_SECONDS) {
+            foreach ($this->resetStaleClaims() as $what => $n) {
+                if ($n > 0) {
+                    $resetRows += $n;
+                    $ctx->debug("Claim abbandonati: {$n} {$what}");
+                }
             }
+            self::$lastStaleResetAt = $now;
         }
 
         $capacity = self::BATCH_SIZE - $this->outstandingMessages();
         if ($capacity <= 0) {
             $this->backpressure = $this->hasQueuedRows();
-            return new JobResult(0, 0, 0, 0, false);
+            // Coda piena: nulla da registrare, salvo righe rimesse in coda dal reset.
+            return new JobResult(0, 0, 0, 0, false, [], $resetRows === 0);
         }
 
         [$kind, $ids] = $this->selectCandidates($capacity);

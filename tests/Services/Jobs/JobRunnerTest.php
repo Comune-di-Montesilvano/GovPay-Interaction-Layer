@@ -137,6 +137,38 @@ final class JobRunnerTest extends DbTestCase
         self::assertStringContainsString('boom', $this->out[1]);
     }
 
+    /**
+     * Fix round 1 (Task 11): un giro che non fa nulla per contropressione (risultato `silent`) non
+     * lascia righe in gil_job_runs ne' righe su stdout, ma pianifica comunque il prossimo giro.
+     */
+    public function testSilentRunLeavesNoRunRowAndNoOutputButSchedulesNextRun(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $job = new FakePeriodicJob([fn() => new JobResult(0, 0, 0, 0, false, [], true)], 30);
+
+        $res = $this->runner()->run($job);
+
+        self::assertNotNull($res);
+        self::assertSame([], self::runs());
+        self::assertSame([], $this->out);
+        self::assertSame($this->clock->now()->modify('+30 seconds')->format('Y-m-d H:i:s'), self::jobRow()['next_run_at']);
+    }
+
+    /** Silenzioso solo se TUTTI i batch lo sono, e mai per un'esecuzione manuale. */
+    public function testSilentBatchAfterWorkOrManualRunIsRecorded(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $job = new FakePeriodicJob([fn() => self::res(3, true), fn() => new JobResult(0, 0, 0, 0, false, [], true)], 30);
+        $this->runner()->run($job);
+        self::assertCount(1, self::runs());
+        self::assertSame(3, (int)self::runs()[0]['processed']);
+
+        $silent = new FakePeriodicJob([fn() => new JobResult(0, 0, 0, 0, false, [], true)], 30);
+        $this->runner()->run($silent, true);
+        self::assertCount(2, self::runs(), 'manuale: sempre registrato');
+        self::assertCount(2, $this->out);
+    }
+
     public function testLoopsWhileHadWorkInOneRun(): void
     {
         $this->repo->setEnabled('fake', true);

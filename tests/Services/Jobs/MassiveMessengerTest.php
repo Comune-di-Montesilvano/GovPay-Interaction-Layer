@@ -78,6 +78,7 @@ final class MassiveMessengerTest extends DbTestCase
         $this->reported = [];
         // lavoro attivo: con `pendenze-massive` disabilitato il gestore rilascia le righe (pausa)
         $this->state->setEnabled(MassiveEnqueueJob::NAME, true);
+        MassiveEnqueueJob::forgetStaleReset();
     }
 
     protected function tearDown(): void
@@ -108,7 +109,7 @@ final class MassiveMessengerTest extends DbTestCase
 
     private function enqueueJob(?SenderInterface $sender = null): MassiveEnqueueJob
     {
-        return new MassiveEnqueueJob($this->dbal, $sender ?? WorkerKernel::createMassiveTransport($this->dbal));
+        return new MassiveEnqueueJob($this->dbal, $sender ?? WorkerKernel::createMassiveTransport($this->dbal), $this->clock);
     }
 
     /** Worker reale finche' le code non sono vuote (il tempo finto avanza solo a vuoto). */
@@ -320,7 +321,7 @@ final class MassiveMessengerTest extends DbTestCase
         }
     }
 
-    /** Al massimo BATCH_SIZE messaggi in coda: un giro prende al piu' 50 righe, poi contropressione (5 s). */
+    /** Al massimo BATCH_SIZE messaggi in coda: un giro prende al piu' 50 righe, poi contropressione. */
     public function testRunClaimsAtMostBatchSizeAndThenBacksOff(): void
     {
         for ($i = 1; $i <= 55; $i++) {
@@ -337,7 +338,7 @@ final class MassiveMessengerTest extends DbTestCase
         self::assertSame(50, self::messages());
         self::assertSame(MassiveEnqueueJob::BACKPRESSURE_SECONDS, $job->emptyQueueIntervalSeconds());
         $next = self::pdo()->query("SELECT next_run_at FROM gil_jobs WHERE name = 'pendenze-massive'")->fetchColumn();
-        self::assertSame($this->clock->now()->modify('+5 seconds')->format('Y-m-d H:i:s'), $next);
+        self::assertSame($this->clock->now()->modify('+' . MassiveEnqueueJob::BACKPRESSURE_SECONDS . ' seconds')->format('Y-m-d H:i:s'), $next);
         self::assertSame(5, (int)self::pdo()->query("SELECT COUNT(*) FROM pendenze_massive WHERE stato = 'PENDING'")->fetchColumn());
 
         // 10 messaggi elaborati -> 10 posti liberi: il giro successivo prende le 5 rimaste
@@ -345,6 +346,50 @@ final class MassiveMessengerTest extends DbTestCase
         $r = $this->enqueueJob()->runOnce(new RecordingJobContext());
         self::assertSame(5, $r->processed);
         self::assertSame(45, self::messages());
+    }
+
+    /**
+     * Fix round 1: coda piena e nessun reset da fare -> il giro non lascia traccia (nessuna riga
+     * gil_job_runs, nessuna riga su stdout) e riprova dopo 30-60 s, non ogni 5 s.
+     */
+    public function testRunAtQueueCapIsSilentAndBacksOffAtLeast30s(): void
+    {
+        for ($i = 1; $i <= 52; $i++) {
+            $this->insertRow('PENDING', self::payload($i), riga: $i);
+        }
+        $this->enqueueJob()->runOnce(new RecordingJobContext()); // 50 messaggi: coda piena
+        self::assertSame(50, self::messages());
+        $this->clock->sleep(120); // il reset dei claim e' di nuovo dovuto... ma non trova nulla
+
+        $job = $this->enqueueJob();
+        $result = $this->kernel()->runner()->run($job);
+
+        self::assertNotNull($result);
+        self::assertSame(0, $result->processed);
+        self::assertSame(0, (int)self::pdo()->query("SELECT COUNT(*) FROM gil_job_runs WHERE job = 'pendenze-massive'")->fetchColumn());
+        self::assertSame([], $this->out);
+        self::assertGreaterThanOrEqual(30, MassiveEnqueueJob::BACKPRESSURE_SECONDS);
+        self::assertLessThanOrEqual(60, MassiveEnqueueJob::BACKPRESSURE_SECONDS);
+        self::assertSame(MassiveEnqueueJob::BACKPRESSURE_SECONDS, $job->emptyQueueIntervalSeconds());
+        $next = self::pdo()->query("SELECT next_run_at FROM gil_jobs WHERE name = 'pendenze-massive'")->fetchColumn();
+        self::assertSame($this->clock->now()->modify('+' . MassiveEnqueueJob::BACKPRESSURE_SECONDS . ' seconds')->format('Y-m-d H:i:s'), $next);
+    }
+
+    /** Fix round 1: il reset dei claim abbandonati gira al piu' una volta al minuto (per processo). */
+    public function testStaleResetRunsAtMostOncePerMinute(): void
+    {
+        $this->enqueueJob()->runOnce(new RecordingJobContext()); // reset eseguito (nulla da fare)
+        $stale = $this->insertRow('PROCESSING', self::payload(1), ['idPendenza' => 'GIL-s'], claimedAgo: '2 HOUR', token: 'old');
+
+        $this->clock->sleep(59);
+        $this->enqueueJob()->runOnce(new RecordingJobContext());
+        self::assertSame('old', $this->row($stale)['claim_token'], 'entro il minuto: nessun reset');
+        self::assertSame(0, self::messages());
+
+        $this->clock->sleep(2);
+        $this->enqueueJob()->runOnce(new RecordingJobContext());
+        self::assertNotSame('old', $this->row($stale)['claim_token'], 'dopo il minuto: reset + nuovo claim');
+        self::assertSame(1, self::messages());
     }
 
     // ============================================================ worker: elaborazione per messaggio
@@ -579,6 +624,7 @@ final class MassiveMessengerTest extends DbTestCase
         self::pdo()->prepare("UPDATE pendenze_massive SET stato = 'PROCESSING', errore = NULL, response_json = ?, claimed_at = NOW() - INTERVAL 2 HOUR WHERE id = ?")
             ->execute([$atPut['response_json'], $id]);
         $this->gp->notifications = [];
+        $this->clock->sleep(61); // reset dei claim al piu' una volta al minuto
 
         $this->enqueueJob()->runOnce(new RecordingJobContext()); // reset del claim + nuovo claim
         $row = $this->row($id);
