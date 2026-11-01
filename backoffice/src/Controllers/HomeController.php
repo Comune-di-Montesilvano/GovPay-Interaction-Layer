@@ -54,10 +54,10 @@ class HomeController
 
         // Stato dei servizi GIL (gil_jobs, eseguiti dal container worker)
         $statuses = CronController::jobStatuses();
-        $daemons = [];
+        $jobs = [];
         foreach (['biz', 'tefa', 'ragioneria', 'pendenze-massive'] as $key) {
             $st = $statuses[$key] ?? [];
-            $daemons[$key] = [
+            $jobs[$key] = [
                 'enabled' => (bool)($st['enabled'] ?? false),
                 'running' => (bool)($st['running'] ?? false),
                 'last_finished_at' => $st['last_finished_at'] ?? null,
@@ -84,7 +84,7 @@ class HomeController
 
         return $this->twig->render($response, 'home.html.twig', [
             'id_dominio' => $idDominio,
-            'daemons' => $daemons,
+            'jobs' => $jobs,
             'ragioneria_scan_da_formatted' => $scanDaFormatted,
             'debug' => nl2br(htmlspecialchars($debug)),
         ]);

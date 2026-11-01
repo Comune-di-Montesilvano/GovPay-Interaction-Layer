@@ -112,8 +112,8 @@ class MappingPendenzeController
             $noMatchExamples = $repo->getNoMatchExamples($idDominio);
         } catch (\Throwable $_) {}
 
-        $daemonRunning      = CronController::isDaemonRunning('mapping');
-        $daemonVocabRunning = CronController::isDaemonRunning('vocab');
+        $mappingEnabled     = CronController::isJobEnabled('mapping');
+        $vocabEnabled       = CronController::isJobEnabled('vocab');
 
         $flash = $_SESSION['flash'] ?? [];
         unset($_SESSION['flash']);
@@ -125,8 +125,8 @@ class MappingPendenzeController
             'stats'               => $stats,
             'tipologie_list'      => $tipologieList,
             'tipologie_custom'    => $tipologieCustom,
-            'daemon_running'       => $daemonRunning,
-            'daemon_vocab_running' => $daemonVocabRunning,
+            'mapping_job_enabled' => $mappingEnabled,
+            'vocab_job_enabled'   => $vocabEnabled,
             'flash'                => $flash,
             'current_user'         => $user,
             'no_match_examples'    => $noMatchExamples,

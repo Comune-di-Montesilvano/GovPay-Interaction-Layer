@@ -88,7 +88,7 @@ class CronController
      * Compatibilita' (tab Impostazioni, mapping pendenze, report TEFA): "attivo" = lavoro
      * abilitato in gil_jobs (lo esegue il container worker), non piu' un processo con PID.
      */
-    public static function isDaemonRunning(string $jobKey): bool
+    public static function isJobEnabled(string $jobKey): bool
     {
         if (!isset(self::JOBS[$jobKey])) {
             return false;

@@ -255,7 +255,7 @@ class ReportTefaController
 
     private function isScannerRunning(): bool
     {
-        return CronController::isDaemonRunning('tefa');
+        return CronController::isJobEnabled('tefa');
     }
 
     public function retryErrors(Request $request, Response $response): Response
@@ -545,7 +545,7 @@ class ReportTefaController
 
     private function isBizScannerRunning(): bool
     {
-        return CronController::isDaemonRunning('biz');
+        return CronController::isJobEnabled('biz');
     }
 
     private function jsonResponse(Response $response, array $data, int $status = 200): Response

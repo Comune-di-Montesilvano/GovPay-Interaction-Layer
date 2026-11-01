@@ -101,9 +101,9 @@
             <i class="fas fa-database" aria-hidden="true"></i>
           </div>
           <span class="bo-hero-card-label">Sincronizzazione Ragioneria</span>
-          <div class="bo-hero-card-value">{{ daemons.ragioneria.enabled ? 'Attivo' : 'In pausa' }}</div>
+          <div class="bo-hero-card-value">{{ jobs.ragioneria.enabled ? 'Attivo' : 'In pausa' }}</div>
           <div class="bo-hero-card-meta">
-            <span class="status-dot {{ daemons.ragioneria.enabled ? 'active' : 'stopped' }}" aria-hidden="true"></span>
+            <span class="status-dot {{ jobs.ragioneria.enabled ? 'active' : 'stopped' }}" aria-hidden="true"></span>
             <span>Sincronizza dal: <strong>{{ ragioneria_scan_da_formatted }}</strong></span>
           </div>
         </div>
@@ -245,7 +245,7 @@
               {key: 'tefa', name: 'Classificatore TEFA', icon: 'fa-building-columns', desc: 'Classifica i flussi Biz Events identificando la quota provinciale TEFA.', only_tefa: true}
             ] %}
             {% for item in hub_items|filter(i => not (i.only_tefa ?? false) or tefa_enabled|default(false)) %}
-            {% set d = daemons[item.key] %}
+            {% set d = jobs[item.key] %}
             <div class="daemon-service-item">
               <div class="d-flex align-items-center justify-content-between">
                 <span class="daemon-service-name">
