@@ -12,7 +12,8 @@ Multi-container Docker. Container principali:
 
 | Container | Service | Stack | Scopo |
 |---|---|---|---|
-| `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute. **Unico container che chiama GovPay/pagoPA API.** |
+| `gil-backoffice` | `backoffice` | PHP 8.5 + Slim 4 + Apache | Interfaccia operatori: pendenze, rendicontazione, ricevute. **Con il worker (stessa immagine), unico a chiamare GovPay/pagoPA API.** |
+| (`<progetto>-worker-1`) | `worker` | PHP 8.5 CLI (immagine backoffice) | Lavori periodici (ex demoni cron): Symfony Scheduler + Messenger su MariaDB. UN SOLO worker. Vedi "Lavori periodici (worker)". |
 | `gil-frontoffice` | `frontoffice` | PHP 8.5 + Apache | Portale cittadino (sidecar del backoffice). Non chiama GovPay/pagoPA direttamente: usa API interne backoffice via MASTER_TOKEN. |
 | `gil-db` | `db` | MariaDB 11 | DB condiviso. Backoffice (RW). Frontoffice (RO solo tabella `settings` per config). |
 
@@ -64,23 +65,12 @@ docker compose pull && docker compose up -d
 # Esegui test PHP
 docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build --abort-on-container-exit
 
-# Daemon ragioneria (sincronizza flussi GovPay → tabella flussi_rendicontazioni)
-docker exec -d gil-backoffice php /var/www/html/scripts/cron_ragioneria.php
-
-# Daemon Biz scanner (salva dati ricevuta Biz Events per pendenze non-GovPay → biz_ricevute)
-docker exec -d gil-backoffice php /var/www/html/scripts/cron_biz_scanner.php
-
-# Daemon TEFA scanner (classifica IUR come TEFA/non-TEFA da biz_ricevute → tefa_ricevute)
-docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
-
-# Cron batch pendenze massive
-docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
-
-# Daemon gestibili anche da Backoffice → Impostazioni → Cron (start/stop/log/autostart)
-# `docker exec` senza -u gira come root (nessun USER nel Dockerfile) — Apache/PHP-FPM
-# gira invece come www-data. File condivisi tra i due vanno in dir con setgid (2775),
-# mai in sys_get_temp_dir()/tmp (sticky bit blocca unlink cross-owner). Vedi
-# GovPayClientFactory::circuitBreakerFilePath()/writeCircuitBreakerFile().
+# Lavori periodici (ex demoni cron_*.php): container `worker` (gil:worker), sempre attivo, nessun
+# docker exec. Abilita/pausa, esegui ora, log: Backoffice → Funzioni avanzate → Cron / Servizi.
+docker compose logs -f worker
+# LEGACY (da rimuovere): `docker exec -d gil-backoffice php scripts/cron_*.php` e
+# `backoffice/bin/process_massive_pendenze.php` sono ancora nell'immagine ma NON vanno lanciati:
+# girerebbero in parallelo al worker (doppie chiamate GovPay, doppie creazioni massive).
 
 # Accesso DB diretto — backoffice user NON funziona da localhost dentro il container
 docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
@@ -195,7 +185,7 @@ Tag immagini (verificati su GHCR): tag git `vX.Y.Z` → `:X.Y.Z` (senza `v`, es.
 - **Autenticazione frontoffice cittadini**: OIDC esterno via Authorization Code + PKCE. Configurabile da Backoffice → Impostazioni → Frontoffice. Tipo `none` = accesso libero senza login.
 - **`session_regenerate_id(true)` post-login**: chiamato dopo aver scritto `$_SESSION['frontoffice_user']` nel path OIDC callback. Non rimuovere — previene session fixation.
 - **Single-session backoffice**: `AuthMiddleware` verifica `$_SESSION['session_token']` contro `users.session_token` in DB (`UserRepository::getSessionToken`/`updateSessionToken`) — login più recente invalida sessioni precedenti dello stesso utente. Una sessione PHP fabbricata a mano (es. per test/debug) deve settare entrambi i valori allineati, non solo `$_SESSION['user']`, altrimenti `AuthMiddleware` la considera "soppiantata" e redirige a `/login`.
-- **Errore cron `"Unmatched '}'"` / `"Unmatched '{'"`**: non è regex/PCRE — è `ParseError` PHP nativo per graffa extra/mancante in un file, catturato genericamente da `catch(\Throwable)` nei loop demoni e loggato come errore ciclo generico. Lint mirato per isolare il file rotto: `docker exec gil-backoffice sh -c "find /var/www/html/app /var/www/html/scripts /var/www/html/backoffice/src -name '*.php' | while read f; do php -l \"\$f\" >/tmp/l 2>&1 || cat /tmp/l; done"`.
+- **Errore cron `"Unmatched '}'"` / `"Unmatched '{'"`**: non è regex/PCRE — è `ParseError` PHP nativo per graffa extra/mancante in un file, catturato genericamente da `catch(\Throwable)` di `JobRunner` (worker) e loggato come errore del giro. Lint mirato per isolare il file rotto: `docker exec gil-backoffice sh -c "find /var/www/html/app /var/www/html/scripts /var/www/html/backoffice/src -name '*.php' | while read f; do php -l \"\$f\" >/tmp/l 2>&1 || cat /tmp/l; done"`.
 - **`docker-compose.override.yml` non monta `app/` live** (solo `./debug`) — `docker exec ... php -l file` dentro il container linta l'immagine buildata, non i sorgenti locali appena editati. Per verificare un fix nel container serve `docker compose up -d --build`; in alternativa lintare il file locale con `php -l` sull'host.
 - **GovPay pendenza `stato=ESEGUITO`**: qualsiasi PUT di aggiornamento viene rifiutato con `VER_003` ("stato che non consente l'aggiornamento"), indipendentemente dai campi inviati. `PendenzeController::addNotificationToPendenza()` (allegare notifiche a `datiAllegati.notifiche`) funziona solo su pendenze non ancora pagate — non utilizzabile per annotare pendenze già riscosse.
 - **Rendicontazione GovPay `iuv` vs `numeroAvviso`**: bridge legacy (Geri/Dilazione) indicizza sul numero avviso completo (aux digit + IUV, 18 cifre, es. `300607000007021733`), non sullo IUV corto GovPay (17 cifre, es. `00607000007021733`). `RendicontazioneEngineService` paddda prima di `LegacyRendicontazioneBridgeClient::invia()` — non rimuovere il padding, causa "Rata non trovata" silenzioso lato bridge (mai su Sentry, `esito=false` inghiottito in `markErrore`). Lookup GovPay diretto by avviso: `GET /pendenze/byAvviso/{idDominio}/{numeroAvviso}` (`PendenzeController::fetchPendenzaByAvvisoRaw`).
@@ -324,51 +314,59 @@ File SQL in `migrations/` (numerati `003_...sql` → `030_...sql`). Nessun runne
 
 Note: `App\Security\SignedLink` firma i link pubblici frontoffice (HMAC, `FRONTOFFICE_LINK_SIGNING_KEY`). `App\Services\MassivoCsvParser::cleanImportoRaw()` normalizza gli importi CSV: decimale = ultimo tra `,`/`.`, gli altri migliaia (`1.234,56`, `1,234.56`); un solo separatore + esattamente 3 cifre (`1.234`) = migliaia (in euro non esistono 3 decimali). Proprieta' in `MassivoCsvParserPropertyTest`.
 
-## Demoni Cron
+## Lavori periodici (worker)
 
-Tutti i demoni sono loop infiniti con single-instance guard (PID file) e segnale di stop via file `/tmp/`. Gestibili da UI: **Backoffice → Impostazioni → Cron** (start/stop/log/autostart).
+Gli ex demoni `scripts/cron_*.php` girano come **lavori** nel container `worker` (servizio compose `worker`, stessa immagine del backoffice, `php bin/worker gil:worker`): Symfony Scheduler (tick 5 s) + Messenger su MariaDB (`messenger_messages`, code `jobs` = "esegui ora" e `massive` = righe pendenze massive). Nessun `docker exec`, PID file, stop file o `.autostart` a runtime. Codice: `app/Services/Jobs/` (`WorkerKernel`, `JobCatalog`, `JobRunner`), controllo UI `App\Services\Jobs\JobControl`.
 
-Log: `echo` su stdout → catturato da Docker (`docker logs gil-backoffice`).
+- **Stato in DB**: `gil_jobs` (flag `enabled`, `next_run_at`, ultimo giro/esito; riga marker `__import__`), `gil_job_runs` (un giro: batch, elaborati/ok/saltati/errori, esito, manuale), `gil_job_run_errors` (righe in errore per giro: solo ref + motivo, mai URL/corpi upstream). Tabelle da migrazione `036`; il backoffice applica le migrazioni all'avvio, il worker parte dopo backoffice healthy e attende DB/tabelle.
+- **UI**: Backoffice → Funzioni avanzate → **Cron / Servizi** (`/funzioni-avanzate/cron`): attiva/pausa (`POST {job}/enabled`, effetto entro un batch), esegui ora (`{job}/run` → `WorkerKernel::enqueueManualRun()`, rifiutato se già in coda; con giro in corso parte al termine), log = ultimi `gil_job_runs` + errori (niente tail stdout), rescan ragioneria (setting `backoffice.ragioneria_rescan_richiesto`, consumato dal giro che parte davvero). "In esecuzione" = lock `job:<name>` valido in `lock_keys` (dopo un kill -9 resta fino a 900 s). Services Hub in home (superadmin) usa gli stessi endpoint. Azioni pagina Cron: admin + superadmin.
+- **CSRF**: tutte le POST di controllo lavori (Cron, report TEFA, reset errori Biz, riprova massive) richiedono `csrf_token` via `App\Security\JobControlCsrf` (sessione `cron_csrf`, Twig `job_csrf_token()`); JSON → 403, form → flash + redirect.
+- **Autostart**: al primo avvio il worker importa **una sola volta** i vecchi `daemon-<slug>.autostart` dal volume `cache` (montato `:ro`) in `gil_jobs.enabled`, poi scrive il marker `__import__`: un lavoro messo in pausa dopo non torna attivo al riavvio. Volume `cache` obbligatorio (directory assente = nessun import, si riprova al prossimo avvio).
+- **UN SOLO worker** (mai `replicas`/scale): lock per lavoro TTL 900 s < durata massima giro 1800 s (`JobRunner::MAX_RUN_SECONDS`, rinnovato tra batch) e retry massive send/reject non atomico → due worker = doppie PUT GovPay.
+- **Stop**: `stop_signal: SIGTERM` + `stop_grace_period: 60s` nel compose sono necessari — l'immagine php:apache dichiara `STOPSIGNAL SIGWINCH` (stop graceful Apache), che il worker ignora: senza, ogni stop/restart aspetta la grazia e poi kill a metà batch. Con SIGTERM finisce il batch corrente ed esce ("worker arrestato.").
+- **Immagini vecchie** (senza `bin/worker`, prod con `APP_VERSION` fisso + compose da main): il command del worker è una guardia `sh -c` che stampa "immagine senza bin/worker, nessuna azione" e resta in attesa (trap TERM, niente exit → niente crash loop); i demoni girano ancora nel backoffice via `.autostart`. Le immagini nuove non avviano più demoni in `docker-setup.sh`. CI: `scripts/smoke-stack.sh` (job smoke di `docker-publish.yml` con `SMOKE_WORKER=new`, `compose-compat.yml` con `auto`) verifica worker healthy, 0 riavvii, www-data senza capability/porte, marker `__import__` (immagine nuova) o riga di attesa (vecchia).
+- **Hardening worker**: `user: www-data`, solo `*hardening` (cap_drop ALL, nessun cap_add, nessuna porta), env allineato al backoffice con `APP_SUITE=worker`, `cache:ro` + `gil_certs:ro`. Healthcheck superficiale (PID 1 = `bin/worker` o attesa): un worker bloccato ma vivo resta healthy — segnale reale = "Ultimo giro / Prossimo" in UI. Circuit breaker GovPay (`backoffice/storage/tmp`) ora per container: worker e web non condividono lo stato.
+- **Sentry**: suite `worker` per il processo, `cron-<job>` per le eccezioni di un giro.
 
-| Demone | Script | PID file | Stop file | Dipende da |
-|---|---|---|---|---|
-| Ragioneria | `cron_ragioneria.php` | `/tmp/cron-ragioneria.pid` | `/tmp/cron-stop-ragioneria` | GovPay API |
-| Biz scanner | `cron_biz_scanner.php` | `/tmp/cron-biz-scanner.pid` | `/tmp/cron-stop-biz` | Biz Events API |
-| TEFA scanner | `cron_tefa_scanner.php` | `/tmp/cron-tefa-scanner.pid` | `/tmp/cron-stop-tefa` | biz_ricevute |
-| Mapping L1 | `cron_mapping_pendenze.php` | `/tmp/cron-mapping.pid` | `/tmp/cron-stop-mapping` | biz + (tefa) |
-| Mapping L2 | `cron_vocab_mapping.php` | `/tmp/cron-vocab.pid` | `/tmp/cron-stop-vocab` | L1 |
-| Pendenze massive | `cron_pendenze_massive.php` | `/tmp/cron-pendenze-massive.pid` | `/tmp/cron-stop-pendenze-massive` | — |
-| GovPay debitore | `cron_govpay_debitore_scanner.php` | `/tmp/cron-govpay-debitore.pid` | `/tmp/cron-stop-govpay-debitore` | GovPay API |
-| Rendicontazione GovPay | `cron_rendicontazione_govpay.php` | `/tmp/cron-rendicontazione-govpay.pid` | `/tmp/cron-stop-rendicontazione-govpay` | GovPay API, ponte legacy |
+| Lavoro (`gil_jobs.name`) | Ex script | Intervallo coda vuota | Dipende da |
+|---|---|---|---|
+| `ragioneria` | `cron_ragioneria.php` | 30 min | GovPay API |
+| `biz` | `cron_biz_scanner.php` | 15 min | Biz Events API |
+| `tefa` | `cron_tefa_scanner.php` | 15 min | biz_ricevute (`tefa_enabled`) |
+| `mapping` (+ `mapping-discovery` ogni 60 s, stesso interruttore) | `cron_mapping_pendenze.php` | 15 min | biz + (tefa) |
+| `vocab` | `cron_vocab_mapping.php` | 15 min | L1 |
+| `govpay-debitore` | `cron_govpay_debitore_scanner.php` | 15 min | GovPay API |
+| `rendicontazione-govpay` | `cron_rendicontazione_govpay.php` | `rendicontazione.scan_interval_minuti` (default 15) | GovPay API, ponte legacy |
+| `pendenze-massive` | `cron_pendenze_massive.php` | 15 min | GovPay API (coda `massive`) |
 
-Pause "coda vuota" standardizzate a 15 minuti su tutti i demoni (eccetto ragioneria a 30 min e rendicontazione GovPay configurabile via `rendicontazione.scan_interval_minuti`, default 15).
+Un giro ripete i batch finché c'è lavoro (cap 1000 batch / 1800 s, poi riparte subito); configurazione mancante → giro vuoto (`IdleJob`) o giro in errore, come facevano gli script. Errore → `gil_job_runs` con esito `error` + Sentry, prossimo giro a intervallo normale.
 
-### Dettaglio demoni
+### Dettaglio lavori
 
-**`cron_ragioneria.php`** — Sincronizza flussi rendicontazione da GovPay API → `flussi_rendicontazioni`. Prima iterazione: scan completo dalla data configurata (`backoffice.ragioneria_scan_da`); iterazioni successive: finestra scorrevole (ultimo sync − 3 giorni) per evitare scan completo ogni volta. Rescan forzato: creare `/tmp/cron-rescan-ragioneria`.
+**`ragioneria`** — Sincronizza flussi rendicontazione da GovPay API → `flussi_rendicontazioni`. Primo giro: scan completo dalla data configurata (`backoffice.ragioneria_scan_da`); giri successivi: finestra scorrevole `MAX(data_flusso) − 15 giorni`. Rescan forzato: bottone in Cron / Servizi (non più `/tmp/cron-rescan-ragioneria`).
 
-**`cron_biz_scanner.php`** — Per ogni IUR non-GovPay in `flussi_rendicontazioni` con `biz_stato = 'PENDING'`: chiama pagoPA Biz Events API e salva i dati ricevuta in `biz_ricevute` (`stato = 'PROCESSED'`). Primo motore della pipeline pendenze esterne.
+**`biz`** — Per ogni IUR non-GovPay in `flussi_rendicontazioni` con `biz_stato = 'PENDING'`: chiama pagoPA Biz Events API e salva i dati ricevuta in `biz_ricevute` (`stato = 'PROCESSED'`). Primo motore della pipeline pendenze esterne. Motivo errore: solo HTTP status + `title` ProblemJson (`BizScannerService::apiErrorReason()`).
 
-**`cron_tefa_scanner.php`** — Legge `biz_ricevute` (PROCESSED, non ancora in `tefa_ricevute`) e classifica ogni IUR come TEFA (`stato = 'PROCESSED'`) o non-TEFA (`stato = 'SKIPPED'`). Non chiama Biz Events — usa i dati già salvati dal demone Biz. Attivo solo se `tefa_enabled = true`.
+**`tefa`** — Legge `biz_ricevute` (PROCESSED, non ancora in `tefa_ricevute`) e classifica ogni IUR come TEFA (`stato = 'PROCESSED'`) o non-TEFA (`stato = 'SKIPPED'`). Non chiama Biz Events. Giro vuoto se `tefa_enabled` non è true.
 
-**`cron_mapping_pendenze.php`** — Demone L1 mapping. Ogni ciclo: (1) discovery pattern IUV ogni 60s (di fatto solo 5-char, vedi "Discovery pattern L1"), (2) bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), (3) segna PENDING rimanenti come `NO_MATCH`. Pausa 15 minuti se nessuna assegnazione, 1s altrimenti.
+**`mapping`** — L1 mapping: bulk assign `fornitore` per ogni pattern attivo (longest-prefix-first), poi PENDING rimanenti → `NO_MATCH`. Discovery pattern IUV nel lavoro `mapping-discovery` ogni 60 s (di fatto solo 5-char, vedi "Discovery pattern L1").
 
-**`cron_vocab_mapping.php`** — Demone L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`. Per ogni pendenza: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
+**`vocab`** — L2 mapping. Prende pendenze con `mapping_stato = 'PROCESSED'` e `vocab_stato = 'PENDING'`: longest-prefix match sul pattern IUV, poi scan keyword vocab (priorità DESC) sulla descrizione Biz. Assegna `cod_entrata` da keyword o da fallback del pattern. Se nessun match: `vocab_stato = 'NO_MATCH'`.
 
-**`cron_pendenze_massive.php`** — Processa batch di 50 pendenze massive in stato `PENDING` (inserimento massivo da CSV/API). Pausa 30s quando coda vuota.
+**`pendenze-massive`** — Il lavoro prende in carico (claim atomico, `claimed_at`/`claim_token`) le righe `PENDING` a batch di 50 e accoda un messaggio per riga sulla coda `massive`; la PUT GovPay la fa il gestore del messaggio (`ProcessMassiveRowHandler`), con `idPendenza` salvato prima della PUT. Errori transitori (rete, 5xx) → 3 retry Messenger a 30 s ×2 (30/60/120 s) sullo stesso `idPendenza`; 4xx → `ERROR` subito con status + campi ProblemJson. "Riprova" (dettaglio lotto, `POST /funzioni-avanzate/cron/pendenze-massive/{rowId}/retry`) solo su righe `ERROR` già prese in carico, riusa l'`idPendenza` salvato (righe scartate all'import: "non riprovabile"). Claim più vecchi di 1 h rimessi in coda. In pausa i messaggi in coda rilasciano la riga a `PENDING` invece di elaborarla, ed "esegui ora" è disabilitato.
 
-**`cron_govpay_debitore_scanner.php`** — Per ogni IUR GovPay (`is_govpay=1`) in `flussi_rendicontazioni` senza entry in `biz_ricevute`: chiama GovPay Backoffice API `GET /pendenze/{id_a2a}/{id_pendenza}` e salva `soggettoPagatore.identificativo/anagrafica` + `causale` in `biz_ricevute` come `PROCESSED`. Consente al CSV ragioneria di includere CF/nominativo debitore anche per pendenze interne. Batch da 20 con 1s tra chiamate; 15 min di sleep quando coda vuota. Usa stessa autenticazione GovPay (Basic Auth + mTLS opzionale).
+**`govpay-debitore`** — Per ogni IUR GovPay (`is_govpay=1`) in `flussi_rendicontazioni` senza entry in `biz_ricevute` (o con `ERROR` più vecchio di 60 min): chiama GovPay Backoffice API `GET /pendenze/{id_a2a}/{id_pendenza}` e salva `soggettoPagatore.identificativo/anagrafica` + `causale` in `biz_ricevute` come `PROCESSED`. 404 → `NOT_FOUND` (definitivo, mai ritentato); altri errori → `ERROR`, ritentato dopo 60 min (escluso da "Reset errori Biz"). Batch da 100 con 1 s tra chiamate. Consente al CSV ragioneria di includere CF/nominativo debitore anche per pendenze interne.
 
-**`cron_rendicontazione_govpay.php`** — Motore rendicontazione GovPay (vedi sezione dedicata sotto). Per ogni riga `is_govpay=1` in `PENDING`/`ERRORE` (finestra `rendicontazione.max_giorni_retry`): instrada verso smarcatura automatica, smarcatura manuale operatore, o handoff al ponte legacy (Geri/Dilazione). Digest email (operatore + admin) inviato dopo N cicli consecutivi senza righe nuove (`rendicontazione.scansioni_quiete_soglia`), non ad ogni ciclo.
+**`rendicontazione-govpay`** — Motore rendicontazione GovPay (vedi sezione dedicata sotto). Per ogni riga `is_govpay=1` in `PENDING`/`ERRORE` (finestra `rendicontazione.max_giorni_retry`): instrada verso smarcatura automatica, smarcatura manuale operatore, o handoff al ponte legacy (Geri/Dilazione). Digest email (operatore + admin) inviato dopo N giri consecutivi senza righe nuove (`rendicontazione.scansioni_quiete_soglia`), non ad ogni giro.
 
 ## Mapping Pendenze Esterne (L1 + L2)
 
 Pipeline obbligatoria per ogni pendenza esterna (`is_govpay = 0`) prima che possa essere analizzata nel mapping:
 
-1. **Motore Biz** (`cron_biz_scanner.php`): `biz_ricevute.stato = 'PROCESSED'`
-2. **Motore TEFA** (`cron_tefa_scanner.php`, solo se `tefa_enabled = true`): `tefa_ricevute.stato = 'SKIPPED'`
-3. **Demone L1** (`cron_mapping_pendenze.php`): assegna `fornitore` via prefisso IUV → `mapping_stato = 'PROCESSED'` oppure `'NO_MATCH'`
-4. **Demone L2** (`cron_vocab_mapping.php`): assegna `cod_entrata` via keyword → `vocab_stato = 'PROCESSED'` oppure `'NO_MATCH'`
+1. **Motore Biz** (lavoro `biz`): `biz_ricevute.stato = 'PROCESSED'`
+2. **Motore TEFA** (lavoro `tefa`, solo se `tefa_enabled = true`): `tefa_ricevute.stato = 'SKIPPED'`
+3. **L1** (lavoro `mapping`): assegna `fornitore` via prefisso IUV → `mapping_stato = 'PROCESSED'` oppure `'NO_MATCH'`
+4. **L2** (lavoro `vocab`): assegna `cod_entrata` via keyword → `vocab_stato = 'PROCESSED'` oppure `'NO_MATCH'`
 
 Una pendenza è `NO_MATCH` solo se ha completato l'intero giro (1 → 2 → 3). Tutte le query di analisi/statistiche usano INNER JOIN con `biz_ricevute` (e `tefa_ricevute` se abilitato) per escludere pendenze non ancora processate dai motori upstream.
 
@@ -387,8 +385,8 @@ Non modificare questa logica senza aggiornare anche la soglia e il rendering UI 
 
 ## Servizi chiave (`app/Services/` e `app/Monitoring/`)
 
-- **`App\Monitoring\SentryReporter`** (`app/Monitoring/SentryReporter.php`) — punto unico init SDK Sentry/GlitchTip. No-op se `SENTRY_DSN` non configurato. `init(?string $suiteOverride = null)` chiamato da bootstrap backoffice/frontoffice e da ogni `scripts/cron_*.php` (slug demone come suite). `Logger::error()/warning()` forwardano automaticamente a Sentry; i demoni cron (che non usano `Logger`) capturano esplicitamente sui catch `'ERRORE...'` non per-record.
-- **`GovPayClientFactory`** — punto unico per tutti i client HTTP verso GovPay Backoffice v1. Gestisce: TLS v1.2 forzato, `Connection: close`, retry automatico su cURL 35 (backoff esponenziale con jitter, max 5 tentativi). Legge `authentication_method` da `SettingsRepository`: `basic` → Basic Auth, `ssl`/`sslheader` → mTLS con cert da `tls_cert_path`/`tls_key_path`. Tutti i controller backoffice che chiamano GovPay usano questa factory.
+- **`App\Monitoring\SentryReporter`** (`app/Monitoring/SentryReporter.php`) — punto unico init SDK Sentry/GlitchTip. No-op se `SENTRY_DSN` non configurato. `init(?string $suiteOverride = null)` chiamato da bootstrap backoffice/frontoffice e da `bin/worker` (suite `worker`; eccezioni di un giro con tag `cron-<job>` da `JobRunner`). `Logger::error()/warning()` forwardano automaticamente a Sentry.
+- **`GovPayClientFactory`** — punto unico per tutti i client HTTP verso GovPay Backoffice v1. Gestisce: TLS v1.2 forzato, `Connection: close`, `HandlerStack::create()` (middleware `http_errors` ripristinato: 4xx/5xx lanciano `ClientException`/`ServerException`), redirect **mai** seguiti (middleware `allow_redirects` rimosso, un 3xx torna come risposta non-2xx), retry rete con backoff+jitter (max 5) che di fatto copre **solo cURL 56**: 35/28 sono nella lista ma Guzzle 7 li lancia come `ConnectException` (non `RequestException`), quindi il retry non scatta — lasciato così di proposito (ritentare una PUT andata in timeout rischia doppia creazione). Legge `authentication_method` da `SettingsRepository`: `basic` → Basic Auth, `ssl`/`sslheader` → mTLS con cert da `tls_cert_path`/`tls_key_path`. Tutti i controller backoffice che chiamano GovPay usano questa factory.
 - **`Connection::retryOnDeadlock()`** (`app/Database/Connection.php`) — retry con backoff esponenziale+jitter (max 5 tentativi) su deadlock InnoDB (SQLSTATE 40001/1213) e lock wait timeout (1205). Usarlo per bulk UPDATE che possono collidere tra demoni concorrenti sulla stessa tabella (es. mapping L1/L2 su `flussi_rendicontazioni`).
 - **`RateizzazioneService`** — logica calcolo rate (importi, scadenze, frequenze).
 - **`BizScannerService`** / **`TefaScannerService`** — logica core dei demoni omonimi.

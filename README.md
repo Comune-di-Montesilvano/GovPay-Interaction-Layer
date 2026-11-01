@@ -415,6 +415,17 @@ Altre modifiche del compose, senza azioni richieste: `no-new-privileges` e `cap_
 > [!WARNING]
 > **Altri cambi incompatibili.** `composer` non è più nell'immagine runtime: le istanze che montano `composer.json`/`vendor` o contano sul `composer update` all'avvio devono usare il `vendor` dell'immagine; con `vendor` assente il container si ferma con un errore esplicito. L'immagine cosign `ghcr.io/sigstore/cosign/cosign` viene scaricata sempre, anche con `VERIFY_IMAGES=false`: i registry mirror/offline devono includerla. È richiesto Docker Compose v2 (`service_completed_successfully`, liste con merge YAML): un Portainer datato con compose v1 non funziona.
 
+### Note di rilascio: container `worker` (lavori periodici)
+
+> [!IMPORTANT]
+> I lavori periodici (ex daemon `cron_*.php`: ragioneria, Biz, TEFA, mapping, debitore GovPay, rendicontazione GovPay, pendenze massive) girano ora nel nuovo servizio **`worker`** del `docker-compose.yml`, con la stessa immagine del backoffice. Va aggiornato il compose (o lo stack Portainer) insieme ad `APP_VERSION`: senza il servizio `worker` nessun lavoro periodico gira.
+
+- **Primo avvio**: il worker legge **una sola volta** i file `daemon-<nome>.autostart` del volume `cache` e attiva gli stessi lavori che prima partivano all'avvio. Dopo l'import lo stato vive nel DB (tabella `gil_jobs`): attivazione, pausa, "Esegui ora" e log si gestiscono da **Funzioni avanzate → Cron / Servizi**. Un lavoro messo in pausa resta in pausa anche dopo un riavvio.
+- **Immagini precedenti**: il nuovo compose funziona anche con un `APP_VERSION` vecchio. Con un'immagine senza worker il servizio `worker` resta acceso senza fare nulla (log: `immagine senza bin/worker, nessuna azione`) e i daemon continuano a girare nel backoffice come prima: nessuna doppia esecuzione.
+- **Un solo worker**: non scalare il servizio (`replicas`, `docker compose up --scale worker=N`). Due worker eseguirebbero due volte le stesse chiamate GovPay.
+- **Niente più `docker exec` / crontab / systemd timer** sugli script `cron_*.php`: se esistono sull'host, vanno rimossi prima dell'upgrade. Girerebbero in parallelo al worker, con doppie creazioni di pendenze massive.
+- Il worker non espone porte e non ha capability Linux (`cap_drop: ALL`, utente `www-data`). Monta il volume `cache` in sola lettura e `gil_certs` (certificati mTLS GovPay) in sola lettura.
+
 ### Upgrade: backup del DB obbligatorio
 
 > [!WARNING]
@@ -460,58 +471,26 @@ Registry: `ghcr.io/comune-di-montesilvano/`
 
 ## Processi batch
 
-I daemon principali (`cron_ragioneria.php`, `cron_tefa_scanner.php`, `cron_pendenze_massive.php`) si gestiscono da **Impostazioni → Cron** nel backoffice (start/stop/log/autostart). Possono anche essere avviati manualmente:
+I lavori periodici girano nel container **`worker`** (stessa immagine del backoffice) e si gestiscono da **Funzioni avanzate → Cron / Servizi** nel backoffice: attiva/pausa, "Esegui ora", log degli ultimi giri con gli errori. Non servono `docker exec`, crontab o systemd timer.
+
+| Lavoro | Cosa fa |
+|---|---|
+| Ragioneria | Sincronizza i flussi di rendicontazione GovPay nel DB |
+| Biz Events | Scarica i dati ricevuta pagoPA per le pendenze non GovPay |
+| TEFA | Classifica le ricevute TEFA (solo se abilitato) |
+| Mapping L1 / L2 | Assegna fornitore e codice entrata alle pendenze esterne |
+| GovPay debitore | Recupera CF e nominativo del debitore per le pendenze GovPay |
+| Rendicontazione GovPay | Smarca le pendenze rendicontate (automatico, manuale o gestionale esterno) |
+| Pendenze massive | Invia a GovPay le righe dei lotti caricati da interfaccia |
 
 ```bash
-# Daemon ragioneria (sincronizza flussi GovPay → DB)
-docker exec -d gil-backoffice php /var/www/html/scripts/cron_ragioneria.php
-
-# Daemon TEFA scanner (elabora IUR via Biz Events)
-docker exec -d gil-backoffice php /var/www/html/scripts/cron_tefa_scanner.php
-
-# Pendenze massive (one-shot o in loop)
-docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
+# Log del worker
+docker compose logs -f worker
 ```
 
 ### Inserimento massivo pendenze
 
-Lo script elabora i lotti caricati via interfaccia web (stato `PENDING`) e li invia a GovPay.
-
-```bash
-# Esecuzione manuale
-docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
-```
-
-**Schedulazione crontab** (ogni 5 minuti):
-```cron
-*/5 * * * * docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php >> /var/log/gil_cron.log 2>&1
-```
-
-**Schedulazione systemd timer** (consigliato in produzione):
-
-`/etc/systemd/system/gil-pendenze.service`:
-```ini
-[Unit]
-Description=GIL Inserimento Massivo Pendenze
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/docker exec gil-backoffice php /var/www/html/scripts/cron_pendenze_massive.php
-```
-
-`/etc/systemd/system/gil-pendenze.timer`:
-```ini
-[Unit]
-Description=GIL Pendenze ogni 5 minuti
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=5min
-
-[Install]
-WantedBy=timers.target
-```
+I lotti caricati via interfaccia web (stato `PENDING`) vengono inviati a GovPay dal lavoro **Pendenze massive** del worker, una riga alla volta. Gli errori temporanei (rete, GovPay non disponibile) vengono ritentati in automatico; le righe in errore si possono **riprovare** dal dettaglio del lotto, con lo stesso identificativo pendenza. Mettere in pausa il lavoro ferma l'invio delle righe ancora in coda.
 
 ---
 
@@ -531,13 +510,13 @@ WantedBy=timers.target
 - Ricerca per data, PSP, stato con paginazione e filtri.
 - Dettaglio flusso con IUV, causale, importo, esito.
 - **Ricevute on-demand (Biz Events)**: per pagamenti "orfani" (senza dati GovPay locali), un pulsante carica la ricevuta pagoPA via AJAX mostrando debitore, pagatore, PSP, importi e trasferimenti.
-- **Cache DB locale**: i flussi GovPay vengono sincronizzati nella tabella `flussi_rendicontazioni` dal daemon ragioneria — i report leggono da cache locale anziché interrogare GovPay in real-time.
+- **Cache DB locale**: i flussi GovPay vengono sincronizzati nella tabella `flussi_rendicontazioni` dal lavoro ragioneria del worker — i report leggono da cache locale anziché interrogare GovPay in real-time.
 
 ### Statistiche e Dashboard Real-Time
 
 - **Dashboard operativa premium**: report combinati tramite Chart.js degli andamenti mensili (transazioni e volumi), doughnut split tra flussi interni (GovPay) ed esterni (Biz Events).
 - **Ripartizione Entrate**: analisi della quota di incassi per singola tipologia di pendenza (Top 6 automatica in base al volume raccolto, espandibile interattivamente a tutte le tipologie tramite toggle asincrono).
-- **GIL Services Hub (Home)**: pannello di controllo in tempo reale dello stato di salute dei demoni contabili (`ragioneria`, `biz`, `tefa`, `pendenze-massive`), con pulsanti AJAX dedicati per avviare/arrestare i processi direttamente dalla home page (riservato ai `superadmin`).
+- **GIL Services Hub (Home)**: pannello di controllo in tempo reale dei lavori contabili del worker (`ragioneria`, `biz`, `tefa`), con stato (attivo/in pausa, ultimo giro, prossimo giro) e pulsanti AJAX per pausa/attivazione ed "Esegui ora" direttamente dalla home page (riservato ai `superadmin`).
 
 ### Ottimizzazione UI & Datepicker Contabile
 
@@ -561,7 +540,7 @@ WantedBy=timers.target
 - Stato copertura TEFA: contatori PENDING / PROCESSED / ERROR / SKIPPED per flusso.
 - View copertura con percentuale elaborazione per singolo flusso.
 - Export CSV dei dati elaborati.
-- Alimentato dal daemon `cron_tefa_scanner.php` che arricchisce le IUR via Biz Events.
+- Alimentato dal lavoro `tefa` del worker, che classifica le IUR già arricchite via Biz Events.
 
 #### Report Incassi (`/pagamenti/incassi-tassonomia`)
 
@@ -570,20 +549,14 @@ WantedBy=timers.target
 - Tabella dettaglio con descrizione tipologia (`tassonomia_label`) in luogo del valore tecnico raw.
 - Link rapido alla pendenza nella griglia dettaglio con stessa logica del Report Ragioneria.
 
-### Impostazioni → Cron (gestione daemon)
+### Funzioni avanzate → Cron / Servizi (lavori periodici)
 
-Il tab **Impostazioni → Cron** gestisce i daemon di background:
+La pagina **Funzioni avanzate → Cron / Servizi** gestisce i lavori del container `worker` (vedi [Processi batch](#processi-batch)):
 
-| Daemon | Scopo |
-|---|---|
-| `cron_biz_scanner.php` | Scansiona i Biz Events e popola `biz_ricevute` |
-| `cron_ragioneria.php` | Sincronizza flussi GovPay nella tabella `flussi_rendicontazioni`; ciclo ogni 30 min |
-| `cron_tefa_scanner.php` | Processa IUR dalla cache, arricchisce via Biz Events per TEFA |
-| `cron_pendenze_massive.php` | Elabora lotti pendenze massive in stato `PENDING` |
-
-- **Autostart**: se il flag autostart è attivo per un daemon, `docker-setup.sh` lo riavvia automaticamente a ogni rebuild del container.
-- **Log viewer**: log file-based consultabili dall'interfaccia backoffice.
-- **Data di scansione ragioneria**: configurabile dal tab Cron (impostazione `ragioneria_scan_da`).
+- **Attiva / Pausa**: flag per lavoro nel DB (`gil_jobs`); la pausa ha effetto entro il batch in corso. Lo stato sopravvive ai riavvii.
+- **Esegui ora**: accoda un giro immediato; se un giro è già in corso parte al suo termine.
+- **Log**: ultimi giri con esito, conteggi e righe in errore (tabelle `gil_job_runs` / `gil_job_run_errors`).
+- **Ragioneria**: data di inizio scansione (`ragioneria_scan_da`) e rescan completo.
 
 ---
 
