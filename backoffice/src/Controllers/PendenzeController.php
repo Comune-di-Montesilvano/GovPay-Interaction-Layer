@@ -5033,7 +5033,14 @@ class PendenzeController
             GovPayClientFactory::basicAuthOptions()
         );
 
-        $resp   = $this->makeHttpClient()->request('POST', $checkoutUrl . '/pagamenti', $opts);
+        try {
+            $resp = $this->makeHttpClient()->request('POST', $checkoutUrl . '/pagamenti', $opts);
+        } catch (\GuzzleHttp\Exception\BadResponseException $e) {
+            // Come su main (stack senza http_errors): ogni risposta HTTP non-201, 4xx o 5xx, e' la
+            // stessa RuntimeException "Risposta inattesa" -> 404 lato frontoffice API, che ripiega su
+            // pagoPA standard. Solo lo status: il messaggio Guzzle contiene URL ed estratto del corpo.
+            throw new \RuntimeException('Risposta inattesa da GovPay checkout: HTTP ' . $e->getResponse()->getStatusCode(), 0, $e);
+        }
         $status = $resp->getStatusCode();
 
         if ($status !== 201) {

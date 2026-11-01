@@ -68,7 +68,7 @@ class FrontofficeApiController
         return $resp->withHeader('Content-Type', 'application/json');
     }
 
-    private function pendenzeController(): PendenzeController
+    protected function pendenzeController(): PendenzeController
     {
         return new PendenzeController($this->twig);
     }

@@ -563,6 +563,71 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertCount(2, $this->gp->calls(), 'nessun redirect seguito');
     }
 
+    /**
+     * Fix round 2 (B2, ruling: comportamento cittadino di sempre): GovPay checkout che risponde con
+     * un HTTP non-201 (4xx o 5xx, come su main 25f91fb) -> RuntimeException "Risposta inattesa",
+     * che il frontoffice API mappa a 404 "non configurato" (fallback a pagoPA standard). Un errore
+     * di rete resta un'eccezione di trasporto (503 lato API, come su main).
+     */
+    public function testGovPayCheckoutHttpErrorIsRuntimeExceptionLikeMain(): void
+    {
+        SettingsRepository::set('govpay', 'checkout_url', 'https://checkout.example.test/api');
+        foreach ([400, 422, 500, 503] as $code) {
+            $this->gp->mock->append(new Response($code, ['Content-Type' => 'application/json'], '{"descrizione":"segreto"}'));
+            try {
+                $this->gp->initiateGovPayCheckout('GIL-B1', 'https://fo.example.test/ret');
+                self::fail("HTTP {$code} deve lanciare");
+            } catch (\RuntimeException $e) {
+                self::assertSame('Risposta inattesa da GovPay checkout: HTTP ' . $code, $e->getMessage());
+            }
+        }
+        $this->gp->mock->append(new ConnectException('cURL error 7', new Request('POST', 'https://checkout.example.test/api/pagamenti')));
+        try {
+            $this->gp->initiateGovPayCheckout('GIL-B1', 'https://fo.example.test/ret');
+            self::fail('errore di rete deve lanciare');
+        } catch (ConnectException) {
+            self::assertTrue(true);
+        }
+        self::assertCount(5, $this->gp->calls());
+    }
+
+    /** Fix round 2 (B2): lato API frontoffice ogni errore GovPay checkout -> 404 "non configurato" (fallback pagoPA), come su main. */
+    public function testFrontofficeBolloGovPayCheckoutErrorsMapTo404LikeMain(): void
+    {
+        SettingsRepository::set('govpay', 'checkout_url', 'https://checkout.example.test/api');
+        $gp = $this->gp;
+        $api = new class (\Slim\Views\Twig::create(dirname(__DIR__, 3) . '/backoffice/templates'), $gp) extends \App\Controllers\FrontofficeApiController {
+            public function __construct(\Slim\Views\Twig $twig, private readonly \App\Controllers\PendenzeController $pc)
+            {
+                parent::__construct($twig);
+            }
+
+            protected function pendenzeController(): \App\Controllers\PendenzeController
+            {
+                return $this->pc;
+            }
+        };
+        $this->gp->mock->append(new Response(422, [], '{"descrizione":"segreto"}'));
+        $this->gp->mock->append(new Response(503, [], '{}'));
+        $this->gp->mock->append(new ConnectException('cURL error 7', new Request('POST', 'https://checkout.example.test/api/pagamenti')));
+        $this->gp->mock->append(new Response(201, ['Content-Type' => 'application/json'], '{"redirect":"https://pay.example.test/go"}'));
+
+        $out = [];
+        for ($i = 0; $i < 4; $i++) {
+            $req = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('POST', '/api/frontoffice/bollo/govpay-checkout');
+            $req->getBody()->write('{"idPendenza":"GIL-B1","returnUrl":"https://fo.example.test/ret"}');
+            $r = $api->bolloGovpayCheckout($req, new \Slim\Psr7\Response());
+            $out[] = [$r->getHeaderLine('X-App-Error-Status'), json_decode((string)$r->getBody(), true)['message'] ?? null];
+        }
+
+        self::assertSame([
+            ['404', 'GovPay checkout non configurato'],
+            ['404', 'GovPay checkout non configurato'],
+            ['404', 'GovPay checkout non configurato'],
+            ['', 'Checkout GovPay avviato'],
+        ], $out);
+    }
+
     private static function request(): \Psr\Http\Message\ServerRequestInterface
     {
         return (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('GET', '/x');
