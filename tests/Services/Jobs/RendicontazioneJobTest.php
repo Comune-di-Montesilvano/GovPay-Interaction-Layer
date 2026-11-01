@@ -7,6 +7,7 @@ use App\Auth\UserRepository;
 use App\Config\SettingsRepository;
 use App\Database\RendicontazioneRepository;
 use App\Database\UserGroupRepository;
+use App\Services\GovPayClientFactory;
 use App\Services\Jobs\RendicontazioneJob;
 use App\Services\LegacyRendicontazioneBridgeClient;
 use App\Services\MailerService;
@@ -22,6 +23,7 @@ use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\RequestInterface;
 use Tests\Support\DbTestCase;
+use Tests\Support\FakeGovPayPendenzeController;
 use Tests\Support\RecordingJobContext;
 use Tests\Support\Synthetic;
 
@@ -158,7 +160,9 @@ final class RendicontazioneJobTest extends DbTestCase
             }
             return Create::promiseFor($resp);
         };
-        return new Client(['handler' => HandlerStack::create($handler)]);
+        // stack reale della factory (http_errors, retry, circuit breaker): solo l'handler finale e' finto
+        @unlink(FakeGovPayPendenzeController::circuitBreakerFile());
+        return GovPayClientFactory::makeBackofficeClient(['handler' => $handler]);
     }
 
     private function bridge(): LegacyRendicontazioneBridgeClient

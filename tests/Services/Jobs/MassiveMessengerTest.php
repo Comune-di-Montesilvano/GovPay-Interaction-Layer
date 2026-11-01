@@ -421,6 +421,7 @@ final class MassiveMessengerTest extends DbTestCase
     /** Errore transitorio x4 (1 + 3 retry): 4 PUT sullo STESSO idPendenza, poi lo stato di errore di oggi. */
     public function testTransientFailureIsRetriedThreeTimesWithSameIdThenGoesToError(): void
     {
+        $this->gp->circuitBreakerNeverOpens = true;
         $id = $this->insertRow('PENDING', self::payload(1));
         $this->enqueueJob()->runOnce(new RecordingJobContext());
         $this->queueTimeout(4);
@@ -491,7 +492,6 @@ final class MassiveMessengerTest extends DbTestCase
         @mkdir(dirname($cb), 0775, true);
         file_put_contents($cb, (string)json_encode(['status' => 'OPEN', 'failures' => 3, 'last_failure_time' => time()]));
         try {
-            $this->gp->realFactory = true;
             $id = $this->insertRow('PENDING', self::payload(1));
             $this->enqueueJob()->runOnce(new RecordingJobContext());
 
@@ -683,6 +683,7 @@ final class MassiveMessengerTest extends DbTestCase
     /** Un retry (RedeliveryStamp 2) rilasciato in pausa non consuma tentativi: riattivato, 1 + 3 retry. */
     public function testRowReleasedDuringPauseKeepsFullRetryBudget(): void
     {
+        $this->gp->circuitBreakerNeverOpens = true;
         $id = $this->insertRow('PENDING', self::payload(1));
         $this->enqueueJob()->runOnce(new RecordingJobContext());
         $token = (string)$this->row($id)['claim_token'];

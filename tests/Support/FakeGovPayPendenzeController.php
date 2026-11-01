@@ -7,14 +7,13 @@ use App\Controllers\PendenzeController;
 use App\Services\GovPayClientFactory;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use Psr\Http\Message\RequestInterface;
 use Slim\Views\Twig;
 
 /**
  * PendenzeController reale con GovPay simulato al confine HTTP: tutti i client Guzzle del
- * controller (makeHttpClient, che in produzione e' GovPayClientFactory, usato anche da
+ * controller (makeHttpClient = GovPayClientFactory reale, usato anche da
  * sendPendenzaToBackoffice) puntano allo stesso MockHandler e ogni richiesta finisce in $requests.
  *
  * Le notifiche di creazione (email/App IO) sono un effetto esterno separato: qui vengono solo
@@ -32,38 +31,61 @@ final class FakeGovPayPendenzeController extends PendenzeController
 
     public ?\Throwable $notificationThrows = null;
 
+    /**
+     * Se true il circuit breaker della factory non si apre mai (per i test che contano i tentativi
+     * su piu' di 3 guasti di rete consecutivi; il circuito aperto ha test dedicati).
+     */
+    public bool $circuitBreakerNeverOpens = false;
+
     /** Se impostato, fetchPendenzaById lancia questa eccezione (ramo "eccezione durante annullamento"). */
     public ?\Throwable $fetchByIdThrows = null;
 
     /** Se impostato, allocateIdPendenza lancia questa eccezione (errore imprevisto, non ritentabile). */
     public ?\Throwable $allocateThrows = null;
 
-    /**
-     * Se true, makeHttpClient passa dalla vera GovPayClientFactory (TLS, Connection: close, retry
-     * cURL 35/28/56, circuit breaker) con il MockHandler come handler finale.
-     */
-    public bool $realFactory = false;
-
-    private HandlerStack $stack;
-
     public function __construct()
     {
         parent::__construct(Twig::create(dirname(__DIR__, 2) . '/backoffice/templates'), null);
         $this->mock = new MockHandler([]);
-        $this->stack = HandlerStack::create($this->mock);
-        $this->stack->push(Middleware::history($this->requests));
+        // stato del circuit breaker condiviso su file: ogni test parte da circuito chiuso
+        @unlink(self::circuitBreakerFile());
+    }
+
+    /**
+     * Client della vera GovPayClientFactory con $mock come handler finale (grezzo, sotto tutti i
+     * middleware della factory) e ogni tentativo registrato in $history. Azzera il circuit breaker.
+     *
+     * @param array<int, mixed> $history
+     */
+    public static function factoryClient(MockHandler $mock, array &$history, array $options = []): Client
+    {
+        @unlink(self::circuitBreakerFile());
+        return GovPayClientFactory::makeBackofficeClient(array_merge($options, ['handler' => Middleware::history($history)($mock)]));
+    }
+
+    public static function circuitBreakerFile(): string
+    {
+        return dirname(__DIR__, 2) . '/backoffice/storage/tmp/govpay_circuit_breaker.json';
     }
 
     protected function makeHttpClient(array $guzzleOptions = []): Client
     {
-        if ($this->realFactory) {
-            // stack nuovo a ogni client (la factory vi aggiunge i propri middleware); history avvolge
-            // direttamente il MockHandler (piu' interno di tutto) cosi' registra OGNI tentativo,
-            // anche quelli ripetuti dal retry della factory.
-            $stack = HandlerStack::create(Middleware::history($this->requests)($this->mock));
-            return GovPayClientFactory::makeBackofficeClient(array_merge($guzzleOptions, ['handler' => $stack]));
+        // Sempre la vera GovPayClientFactory (http_errors, Connection: close, retry di rete,
+        // circuit breaker): handler = MockHandler GREZZO (mai HandlerStack::create(), che
+        // aggiungerebbe da solo http_errors e nasconderebbe uno stack della factory incompleto).
+        // history avvolge direttamente il MockHandler (piu' interno di tutto) cosi' registra OGNI
+        // tentativo, anche quelli ripetuti dal retry della factory.
+        $handler = Middleware::history($this->requests)($this->mock);
+        if ($this->circuitBreakerNeverOpens) {
+            $inner = $handler;
+            // gira SOTTO il circuit breaker: azzerarne il file prima di ogni invio fa ripartire il
+            // conteggio dei guasti da 0 a ogni tentativo, quindi il circuito non si apre mai.
+            $handler = static function (RequestInterface $request, array $options) use ($inner) {
+                @unlink(self::circuitBreakerFile());
+                return $inner($request, $options);
+            };
         }
-        return new Client(array_merge($guzzleOptions, ['handler' => $this->stack]));
+        return GovPayClientFactory::makeBackofficeClient(array_merge($guzzleOptions, ['handler' => $handler]));
     }
 
     public function fetchPendenzaById(string $idPendenza): ?array

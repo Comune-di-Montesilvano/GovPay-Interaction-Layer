@@ -15,6 +15,7 @@ use App\Database\ExternalPaymentTypeRepository;
 use App\Database\PendenzaTemplateRepository;
 use App\Logger;
 use App\Services\GovPayClientFactory;
+use GuzzleHttp\Exception\BadResponseException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\Response as SlimResponse;
@@ -633,6 +634,8 @@ class FrontofficeApiController
             $govResp  = $this->pendenzeController()->fetchRicevutaPdfResponse($idDominio, $iuv, $ccp);
             $filename = 'rt-' . preg_replace('/[^A-Za-z0-9._-]+/', '_', $iuv . '_' . $ccp) . '.pdf';
             return $this->wrapPdfResponse($govResp, $filename);
+        } catch (BadResponseException $e) {
+            return $this->pdfNotAvailable();
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('FrontofficeApi::getRicevuta errore', [
                 'idDominio' => $idDominio, 'iuv' => $iuv, 'ccp' => $ccp,
@@ -691,6 +694,8 @@ class FrontofficeApiController
             $govResp  = $this->pendenzeController()->fetchAvvisoPdfResponse($idDominio, $numeroAvviso);
             $filename = 'avviso-' . $idDominio . '-' . $numeroAvviso . '.pdf';
             return $this->wrapPdfResponse($govResp, $filename);
+        } catch (BadResponseException $e) {
+            return $this->pdfNotAvailable();
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('FrontofficeApi::getAvvisoPdf errore', [
                 'idDominio'    => $idDominio,
@@ -722,6 +727,8 @@ class FrontofficeApiController
             $govResp  = $this->pendenzeController()->fetchDocumentoPdfResponse($idDominio, $numeroDocumento);
             $filename = 'avvisi-' . rawurlencode($numeroDocumento) . '.pdf';
             return $this->wrapPdfResponse($govResp, $filename);
+        } catch (BadResponseException $e) {
+            return $this->pdfNotAvailable();
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('FrontofficeApi::getDocumentoPdf errore', [
                 'numeroDocumento' => $numeroDocumento,
@@ -731,10 +738,19 @@ class FrontofficeApiController
         }
     }
 
+    /**
+     * GovPay ha risposto 4xx/5xx (BadResponseException dallo stack con http_errors della factory):
+     * stessa risposta di sempre per il frontoffice, "PDF non disponibile" 404.
+     */
+    private function pdfNotAvailable(): Response
+    {
+        return $this->jsonError('PDF non disponibile', 404);
+    }
+
     private function wrapPdfResponse(\Psr\Http\Message\ResponseInterface $govResp, string $filename): Response
     {
         if ($govResp->getStatusCode() < 200 || $govResp->getStatusCode() >= 300) {
-            return $this->jsonError('PDF non disponibile', 404);
+            return $this->pdfNotAvailable();
         }
         $resp = new SlimResponse(200);
         $resp->getBody()->write((string)$govResp->getBody());

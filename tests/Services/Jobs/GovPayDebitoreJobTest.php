@@ -9,15 +9,13 @@ use App\Database\FlussiRendicontazioniRepository;
 use App\Services\GovPayDebitoreService;
 use App\Services\Jobs\GovPayDebitoreJob;
 use App\Services\Jobs\JobContext;
-use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\DbTestCase;
+use Tests\Support\FakeGovPayPendenzeController;
 use Tests\Support\RecordingJobContext;
 use Tests\Support\Synthetic;
 
@@ -54,10 +52,8 @@ final class GovPayDebitoreJobTest extends DbTestCase
     /** @param list<Response|\Throwable> $responses */
     private function job(array $responses, ?GovPayDebitoreService $service = null): GovPayDebitoreJob
     {
-        $mock = new MockHandler($responses);
-        $stack = HandlerStack::create($mock);
-        $stack->push(Middleware::history($this->requests));
-        $http = new Client(['handler' => $stack]);
+        // stack reale della factory (http_errors, retry, circuit breaker): solo l'handler finale e' finto
+        $http = FakeGovPayPendenzeController::factoryClient(new MockHandler($responses), $this->requests);
 
         $service ??= new GovPayDebitoreService(
             new BizRepository(self::pdo()),

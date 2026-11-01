@@ -7,15 +7,13 @@ use App\Config\SettingsRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Services\Jobs\JobContext;
 use App\Services\Jobs\RagioneriaSyncJob;
-use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\DbTestCase;
+use Tests\Support\FakeGovPayPendenzeController;
 use Tests\Support\RecordingJobContext;
 use Tests\Support\Synthetic;
 
@@ -53,13 +51,12 @@ final class RagioneriaSyncJobTest extends DbTestCase
 
     private function job(string $a2a = self::A2A, int $preImageCap = RagioneriaSyncJob::PRE_IMAGE_CAP): RagioneriaSyncJob
     {
-        $stack = HandlerStack::create($this->mock);
-        $stack->push(Middleware::history($this->requests));
+        // stack reale della factory (http_errors, retry, circuit breaker): solo l'handler finale e' finto
         return new RagioneriaSyncJob(
             self::DOMINIO,
             $a2a,
             self::BASE . '/',
-            new Client(['handler' => $stack]),
+            FakeGovPayPendenzeController::factoryClient($this->mock, $this->requests),
             new FlussiRendicontazioniRepository(self::pdo()),
             $preImageCap
         );
@@ -364,6 +361,19 @@ final class RagioneriaSyncJobTest extends DbTestCase
 
         self::assertSame(1, $r->errors);
         self::assertSame([['ref' => 'lista', 'reason' => 'HTTP 502']], $r->errorDetails);
+    }
+
+    /** Fix round 1: con lo stack reale della factory un 500 sulla prima pagina lancia -> errore 'lista'. */
+    public function testListServerErrorOnFirstPageIsAListErrorThroughRealFactoryStack(): void
+    {
+        $this->mock->append(new Response(500, ['Content-Type' => 'application/json'], '{"categoria":"INTERNO","descrizione":"segreto"}'));
+
+        $r = $this->job()->runOnce(new RecordingJobContext());
+
+        self::assertSame([0, 0, 0, 1, false], [$r->processed, $r->ok, $r->skipped, $r->errors, $r->hadWork]);
+        self::assertSame([['ref' => 'lista', 'reason' => 'HTTP 500']], $r->errorDetails);
+        self::assertCount(1, $this->requests, 'nessun retry su 5xx');
+        self::assertSame([], $this->rows());
     }
 
     public function testNonJsonListOnFirstPageIsReportedAsListError(): void

@@ -32,6 +32,9 @@ class GovPayClientFactory
      * (backoff esponenziale con jitter, max 5 tentativi, 0–2000 ms). 28 (timeout) e
      * 56 (connection reset) sono transitori tipici al riavvio dei container (GovPay
      * o rete non ancora pronti), oltre al TLS handshake instabile di 35.
+     * Stack di default Guzzle incluso (http_errors): un 4xx/5xx GovPay lancia
+     * ClientException/ServerException come un `new Client()` (salvo 'http_errors' => false
+     * per richiesta). $extra['handler']: HandlerStack usato com'e', altro callable avvolto.
      *
      * @param array $extra Opzioni Guzzle aggiuntive (es. auth, headers specifici)
      */
@@ -69,12 +72,18 @@ class GovPayClientFactory
             $guzzleOptions['curl'] = ($guzzleOptions['curl'] ?? []) + $defaultCurlOptions;
         }
 
-        $handlerStack = $guzzleOptions['handler'] ?? null;
-        if ($handlerStack === null) {
-            $handlerStack = new \GuzzleHttp\HandlerStack();
-            $handlerStack->setHandler(new \GuzzleHttp\Handler\CurlHandler());
+        // Stack di default Guzzle (http_errors, redirect, cookies, prepare_body) come `new Client()`:
+        // senza http_errors un 4xx/5xx GovPay NON lancerebbe e i chiamanti (che si aspettano
+        // ClientException/ServerException, come prima della factory) lo tratterebbero come risposta
+        // valida. I middleware della factory vanno dopo: http_errors resta il piu' esterno, quindi
+        // retry e circuit breaker vedono ancora la risposta grezza (5xx = risposta, non guasto di rete).
+        // Un handler non-HandlerStack (es. MockHandler nei test) viene avvolto nello stesso stack.
+        $handler = $guzzleOptions['handler'] ?? null;
+        unset($guzzleOptions['handler']);
+        if ($handler instanceof \GuzzleHttp\HandlerStack) {
+            $handlerStack = $handler;
         } else {
-            unset($guzzleOptions['handler']);
+            $handlerStack = \GuzzleHttp\HandlerStack::create($handler ?? new \GuzzleHttp\Handler\CurlHandler());
         }
 
         $handlerStack->push(Middleware::mapRequest(

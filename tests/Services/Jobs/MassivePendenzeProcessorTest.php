@@ -476,7 +476,6 @@ final class MassivePendenzeProcessorTest extends DbTestCase
     {
         $cb = dirname(__DIR__, 3) . '/backoffice/storage/tmp/govpay_circuit_breaker.json';
         @unlink($cb);
-        $this->gp->realFactory = true;
         $id = $this->insertRow('PENDING', self::payload(16));
         $this->gp->mock->append(new RequestException('cURL error 56: Connection reset by peer', new Request('PUT', self::BASE), null, null, ['errno' => 56]));
         $this->queue(201, ['numeroAvviso' => '301000000000000160']);
@@ -493,6 +492,42 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame(1, $r->ok);
         self::assertCount(1, $this->gp->notifications, 'una sola creazione registrata/notificata');
         self::assertFileDoesNotExist($cb);
+    }
+
+    /**
+     * Fix round 1: la creazione UI/frontoffice (sendPendenzaToBackoffice, stesso metodo della PUT
+     * massiva) passa dallo stack reale della factory: un 4xx GovPay e' un fallimento CON dettaglio
+     * (errori non vuoti, httpStatus, campi ProblemJson). Senza http_errors nella factory tornava
+     * success=false con errors=[] (messaggio vuoto in UI/frontoffice; il percorso rate, che conta
+     * solo gli errori, lo prendeva per un successo).
+     */
+    public function testUiCreate4xxIsReportedAsFailureWithDetail(): void
+    {
+        $this->queue(422, ['categoria' => 'RICHIESTA', 'codice' => 'SEMANTICA', 'descrizione' => 'Pendenza non valida']);
+
+        $res = $this->gp->sendPendenzaToBackoffice(self::payload(30), 'GIL-UI-30');
+
+        self::assertSame(['PUT ' . self::P . 'GIL-UI-30'], $this->gp->calls(), 'una sola PUT, nessun retry');
+        self::assertFalse($res['success']);
+        self::assertNotSame([], $res['errors']);
+        self::assertNotSame('', implode('; ', $res['errors']), 'il frontoffice mostra implode(errors)');
+        self::assertSame(422, $res['httpStatus'] ?? null);
+        self::assertSame('SEMANTICA', $res['problem']['codice'] ?? null);
+        self::assertArrayNotHasKey('esitoIncerto', $res);
+    }
+
+    /** Fix round 1: 5xx sulla creazione UI -> fallimento con httpStatus, nessun esito incerto (GovPay ha risposto). */
+    public function testUiCreate5xxIsReportedAsFailureWithStatus(): void
+    {
+        $this->queue(503, ['categoria' => 'INTERNO', 'codice' => 'ERR_503', 'descrizione' => 'Servizio non disponibile']);
+
+        $res = $this->gp->sendPendenzaToBackoffice(self::payload(31), 'GIL-UI-31');
+
+        self::assertCount(1, $this->gp->calls());
+        self::assertFalse($res['success']);
+        self::assertNotSame([], $res['errors']);
+        self::assertSame(503, $res['httpStatus'] ?? null);
+        self::assertArrayNotHasKey('esitoIncerto', $res);
     }
 
     public function testMissingBackofficeUrlGoesToErrorWithoutCall(): void
