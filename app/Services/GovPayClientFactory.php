@@ -332,7 +332,8 @@ class GovPayClientFactory
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
             Logger::getInstance()->error('GovPay check status failed: ' . $msg);
-            return ['online' => false, 'error' => $msg];
+            // Servito da /api/govpay/status e /api/frontoffice/govpay-status: mai URL ne' corpo upstream.
+            return ['online' => false, 'error' => ThrowableSummary::forDisplay($e)];
         }
     }
 

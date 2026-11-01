@@ -135,6 +135,24 @@ final class GovPayClientFactoryTest extends DbTestCase
         }
     }
 
+    /**
+     * Fix round 2 (minor): 'error' di checkGovPayStatusDetails (servito da /api/govpay/status e
+     * /api/frontoffice/govpay-status) senza URL. Porta locale chiusa: nessuna chiamata esterna.
+     */
+    public function testStatusDetailsErrorHasNoUrl(): void
+    {
+        if (!extension_loaded('curl')) {
+            self::markTestSkipped('serve ext-curl (handler Guzzle reale verso porta chiusa)');
+        }
+        @unlink(FakeGovPayPendenzeController::circuitBreakerFile());
+        SettingsRepository::set('govpay', 'backoffice_url', 'http://127.0.0.1:1/govpay/RSSMRA80A01H501U');
+
+        $res = \App\Services\GovPayClientFactory::checkGovPayStatusDetails();
+
+        self::assertFalse($res['online']);
+        self::assertSame('ApiException', $res['error']);
+    }
+
     /** Client OpenAPI generato: RequestException dello stack -> ApiException con codice e corpo. */
     public function testGeneratedClientMapsHttpErrorToApiException(): void
     {

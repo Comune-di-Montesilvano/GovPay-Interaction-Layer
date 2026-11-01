@@ -3118,11 +3118,11 @@ class PendenzeController
             return $response;
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $msg  = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . $ce->getMessage());
+            $msg  = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . \App\Services\ThrowableSummary::forDisplay($ce));
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
         } catch (\Throwable $e) {
-            $response->getBody()->write('Errore scaricamento avviso: ' . $e->getMessage());
+            $response->getBody()->write('Errore scaricamento avviso: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(500);
         }
     }
@@ -3235,14 +3235,12 @@ class PendenzeController
         } catch (\GovPay\Pendenze\ApiException $e) {
             $code = $e->getCode() ?: 502;
             $body = method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null;
-            $obj = method_exists($e, 'getResponseObject') ? $e->getResponseObject() : null;
-            $msg = is_object($obj) ? ($obj->descrizione ?? json_encode($obj)) : ($body ?? $e->getMessage());
             Logger::getInstance()->error('Errore getAvvisiDocumento (Pendenze v2 client)', ['code' => $code, 'body' => $body, 'exception' => $e->getMessage()]);
-            $response->getBody()->write('Errore chiamata Pendenze v2: ' . $msg);
+            $response->getBody()->write('Errore chiamata Pendenze v2: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus($code);
         } catch (\Throwable $e) {
             Logger::getInstance()->error('Errore getAvvisiDocumento generico', ['error' => $e->getMessage()]);
-            $response->getBody()->write('Errore chiamata Pendenze v2: ' . $e->getMessage());
+            $response->getBody()->write('Errore chiamata Pendenze v2: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(502);
         }
     }
@@ -3274,11 +3272,11 @@ class PendenzeController
             return $response;
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $msg  = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . $ce->getMessage());
+            $msg  = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . \App\Services\ThrowableSummary::forDisplay($ce));
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
         } catch (\Throwable $e) {
-            $response->getBody()->write('Errore scaricamento ricevuta: ' . $e->getMessage());
+            $response->getBody()->write('Errore scaricamento ricevuta: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(500);
         }
     }
@@ -3424,7 +3422,7 @@ class PendenzeController
             $response->getBody()->write('Logo non disponibile');
             return $response->withStatus(404);
         } catch (\Throwable $e) {
-            $response->getBody()->write('Errore recupero logo: ' . $e->getMessage());
+            $response->getBody()->write('Errore recupero logo: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(500);
         }
     }

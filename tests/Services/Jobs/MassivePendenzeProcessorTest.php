@@ -549,6 +549,34 @@ final class MassivePendenzeProcessorTest extends DbTestCase
     }
 
     /** Fix round 2 (B1): download avviso/ricevuta operatore con 3xx GovPay -> errore 502, mai un "PDF" vuoto, 1 sola GET. */
+    /** Fix round 2 (minor): errori di download all'operatore = 'HTTP <code>' + title/status, mai URL ne' corpo. */
+    public function testOperatorPdfDownloadErrorsShowNoUrlNorBody(): void
+    {
+        $problem = '{"title":"Not Found","status":409,"descrizione":"RSSMRA80A01H501U segreto"}';
+        $this->gp->mock->append(new Response(409, ['Content-Type' => 'application/json'], $problem));
+        $this->gp->mock->append(new Response(500, [], 'stacktrace RSSMRA80A01H501U'));
+        $this->gp->mock->append(new Response(409, ['Content-Type' => 'application/json'], $problem));
+        $this->gp->mock->append(new ConnectException('cURL error 7 https://govpay.example.test/x?cf=RSSMRA80A01H501U', new Request('GET', 'https://govpay.example.test/x')));
+
+        $out = [];
+        foreach ([
+            fn() => $this->gp->downloadAvviso(self::request(), new \Slim\Psr7\Response(), ['idDominio' => self::DOMINIO, 'numeroAvviso' => '301000000000000001']),
+            fn() => $this->gp->downloadAvviso(self::request(), new \Slim\Psr7\Response(), ['idDominio' => self::DOMINIO, 'numeroAvviso' => '301000000000000001']),
+            fn() => $this->gp->downloadRicevuta(self::request(), new \Slim\Psr7\Response(), ['idDominio' => self::DOMINIO, 'iuv' => 'IUV1', 'ccp' => 'CCP1']),
+            fn() => $this->gp->downloadRicevuta(self::request(), new \Slim\Psr7\Response(), ['idDominio' => self::DOMINIO, 'iuv' => 'IUV1', 'ccp' => 'CCP1']),
+        ] as $call) {
+            $r = $call();
+            $out[] = [$r->getStatusCode(), (string)$r->getBody()];
+        }
+
+        self::assertSame([
+            [409, 'Errore client avviso: HTTP 409 - Not Found (status 409)'],
+            [500, 'Errore scaricamento avviso: HTTP 500'],
+            [409, 'Errore client ricevuta: HTTP 409 - Not Found (status 409)'],
+            [500, 'Errore scaricamento ricevuta: ConnectException'],
+        ], $out);
+    }
+
     public function testOperatorPdfDownload3xxIsAnErrorNotAnAttachment(): void
     {
         $this->gp->mock->append(new Response(302, ['Location' => 'https://altro.example.test/a.pdf']));
@@ -567,7 +595,8 @@ final class MassivePendenzeProcessorTest extends DbTestCase
      * Fix round 2 (B2, ruling: comportamento cittadino di sempre): GovPay checkout che risponde con
      * un HTTP non-201 (4xx o 5xx, come su main 25f91fb) -> RuntimeException "Risposta inattesa",
      * che il frontoffice API mappa a 404 "non configurato" (fallback a pagoPA standard). Un errore
-     * di rete resta un'eccezione di trasporto (503 lato API, come su main).
+     * di rete resta la ConnectException originale: anch'essa e' una RuntimeException, quindi lato
+     * API e' 404 come su main (vedi testFrontofficeBolloGovPayCheckoutErrorsMapTo404LikeMain).
      */
     public function testGovPayCheckoutHttpErrorIsRuntimeExceptionLikeMain(): void
     {
