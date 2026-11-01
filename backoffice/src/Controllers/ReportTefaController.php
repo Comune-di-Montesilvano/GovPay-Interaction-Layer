@@ -19,7 +19,10 @@ use Slim\Views\Twig;
  */
 class ReportTefaController
 {
-    public function __construct(private readonly Twig $twig) {}
+    /**
+     * @param \Closure():\App\Services\Jobs\JobControl|null $jobControlFactory solo per i test
+     */
+    public function __construct(private readonly Twig $twig, private readonly ?\Closure $jobControlFactory = null) {}
 
     public function index(Request $request, Response $response): Response
     {
@@ -151,9 +154,23 @@ class ReportTefaController
      * I servizi TEFA/Biz girano nel container worker: "avvia"/"ferma" = flag gil_jobs
      * (mai processi lanciati da qui, sarebbero doppi rispetto al worker).
      */
-    private static function setJobEnabled(string $job, bool $enabled): void
+    private function setJobEnabled(Response $response, string $job, bool $enabled): ?Response
     {
-        (new \App\Services\Jobs\JobControl(\App\Database\JobStateRepository::default()))->setEnabled($job, $enabled);
+        try {
+            $control = $this->jobControlFactory !== null
+                ? ($this->jobControlFactory)()
+                : new \App\Services\Jobs\JobControl(\App\Database\JobStateRepository::default());
+            $control->setEnabled($job, $enabled);
+            return null;
+        } catch (\Throwable $e) {
+            \App\Logger::getInstance()->error('Report TEFA: aggiornamento stato servizio fallito', [
+                'job' => $job, 'enabled' => $enabled, 'error' => \App\Services\ThrowableSummary::of($e),
+            ]);
+            return $this->jsonResponse($response, [
+                'ok' => false,
+                'error' => ($enabled ? 'Attivazione' : 'Pausa') . " del servizio {$job} non riuscita: riprovare.",
+            ], 500);
+        }
     }
 
     public function scan(Request $request, Response $response): Response
@@ -177,7 +194,9 @@ class ReportTefaController
         }
 
         // Lo scanner TEFA non ha mai filtrato per intervallo: entrambe le modalita' = servizio attivo.
-        self::setJobEnabled('tefa', true);
+        if ($errRes = $this->setJobEnabled($response, 'tefa', true)) {
+            return $errRes;
+        }
 
         $mode = $rangeMode ? 'range' : 'loop';
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
@@ -186,9 +205,11 @@ class ReportTefaController
             'ok'   => true,
             'mode' => $mode,
             'result' => [
+                // Il servizio TEFA non filtra per intervallo: in entrambe le modalita' viene solo
+                // attivato e la scansione (di tutte le ricevute in coda) parte al prossimo giro.
                 'message' => $mode === 'loop'
-                    ? 'Scansione quotidiana avviata (loop).'
-                    : "Scansione range {$dataDa}÷{$dataA} avviata.",
+                    ? 'Servizio TEFA attivato: la scansione parte al prossimo giro del worker.'
+                    : "Servizio TEFA attivato: la scansione parte al prossimo giro del worker ed elabora tutte le ricevute in coda, non solo l'intervallo {$dataDa}÷{$dataA}.",
             ],
         ]);
     }
@@ -201,7 +222,9 @@ class ReportTefaController
             return $errRes;
         }
 
-        self::setJobEnabled('tefa', false);
+        if ($errRes = $this->setJobEnabled($response, 'tefa', false)) {
+            return $errRes;
+        }
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
@@ -449,7 +472,9 @@ class ReportTefaController
             return $errRes;
         }
 
-        self::setJobEnabled('biz', true);
+        if ($errRes = $this->setJobEnabled($response, 'biz', true)) {
+            return $errRes;
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
@@ -467,7 +492,9 @@ class ReportTefaController
             return $errRes;
         }
 
-        self::setJobEnabled('biz', false);
+        if ($errRes = $this->setJobEnabled($response, 'biz', false)) {
+            return $errRes;
+        }
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
