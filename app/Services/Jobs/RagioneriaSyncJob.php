@@ -5,23 +5,25 @@ namespace App\Services\Jobs;
 
 use App\Config\SettingsRepository;
 use App\Database\FlussiRendicontazioniRepository;
+use App\Services\GovPayClientFactory;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
 /**
- * Una iterazione del demone ragioneria (corpo del loop di cron_ragioneria.php): elenca i flussi di
+ * Una iterazione del lavoro `ragioneria` (eseguita dal worker tramite JobRunner): elenca i flussi di
  * rendicontazione GovPay dalla data di partenza (scan completo oppure finestra scorrevole), scarica
  * il dettaglio di ciascuno e fa l'upsert in flussi_rendicontazioni.
  *
- * Stato tra le iterazioni (in memoria sull'istanza, come le variabili dello script):
+ * Stato tra le iterazioni (in memoria sull'istanza):
  *  - $rollingFrom: inizio della finestra scorrevole (null = scan completo da ragioneria_scan_da).
  *    Persistito anche in settings (ragioneria_progress_*) per sopravvivere ai riavvii; alla prima
  *    runOnce() viene ripristinato da li' se ragioneria_progress_scan_da coincide con la config.
- *  - flag di rescan forzato: requestRescan() lo imposta, la prossima runOnce() lo consuma.
+ *  - rescan forzato: flag in settings (storeRescanRequest(), pulsante della pagina Cron), letto e
+ *    azzerato dal primo runOnce() che parte davvero (consumeRescan): ripartenza da ragioneria_scan_da.
  *
  * hadWork = almeno una riga inserita o aggiornata con modifiche in questo ciclo (righe identiche non
- * contano): se true lo script rilancia subito runOnce(), altrimenti attende 30 minuti.
- * Pausa, stop file, guardie di avvio e requestRescan da file restano nello script.
+ * contano): se true JobRunner rilancia subito runOnce(), altrimenti il prossimo giro e' tra 30 minuti.
+ * Pausa, lock e storico esecuzioni sono di JobRunner; le guardie di configurazione di configError().
  *
  * Conteggi: processed = flussi validi esaminati (dopo i controlli su id/dominio), ok = flussi con
  * dettaglio scaricato e righe upsertate, skipped = flussi gia' in DB piu' vecchi di 15 giorni,
@@ -34,8 +36,6 @@ final class RagioneriaSyncJob implements PeriodicJob
     private readonly string $backofficeUrl;
 
     private bool $initialized = false;
-
-    private bool $rescanRequested = false;
 
     private ?string $rollingFrom = null;
 
@@ -84,12 +84,6 @@ final class RagioneriaSyncJob implements PeriodicJob
         return $this->lastPreImageSize;
     }
 
-    /** Il prossimo ciclo ripartira' da ragioneria_scan_da (scan completo) azzerando la finestra salvata. */
-    public function requestRescan(): void
-    {
-        $this->rescanRequested = true;
-    }
-
     /** Setting del rescan chiesto da UI (sostituisce /tmp/cron-rescan-ragioneria). */
     public const RESCAN_SETTING = 'ragioneria_rescan_richiesto';
 
@@ -120,7 +114,7 @@ final class RagioneriaSyncJob implements PeriodicJob
         SettingsRepository::flush();
 
         $repo = $this->repo ??= new FlussiRendicontazioniRepository();
-        $client = $this->client ??= self::buildDefaultClient();
+        $client = $this->client ??= GovPayClientFactory::makeBackofficeJobClient();
         $idDominio = $this->idDominio;
         $backofficeUrl = $this->backofficeUrl;
 
@@ -444,10 +438,9 @@ final class RagioneriaSyncJob implements PeriodicJob
     {
         // Flag UI letto e azzerato QUI, dopo il controllo di stop: un giro che esce subito
         // (stop/pausa) non lo consuma, lo usa il primo giro che parte davvero.
-        if (!$this->rescanRequested && !self::takeRescanRequest()) {
+        if (!self::takeRescanRequest()) {
             return;
         }
-        $this->rescanRequested = false;
         $this->rollingFrom = null;
         try {
             SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', null);
@@ -519,23 +512,6 @@ final class RagioneriaSyncJob implements PeriodicJob
             $ids[(string)$row[0]] = true;
         }
         return $ids;
-    }
-
-    private static function buildDefaultClient(): Client
-    {
-        $opts = [
-            'headers' => ['Accept' => 'application/json'],
-            'connect_timeout' => 10,
-            'timeout' => 30,
-        ];
-
-        $username = (string)SettingsRepository::get('govpay', 'user', '');
-        $password = (string)SettingsRepository::get('govpay', 'password', '');
-        if ($username !== '' && $password !== '') {
-            $opts['auth'] = [$username, $password];
-        }
-
-        return \App\Services\GovPayClientFactory::makeBackofficeClient($opts);
     }
 
     public function name(): string

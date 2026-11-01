@@ -148,7 +148,7 @@ final class JobCatalog
             $bridge = new LegacyRendicontazioneBridgeClient();
             return new FixedCadenceJob(new RendicontazioneJob(
                 $repo,
-                static fn(): RendicontazioneEngineService => new RendicontazioneEngineService($repo, $bridge, self::rendicontazioneGovPayClient()),
+                static fn(): RendicontazioneEngineService => new RendicontazioneEngineService($repo, $bridge, GovPayClientFactory::makeBackofficeJobClient()),
                 new UserGroupRepository(),
                 new UserRepository(),
                 MailerService::forSuite('backoffice'),
@@ -179,17 +179,5 @@ final class JobCatalog
     private static function stripErrorPrefix(string $msg): string
     {
         return str_starts_with($msg, 'ERRORE: ') ? substr($msg, 8) : $msg;
-    }
-
-    /** Client GovPay del motore rendicontazione (come buildGovPayClientForRendicontazione dello script). */
-    private static function rendicontazioneGovPayClient(): \GuzzleHttp\Client
-    {
-        $opts = ['headers' => ['Accept' => 'application/json'], 'connect_timeout' => 10, 'timeout' => 30];
-        $username = (string)SettingsRepository::get('govpay', 'user', '');
-        $password = (string)SettingsRepository::get('govpay', 'password', '');
-        if ($username !== '' && $password !== '') {
-            $opts['auth'] = [$username, $password];
-        }
-        return GovPayClientFactory::makeBackofficeClient($opts);
     }
 }

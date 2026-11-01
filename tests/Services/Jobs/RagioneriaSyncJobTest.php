@@ -276,7 +276,7 @@ final class RagioneriaSyncJobTest extends DbTestCase
 
     // ---------------------------------------------------------------- rescan
 
-    public function testRequestRescanForcesFullScanOnceAndResetsStoredWindow(): void
+    public function testStoredRescanRequestForcesFullScanOnceAndResetsStoredWindow(): void
     {
         $job = $this->job();
         $this->queueOneFlusso('FL-A', self::day(5));
@@ -284,7 +284,7 @@ final class RagioneriaSyncJobTest extends DbTestCase
         $rolling = $this->setting('ragioneria_progress_rolling_from');
         self::assertNotNull($rolling);
 
-        $job->requestRescan();
+        RagioneriaSyncJob::storeRescanRequest();
         $this->requests = [];
         $this->queueList([]);
         $ctx = new RecordingJobContext();
@@ -333,7 +333,7 @@ final class RagioneriaSyncJobTest extends DbTestCase
         SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', self::SCAN_DA);
         SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', '2026-02-10');
         $job = $this->job();
-        $job->requestRescan();
+        RagioneriaSyncJob::storeRescanRequest();
         $this->queueList([]);
 
         $job->runOnce(new RecordingJobContext());

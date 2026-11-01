@@ -164,17 +164,6 @@ class GovPayDebitoreService
             return $this->http;
         }
 
-        $opts = [
-            'connect_timeout' => 5,
-            'timeout'         => 20,
-        ];
-
-        $username = SettingsRepository::get('govpay', 'user', '');
-        $password = SettingsRepository::get('govpay', 'password', '');
-        if ($username !== '' && $password !== '') {
-            $opts['auth'] = [$username, $password];
-        }
-
-        return GovPayClientFactory::makeBackofficeClient($opts);
+        return GovPayClientFactory::makeBackofficeBasicAuthClient(['connect_timeout' => 5, 'timeout' => 20]);
     }
 }

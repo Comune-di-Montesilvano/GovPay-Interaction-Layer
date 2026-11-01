@@ -284,6 +284,25 @@ class GovPayClientFactory
     }
 
     /**
+     * Client Backoffice con Basic Auth da impostazioni (se configurata) piu' $extra; mTLS e stack
+     * middleware come makeBackofficeClient(). Per i lavori del worker e i servizi senza Slim.
+     */
+    public static function makeBackofficeBasicAuthClient(array $extra = []): Client
+    {
+        return self::makeBackofficeClient($extra + self::basicAuthOptions());
+    }
+
+    /** Client dei lavori ragioneria / rendicontazione: JSON, connect 10 s, timeout 30 s. */
+    public static function makeBackofficeJobClient(): Client
+    {
+        return self::makeBackofficeBasicAuthClient([
+            'headers' => ['Accept' => 'application/json'],
+            'connect_timeout' => 10,
+            'timeout' => 30,
+        ]);
+    }
+
+    /**
      * Restituisce le opzioni Guzzle per Basic Auth GovPay (o array vuoto se non configurata).
      */
     public static function basicAuthOptions(): array
