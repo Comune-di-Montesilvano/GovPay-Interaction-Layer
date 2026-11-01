@@ -7,7 +7,6 @@ use App\Database\MappingPendenzeRepository;
 use App\Services\Jobs\FixedCadenceJob;
 use App\Services\Jobs\IdleJob;
 use App\Services\Jobs\JobCatalog;
-use App\Services\Jobs\JobContext;
 use App\Services\Jobs\JobRegistry;
 use App\Services\Jobs\JobResult;
 use App\Services\Jobs\LazyJob;
@@ -16,35 +15,7 @@ use App\Services\Jobs\MappingL1Job;
 use App\Services\Jobs\PeriodicJob;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\RecordingJobContext;
-
-/** Lavoro finto con nome e risultato configurabili. */
-final class StubPeriodicJob implements PeriodicJob
-{
-    public int $calls = 0;
-
-    /** @param \Closure(int): JobResult $result */
-    public function __construct(
-        private readonly string $n,
-        private readonly \Closure $result,
-        private readonly int $interval = 900
-    ) {}
-
-    public function name(): string
-    {
-        return $this->n;
-    }
-
-    public function emptyQueueIntervalSeconds(): int
-    {
-        return $this->interval;
-    }
-
-    public function runOnce(JobContext $ctx): JobResult
-    {
-        $this->calls++;
-        return ($this->result)($this->calls);
-    }
-}
+use Tests\Support\StubPeriodicJob;
 
 final class LazyJobTest extends TestCase
 {

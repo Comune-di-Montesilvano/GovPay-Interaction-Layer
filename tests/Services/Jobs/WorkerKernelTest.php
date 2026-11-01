@@ -1,0 +1,314 @@
+<?php
+declare(strict_types=1);
+
+namespace Tests\Services\Jobs;
+
+use App\Config\SettingsRepository;
+use App\Database\DbalConnectionFactory;
+use App\Database\JobStateRepository;
+use App\Services\Jobs\IdleJob;
+use App\Services\Jobs\JobCatalog;
+use App\Services\Jobs\JobRegistry;
+use App\Services\Jobs\JobResult;
+use App\Services\Jobs\LazyJob;
+use App\Services\Jobs\Message\SchedulerTick;
+use App\Services\Jobs\PeriodicJob;
+use App\Services\Jobs\TefaScanJob;
+use App\Services\Jobs\WorkerKernel;
+use Doctrine\DBAL\Connection as DbalConnection;
+use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\DoctrineDbalStore;
+use Tests\Support\DbTestCase;
+use Tests\Support\StubPeriodicJob;
+
+/**
+ * Worker su DB usa-e-getta, lavori finti (nessuna chiamata esterna). Orologio MockClock: le
+ * pause del Worker/attese DB avanzano il tempo finto invece di dormire.
+ */
+#[Group('db')]
+final class WorkerKernelTest extends DbTestCase
+{
+    protected static array $tables = ['gil_job_run_errors', 'gil_job_runs', 'gil_jobs', 'lock_keys', 'messenger_messages', 'settings'];
+
+    private MockClock $clock;
+    private JobStateRepository $state;
+    private DbalConnection $dbal;
+    /** @var list<string> */
+    private array $out = [];
+    /** @var list<\Throwable> */
+    private array $reported = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        SettingsRepository::flush();
+        $this->clock = new MockClock('2026-10-28 10:00:00');
+        $this->state = new JobStateRepository(static fn(): \PDO => self::pdo(), $this->clock);
+        $this->dbal = DbalConnectionFactory::create();
+        $this->out = [];
+        $this->reported = [];
+    }
+
+    protected function tearDown(): void
+    {
+        SettingsRepository::flush();
+        parent::tearDown();
+    }
+
+    /** @param (\Closure(): void)|null $probe */
+    private function kernel(JobRegistry $registry, ?\Closure $probe = null, ?JobStateRepository $state = null): WorkerKernel
+    {
+        return new WorkerKernel(
+            $registry,
+            $state ?? $this->state,
+            $this->dbal,
+            $this->clock,
+            function (string $line): void { $this->out[] = $line; },
+            function (string $suite, \Throwable $e): void { $this->reported[] = $e; },
+            $probe,
+            new LockFactory(new DoctrineDbalStore($this->dbal, [], 0.0)),
+            sys_get_temp_dir() . '/gil-worker-test-cache-assente'
+        );
+    }
+
+    private static function job(string $name, bool $hadWork = false, ?\Closure $onRun = null): StubPeriodicJob
+    {
+        return new StubPeriodicJob($name, static function (int $call) use ($hadWork, $onRun): JobResult {
+            if ($onRun !== null) {
+                $onRun($call);
+            }
+            return new JobResult(1, 1, 0, 0, $hadWork);
+        });
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function runs(): array
+    {
+        return self::pdo()->query('SELECT * FROM gil_job_runs ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    private static function queued(): int
+    {
+        return (int)self::pdo()->query('SELECT COUNT(*) FROM messenger_messages')->fetchColumn();
+    }
+
+    public function testTickRunsOnlyEnabledDueJobsAndIsSilentWhenNothingIsDue(): void
+    {
+        $due = self::job('due');
+        $future = self::job('future');
+        $disabled = self::job('disabled');
+        $kernel = $this->kernel(new JobRegistry([$due, $future, $disabled]));
+        $this->state->setEnabled('due', true);
+        $this->state->setEnabled('future', true);
+        self::pdo()->exec("UPDATE gil_jobs SET next_run_at = '2026-10-28 11:00:00' WHERE name = 'future'");
+        // riga di un lavoro non registrato (es. rimosso): ignorata senza log
+        $this->state->setEnabled('rimosso', true);
+
+        $kernel->bus()->dispatch(new SchedulerTick());
+
+        self::assertSame([1, 0, 0], [$due->calls, $future->calls, $disabled->calls]);
+        self::assertCount(1, self::runs());
+        self::assertSame('due', self::runs()[0]['job']);
+        self::assertCount(1, $this->out, 'solo la riga di riepilogo del giro');
+        self::assertStringContainsString('[cron-due] run #', $this->out[0]);
+
+        // stesso istante: 'due' ripianificato a +900 s, nulla da fare -> nessuna riga
+        $this->out = [];
+        $kernel->bus()->dispatch(new SchedulerTick());
+        self::assertSame(1, $due->calls);
+        self::assertSame([], $this->out);
+
+        $this->clock->modify('+901 seconds');
+        $kernel->bus()->dispatch(new SchedulerTick());
+        self::assertSame(2, $due->calls);
+    }
+
+    public function testTickReadErrorIsLoggedOnceUntilRecovered(): void
+    {
+        $fail = true;
+        $state = new JobStateRepository(static function () use (&$fail): \PDO {
+            if ($fail) {
+                throw new \PDOException('SQLSTATE[HY000] [2002] Connection refused');
+            }
+            return self::pdo();
+        }, $this->clock);
+        $kernel = $this->kernel(new JobRegistry([self::job('a')]), null, $state);
+
+        $kernel->bus()->dispatch(new SchedulerTick());
+        $kernel->bus()->dispatch(new SchedulerTick());
+        $kernel->bus()->dispatch(new SchedulerTick());
+        self::assertCount(1, $this->out);
+        self::assertStringContainsString('ERRORE lettura lavori scaduti', $this->out[0]);
+
+        $fail = false;
+        $kernel->bus()->dispatch(new SchedulerTick());
+        $kernel->bus()->dispatch(new SchedulerTick());
+        self::assertCount(2, $this->out);
+        self::assertStringContainsString('ripristinata', $this->out[1]);
+    }
+
+    public function testManualMessageFromQueueRunsDisabledJob(): void
+    {
+        $job = self::job('manuale');
+        $kernel = $this->kernel(new JobRegistry([$job]));
+        self::assertFalse($this->state->isEnabled('manuale'));
+
+        WorkerKernel::enqueueManualRun($this->dbal, 'manuale');
+        self::assertSame(1, self::queued());
+
+        self::assertSame(0, $kernel->run(3.0));
+
+        self::assertSame(1, $job->calls);
+        $runs = self::runs();
+        self::assertCount(1, $runs);
+        self::assertSame(1, (int)$runs[0]['manual']);
+        self::assertSame(0, self::queued(), 'messaggio confermato (ack) e rimosso');
+        self::assertFalse($this->state->isEnabled('manuale'), 'il manuale non abilita il lavoro');
+    }
+
+    public function testWorkerSchedulerTickRunsDueJobs(): void
+    {
+        $job = self::job('periodico');
+        $this->state->setEnabled('periodico', true);
+        $kernel = $this->kernel(new JobRegistry([$job]));
+
+        $kernel->run(12.0);
+
+        // primo tick a +5 s: giro, poi prossimo a +900 s (nessun altro giro entro 12 s)
+        self::assertSame(1, $job->calls);
+        self::assertCount(1, self::runs());
+    }
+
+    public function testStopSignalFinishesCurrentBatchAndExitsWorker(): void
+    {
+        $kernel = null;
+        $job = self::job('lungo', true, static function () use (&$kernel): void {
+            // SIGTERM durante il batch: il gestore pcntl chiama requestStop()
+            $kernel->requestStop();
+        });
+        // 'zeta' viene dopo 'lungo' (dueJobs ordina per nome): non deve partire dopo lo stop
+        $other = self::job('zeta');
+        $this->state->setEnabled('zeta', true);
+        $this->state->setEnabled('lungo', true);
+        $kernel = $this->kernel(new JobRegistry([$job, $other]));
+
+        $start = $this->clock->now();
+        self::assertSame(0, $kernel->run(600.0));
+
+        self::assertSame(1, $job->calls, 'hadWork=true ma nessun batch successivo dopo lo stop');
+        $runs = self::runs();
+        self::assertCount(1, $runs, 'nessun altro lavoro avviato dopo lo stop');
+        self::assertSame('lungo', $runs[0]['job']);
+        self::assertSame(1, (int)$runs[0]['batches']);
+        self::assertSame('ok', $runs[0]['status']);
+        self::assertSame(0, $other->calls);
+        self::assertLessThan(60, $this->clock->now()->getTimestamp() - $start->getTimestamp(), 'uscita subito, non al time limit');
+        self::assertStringContainsString('worker arrestato', end($this->out));
+        self::assertTrue($kernel->isStopRequested());
+    }
+
+    public function testJobIsConstructedPerRunAndSeesSettingsChangedOnDb(): void
+    {
+        $built = 0;
+        $registry = new JobRegistry();
+        $registry->register('cfg', 900, function () use (&$built): PeriodicJob {
+            $built++;
+            $n = (int)SettingsRepository::get('test', 'batch', '1');
+            return new StubPeriodicJob('cfg', static fn() => new JobResult($n, $n, 0, 0, false));
+        });
+        $this->state->setEnabled('cfg', true);
+        SettingsRepository::set('test', 'batch', '1');
+        $kernel = $this->kernel($registry);
+
+        $first = $kernel->runner()->run($registry->get('cfg'));
+        // modifica diretta su DB (come la UI di un altro processo): la cache del worker e' stale
+        self::pdo()->exec("UPDATE settings SET value = '5' WHERE section = 'test' AND key_name = 'batch'");
+        self::assertSame('1', SettingsRepository::get('test', 'batch'), 'premessa: cache stale');
+        $second = $kernel->runner()->run($registry->get('cfg'));
+
+        self::assertSame(1, $first?->processed);
+        self::assertSame(5, $second?->processed);
+        self::assertSame(2, $built);
+    }
+
+    public function testTefaGateIsEvaluatedPerRun(): void
+    {
+        SettingsRepository::set('entity', 'id_dominio', '80000000001');
+        SettingsRepository::set('backoffice', 'tefa_enabled', 'false');
+        $registry = JobCatalog::registry();
+
+        $first = $registry->get('tefa');
+        self::assertInstanceOf(LazyJob::class, $first);
+        self::assertInstanceOf(IdleJob::class, $first->inner());
+
+        self::pdo()->exec("UPDATE settings SET value = 'true' WHERE section = 'backoffice' AND key_name = 'tefa_enabled'");
+        $second = $registry->get('tefa');
+        self::assertInstanceOf(LazyJob::class, $second);
+        self::assertInstanceOf(TefaScanJob::class, $second->inner());
+    }
+
+    public function testMissingDominioIsARunErrorNotACrash(): void
+    {
+        $registry = JobCatalog::registry();
+        $this->state->setEnabled('vocab', true);
+        $kernel = $this->kernel($registry);
+
+        $kernel->bus()->dispatch(new SchedulerTick());
+
+        $runs = self::runs();
+        self::assertCount(1, $runs);
+        self::assertSame('error', $runs[0]['status']);
+        self::assertStringContainsString('id_dominio non configurato', (string)$runs[0]['error_message']);
+        // prossimo giro all'intervallo normale: niente errore a ogni tick
+        self::assertSame('2026-10-28 10:15:00', $this->state->state('vocab')['next_run_at']);
+    }
+
+    public function testWaitsForDatabaseRetryingEvery5sWithOneLinePerAttempt(): void
+    {
+        $attempts = 0;
+        $kernel = $this->kernel(new JobRegistry(), function () use (&$attempts): void {
+            if (++$attempts <= 3) {
+                throw new \PDOException('SQLSTATE[HY000] [2002] Connection refused');
+            }
+        });
+        $start = $this->clock->now();
+
+        self::assertTrue($kernel->waitForDatabase());
+
+        self::assertSame(4, $attempts);
+        self::assertSame(15, $this->clock->now()->getTimestamp() - $start->getTimestamp());
+        self::assertCount(4, $this->out);
+        foreach (array_slice($this->out, 0, 3) as $line) {
+            self::assertStringContainsString('DB non pronto (PDOException', $line);
+            self::assertStringContainsString('nuovo tentativo tra 5 s', $line);
+            self::assertStringNotContainsString('#0 ', $line, 'nessuno stack trace');
+        }
+        self::assertStringContainsString('DB pronto', $this->out[3]);
+    }
+
+    public function testWaitForDatabaseNeverGivesUpButHonoursStop(): void
+    {
+        $attempts = 0;
+        $kernel = null;
+        $kernel = $this->kernel(new JobRegistry(), function () use (&$attempts, &$kernel): void {
+            if (++$attempts === 200) {
+                $kernel->requestStop();
+            }
+            throw new \RuntimeException('Table gil_jobs doesn\'t exist');
+        });
+
+        self::assertSame(0, $kernel->run());
+        self::assertSame(200, $attempts, 'nessun limite di tentativi');
+        self::assertStringContainsString('arresto richiesto', end($this->out));
+    }
+
+    public function testMissingTablesCountAsNotReady(): void
+    {
+        WorkerKernel::probeTables($this->dbal, WorkerKernel::REQUIRED_TABLES);
+
+        $this->expectException(\Throwable::class);
+        WorkerKernel::probeTables($this->dbal, ['gil_jobs', 'tabella_migrazione_mancante']);
+    }
+}
