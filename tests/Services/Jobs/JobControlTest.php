@@ -162,9 +162,12 @@ final class JobControlTest extends DbTestCase
             (2, 'b', 2, 'ERROR', 'CF non valido', '{}', NULL, NULL),
             (3, 'b', 3, 'SUCCESS', NULL, '{}', '{\"idPendenza\":\"GIL-s\"}', NOW())");
 
+        $pdo->exec("INSERT INTO gil_jobs (name, enabled, next_run_at) VALUES ('pendenze-massive', 0, '2099-01-01 00:00:00')");
         $r = $this->control()->retryMassiveRow(1);
         self::assertTrue($r['ok']);
         self::assertStringContainsString('riattivato', $r['message']); // servizio in pausa
+        // presa in carico al prossimo tick (una volta riattivato), non dopo la pausa "coda vuota"
+        self::assertNull($pdo->query("SELECT next_run_at FROM gil_jobs WHERE name = 'pendenze-massive'")->fetchColumn());
         $row = $pdo->query('SELECT stato, response_json, claimed_at FROM pendenze_massive WHERE id = 1')->fetch(\PDO::FETCH_ASSOC);
         self::assertSame('PENDING', $row['stato']);
         self::assertNull($row['claimed_at']);

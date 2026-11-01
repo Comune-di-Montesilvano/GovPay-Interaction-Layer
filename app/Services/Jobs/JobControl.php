@@ -216,6 +216,8 @@ final class JobControl
             return ['ok' => false, 'message' => 'Non riprovabile: stato della riga cambiato nel frattempo.'];
         }
         $paused = !$this->state->isEnabled(MassiveEnqueueJob::NAME);
+        // Senza, la riga aspetterebbe la pausa "coda vuota" (15 min) del giro di presa in carico.
+        $this->state->scheduleNow(MassiveEnqueueJob::NAME);
         return [
             'ok' => true,
             'message' => $paused
