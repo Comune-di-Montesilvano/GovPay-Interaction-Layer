@@ -358,7 +358,7 @@ final class JobRunnerTest extends DbTestCase
             'govpay-debitore' => 'cron-govpay-debitore-scanner',
             'rendicontazione-govpay' => 'cron-rendicontazione-govpay',
             'pendenze-massive' => 'cron-pendenze-massive',
-            'mapping-discovery' => 'cron-mapping-discovery',
+            'mapping-discovery' => 'cron-mapping-pendenze',
         ];
         foreach ($expected as $slug => $suite) {
             self::assertSame($suite, JobRunner::suiteFor($slug), $slug);

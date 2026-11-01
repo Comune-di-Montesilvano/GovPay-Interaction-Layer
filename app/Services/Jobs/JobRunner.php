@@ -113,6 +113,7 @@ final class JobRunner
         'biz' => 'cron-biz-scanner',
         'tefa' => 'cron-tefa-scanner',
         'mapping' => 'cron-mapping-pendenze',
+        'mapping-discovery' => 'cron-mapping-pendenze',
         'vocab' => 'cron-vocab-mapping',
         'govpay-debitore' => 'cron-govpay-debitore-scanner',
     ];
