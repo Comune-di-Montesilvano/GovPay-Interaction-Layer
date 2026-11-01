@@ -37,6 +37,14 @@ final class JobRunner
     public const MAX_BATCHES_PER_RUN = 1000;
     public const MAX_RUN_SECONDS = 1800;
 
+    public const SKIP_DISABLED = 'disabilitato';
+    public const SKIP_LOCKED = 'lock occupato (giro gia\' in esecuzione)';
+    public const SKIP_START_ERROR = 'errore di avvio';
+
+    private ?string $lastSkipReason = null;
+    /** @var array<string, true> lavori con errore di avvio gia' segnalato (serie in corso) */
+    private array $startFailing = [];
+
     private readonly ClockInterface $clock;
     /** @var \Closure(string): void */
     private readonly \Closure $output;
@@ -84,28 +92,53 @@ final class JobRunner
         return new self(JobStateRepository::default(), self::defaultLockFactory(), null, null, null, $stopSignal);
     }
 
+    private function startRecovered(string $name, string $suite): void
+    {
+        if (isset($this->startFailing[$name])) {
+            unset($this->startFailing[$name]);
+            $this->line($suite, 'avvio ripristinato');
+        }
+    }
+
     public static function suiteFor(string $jobName): string
     {
         return 'cron-' . $jobName;
+    }
+
+    /** Motivo dell'ultimo run() che ha restituito null (SKIP_*), null se l'ultimo e' partito. */
+    public function lastSkipReason(): ?string
+    {
+        return $this->lastSkipReason;
     }
 
     public function run(PeriodicJob $job, bool $manual = false): ?JobResult
     {
         $name = $job->name();
         $suite = self::suiteFor($name);
+        $this->lastSkipReason = null;
 
         try {
             $enabledAtStart = $this->state->isEnabled($name);
             if (!$manual && !$enabledAtStart) {
+                $this->startRecovered($name, $suite);
+                $this->lastSkipReason = self::SKIP_DISABLED;
                 return null;
             }
             $lock = $this->locks->createLock('job:' . $name, self::LOCK_TTL_SECONDS, false);
-            if (!$this->acquire($lock)) {
+            $acquired = $this->acquire($lock);
+            $this->startRecovered($name, $suite);
+            if (!$acquired) {
+                $this->lastSkipReason = self::SKIP_LOCKED;
                 return null;
             }
         } catch (\Throwable $e) {
-            ($this->reportException)($suite, $e);
-            $this->line($suite, 'ERRORE avvio: ' . self::errorMessage($e));
+            $this->lastSkipReason = self::SKIP_START_ERROR;
+            // Una segnalazione (Sentry + riga) per serie di errori: il tick riprova ogni 5 s.
+            if (!isset($this->startFailing[$name])) {
+                $this->startFailing[$name] = true;
+                ($this->reportException)($suite, $e);
+                $this->line($suite, 'ERRORE avvio: ' . self::errorMessage($e) . ' (segnalato una volta fino al ripristino)');
+            }
             return null;
         }
 
@@ -245,6 +278,13 @@ final class JobRunner
         } catch (\Throwable $e) {
             ($this->reportException)($suite, $e);
             $this->line($suite, 'ERRORE registrazione esecuzione: ' . self::errorMessage($e));
+            // Ripiego: almeno il prossimo giro, altrimenti il lavoro resta scaduto e ripete il
+            // lavoro reale (GovPay/ponte) a ogni tick finche' lo storico non torna scrivibile.
+            try {
+                $this->state->setNextRunAt($name, $nextRunAt);
+            } catch (\Throwable) {
+                // DB del tutto giu': il tick non legge nemmeno i lavori scaduti.
+            }
         }
 
         $this->line($suite, sprintf(

@@ -413,4 +413,75 @@ final class JobRunnerTest extends DbTestCase
         self::assertSame(2, $job->calls);
         self::assertSame([], $this->reported);
     }
+
+    public function testRecordRunFailureStillAdvancesNextRunAt(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $job = new FakePeriodicJob([fn() => self::res(1, false)], 600);
+        // storico non scrivibile in modo persistente: recordRun fallisce a ogni giro
+        self::pdo()->exec('RENAME TABLE gil_job_runs TO gil_job_runs_bak');
+        try {
+            $this->runner()->run($job);
+        } finally {
+            self::pdo()->exec('RENAME TABLE gil_job_runs_bak TO gil_job_runs');
+        }
+
+        self::assertCount(1, $this->reported);
+        // senza avanzamento il lavoro (GovPay/ponte) ripartirebbe a ogni tick da 5 s
+        self::assertSame('2026-10-28 10:10:00', self::jobRow()['next_run_at']);
+        self::assertSame([], $this->repo->dueJobs($this->clock->now()));
+    }
+
+    public function testStartErrorIsReportedOncePerStreakWithRecoveryLine(): void
+    {
+        $fail = true;
+        $repo = new JobStateRepository(static function () use (&$fail): \PDO {
+            if ($fail) {
+                throw new \PDOException('SQLSTATE[HY000] [2002] Connection refused');
+            }
+            return self::pdo();
+        }, $this->clock);
+        $runner = new JobRunner(
+            $repo,
+            self::locks(),
+            $this->clock,
+            function (string $line): void { $this->out[] = $line; },
+            function (string $suite, \Throwable $e): void { $this->reported[] = [$suite, $e]; },
+        );
+        $job = new FakePeriodicJob([fn() => self::res(1, false)]);
+
+        for ($i = 0; $i < 3; $i++) {
+            self::assertNull($runner->run($job));
+        }
+        self::assertCount(1, $this->reported, 'una sola segnalazione Sentry per serie di errori');
+        self::assertCount(1, $this->out);
+        self::assertStringContainsString('ERRORE avvio', $this->out[0]);
+
+        $fail = false;
+        $this->repo->setEnabled('fake', true);
+        self::assertNotNull($runner->run($job));
+        self::assertStringContainsString('avvio ripristinato', $this->out[1]);
+
+        // nuova serie dopo il ripristino: di nuovo segnalata una volta
+        $fail = true;
+        $runner->run($job);
+        $runner->run($job);
+        self::assertCount(2, $this->reported);
+    }
+
+    public function testSkipReasonDistinguishesLockFromStartError(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $locks = self::locks();
+        $held = $locks->createLock('job:fake', 60);
+        self::assertTrue($held->acquire());
+        $runner = $this->runner($locks);
+
+        self::assertNull($runner->run(new FakePeriodicJob([fn() => self::res(1, false)]), true));
+        self::assertSame(JobRunner::SKIP_LOCKED, $runner->lastSkipReason());
+        $held->release();
+
+        self::assertNotNull($runner->run(new FakePeriodicJob([fn() => self::res(1, false)]), true));
+        self::assertNull($runner->lastSkipReason());
+    }
 }

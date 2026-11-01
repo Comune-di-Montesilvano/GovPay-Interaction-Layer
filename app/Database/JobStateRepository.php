@@ -156,6 +156,16 @@ final class JobStateRepository
         }
     }
 
+    /**
+     * Solo il prossimo giro, senza storico: ripiego quando recordRun() fallisce (altrimenti il
+     * lavoro resterebbe scaduto e ripartirebbe a ogni tick).
+     */
+    public function setNextRunAt(string $job, \DateTimeImmutable $at): void
+    {
+        $st = $this->pdo()->prepare('UPDATE gil_jobs SET next_run_at = ? WHERE name = ?');
+        $st->execute([$at->format(self::DT), $job]);
+    }
+
     /** @return list<array<string, mixed>> esecuzioni piu' recenti prima */
     public function recentRuns(string $job, int $limit): array
     {
