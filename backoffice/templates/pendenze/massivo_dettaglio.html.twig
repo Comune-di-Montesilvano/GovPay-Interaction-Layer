@@ -193,7 +193,7 @@
 {% if can_retry %}
 <script>
   async function massiveRetry(ev, rowId) {
-    if (!confirm('Rimettere in coda la riga ' + rowId + '? Verifica prima su GovPay se l'errore indica un esito incerto.')) return;
+    if (!confirm(`Rimettere in coda la riga ${rowId}? Verifica prima su GovPay se l'errore indica un esito incerto.`)) return;
     const btn = ev?.currentTarget;
     if (btn) btn.disabled = true;
     try {
