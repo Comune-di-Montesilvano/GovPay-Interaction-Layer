@@ -197,7 +197,8 @@
     const btn = ev?.currentTarget;
     if (btn) btn.disabled = true;
     try {
-      const res = await fetch('/funzioni-avanzate/cron/pendenze-massive/' + rowId + '/retry', { method: 'POST' });
+      const body = new URLSearchParams({ csrf_token: '{{ job_csrf_token()|e('js') }}' });
+      const res = await fetch('/funzioni-avanzate/cron/pendenze-massive/' + rowId + '/retry', { method: 'POST', body });
       const json = await res.json();
       alert(json.ok ? json.message : (json.error || 'Errore'));
       if (json.ok) { location.reload(); return; }

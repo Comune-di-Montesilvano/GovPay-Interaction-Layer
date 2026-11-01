@@ -12,6 +12,7 @@ use App\Database\BizRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\TefaRepository;
 use App\Logger;
+use App\Security\JobControlCsrf;
 use App\Services\Jobs\JobControl;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -140,6 +141,9 @@ class CronController
     public function run(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
@@ -166,6 +170,9 @@ class CronController
     public function setEnabled(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
@@ -183,6 +190,9 @@ class CronController
     public function stop(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
@@ -211,6 +221,9 @@ class CronController
     public function setScanDate(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedForm($request, $response)) {
+            return $denied;
+        }
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -232,6 +245,9 @@ class CronController
     public function resetDateRange(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedForm($request, $response)) {
+            return $denied;
+        }
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -285,6 +301,9 @@ class CronController
     public function forceRescan(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         try {
             $reason = $this->control()->requestRagioneriaRescan();
@@ -321,6 +340,9 @@ class CronController
     public function retryMassiveRow(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         $rowId = (int)($args['rowId'] ?? 0);
         try {
@@ -333,6 +355,25 @@ class CronController
             return $this->jsonResponse($response, ['ok' => false, 'error' => $result['message']], 409);
         }
         return $this->jsonResponse($response, ['ok' => true, 'message' => $result['message']]);
+    }
+
+    /** POST JSON senza token CSRF valido: 403, nessuna modifica di stato. */
+    private function csrfDeniedJson(Request $request, Response $response): ?Response
+    {
+        if (JobControlCsrf::isValid($request)) {
+            return null;
+        }
+        return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+    }
+
+    /** POST da form senza token CSRF valido: errore flash e ritorno alla pagina Cron, nessuna modifica. */
+    private function csrfDeniedForm(Request $request, Response $response): ?Response
+    {
+        if (JobControlCsrf::isValid($request)) {
+            return null;
+        }
+        $_SESSION['flash'][] = ['type' => 'error', 'text' => JobControlCsrf::ERROR_MESSAGE];
+        return $response->withHeader('Location', '/funzioni-avanzate/cron')->withStatus(303);
     }
 
     private function requireAuth(): void

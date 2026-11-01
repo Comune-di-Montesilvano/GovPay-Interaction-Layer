@@ -1246,6 +1246,11 @@ return function (App $app, Twig $twig): void {
     $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true';
     // Espone un flag globale a Twig per consentire controlli condizionali lato template
     $twig->getEnvironment()->addGlobal('app_debug', $displayErrorDetails);
+    // Token CSRF dei POST di controllo lavori (Cron, Services Hub, riprova massive, report TEFA)
+    $twig->getEnvironment()->addFunction(new \Twig\TwigFunction(
+        'job_csrf_token',
+        static fn(): string => \App\Security\JobControlCsrf::token()
+    ));
     if ($displayErrorDetails) {
         $app->get('/_test-error', function() {
             throw new \RuntimeException('Errore di test intenzionale');

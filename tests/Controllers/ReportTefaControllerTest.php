@@ -6,6 +6,7 @@ namespace Tests\Controllers;
 use App\Config\SettingsRepository;
 use App\Controllers\ReportTefaController;
 use App\Database\JobStateRepository;
+use App\Security\JobControlCsrf;
 use App\Services\Jobs\JobControl;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\ResponseInterface;
@@ -56,9 +57,29 @@ final class ReportTefaControllerTest extends DbTestCase
     }
 
     /** @param array<string,string> $body */
-    private static function post(array $body = []): \Psr\Http\Message\ServerRequestInterface
+    private static function post(array $body = [], bool $withToken = true): \Psr\Http\Message\ServerRequestInterface
     {
+        if ($withToken) {
+            $body['csrf_token'] = JobControlCsrf::token();
+        }
         return (new ServerRequestFactory())->createServerRequest('POST', '/pagamenti/report-tefa/scan')->withParsedBody($body);
+    }
+
+    /** Fix round 1, item 7: avvio/pausa senza token CSRF valido -> 403, flag gil_jobs invariato. */
+    public function testControlsWithoutValidCsrfTokenAre403AndChangeNothing(): void
+    {
+        self::pdo()->exec("INSERT INTO gil_jobs (name, enabled) VALUES ('tefa', 0), ('biz', 1)");
+        $c = $this->controller();
+        foreach (['scan', 'stop', 'bizScan', 'bizStop'] as $method) {
+            foreach ([self::post([], false), self::post(['csrf_token' => 'sbagliato'], false)] as $req) {
+                $r = $c->{$method}($req, new Response());
+                self::assertSame(403, $r->getStatusCode(), $method);
+                self::assertSame(JobControlCsrf::errorPayload(), self::json($r), $method);
+            }
+        }
+        $repo = JobStateRepository::default();
+        self::assertFalse($repo->isEnabled('tefa'));
+        self::assertTrue($repo->isEnabled('biz'));
     }
 
     /** @return array<string,mixed> */

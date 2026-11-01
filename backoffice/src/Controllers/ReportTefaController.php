@@ -9,6 +9,7 @@ namespace App\Controllers;
 
 use App\Config\SettingsRepository;
 use App\Database\TefaRepository;
+use App\Security\JobControlCsrf;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -180,6 +181,9 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
         $body   = (array)($request->getParsedBody() ?? []);
         $dataDa = trim((string)($body['dataDa'] ?? ''));
@@ -220,6 +224,9 @@ class ReportTefaController
         $this->requireTefaEnabled($response);
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
 
         if ($errRes = $this->setJobEnabled($response, 'tefa', false)) {
@@ -471,6 +478,9 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
         if ($errRes = $this->setJobEnabled($response, 'biz', true)) {
             return $errRes;
@@ -490,6 +500,9 @@ class ReportTefaController
         $this->requireAuth();
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
 
         if ($errRes = $this->setJobEnabled($response, 'biz', false)) {

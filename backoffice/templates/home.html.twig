@@ -616,13 +616,17 @@
     }
 
     // ── Daemon Controller AJAX ───────────────────────────────────────
+    const JOB_CSRF = '{{ job_csrf_token()|e('js') }}';
+
     async function postDaemon(btn, url, body) {
       if (btn) {
         btn.disabled = true;
         btn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i> Attendi...`;
       }
       try {
-        const response = await fetch(url, { method: "POST", body: body || new URLSearchParams() });
+        const payload = body || new URLSearchParams();
+        payload.set('csrf_token', JOB_CSRF);
+        const response = await fetch(url, { method: "POST", body: payload });
         const result = await response.json();
         if (result.ok) {
           return result;
