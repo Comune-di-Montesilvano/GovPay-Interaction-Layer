@@ -94,8 +94,8 @@ final class RagioneriaSyncJob implements PeriodicJob
     public const RESCAN_SETTING = 'ragioneria_rescan_richiesto';
 
     /**
-     * Rescan chiesto dalla pagina Cron: flag persistito in settings, consumato dal prossimo giro
-     * (JobCatalog::registry() -> takeRescanRequest() -> requestRescan()). Un flag e non un reset
+     * Rescan chiesto dalla pagina Cron: flag persistito in settings, consumato dal primo giro che
+     * parte davvero (runOnce -> consumeRescan, dopo il controllo di stop). Un flag e non un reset
      * diretto di ragioneria_progress_rolling_from: un giro in corso lo riscriverebbe a fine ciclo.
      */
     public static function storeRescanRequest(): void
@@ -442,7 +442,9 @@ final class RagioneriaSyncJob implements PeriodicJob
 
     private function consumeRescan(JobContext $ctx): void
     {
-        if (!$this->rescanRequested) {
+        // Flag UI letto e azzerato QUI, dopo il controllo di stop: un giro che esce subito
+        // (stop/pausa) non lo consuma, lo usa il primo giro che parte davvero.
+        if (!$this->rescanRequested && !self::takeRescanRequest()) {
             return;
         }
         $this->rescanRequested = false;

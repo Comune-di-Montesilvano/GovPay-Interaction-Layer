@@ -71,11 +71,8 @@ final class JobCatalog
             if ($configError !== null) {
                 throw new \RuntimeException(self::stripErrorPrefix($configError));
             }
-            $job = new RagioneriaSyncJob($idDominio, $idA2A, $backofficeUrl);
-            if (RagioneriaSyncJob::takeRescanRequest()) {
-                $job->requestRescan();
-            }
-            return $job;
+            // il rescan chiesto da UI lo legge (e azzera) runOnce quando il giro parte davvero
+            return new RagioneriaSyncJob($idDominio, $idA2A, $backofficeUrl);
         });
 
         $r->register('biz', self::EMPTY_QUEUE, static function (): PeriodicJob {

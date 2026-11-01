@@ -299,6 +299,35 @@ final class RagioneriaSyncJobTest extends DbTestCase
         self::assertSame($rolling, $this->query(0)['dataDa']);
     }
 
+    /**
+     * Fix round 1: il rescan chiesto da UI (flag in settings) si azzera solo quando il rescan
+     * parte davvero. Un giro costruito dal catalogo che esce subito per stop lascia il flag.
+     */
+    public function testUiRescanFlagSurvivesARunThatStopsBeforeStarting(): void
+    {
+        SettingsRepository::set('entity', 'id_dominio', self::DOMINIO);
+        SettingsRepository::set('govpay', 'backoffice_url', self::BASE);
+        RagioneriaSyncJob::storeRescanRequest();
+        $stopped = new RecordingJobContext();
+        $stopped->stop = true;
+
+        $r = \App\Services\Jobs\JobCatalog::registry()->get('ragioneria')->runOnce($stopped);
+
+        self::assertFalse($r->hadWork);
+        self::assertSame('1', $this->setting(RagioneriaSyncJob::RESCAN_SETTING), 'stop prima di partire: flag intatto');
+
+        // il giro successivo che parte davvero consuma il flag e fa lo scan completo
+        SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', self::SCAN_DA);
+        SettingsRepository::set('backoffice', 'ragioneria_progress_rolling_from', '2026-02-10');
+        $this->queueList([]);
+        $ctx = new RecordingJobContext();
+        $this->job()->runOnce($ctx);
+
+        self::assertSame(self::SCAN_DA, $this->query(0)['dataDa']);
+        self::assertContains('Segnale rescan ricevuto: prossimo ciclo scan completo da data configurazione.', $ctx->messages);
+        self::assertNull($this->setting(RagioneriaSyncJob::RESCAN_SETTING));
+    }
+
     public function testRescanBeforeFirstRunOverridesRestoredProgress(): void
     {
         SettingsRepository::set('backoffice', 'ragioneria_progress_scan_da', self::SCAN_DA);

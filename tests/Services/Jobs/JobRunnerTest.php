@@ -154,6 +154,40 @@ final class JobRunnerTest extends DbTestCase
         self::assertSame($this->clock->now()->modify('+30 seconds')->format('Y-m-d H:i:s'), self::jobRow()['next_run_at']);
     }
 
+    /**
+     * Fix round 1: "esegui subito" (scheduleNow, es. riattivazione o riprova riga massiva) chiesto
+     * MENTRE il giro e' in corso non va perso: la fine del giro non sovrascrive next_run_at=NULL,
+     * il lavoro resta scaduto e riparte subito. Vale per giro registrato e per giro silenzioso.
+     */
+    public function testScheduleNowDuringLiveRunIsKeptAfterTheRun(): void
+    {
+        foreach ([[self::res(2, false), 1], [new JobResult(0, 0, 0, 0, false, [], true), 0]] as [$result, $expectedRuns]) {
+            self::pdo()->exec('DELETE FROM gil_job_runs');
+            $this->repo->setEnabled('fake', true);
+            $job = new FakePeriodicJob([function () use ($result): JobResult {
+                $this->repo->scheduleNow('fake');
+                return $result;
+            }], 900);
+
+            $this->runner()->run($job);
+
+            self::assertCount($expectedRuns, self::runs());
+            self::assertNull(self::jobRow()['next_run_at'], 'richiesta arrivata durante il giro: riparte subito');
+            self::assertSame(['fake'], $this->repo->dueJobs($this->clock->now()));
+        }
+    }
+
+    /** Una richiesta arrivata PRIMA del giro e' consumata da quel giro: dopo, intervallo normale. */
+    public function testScheduleNowBeforeTheRunIsConsumedByIt(): void
+    {
+        $this->repo->setEnabled('fake', true);
+        $this->repo->scheduleNow('fake');
+
+        $this->runner()->run(new FakePeriodicJob([fn() => self::res(1, false)], 900));
+
+        self::assertSame($this->clock->now()->modify('+900 seconds')->format('Y-m-d H:i:s'), self::jobRow()['next_run_at']);
+    }
+
     /** Silenzioso solo se TUTTI i batch lo sono, e mai per un'esecuzione manuale. */
     public function testSilentBatchAfterWorkOrManualRunIsRecorded(): void
     {

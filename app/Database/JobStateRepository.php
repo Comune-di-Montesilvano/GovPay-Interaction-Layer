@@ -73,13 +73,26 @@ final class JobStateRepository
         return $row === false ? null : $row;
     }
 
+    /**
+     * Inizio giro. Un "esegui subito" gia' in attesa (next_run_at NULL) e' consumato da questo giro:
+     * next_run_at diventa l'ora di avvio, cosi' un NULL trovato a fine giro significa "richiesto
+     * DURANTE il giro" (scheduleNow) e viene conservato (vedi FINISH_NEXT_RUN_SQL).
+     */
     public function markStarted(string $job, \DateTimeImmutable $at): void
     {
         $st = $this->pdo()->prepare(
-            'INSERT INTO gil_jobs (name, last_started_at) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_started_at = VALUES(last_started_at)'
+            'INSERT INTO gil_jobs (name, last_started_at, next_run_at) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE next_run_at = COALESCE(next_run_at, VALUES(last_started_at)), last_started_at = VALUES(last_started_at)'
         );
-        $st->execute([$job, $at->format(self::DT)]);
+        $st->execute([$job, $at->format(self::DT), $at->format(self::DT)]);
     }
+
+    /**
+     * Espressione SQL del prossimo giro a fine esecuzione: next_run_at NULL dopo markStarted
+     * (stesso last_started_at, quindi va valutata PRIMA di riassegnare last_started_at) = scheduleNow
+     * arrivato mentre il giro girava -> resta NULL (riparte subito). Parametri: startedAt, nextRunAt.
+     */
+    private const FINISH_NEXT_RUN_SQL = 'IF(next_run_at IS NULL AND last_started_at = ?, NULL, ?)';
 
     /**
      * Registra un'esecuzione conclusa (riga storico + primi 50 errori) e aggiorna lo stato del
@@ -129,16 +142,20 @@ final class JobStateRepository
                 }
             }
 
+            // next_run_at per primo: le assegnazioni successive vedono gia' il nuovo last_started_at
             $up = $pdo->prepare(
                 'INSERT INTO gil_jobs (name, last_started_at, last_finished_at, last_status, next_run_at) VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE last_started_at = VALUES(last_started_at), last_finished_at = VALUES(last_finished_at),
-                   last_status = VALUES(last_status), next_run_at = VALUES(next_run_at)'
+                 ON DUPLICATE KEY UPDATE next_run_at = ' . self::FINISH_NEXT_RUN_SQL . ',
+                   last_started_at = VALUES(last_started_at), last_finished_at = VALUES(last_finished_at),
+                   last_status = VALUES(last_status)'
             );
             $up->execute([
                 $job,
                 $startedAt->format(self::DT),
                 $finishedAt->format(self::DT),
                 $status,
+                $nextRunAt->format(self::DT),
+                $startedAt->format(self::DT),
                 $nextRunAt->format(self::DT),
             ]);
 
@@ -160,10 +177,19 @@ final class JobStateRepository
      * Solo il prossimo giro, senza storico: ripiego quando recordRun() fallisce (altrimenti il
      * lavoro resterebbe scaduto e ripartirebbe a ogni tick).
      */
-    public function setNextRunAt(string $job, \DateTimeImmutable $at): void
+    /**
+     * Con $runStartedAt (fine di un giro avviato con markStarted) conserva un scheduleNow arrivato
+     * durante il giro, come recordRun().
+     */
+    public function setNextRunAt(string $job, \DateTimeImmutable $at, ?\DateTimeImmutable $runStartedAt = null): void
     {
-        $st = $this->pdo()->prepare('UPDATE gil_jobs SET next_run_at = ? WHERE name = ?');
-        $st->execute([$at->format(self::DT), $job]);
+        if ($runStartedAt === null) {
+            $st = $this->pdo()->prepare('UPDATE gil_jobs SET next_run_at = ? WHERE name = ?');
+            $st->execute([$at->format(self::DT), $job]);
+            return;
+        }
+        $st = $this->pdo()->prepare('UPDATE gil_jobs SET next_run_at = ' . self::FINISH_NEXT_RUN_SQL . ' WHERE name = ?');
+        $st->execute([$runStartedAt->format(self::DT), $at->format(self::DT), $job]);
     }
 
     /** Il prossimo tick (entro 5 s) fa partire il lavoro, se abilitato. */

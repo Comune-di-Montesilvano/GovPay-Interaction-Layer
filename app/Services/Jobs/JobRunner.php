@@ -267,7 +267,7 @@ final class JobRunner
 
         if ($status === 'ok' && $allSilent && !$manual) {
             try {
-                $this->state->setNextRunAt($name, $nextRunAt);
+                $this->state->setNextRunAt($name, $nextRunAt, $startedAt);
             } catch (\Throwable $e) {
                 ($this->reportException)($suite, $e);
             }
@@ -294,7 +294,7 @@ final class JobRunner
             // Ripiego: almeno il prossimo giro, altrimenti il lavoro resta scaduto e ripete il
             // lavoro reale (GovPay/ponte) a ogni tick finche' lo storico non torna scrivibile.
             try {
-                $this->state->setNextRunAt($name, $nextRunAt);
+                $this->state->setNextRunAt($name, $nextRunAt, $startedAt);
             } catch (\Throwable) {
                 // DB del tutto giu': il tick non legge nemmeno i lavori scaduti.
             }
