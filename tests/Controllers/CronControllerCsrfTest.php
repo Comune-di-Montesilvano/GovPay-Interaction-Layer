@@ -172,6 +172,30 @@ final class CronControllerCsrfTest extends DbTestCase
         self::assertStringNotContainsString('Reset completato', json_encode($_SESSION['flash']));
     }
 
+    /**
+     * Fix round 2 (minor): sulla GET la sessione e' gia' chiusa da ReleaseSessionLockMiddleware.
+     * Token presente: letto senza riaprire la sessione. Assente: aperta, scritto, richiusa subito,
+     * e il token resta persistito per il POST successivo.
+     */
+    public function testTokenDoesNotReopenClosedSession(): void
+    {
+        $existing = JobControlCsrf::token();
+        session_write_close();
+        self::assertSame($existing, JobControlCsrf::token());
+        self::assertSame(PHP_SESSION_NONE, session_status(), 'token presente: nessun session_start');
+
+        @session_start();
+        unset($_SESSION[JobControlCsrf::SESSION_KEY]);
+        session_write_close();
+        $fresh = JobControlCsrf::token();
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $fresh);
+        self::assertSame(PHP_SESSION_NONE, session_status(), 'token assente: sessione richiusa subito');
+
+        $_SESSION = [];
+        @session_start();
+        self::assertSame($fresh, $_SESSION[JobControlCsrf::SESSION_KEY] ?? null, 'token persistito');
+    }
+
     public function testTokenIsStablePerSessionAndRandom(): void
     {
         $t = JobControlCsrf::token();

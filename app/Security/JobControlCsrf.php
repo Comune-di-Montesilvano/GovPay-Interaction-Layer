@@ -22,13 +22,28 @@ final class JobControlCsrf
     public const FIELD = 'csrf_token';
     public const ERROR_MESSAGE = 'Token di sicurezza mancante o non valido: ricaricare la pagina e riprovare.';
 
+    /**
+     * Sulle GET ReleaseSessionLockMiddleware ha gia' chiuso la sessione ($_SESSION resta leggibile):
+     * se il token c'e' lo si legge e basta, senza riprendere il lock. Solo se manca si riapre la
+     * sessione per scriverlo e, se era chiusa, la si richiude subito.
+     */
     public static function token(): string
     {
-        self::startSession();
-        if (empty($_SESSION[self::SESSION_KEY]) || !is_string($_SESSION[self::SESSION_KEY])) {
-            $_SESSION[self::SESSION_KEY] = bin2hex(random_bytes(32));
+        $current = $_SESSION[self::SESSION_KEY] ?? null;
+        if (is_string($current) && $current !== '') {
+            return $current;
         }
-        return $_SESSION[self::SESSION_KEY];
+        $wasActive = session_status() === PHP_SESSION_ACTIVE;
+        self::startSession();
+        $current = $_SESSION[self::SESSION_KEY] ?? null;
+        if (!is_string($current) || $current === '') {
+            $current = bin2hex(random_bytes(32));
+            $_SESSION[self::SESSION_KEY] = $current;
+        }
+        if (!$wasActive && session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        return $current;
     }
 
     public static function isValid(ServerRequestInterface $request): bool
