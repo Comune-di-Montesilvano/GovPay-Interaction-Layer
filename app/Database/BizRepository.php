@@ -157,6 +157,21 @@ class BizRepository
         $stmt->execute([':msg' => mb_substr($reason, 0, 500), ':id' => $id]);
     }
 
+    /** Righe ERROR che resetErrors() rimette in PENDING (escluse quelle GovPay del debitore). */
+    private const RESETTABLE_ERRORS_WHERE = 'b.stato = \'ERROR\' AND b.id_dominio = :id_dominio
+               AND NOT EXISTS (
+                   SELECT 1 FROM flussi_rendicontazioni f
+                    WHERE f.id_dominio = b.id_dominio AND f.iur = b.iur AND f.is_govpay = 1
+               )';
+
+    /** Quante righe resetErrors() senza soglia (retry da UI) rimetterebbe in PENDING adesso. */
+    public function countResettableErrors(string $idDominio): int
+    {
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM biz_ricevute b WHERE ' . self::RESETTABLE_ERRORS_WHERE);
+        $stmt->execute([':id_dominio' => $idDominio]);
+        return (int)$stmt->fetchColumn();
+    }
+
     /**
      * Resetta ERROR -> PENDING. Con $olderThanMinutes (demone) solo le righe il cui ultimo
      * aggiornamento (updated_at = momento dell'errore) e' piu' vecchio della soglia: backoff tra
@@ -168,11 +183,7 @@ class BizRepository
     public function resetErrors(string $idDominio, ?int $olderThanMinutes = null): int
     {
         $sql = 'UPDATE biz_ricevute b SET b.stato = \'PENDING\', b.error_msg = NULL, b.updated_at = NOW()
-             WHERE b.stato = \'ERROR\' AND b.id_dominio = :id_dominio
-               AND NOT EXISTS (
-                   SELECT 1 FROM flussi_rendicontazioni f
-                    WHERE f.id_dominio = b.id_dominio AND f.iur = b.iur AND f.is_govpay = 1
-               )';
+             WHERE ' . self::RESETTABLE_ERRORS_WHERE;
         $params = [':id_dominio' => $idDominio];
         if ($olderThanMinutes !== null) {
             $sql .= ' AND b.updated_at < NOW() - INTERVAL :minuti MINUTE';

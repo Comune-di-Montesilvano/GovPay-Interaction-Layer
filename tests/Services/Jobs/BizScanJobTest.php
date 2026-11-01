@@ -235,6 +235,8 @@ final class BizScanJobTest extends DbTestCase
         $row = $this->biz($iur);
         self::assertSame('ERROR', $row['stato']);
         self::assertStringStartsWith('Errore API Biz Events HTTP 500:', (string)$row['error_msg']);
+        // Etichetta "Reset errori Biz (N)": l'errore di una pendenza esterna conta.
+        self::assertSame(1, (new \App\Database\BizRepository(self::pdo()))->countResettableErrors(self::DOMINIO));
         self::assertSame([1, 0, 0, 1, true], [$res->processed, $res->ok, $res->skipped, $res->errors, $res->hadWork]);
         self::assertSame([['ref' => $iur, 'reason' => mb_substr((string)$row['error_msg'], 0, 200)]], $res->errorDetails);
 

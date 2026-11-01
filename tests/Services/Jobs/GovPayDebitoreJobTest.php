@@ -381,6 +381,9 @@ final class GovPayDebitoreJobTest extends DbTestCase
         $this->backdateBiz($iur, 120);
 
         $bizRepo = new BizRepository(self::pdo());
+        // Etichetta "Reset errori Biz (N)" (report ragioneria): N = righe che il reset tocca.
+        self::assertSame(1, (int)self::pdo()->query("SELECT COUNT(*) FROM biz_ricevute WHERE stato = 'ERROR'")->fetchColumn());
+        self::assertSame(0, $bizRepo->countResettableErrors(self::DOMINIO));
         self::assertSame(0, $bizRepo->resetErrors(self::DOMINIO, 60));
         self::assertSame(0, $bizRepo->resetErrors(self::DOMINIO));
         self::assertSame('ERROR', $this->biz($iur)['stato']);
