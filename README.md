@@ -426,6 +426,44 @@ Altre modifiche del compose, senza azioni richieste: `no-new-privileges` e `cap_
 - **Script `cron_*.php` rimossi**: le immagini precedenti eseguono ancora i propri daemon, quelle nuove usano il worker e non contengono più gli script. Eventuali voci crontab/systemd timer sull'host (`docker exec ... cron_*.php`) vanno rimosse.
 - Il worker non espone porte e non ha capability Linux (`cap_drop: ALL`, utente `www-data`). Monta il volume `cache` in sola lettura e `gil_certs` (certificati mTLS GovPay) in sola lettura.
 
+### Rollback dal container `worker` all'immagine precedente
+
+Il rollback è `APP_VERSION` precedente: lo schema migrato è tollerato dal codice vecchio (colonne nuove nullable, tabelle `gil_*` ignorate). Prima, però, va svuotato il lavoro in volo delle **pendenze massive**, che il worker prende in carico a righe e che il vecchio daemon non sa riprendere.
+
+1. Da **Funzioni avanzate → Cron / Servizi** mettere in pausa `pendenze-massive` (e, volendo, tutti gli altri lavori). La pausa ha effetto entro il batch corrente e rimette in coda le righe già accodate.
+2. Attendere che il lavoro in volo sia finito. Controllo (sola lettura, entrambe le query devono dare 0 righe/0):
+
+   ```sql
+   SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'massive';
+   SELECT stato, COUNT(*) FROM pendenze_massive
+   WHERE stato IN ('PROCESSING', 'CANCEL_PROCESSING') GROUP BY stato;
+   ```
+
+   ```bash
+   docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "<query>"
+   ```
+3. Impostare `APP_VERSION` sulla versione precedente e ricreare lo stack.
+4. **Stato dei lavori**: i vecchi daemon ripartono dai file `daemon-<nome>.autostart` del volume `cache` com'erano al momento dell'upgrade. Pausa/attivazione fatte dopo dall'interfaccia (tabella `gil_jobs`) **non** tornano indietro: ricreare o rimuovere a mano i file `.autostart` (`docker exec gil-backoffice ls /var/www/cache`) in modo che corrispondano ai lavori che si vogliono attivi.
+
+Se il rollback è già stato fatto con righe rimaste in lavorazione (il vecchio `cron_pendenze_massive.php` non le riprende mai: restano "in lavorazione"), si possono rimettere in coda dopo aver verificato che il worker sia fermo:
+
+```sql
+-- Creazioni prese in carico dal worker, con idPendenza già salvato: la PUT è idempotente
+UPDATE pendenze_massive
+SET stato = 'PENDING', claimed_at = NULL, claim_token = NULL, updated_at = NOW()
+WHERE stato = 'PROCESSING' AND claimed_at IS NOT NULL
+  AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(response_json, '$.idPendenza')), '') NOT IN ('', 'null');
+
+-- Annullamenti presi in carico dal worker
+UPDATE pendenze_massive
+SET stato = 'CANCEL_PENDING', claimed_at = NULL, claim_token = NULL, updated_at = NOW()
+WHERE stato = 'CANCEL_PROCESSING' AND claimed_at IS NOT NULL;
+```
+
+Le creazioni in lavorazione **senza** idPendenza salvato non vanno resettate in blocco: prima verificare su GovPay se la pendenza esiste, per non crearla due volte.
+
+Effetti collaterali nel DB, innocui: il lavoro `govpay-debitore` scrive in `biz_ricevute` anche righe `ERROR` e `NOT_FOUND` per gli IUR GovPay. Il vecchio scanner non le riprova (la riga esiste già) e il vecchio "Reset errori Biz" le riporta a `PENDING`, facendo interrogare Biz Events per IUR GovPay senza esito utile. Un successivo re-upgrade mantiene i flag di `gil_jobs` e recupera da solo i claim abbandonati dopo 1 ora.
+
 ### Upgrade: backup del DB obbligatorio
 
 > [!WARNING]
