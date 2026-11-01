@@ -8,6 +8,12 @@ use DateTimeImmutable;
 
 class MassivePendenzeRepository
 {
+    /**
+     * ALTER ... MODIFY di ensureTable() gia' eseguito in questo processo: prende un lock di metadati
+     * sulla tabella, quindi non a ogni costruzione (il worker crea un repository per messaggio).
+     */
+    private static bool $enumAltered = false;
+
     public function __construct(private ?PDO $pdo = null)
     {
         $this->pdo = $this->pdo ?: Connection::getPDO();
@@ -313,6 +319,10 @@ class MassivePendenzeRepository
     {
         try {
             $this->pdo->query('SELECT 1 FROM pendenze_massive LIMIT 1');
+            if (self::$enumAltered) {
+                return;
+            }
+            self::$enumAltered = true;
             // Try to alter table safely (adds PAUSED, CANCELLED, CANCEL_PENDING, CANCEL_PROCESSING to enum if missing)
             try {
                 $this->pdo->exec("ALTER TABLE pendenze_massive MODIFY COLUMN stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED','CANCEL_PENDING','CANCEL_PROCESSING') NOT NULL DEFAULT 'PENDING'");

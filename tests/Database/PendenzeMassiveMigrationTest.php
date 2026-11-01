@@ -35,6 +35,35 @@ final class PendenzeMassiveMigrationTest extends DbTestCase
         self::pdo()->exec(self::migration('037_pendenze_massive_claim.sql'));
     }
 
+    /**
+     * Fix round 1 (Task 11): l'ALTER ... MODIFY di ensureTable() (lock di metadati) gira al piu' una
+     * volta per processo, non a ogni costruzione del repository (il worker ne crea uno per messaggio).
+     */
+    public function testEnsureTableAltersAtMostOncePerProcess(): void
+    {
+        $p = \App\Database\Connection::params();
+        $pdo = new class('mysql:host=' . $p['host'] . ';port=' . $p['port'] . ';dbname=' . $p['dbname'] . ';charset=utf8mb4', (string)$p['user'], (string)$p['password']) extends \PDO {
+            public int $alters = 0;
+            public function exec(string $statement): int|false
+            {
+                if (stripos(ltrim($statement), 'ALTER') === 0) {
+                    $this->alters++;
+                }
+                return parent::exec($statement);
+            }
+        };
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        for ($i = 0; $i < 3; $i++) {
+            new MassivePendenzeRepository($pdo);
+        }
+
+        self::assertLessThanOrEqual(1, $pdo->alters);
+        $before = $pdo->alters;
+        new MassivePendenzeRepository($pdo);
+        self::assertSame($before, $pdo->alters, 'nessun ALTER dopo il primo');
+    }
+
     public function testMigrationCreatesTableIdenticalToEnsureTableAndIsIdempotent(): void
     {
         $pdo = self::pdo();
