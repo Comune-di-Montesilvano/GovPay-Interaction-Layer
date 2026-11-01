@@ -136,11 +136,15 @@ wk_id=$("${COMPOSE[@]}" ps -q worker)
 # worker in crash loop non risponde a exec. Path dentro `sh -c`: git-bash (Windows) riscrive gli
 # argomenti che iniziano con / e test -f fallirebbe in silenzio.
 wk_image=$(docker inspect -f '{{.Config.Image}}' "$wk_id")
-if docker run --rm --network none --entrypoint sh "$wk_image" -c 'test -f /var/www/html/bin/worker'; then
-  has_bin=1
-else
-  has_bin=0
-fi
+# Esito di docker run distinto da quello di test: 0 = file presente, 1 = assente (test -f),
+# altro (125/126/127, immagine non avviabile) = errore docker, non "senza bin/worker".
+rc=0
+docker run --rm --network none --entrypoint sh "$wk_image" -c 'test -f /var/www/html/bin/worker' || rc=$?
+case "$rc" in
+  0) has_bin=1 ;;
+  1) has_bin=0 ;;
+  *) fail "docker run su $wk_image fallito (exit $rc): impossibile verificare bin/worker" ;;
+esac
 if [ "$WORKER_MODE" = auto ]; then
   if [ "$has_bin" = 1 ]; then WORKER_MODE=new; else WORKER_MODE=legacy; fi
 fi
