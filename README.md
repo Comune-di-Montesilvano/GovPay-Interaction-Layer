@@ -423,7 +423,7 @@ Altre modifiche del compose, senza azioni richieste: `no-new-privileges` e `cap_
 - **Primo avvio**: il worker legge **una sola volta** i file `daemon-<nome>.autostart` del volume `cache` e attiva gli stessi lavori che prima partivano all'avvio. Dopo l'import lo stato vive nel DB (tabella `gil_jobs`): attivazione, pausa, "Esegui ora" e log si gestiscono da **Funzioni avanzate → Cron / Servizi**. Un lavoro messo in pausa resta in pausa anche dopo un riavvio.
 - **Immagini precedenti**: il nuovo compose funziona anche con un `APP_VERSION` vecchio. Con un'immagine senza worker il servizio `worker` resta acceso senza fare nulla (log: `immagine senza bin/worker, nessuna azione`) e i daemon continuano a girare nel backoffice come prima: nessuna doppia esecuzione.
 - **Un solo worker**: non scalare il servizio (`replicas`, `docker compose up --scale worker=N`). Due worker eseguirebbero due volte le stesse chiamate GovPay.
-- **Niente più `docker exec` / crontab / systemd timer** sugli script `cron_*.php`: se esistono sull'host, vanno rimossi prima dell'upgrade. Girerebbero in parallelo al worker, con doppie creazioni di pendenze massive.
+- **Script `cron_*.php` rimossi**: le immagini precedenti eseguono ancora i propri daemon, quelle nuove usano il worker e non contengono più gli script. Eventuali voci crontab/systemd timer sull'host (`docker exec ... cron_*.php`) vanno rimosse.
 - Il worker non espone porte e non ha capability Linux (`cap_drop: ALL`, utente `www-data`). Monta il volume `cache` in sola lettura e `gil_certs` (certificati mTLS GovPay) in sola lettura.
 
 ### Upgrade: backup del DB obbligatorio

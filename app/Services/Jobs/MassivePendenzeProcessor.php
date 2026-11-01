@@ -10,33 +10,18 @@ use App\Database\MassivePendenzeRepository;
 /**
  * Elaborazione della coda pendenze massive.
  *
- * Worker (Task 11): processClaimedRow() per ogni messaggio ProcessMassiveRow (righe prese in carico
- * da MassiveEnqueueJob con claim atomico), failClaimedRow() per l'esito finale dei messaggi falliti.
- * Percorso legacy (cron_pendenze_massive.php, rimosso con il passaggio al worker): runOnce().
- * In entrambi l'idPendenza di una nuova pendenza viene assegnato e salvato sulla riga PRIMA della
- * PUT di creazione, e resta salvato anche dopo un rifiuto: ogni nuovo tentativo aggiorna la
- * stessa pendenza (PUT idempotente), mai una seconda creazione con un id diverso.
+ * Worker: processClaimedRow() per ogni messaggio ProcessMassiveRow (righe prese in carico da
+ * MassiveEnqueueJob con claim atomico), failClaimedRow() per l'esito finale dei messaggi falliti.
+ * L'idPendenza di una nuova pendenza viene assegnato e salvato sulla riga PRIMA della PUT di
+ * creazione, e resta salvato anche dopo un rifiuto: ogni nuovo tentativo aggiorna la stessa
+ * pendenza (PUT idempotente), mai una seconda creazione con un id diverso.
  *
- * - claimBatch(): selezione di oggi. Prima le righe CANCEL_PENDING (id ASC, max $limit); solo se
- *   non ce ne sono, le righe PENDING (id ASC, max $limit). NON marca nulla: oggi la marcatura
- *   "in corso" avviene riga per riga dentro l'elaborazione (setCancelProcessing per gli
- *   annullamenti, setProcessing per le creazioni dopo la validazione del payload), quindi una
- *   riga selezionata e non ancora elaborata resta CANCEL_PENDING/PENDING. Sicuro solo con un
- *   unico consumatore (oggi garantito dal PID file).
- * - processRow(): rilegge la riga e la elabora secondo il suo stato attuale: CANCEL_PENDING ->
- *   annullamento su GovPay, PENDING -> creazione su GovPay; ogni altro stato (o id inesistente)
- *   e' un no-op (skipped). Diversamente dallo script, che lavorava sullo snapshot del batch, una
- *   riga cambiata di stato tra selezione ed elaborazione (es. batch messo in PAUSED) non viene
- *   piu' toccata.
- * - runOnce(): claimBatch + processRow per ogni id. Come oggi lo stop non viene verificato tra
- *   una riga e l'altra (lo script lo controlla solo tra un ciclo e l'altro). hadWork = c'erano
- *   righe in coda: se false lo script attende 15 minuti.
+ * - processRow(): rilegge la riga e la elabora secondo il suo stato attuale (CANCEL_PENDING ->
+ *   annullamento, PENDING -> creazione, altro = no-op). Senza claim: non usato dal worker, resta
+ *   come punto d'ingresso dei test di caratterizzazione di creazione/annullamento.
  *
- * Le chiamate GovPay passano dal PendenzeController (stessi metodi usati dallo script). Le
- * eccezioni del ramo creazione NON sono catturate (come oggi: arrivano al gestore globale dello
- * script); quelle del ramo annullamento sono catturate per riga.
- *
- * errorDetails: ref = id della riga; reason = testo fisso / status HTTP, mai corpi upstream.
+ * Le chiamate GovPay passano dal PendenzeController. errorDetails: ref = id della riga;
+ * reason = testo fisso / status HTTP, mai corpi upstream.
  */
 final class MassivePendenzeProcessor
 {
@@ -48,44 +33,6 @@ final class MassivePendenzeProcessor
         private readonly PendenzeController $controller,
         private readonly MassivePendenzeRepository $repo
     ) {}
-
-    /** @return list<int> */
-    public function claimBatch(int $limit = self::BATCH_SIZE): array
-    {
-        return $this->selectBatch($limit)[1];
-    }
-
-    public function runOnce(JobContext $ctx): JobResult
-    {
-        // Ogni iterazione rilegge i settings: in un processo longevo la cache statica
-        // resterebbe ferma ai valori dell'avvio (modifiche da UI ignorate fino al riavvio).
-        SettingsRepository::flush();
-
-        [$kind, $ids] = $this->selectBatch(self::BATCH_SIZE);
-
-        if ($ids === []) {
-            $ctx->debug('Nessuna pendenza PENDING o CANCEL_PENDING. Attendo ' . self::IDLE_SECONDS . 's...');
-            return new JobResult(0, 0, 0, 0, false);
-        }
-
-        $ctx->debug('Elaboro batch di ' . count($ids) . ($kind === 'cancel' ? ' annullamenti...' : ' pendenze...'));
-
-        $processed = 0;
-        $ok = 0;
-        $skipped = 0;
-        $errors = 0;
-        $details = [];
-        foreach ($ids as $id) {
-            $r = $this->processRow($id, $ctx);
-            $processed += $r->processed;
-            $ok += $r->ok;
-            $skipped += $r->skipped;
-            $errors += $r->errors;
-            array_push($details, ...$r->errorDetails);
-        }
-
-        return new JobResult($processed, $ok, $skipped, $errors, true, $details);
-    }
 
     public function processRow(int $rowId, ?JobContext $ctx = null): JobResult
     {
@@ -154,19 +101,6 @@ final class MassivePendenzeProcessor
     public function failClaimedRow(int $rowId, string $claimToken, ?string $errore): bool
     {
         return $this->repo->failClaim($rowId, $claimToken, $errore);
-    }
-
-    /**
-     * @return array{0:'cancel'|'create',1:list<int>}
-     */
-    private function selectBatch(int $limit): array
-    {
-        $cancels = $this->repo->fetchCancelPending($limit);
-        if (count($cancels) > 0) {
-            return ['cancel', array_values(array_map(static fn(array $r): int => (int)$r['id'], $cancels))];
-        }
-        $pending = $this->repo->fetchPending($limit);
-        return ['create', array_values(array_map(static fn(array $r): int => (int)$r['id'], $pending))];
     }
 
     /**

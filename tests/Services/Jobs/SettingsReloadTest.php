@@ -8,7 +8,6 @@ use App\Config\SettingsRepository;
 use App\Database\BizRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\MappingPendenzeRepository;
-use App\Database\MassivePendenzeRepository;
 use App\Database\RendicontazioneRepository;
 use App\Database\TefaRepository;
 use App\Database\UserGroupRepository;
@@ -18,7 +17,6 @@ use App\Services\Jobs\BizScanJob;
 use App\Services\Jobs\GovPayDebitoreJob;
 use App\Services\Jobs\MappingL1Job;
 use App\Services\Jobs\MappingL2Job;
-use App\Services\Jobs\MassivePendenzeProcessor;
 use App\Services\Jobs\RagioneriaSyncJob;
 use App\Services\Jobs\RendicontazioneJob;
 use App\Services\Jobs\TefaScanJob;
@@ -31,7 +29,6 @@ use GuzzleHttp\HandlerStack;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\DbTestCase;
-use Tests\Support\FakeGovPayPendenzeController;
 use Tests\Support\RecordingJobContext;
 
 /**
@@ -65,7 +62,7 @@ final class SettingsReloadTest extends DbTestCase
         return [
             'biz' => ['biz'], 'tefa' => ['tefa'], 'debitore' => ['debitore'],
             'mappingL1' => ['mappingL1'], 'mappingL2' => ['mappingL2'], 'ragioneria' => ['ragioneria'],
-            'massive' => ['massive'], 'rendicontazione' => ['rendicontazione'],
+            'rendicontazione' => ['rendicontazione'],
         ];
     }
 
@@ -79,7 +76,6 @@ final class SettingsReloadTest extends DbTestCase
             'mappingL1' => new MappingL1Job($this->createStub(MappingPendenzeRepository::class), self::DOMINIO),
             'mappingL2' => new MappingL2Job($this->createStub(MappingPendenzeRepository::class), self::DOMINIO),
             'ragioneria' => new RagioneriaSyncJob(self::DOMINIO, 'GIL-TEST', 'https://govpay.example.test/backoffice/v1', $client, $this->createStub(FlussiRendicontazioniRepository::class)),
-            'massive' => new MassivePendenzeProcessor(new FakeGovPayPendenzeController(), $this->createStub(MassivePendenzeRepository::class)),
             'rendicontazione' => new RendicontazioneJob(
                 $this->createStub(RendicontazioneRepository::class),
                 fn() => $this->createStub(RendicontazioneEngineService::class),

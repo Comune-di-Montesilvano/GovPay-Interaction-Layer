@@ -12,7 +12,7 @@ use GuzzleHttp\Exception\BadResponseException;
 /**
  * Recupera dati debitore da GovPay Backoffice API per IUR is_govpay=1
  * e li salva direttamente in biz_ricevute come PROCESSED.
- * Usato da cron_govpay_debitore_scanner.php.
+ * Usato da GovPayDebitoreJob.
  */
 class GovPayDebitoreService
 {

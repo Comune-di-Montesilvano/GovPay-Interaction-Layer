@@ -151,13 +151,11 @@ class GovPayClientFactory
 
     /**
      * Path del file di stato del Circuit Breaker. Deliberatamente NON in
-     * sys_get_temp_dir() (/tmp ha lo sticky bit): un daemon lanciato via
-     * `docker exec` (di norma come root, nessun USER nell'immagine) e Apache
-     * (www-data) scrivono entrambi qui — su /tmp lo sticky bit impedirebbe
-     * a www-data di fare unlink() su un file creato da root (Operation not
-     * permitted, vedi GOVPAY-GIL-K e duplicati). storage/tmp ha invece il
-     * bit setgid (2775, impostato in Dockerfile) così ogni nuovo file
-     * eredita il gruppo www-data indipendentemente da chi scrive.
+     * sys_get_temp_dir() (/tmp ha lo sticky bit): backoffice (Apache, www-data) e worker
+     * scrivono entrambi qui, e un file creato da un altro utente non sarebbe eliminabile
+     * (Operation not permitted, vedi GOVPAY-GIL-K e duplicati). storage/tmp ha invece il
+     * bit setgid (2775, impostato in Dockerfile) cosi' ogni nuovo file eredita il gruppo
+     * www-data indipendentemente da chi scrive.
      */
     private static function circuitBreakerFilePath(): string
     {
@@ -173,7 +171,7 @@ class GovPayClientFactory
      * A differenza di file_put_contents() in-place, rename() richiede solo
      * il permesso di scrittura sulla directory (come unlink) — non su un
      * eventuale file esistente scritto da un altro utente con mode 0644
-     * (owner-only write). Elimina il caso limite in cui root e www-data si
+     * (owner-only write). Elimina il caso limite in cui due utenti si
      * alternano nello scrivere lo stesso file e uno dei due resta bloccato.
      */
     private static function writeCircuitBreakerFile(string $cbFile, array $data): void

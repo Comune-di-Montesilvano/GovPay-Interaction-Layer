@@ -68,9 +68,6 @@ docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build --abort
 # Lavori periodici (ex demoni cron_*.php): container `worker` (gil:worker), sempre attivo, nessun
 # docker exec. Abilita/pausa, esegui ora, log: Backoffice → Funzioni avanzate → Cron / Servizi.
 docker compose logs -f worker
-# LEGACY (da rimuovere): `docker exec -d gil-backoffice php scripts/cron_*.php` e
-# `backoffice/bin/process_massive_pendenze.php` sono ancora nell'immagine ma NON vanno lanciati:
-# girerebbero in parallelo al worker (doppie chiamate GovPay, doppie creazioni massive).
 
 # Accesso DB diretto — backoffice user NON funziona da localhost dentro il container
 docker exec gil-db mariadb -uroot -p"$DB_ROOT_PASSWORD" govpay -e "SELECT ..."
@@ -214,7 +211,7 @@ Tag immagini (verificati su GHCR): tag git `vX.Y.Z` → `:X.Y.Z` (senza `v`, es.
 
 1. **Riprogettazione UI Backoffice**:
    - **Dashboard in tempo reale**: Grafici combinati Chart.js (trend mensili incassi e transazioni), doughnut split flussi interni (GovPay) vs esterni (Biz Events), e breakdown per tipologia di pendenza (Top 6 predefinita ed espansione a tutte con bottone toggle e animazione client-side).
-   - **GIL Services Hub**: Gestione asincrona AJAX dei demoni contabili (`biz`, `tefa`, `ragioneria`, `pendenze-massive`) direttamente dalla home per i superadmin (avvio, arresto e log live).
+   - **GIL Services Hub**: Gestione asincrona AJAX dei demoni contabili (`biz`, `tefa`, `ragioneria`, `pendenze-massive`) direttamente dalla home per i superadmin (pausa, esegui ora, log di esecuzione).
    - **Gerarchia Visiva**: Sidebar con icone FontAwesome nidificate, testate delle card compatte ed allineate a sinistra con paginazione integrata, e badges di stato a contrasto elevato in tinte pastello con bordi coordinati.
    - **Piani di Rateizzazione Lineari**: Algoritmo automatico in JS che ricalcola scadenze, frequenze di intervallo e importi residui in tempo reale al cambio di qualsiasi campo (redistribuzione progressiva), eliminando tutti i vecchi bottoni "Ricalcola".
    - **Datepicker Contabile**: Premium Date Picker (Litepicker) con input manuale sbloccato (validazione anni bisestili) e pulsanti rapidi preimpostati per ragioneria (*Mese Corrente*, *Mese Precedente*, *Anno Corrente*, *Anno Precedente*, *Azzera*) uniformati su tutte le 6 ricerche/report contabili e disposti in una griglia orizzontale affiancata senza wrapping orizzontale.
@@ -241,7 +238,7 @@ Tag immagini (verificati su GHCR): tag git `vX.Y.Z` → `:X.Y.Z` (senza `v`, es.
    - **Gotcha `app_debug` Twig**: nei template è globale `app_debug` (booleano/stringa da `web.php:1129`), NON `app.debug` dal settings array.
 
 5. **Motore Rendicontazione GovPay (Luglio 2026)**:
-   - Nuovo demone `cron_rendicontazione_govpay.php` processa i flussi bancari non rendicontati (`flussi_rendicontazioni`, solo `is_govpay=1`): instrada ogni pendenza GovPay verso smarcatura automatica (`GIL_MANUALE`/`AUTO_ESTERNO`), smarcatura manuale operatore (`IN_ATTESA_CONFERMA`), o handoff a gestionale legacy (`GERI`/`DILAZIONE`) via ponte HTTP esterno.
+   - Nuovo lavoro `rendicontazione-govpay` (worker, ex `cron_rendicontazione_govpay.php`) processa i flussi bancari non rendicontati (`flussi_rendicontazioni`, solo `is_govpay=1`): instrada ogni pendenza GovPay verso smarcatura automatica (`GIL_MANUALE`/`AUTO_ESTERNO`), smarcatura manuale operatore (`IN_ATTESA_CONFERMA`), o handoff a gestionale legacy (`GERI`/`DILAZIONE`) via ponte HTTP esterno.
    - Instradamento: IUV con prefisso configurabile (default `GIL`, `rendicontazione.iuv_prefix_gil`) = pendenza GIL — se la tipologia ha un gruppo assegnato in `rendicontazione_gruppo_tipologie` con modalità `NOTIFICA_E_SMARCATURA`, va in vista dedicata `/rendicontazione/da-confermare`; altrimenti auto. IUV non-GIL: match su `rendicontazione_regole_esterne` (pattern `IUV_PREFIX` o `ID_APP_AGID`, longest-match) verso i due handler legacy noti (Geri, Dilazione — gli altri script storici `gitt.php`/`sportello.php`/`massivi.php` sono deprecati, non riportati).
    - Ponte legacy: `scripts/legacy-bridge/rendicontazione_bridge.php`, script standalone (nessuna dipendenza da `App\`) da copiare **a mano** sul server legacy (`servizi.comune.montesilvano.pe.it`) — non fa parte della pipeline Docker/CI di GIL. Token Bearer condiviso configurato in Impostazioni → Rendicontazione (`rendicontazione.bridge_url`/`bridge_token`, cifrato) e hardcoded nello script deployato.
    - Esito GERI è best-effort (il connector legacy non ha un contratto di ritorno affidabile): si considera riuscita l'assenza di eccezioni, con cap tentativi configurabile (`rendicontazione.geri_max_tentativi`) per limitare il rischio di doppie registrazioni. DILAZIONE ha esito verificabile (righe SQL affette).
@@ -330,14 +327,14 @@ Gli ex demoni `scripts/cron_*.php` girano come **lavori** nel container `worker`
 
 | Lavoro (`gil_jobs.name`) | Ex script | Intervallo coda vuota | Dipende da |
 |---|---|---|---|
-| `ragioneria` | `cron_ragioneria.php` | 30 min | GovPay API |
-| `biz` | `cron_biz_scanner.php` | 15 min | Biz Events API |
-| `tefa` | `cron_tefa_scanner.php` | 15 min | biz_ricevute (`tefa_enabled`) |
-| `mapping` (+ `mapping-discovery` ogni 60 s, stesso interruttore) | `cron_mapping_pendenze.php` | 15 min | biz + (tefa) |
-| `vocab` | `cron_vocab_mapping.php` | 15 min | L1 |
-| `govpay-debitore` | `cron_govpay_debitore_scanner.php` | 15 min | GovPay API |
-| `rendicontazione-govpay` | `cron_rendicontazione_govpay.php` | `rendicontazione.scan_interval_minuti` (default 15) | GovPay API, ponte legacy |
-| `pendenze-massive` | `cron_pendenze_massive.php` | 15 min | GovPay API (coda `massive`) |
+| `ragioneria` | ex `cron_ragioneria.php` (rimosso) | 30 min | GovPay API |
+| `biz` | ex `cron_biz_scanner.php` (rimosso) | 15 min | Biz Events API |
+| `tefa` | ex `cron_tefa_scanner.php` (rimosso) | 15 min | biz_ricevute (`tefa_enabled`) |
+| `mapping` (+ `mapping-discovery` ogni 60 s, stesso interruttore) | ex `cron_mapping_pendenze.php` (rimosso) | 15 min | biz + (tefa) |
+| `vocab` | ex `cron_vocab_mapping.php` (rimosso) | 15 min | L1 |
+| `govpay-debitore` | ex `cron_govpay_debitore_scanner.php` (rimosso) | 15 min | GovPay API |
+| `rendicontazione-govpay` | ex `cron_rendicontazione_govpay.php` (rimosso) | `rendicontazione.scan_interval_minuti` (default 15) | GovPay API, ponte legacy |
+| `pendenze-massive` | ex `cron_pendenze_massive.php` (rimosso) | 15 min | GovPay API (coda `massive`) |
 
 Un giro ripete i batch finché c'è lavoro (cap 1000 batch / 1800 s, poi riparte subito); configurazione mancante → giro vuoto (`IdleJob`) o giro in errore, come facevano gli script. Errore → `gil_job_runs` con esito `error` + Sentry, prossimo giro a intervallo normale.
 

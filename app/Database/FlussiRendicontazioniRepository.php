@@ -695,7 +695,7 @@ class FlussiRendicontazioniRepository
 
     /**
      * IUR GovPay senza entry in biz_ricevute, o con un tentativo fallito (ERROR) piu' vecchio di
-     * DEBITORE_ERROR_RETRY_MINUTES — coda per il demone cron_govpay_debitore_scanner.
+     * DEBITORE_ERROR_RETRY_MINUTES — coda per il lavoro govpay-debitore.
      * @return array<int,array<string,mixed>>
      */
     public function getUnprocessedGovPayForDebitore(string $idDominio, int $limit, ?string $minDate = null): array

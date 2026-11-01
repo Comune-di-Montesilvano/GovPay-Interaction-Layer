@@ -314,7 +314,7 @@ class BizRepository
 
     /**
      * Inserisce dati debitore GovPay direttamente come PROCESSED (senza passare per la coda PENDING).
-     * Usato dal demone cron_govpay_debitore_scanner.php. Con $stato = 'NOT_FOUND' registra una
+     * Usato dal lavoro GovPayDebitoreJob. Con $stato = 'NOT_FOUND' registra una
      * pendenza assente in GovPay (404): esito definitivo, mai ritentato.
      * @param array{id_dominio:string,anno:int,mese:int,id_flusso:?string,iur:string,iuv:?string,data_pagamento:?string,importo:?float,descrizione:?string,cf_debitore:?string,nominativo_debitore:?string} $data
      * @param 'PROCESSED'|'NOT_FOUND' $stato
