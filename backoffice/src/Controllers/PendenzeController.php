@@ -1781,6 +1781,10 @@ class PendenzeController
                 // pendenza (PUT idempotente) invece di crearne una nuova.
                 $handlerCtx = $e->getHandlerContext();
                 $out['esitoIncerto'] = true;
+                if ($e->getMessage() === GovPayClientFactory::CIRCUIT_OPEN_MESSAGE) {
+                    // Rifiuto locale del circuit breaker: la PUT non e' partita (resta transitorio).
+                    $out['circuitBreakerOpen'] = true;
+                }
                 $out['curlErrno'] = isset($handlerCtx['errno']) ? (int)$handlerCtx['errno'] : null;
                 if ($idP !== '') {
                     $out['idPendenza'] = $idP;

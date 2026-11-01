@@ -22,6 +22,9 @@ use Psr\Http\Message\RequestInterface as HttpRequest;
  */
 class GovPayClientFactory
 {
+    /** Messaggio della ConnectException con cui il circuit breaker aperto rifiuta (nessun invio). */
+    public const CIRCUIT_OPEN_MESSAGE = 'GovPay is offline (Circuit Breaker active)';
+
     /**
      * Client HTTP per chiamate raw verso GovPay Backoffice v1.
      *
@@ -186,7 +189,7 @@ class GovPayClientFactory
                         if (time() - $lastFailure < $cooloff) {
                             return \GuzzleHttp\Promise\Create::rejectionFor(
                                 new \GuzzleHttp\Exception\ConnectException(
-                                    'GovPay is offline (Circuit Breaker active)',
+                                    self::CIRCUIT_OPEN_MESSAGE,
                                     $request
                                 )
                             );

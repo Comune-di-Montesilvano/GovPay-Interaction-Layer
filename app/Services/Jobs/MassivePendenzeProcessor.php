@@ -429,6 +429,9 @@ final class MassivePendenzeProcessor
      */
     private static function createErrore(array $res): string
     {
+        if (!empty($res['circuitBreakerOpen'])) {
+            return "GovPay non raggiungibile (circuit breaker aperto) \u{2014} nessun invio effettuato";
+        }
         if (!empty($res['esitoIncerto'])) {
             $errno = isset($res['curlErrno']) ? (string)(int)$res['curlErrno'] : 'n/d';
             return "Esito incerto: timeout/errore di rete verso GovPay (cURL $errno) \u{2014} verificare prima di ripetere";
@@ -460,6 +463,9 @@ final class MassivePendenzeProcessor
      */
     private static function createFailureReason(array $res): string
     {
+        if (!empty($res['circuitBreakerOpen'])) {
+            return 'GovPay non raggiungibile (circuit breaker aperto)';
+        }
         if (!empty($res['esitoIncerto'])) {
             return 'Esito incerto: errore di rete (cURL ' . (isset($res['curlErrno']) ? (int)$res['curlErrno'] : 'n/d') . ')';
         }

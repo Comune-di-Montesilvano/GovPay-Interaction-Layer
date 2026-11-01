@@ -434,6 +434,33 @@ final class MassiveMessengerTest extends DbTestCase
         self::assertSame(['idPendenza' => $puts[0]], $this->json($row['response_json']));
     }
 
+    /**
+     * Fix round 1: circuit breaker aperto = errore transitorio (ritentato), ma nessuna PUT e' partita:
+     * il testo non dice "esito incerto (cURL n/d)".
+     */
+    public function testCircuitBreakerOpenIsTransientWithDedicatedText(): void
+    {
+        $cb = dirname(__DIR__, 3) . '/backoffice/storage/tmp/govpay_circuit_breaker.json';
+        @mkdir(dirname($cb), 0775, true);
+        file_put_contents($cb, (string)json_encode(['status' => 'OPEN', 'failures' => 3, 'last_failure_time' => time()]));
+        try {
+            $this->gp->realFactory = true;
+            $id = $this->insertRow('PENDING', self::payload(1));
+            $this->enqueueJob()->runOnce(new RecordingJobContext());
+
+            $this->drain();
+
+            self::assertSame([], $this->gp->calls(), 'nessuna richiesta inviata a GovPay');
+            $row = $this->row($id);
+            self::assertSame('ERROR', $row['stato'], 'ritentato e poi stato di errore');
+            self::assertSame("GovPay non raggiungibile (circuit breaker aperto) \u{2014} nessun invio effettuato", $row['errore']);
+            self::assertStringNotContainsString('incerto', implode("\n", $this->out));
+            self::assertCount(4, array_filter($this->out, static fn(string $l): bool => str_contains($l, 'circuit breaker aperto')), '1 tentativo + 3 retry');
+        } finally {
+            @unlink($cb);
+        }
+    }
+
     /** 4xx = rifiuto definitivo: una sola PUT, ERROR subito, nessun retry. */
     public function testGovPay4xxIsNotRetried(): void
     {
