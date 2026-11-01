@@ -48,10 +48,15 @@ class MassivePendenzeRepository
         return (string)$json;
     }
 
-    public function setProcessing(int $id): void
+    /**
+     * PENDING -> PROCESSING (percorso legacy). Condizionale: false se la riga non e' piu' PENDING
+     * (es. presa nel frattempo dal worker): il chiamante la salta.
+     */
+    public function setProcessing(int $id): bool
     {
-        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "PROCESSING", updated_at = NOW() WHERE id = :id');
+        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "PROCESSING", updated_at = NOW() WHERE id = :id AND stato = "PENDING"');
         $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() === 1;
     }
 
     public function setResult(int $id, bool $ok, ?array $response = null, ?string $errore = null): void
@@ -210,12 +215,14 @@ class MassivePendenzeRepository
     }
 
     /**
-     * Marca una riga in elaborazione per l'annullamento.
+     * CANCEL_PENDING -> CANCEL_PROCESSING (percorso legacy). Condizionale: false se la riga non e'
+     * piu' CANCEL_PENDING (es. presa nel frattempo dal worker): il chiamante la salta.
      */
-    public function setCancelProcessing(int $id): void
+    public function setCancelProcessing(int $id): bool
     {
-        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "CANCEL_PROCESSING", updated_at = NOW() WHERE id = :id');
+        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "CANCEL_PROCESSING", updated_at = NOW() WHERE id = :id AND stato = "CANCEL_PENDING"');
         $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() === 1;
     }
 
     /**

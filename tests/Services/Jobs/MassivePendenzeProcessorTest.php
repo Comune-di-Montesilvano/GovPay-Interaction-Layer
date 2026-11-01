@@ -782,6 +782,37 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::assertSame(['idPendenza' => $candidate, 'numeroAvviso' => $candidate], $seen[1]);
     }
 
+    /**
+     * Fix round 1 (Task 11): il percorso legacy marca la riga in modo condizionale. Se tra la
+     * rilettura e la marcatura la riga viene presa dal worker (claim), lo script la salta: nessuna
+     * chiamata GovPay, claim del worker intatto (mai due creazioni con id diversi).
+     */
+    public function testLegacyPathSkipsRowClaimedByWorkerAfterReread(): void
+    {
+        $create = $this->insertRow('PENDING', self::payload(33), null, null, 'B1', 1);
+        $cancel = $this->insertRow('CANCEL_PENDING', null, ['idPendenza' => 'GIL-x'], null, 'B1', 2);
+        $pdo = self::pdo();
+        // findById restituisce lo stato letto, poi il worker prende la riga prima della marcatura
+        $repo = new class($pdo) extends MassivePendenzeRepository {
+            public function findById(int $id): ?array
+            {
+                $row = parent::findById($id);
+                (new \ReflectionProperty(MassivePendenzeRepository::class, 'pdo'))->getValue($this)
+                    ->prepare("UPDATE pendenze_massive SET stato = IF(stato = 'CANCEL_PENDING', 'CANCEL_PROCESSING', 'PROCESSING'), claimed_at = NOW(), claim_token = 'worker' WHERE id = ?")
+                    ->execute([$id]);
+                return $row;
+            }
+        };
+        $p = new MassivePendenzeProcessor($this->gp, $repo);
+
+        self::assertResult($p->processRow($create, $this->ctx), 0, 0, 1, 0, false);
+        self::assertResult($p->processRow($cancel, $this->ctx), 0, 0, 1, 0, false);
+
+        self::assertSame([], $this->gp->calls());
+        self::assertSame(['PROCESSING', 'worker', null], [$this->row($create)['stato'], $this->row($create)['claim_token'], $this->row($create)['response_json']]);
+        self::assertSame(['CANCEL_PROCESSING', 'worker'], [$this->row($cancel)['stato'], $this->row($cancel)['claim_token']]);
+    }
+
     // ============================================================ processRow: stati non lavorabili
 
     /**

@@ -101,7 +101,7 @@ final class MassivePendenzeProcessor
         }
 
         return $stato === 'CANCEL_PENDING'
-            ? $this->processCancel($row, $log)
+            ? $this->processCancel($row, $log, false)
             : $this->processCreate($row, $log);
     }
 
@@ -137,7 +137,7 @@ final class MassivePendenzeProcessor
         }
 
         return $stato === 'CANCEL_PROCESSING'
-            ? $this->processCancel($row, $log)
+            ? $this->processCancel($row, $log, true)
             : $this->processCreate($row, $log, $claimToken);
     }
 
@@ -166,8 +166,9 @@ final class MassivePendenzeProcessor
     /**
      * @param array<string,mixed> $row
      * @param callable(string):void $log
+     * @param bool $claimed riga gia' CANCEL_PROCESSING con claim del worker (nessuna marcatura)
      */
-    private function processCancel(array $row, callable $log): JobResult
+    private function processCancel(array $row, callable $log, bool $claimed): JobResult
     {
         $id         = (int)$row['id'];
         $batchId    = $row['file_batch_id'];
@@ -177,7 +178,10 @@ final class MassivePendenzeProcessor
         $log("  [$batchId:$numeroRiga] ID-$id Annullamento in corso...");
 
         try {
-            $this->repo->setCancelProcessing($id);
+            if (!$claimed && !$this->repo->setCancelProcessing($id)) {
+                $log("  [$batchId:$numeroRiga] ID-$id non piu' CANCEL_PENDING (presa da un altro processo), salto.");
+                return new JobResult(0, 0, 1, 0, false);
+            }
 
             // --- Passo 1: trova idPendenza direttamente ---
             $idPendenza = self::extractIdPendenza($row);
@@ -274,8 +278,9 @@ final class MassivePendenzeProcessor
             return self::error($ref, 'Payload JSON non valido o mancante');
         }
 
-        if ($claimToken === null) {
-            $this->repo->setProcessing($id);
+        if ($claimToken === null && !$this->repo->setProcessing($id)) {
+            $log("  [$batchId:$numeroRiga] ID-$id non piu' PENDING (presa da un altro processo), salto.");
+            return new JobResult(0, 0, 1, 0, false);
         }
 
         $accErrors        = [];
