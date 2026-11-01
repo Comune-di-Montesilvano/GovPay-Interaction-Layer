@@ -147,11 +147,14 @@ class ReportTefaController
         ]);
     }
 
-    private const SCANNER_PID_FILE  = '/tmp/cron-tefa-scanner.pid';
-    private const SCANNER_STOP_FILE = '/tmp/cron-stop-tefa';
-
-    private const BIZ_SCANNER_PID_FILE  = '/tmp/cron-biz-scanner.pid';
-    private const BIZ_SCANNER_STOP_FILE = '/tmp/cron-stop-biz';
+    /**
+     * I servizi TEFA/Biz girano nel container worker: "avvia"/"ferma" = flag gil_jobs
+     * (mai processi lanciati da qui, sarebbero doppi rispetto al worker).
+     */
+    private static function setJobEnabled(string $job, bool $enabled): void
+    {
+        (new \App\Services\Jobs\JobControl(\App\Database\JobStateRepository::default()))->setEnabled($job, $enabled);
+    }
 
     public function scan(Request $request, Response $response): Response
     {
@@ -171,22 +174,10 @@ class ReportTefaController
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataDa) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataA)) {
                 return $this->jsonResponse($response, ['ok' => false, 'error' => 'Formato date non valido (YYYY-MM-DD)'], 400);
             }
-            // Ferma scanner eventualmente attivo (loop quotidiano)
-            file_put_contents(self::SCANNER_STOP_FILE, '1');
-            usleep(600_000); // 0.6s
         }
 
-        $script = '/var/www/html/scripts/cron_tefa_scanner.php';
-        $args   = $rangeMode
-            ? '--da=' . escapeshellarg($dataDa) . ' --a=' . escapeshellarg($dataA)
-            : '';
-
-        $cmd = sprintf(
-            'php %s %s < /dev/null > /dev/null 2>&1 &',
-            escapeshellarg($script),
-            $args
-        );
-        exec($cmd);
+        // Lo scanner TEFA non ha mai filtrato per intervallo: entrambe le modalita' = servizio attivo.
+        self::setJobEnabled('tefa', true);
 
         $mode = $rangeMode ? 'range' : 'loop';
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
@@ -210,7 +201,7 @@ class ReportTefaController
             return $errRes;
         }
 
-        file_put_contents(self::SCANNER_STOP_FILE, '1');
+        self::setJobEnabled('tefa', false);
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
@@ -234,11 +225,7 @@ class ReportTefaController
 
     private function isScannerRunning(): bool
     {
-        if (!file_exists(self::SCANNER_PID_FILE)) {
-            return false;
-        }
-        $pid = (int)file_get_contents(self::SCANNER_PID_FILE);
-        return $pid > 0 && file_exists('/proc/' . $pid);
+        return CronController::isDaemonRunning('tefa');
     }
 
     public function retryErrors(Request $request, Response $response): Response
@@ -462,16 +449,14 @@ class ReportTefaController
             return $errRes;
         }
 
-        $script = '/var/www/html/scripts/cron_biz_scanner.php';
-        $cmd    = sprintf('php %s < /dev/null > /dev/null 2>&1 &', escapeshellarg($script));
-        exec($cmd);
+        self::setJobEnabled('biz', true);
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
 
         return $this->jsonResponse($response, [
             'ok'     => true,
-            'result' => ['message' => 'Demone Biz avviato.'],
+            'result' => ['message' => 'Servizio Biz attivato.'],
         ]);
     }
 
@@ -482,7 +467,7 @@ class ReportTefaController
             return $errRes;
         }
 
-        file_put_contents(self::BIZ_SCANNER_STOP_FILE, '1');
+        self::setJobEnabled('biz', false);
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
@@ -505,11 +490,7 @@ class ReportTefaController
 
     private function isBizScannerRunning(): bool
     {
-        if (!file_exists(self::BIZ_SCANNER_PID_FILE)) {
-            return false;
-        }
-        $pid = (int)file_get_contents(self::BIZ_SCANNER_PID_FILE);
-        return $pid > 0 && file_exists('/proc/' . $pid);
+        return CronController::isDaemonRunning('biz');
     }
 
     private function jsonResponse(Response $response, array $data, int $status = 200): Response

@@ -7,7 +7,7 @@
   <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
     <div>
       <h1 class="h4 mb-1"><i class="fas fa-clock me-2 text-primary"></i>Gestione Servizi di Integrazione</h1>
-      <p class="text-muted mb-0">Hub di monitoraggio e avvio dei demoni e delle procedure pianificate in background (GIL Services Hub)</p>
+      <p class="text-muted mb-0">Servizi in background eseguiti dal container worker: attivazione, pausa, esecuzione immediata e storico (GIL Services Hub)</p>
     </div>
   </div>
 
@@ -17,7 +17,7 @@
   {% if not is_admin %}
     <div class="alert alert-info shadow-sm d-flex align-items-center gap-2 mb-4" role="alert">
       <i class="fas fa-info-circle fs-5" aria-hidden="true"></i>
-      <span>Sei connesso come <strong>{{ current_user.role|upper }}</strong> (Sola Lettura). Le funzioni avanzate di avvio, arresto e configurazione dei demoni sono riservate agli amministratori.</span>
+      <span>Sei connesso come <strong>{{ current_user.role|upper }}</strong> (Sola Lettura). Le funzioni di attivazione, pausa e configurazione dei servizi sono riservate agli amministratori.</span>
     </div>
   {% endif %}
 
@@ -59,54 +59,71 @@
         </form>
       {% endif %}
 
-      {# 3.3 Daemon cards #}
+      {# 3.3 Service cards: stato da gil_jobs (eseguiti dal container worker) #}
       <div class="row g-3 mb-4">
         {% for jobKey, job in jobs %}
-        {% set running = daemon_status[jobKey] ?? false %}
+        {% set st = job_status[jobKey] ?? {} %}
+        {% set enabled = st.enabled ?? false %}
+        {% set running = st.running ?? false %}
         <div class="col-md-6">
           <div class="card h-100 border shadow-none" id="job-card-{{ jobKey }}">
             <div class="card-body d-flex flex-column gap-2">
               <div class="d-flex align-items-center gap-2">
                 <span class="text-primary fs-5"><i class="fas {{ job.icon }}"></i></span>
                 <strong class="text-dark">{{ job.label }}</strong>
-                <span class="badge ms-auto {{ running ? 'bg-success' : 'bg-secondary' }} px-2 py-1">
-                  {{ running ? 'ATTIVO' : 'ARRESTATO' }}
+                <span class="ms-auto d-flex gap-1">
+                  {% if running %}
+                    <span class="badge bg-info text-dark px-2 py-1" title="Giro in corso nel worker"><i class="fas fa-spinner fa-spin me-1" aria-hidden="true"></i>IN ESECUZIONE</span>
+                  {% endif %}
+                  <span class="badge {{ enabled ? 'bg-success' : 'bg-secondary' }} px-2 py-1">
+                    {{ enabled ? 'ATTIVO' : 'IN PAUSA' }}
+                  </span>
                 </span>
               </div>
               <p class="text-muted small mb-1">{{ job.description }}</p>
-
-              {% if job.params %}
-              <div class="row g-2 my-1" id="params-{{ jobKey }}">
-                {% for param in job.params %}
-                <div class="col-6">
-                  <label class="form-label small mb-1">{{ param.label }}</label>
-                  <input type="{{ param.type }}" class="form-control form-control-sm"
-                         id="param-{{ jobKey }}-{{ param.name }}"
-                         data-job="{{ jobKey }}" data-param="{{ param.name }}"
-                         value="{{ param.type == 'date' ? 'now'|date('Y') ~ '-01-01' : '' }}"
-                         {% if not is_admin %}disabled{% endif %}>
-                </div>
-                {% endfor %}
+              <div class="small text-muted">
+                <i class="fas fa-clock-rotate-left me-1" aria-hidden="true"></i>Ultimo giro:
+                {% if st.last_finished_at ?? null %}
+                  <strong>{{ st.last_finished_at|date('d/m/Y H:i:s') }}</strong>
+                  {% if st.last_status == 'error' %}
+                    <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">errore</span>
+                  {% elseif st.last_status == 'ok' %}
+                    <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">ok</span>
+                  {% endif %}
+                {% else %}
+                  <span>mai</span>
+                {% endif %}
+                {% if enabled %}
+                  <span class="ms-2"><i class="fas fa-forward me-1" aria-hidden="true"></i>Prossimo: <strong>{{ (st.next_run_at ?? null) ? st.next_run_at|date('d/m/Y H:i:s') : 'entro pochi secondi' }}</strong></span>
+                {% endif %}
               </div>
-              {% endif %}
 
               <div class="d-flex gap-2 mt-auto flex-wrap pt-2 border-top">
-                {% if running %}
-                  <button class="btn btn-danger btn-sm" onclick="daemonStop('{{ jobKey }}')" {% if not is_admin %}disabled title="Richiesti permessi amministrativi"{% endif %}>
-                    <i class="fas fa-stop me-1" aria-hidden="true"></i>Ferma
+                {% if enabled %}
+                  <button class="btn btn-danger btn-sm" onclick="jobSetEnabled('{{ jobKey }}', 0)" {% if not is_admin %}disabled title="Richiesti permessi amministrativi"{% endif %}>
+                    <i class="fas fa-pause me-1" aria-hidden="true"></i>Pausa
                   </button>
                 {% else %}
-                  <button class="btn btn-success btn-sm" onclick="daemonStart('{{ jobKey }}')" {% if not is_admin %}disabled title="Richiesti permessi amministrativi"{% endif %}>
-                    <i class="fas fa-play me-1" aria-hidden="true"></i>Avvia
+                  <button class="btn btn-success btn-sm" onclick="jobSetEnabled('{{ jobKey }}', 1)" {% if not is_admin %}disabled title="Richiesti permessi amministrativi"{% endif %}>
+                    <i class="fas fa-play me-1" aria-hidden="true"></i>Attiva
                   </button>
                 {% endif %}
-                
-                {% if jobKey == 'ragioneria' and running %}
+
+                {% set massive_paused = jobKey == 'pendenze-massive' and not enabled %}
+                <button class="btn btn-outline-primary btn-sm" onclick="jobRunNow('{{ jobKey }}')"
+                        {% if not is_admin %}disabled title="Richiesti permessi amministrativi"
+                        {% elseif massive_paused %}disabled title="Servizio in pausa: riattivarlo per elaborare le righe"
+                        {% elseif running %}title="Un giro è già in corso: la richiesta verrà ignorata"
+                        {% else %}title="Esegue subito un giro, anche se il servizio è in pausa"{% endif %}>
+                  <i class="fas fa-bolt me-1" aria-hidden="true"></i>Esegui ora
+                </button>
+
+                {% if jobKey == 'ragioneria' and enabled %}
                   <button class="btn btn-outline-warning btn-sm" onclick="ragioneriaRescan()" title="Riscansiona tutti i flussi dalla data configurata" {% if not is_admin %}disabled{% endif %}>
                     <i class="fas fa-rotate me-1" aria-hidden="true"></i>Rescan tutto
                   </button>
                 {% endif %}
-                
+
                 <button class="btn btn-outline-secondary btn-sm" onclick="showLog('{{ jobKey }}')">
                   <i class="fas fa-terminal me-1" aria-hidden="true"></i>Visualizza Log
                 </button>
@@ -131,7 +148,7 @@
           </div>
         </div>
         <pre id="daemon-log-output" class="bg-dark text-light rounded p-3 small mb-0"
-             style="max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;">(nessun log)</pre>
+             style="max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;">(nessuno storico)</pre>
       </div>
 
     </div>
@@ -168,36 +185,35 @@
       }, 3000);
     }
 
-    window.daemonStart = async function (jobKey) {
-      const paramInputs = document.querySelectorAll('[data-job="' + jobKey + '"][data-param]');
+    async function postJson(url, body) {
+      const res = await fetch(url, { method: 'POST', body: body || new URLSearchParams() });
+      return res.json();
+    }
+
+    window.jobSetEnabled = async function (jobKey, enabled) {
       const body = new URLSearchParams();
-      for (const inp of paramInputs) {
-        const val = inp.value.trim();
-        if (val) body.append(inp.dataset.param, val);
-      }
+      body.append('enabled', String(enabled));
       try {
-        const res  = await fetch('/funzioni-avanzate/cron/' + jobKey + '/run', { method: 'POST', body });
-        const json = await res.json();
+        const json = await postJson('/funzioni-avanzate/cron/' + jobKey + '/enabled', body);
         if (json.ok) {
-          showNotification('Servizio avviato con successo.', true);
+          showNotification(json.message || 'Stato aggiornato.', true);
           setTimeout(() => location.reload(), 1200);
         } else {
-          showNotification(json.error || 'Errore avvio servizio.', false);
+          showNotification(json.error || 'Errore aggiornamento servizio.', false);
         }
       } catch (e) {
         showNotification('Errore di rete: ' + e.message, false);
       }
     };
 
-    window.daemonStop = async function (jobKey) {
+    window.jobRunNow = async function (jobKey) {
       try {
-        const res  = await fetch('/funzioni-avanzate/cron/' + jobKey + '/stop', { method: 'POST' });
-        const json = await res.json();
+        const json = await postJson('/funzioni-avanzate/cron/' + jobKey + '/run');
         if (json.ok) {
-          showNotification('Segnale di arresto inviato.', true);
-          setTimeout(() => location.reload(), 1200);
+          showNotification(json.message || 'Esecuzione richiesta.', true);
+          setTimeout(() => location.reload(), 4000);
         } else {
-          showNotification(json.error || 'Errore arresto servizio.', false);
+          showNotification(json.error || 'Errore richiesta esecuzione.', false);
         }
       } catch (e) {
         showNotification('Errore di rete: ' + e.message, false);
@@ -207,10 +223,9 @@
     window.ragioneriaRescan = async function () {
       if (!confirm('Avviare una riscansione completa di tutti i flussi dalla data configurata?\nI dati esistenti non verranno cancellati.')) return;
       try {
-        const res  = await fetch('/funzioni-avanzate/cron/ragioneria/rescan', { method: 'POST' });
-        const json = await res.json();
+        const json = await postJson('/funzioni-avanzate/cron/ragioneria/rescan');
         if (json.ok) {
-          showNotification('Segnale rescan inviato. Il prossimo ciclo riscansionerà tutto.', true);
+          showNotification(json.message || 'Rescan richiesto.', true);
         } else {
           showNotification(json.error || 'Errore invio segnale rescan.', false);
         }
@@ -221,7 +236,7 @@
 
     window.showLog = async function (jobKey) {
       currentLogJob = jobKey;
-      document.getElementById('daemon-log-label').innerHTML = `<i class="fas fa-terminal text-primary me-2"></i>Log del Servizio — <strong>${jobKey}</strong>`;
+      document.getElementById('daemon-log-label').innerHTML = `<i class="fas fa-terminal text-primary me-2"></i>Storico esecuzioni — <strong>${jobKey}</strong>`;
       document.getElementById('daemon-log-panel').classList.remove('d-none');
       document.getElementById('daemon-log-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       await refreshLog();
@@ -234,8 +249,8 @@
         const json = await res.json();
         const out  = document.getElementById('daemon-log-output');
         if (json.ok) {
-          out.textContent = json.content || '(nessun log)';
-          out.scrollTop   = out.scrollHeight;
+          out.textContent = json.content || '(nessuno storico)';
+          out.scrollTop   = 0;
         } else {
           out.textContent = json.error || 'Errore lettura log.';
         }
