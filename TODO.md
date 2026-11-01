@@ -20,7 +20,7 @@ Ultima revisione: 2026-08-14 (verificato contro stato codice/CLAUDE.md, item com
 ## Sistema di Rendicontazione — webhook agnostici
 - [ ] Meccanismo di notifica verso sistemi terzi basato su regole configurabili per tipologia pendenza (nessuna traccia in codice — non implementato)
 
-(Nota: cron scansione flussi, notifiche email, rendicontazione automatica al completamento e smarcatura manuale da UI sono **già implementati** — vedi CLAUDE.md "Motore Rendicontazione GovPay, Luglio 2026" / `cron_rendicontazione_govpay.php` / `/rendicontazione/da-confermare`. Rimossi da questa lista.)
+(Nota: cron scansione flussi, notifiche email, rendicontazione automatica al completamento e smarcatura manuale da UI sono **già implementati** — vedi CLAUDE.md "Motore Rendicontazione GovPay, Luglio 2026" / lavoro `rendicontazione-govpay` del worker (`app/Services/Jobs/RendicontazioneJob.php`) / `/rendicontazione/da-confermare`. Rimossi da questa lista.)
 
 ## Pulizia Repository
 - [ ] Rimozione script di migrazione orfani in `migrations/`

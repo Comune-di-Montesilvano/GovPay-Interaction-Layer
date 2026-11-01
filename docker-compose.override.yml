@@ -15,6 +15,15 @@ services:
     volumes:
       - ./debug:/var/www/html/public/debug
 
+  # Il worker NON parte in locale con `docker compose up`: esegue i lavori periodici (GovPay,
+  # ponte rendicontazione GERI/DILAZIONE, App IO, pendenze massive) con i settings presenti nel
+  # DB, che in locale e' spesso un dump di produzione. Avvio esplicito, solo su un DB non di
+  # produzione:  docker compose --profile worker up -d --build worker
+  worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      target: runtime-backoffice
 
   db:
     build:
