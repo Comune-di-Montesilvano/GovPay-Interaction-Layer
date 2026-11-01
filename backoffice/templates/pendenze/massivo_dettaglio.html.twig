@@ -3,6 +3,7 @@
 {% block title %}Dettaglio caricamento massivo{% endblock %}
 
 {% block content %}
+{% set can_retry = current_user.role|default('') in ['admin', 'superadmin'] %}
 <div class="container my-4">
   <div class="row mb-4">
     <div class="col-12">
@@ -121,6 +122,7 @@
                     <th>Errore</th>
                     <th>Dettagli Payload</th>
                     <th>Data Creazione</th>
+                    {% if can_retry %}<th>Azioni</th>{% endif %}
                   </tr>
                 </thead>
                 <tbody>
@@ -158,10 +160,25 @@
                       </div>
                     </td>
                     <td class="small">{{ r.created_at|date('d/m/Y H:i') }}</td>
+                    {% if can_retry %}
+                    <td class="small">
+                      {% if r.stato == 'ERROR' %}
+                        {% if r.retry_block_reason %}
+                          <span class="text-muted" title="{{ r.retry_block_reason }}"><i class="fas fa-ban me-1" aria-hidden="true"></i>Non riprovabile</span>
+                          <div class="text-muted" style="font-size:.75rem">{{ r.retry_block_reason }}</div>
+                        {% else %}
+                          <button type="button" class="btn btn-xs btn-outline-primary" onclick="massiveRetry(event, {{ r.id }})"
+                                  title="Rimette la riga in coda: viene reinviata a GovPay con lo stesso idPendenza (se gia' assegnato)">
+                            <i class="fas fa-rotate-right me-1" aria-hidden="true"></i>Riprova
+                          </button>
+                        {% endif %}
+                      {% endif %}
+                    </td>
+                    {% endif %}
                   </tr>
                 {% else %}
                   <tr>
-                    <td colspan="6" class="text-center text-muted py-4">Nessuna riga trovata per questo batch.</td>
+                    <td colspan="{{ can_retry ? 7 : 6 }}" class="text-center text-muted py-4">Nessuna riga trovata per questo batch.</td>
                   </tr>
                 {% endfor %}
                 </tbody>
@@ -173,4 +190,22 @@
     </div>
   </div>
 </div>
+{% if can_retry %}
+<script>
+  async function massiveRetry(ev, rowId) {
+    if (!confirm('Rimettere in coda la riga ' + rowId + '? Verifica prima su GovPay se l'errore indica un esito incerto.')) return;
+    const btn = ev?.currentTarget;
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/funzioni-avanzate/cron/pendenze-massive/' + rowId + '/retry', { method: 'POST' });
+      const json = await res.json();
+      alert(json.ok ? json.message : (json.error || 'Errore'));
+      if (json.ok) { location.reload(); return; }
+    } catch (e) {
+      alert('Errore di rete: ' + e.message);
+    }
+    if (btn) btn.disabled = false;
+  }
+</script>
+{% endif %}
 {% endblock %}
