@@ -193,6 +193,9 @@ services:
       - "MASTER_TOKEN=${MASTER_TOKEN:?MASTER_TOKEN obbligatoria: vedi .env.example}"
     restart: unless-stopped
     # Stop: SIGTERM -> il giro in corso finisce il batch corrente, nessun batch nuovo.
+    # L'immagine php:apache dichiara STOPSIGNAL SIGWINCH (stop graceful di Apache), che il
+    # worker ignorerebbe: senza questa riga ogni stop/restart attende il kill dopo la grazia.
+    stop_signal: SIGTERM
     stop_grace_period: 60s
     # PID 1 e' il worker (o l'attesa delle immagini vecchie): se esce, restart policy.
     healthcheck:
