@@ -13,6 +13,7 @@ use App\Database\BizRepository;
 use App\Database\EntrateRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\MappingPendenzeRepository;
+use App\Security\JobControlCsrf;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -358,6 +359,11 @@ class ReportRagioneriaController
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
+        }
+
+        if (!JobControlCsrf::isValid($request)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => JobControlCsrf::ERROR_MESSAGE];
+            return $response->withHeader('Location', '/pagamenti/report-ragioneria')->withStatus(302);
         }
 
         $body = (array)($request->getParsedBody() ?? []);

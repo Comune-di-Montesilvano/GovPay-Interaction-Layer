@@ -23,7 +23,7 @@ use Tests\Support\DbTestCase;
 #[Group('db')]
 final class ReportTefaControllerTest extends DbTestCase
 {
-    protected static array $tables = ['settings', 'gil_jobs'];
+    protected static array $tables = ['settings', 'gil_jobs', 'tefa_ricevute'];
 
     protected function setUp(): void
     {
@@ -80,6 +80,45 @@ final class ReportTefaControllerTest extends DbTestCase
         $repo = JobStateRepository::default();
         self::assertFalse($repo->isEnabled('tefa'));
         self::assertTrue($repo->isEnabled('biz'));
+    }
+
+    /**
+     * Fix round 2 (finding 7): anche riprova errori / riprova non-TEFA / correggi date e
+     * override anomalie richiedono il token: senza o sbagliato 403 e nessuna riga toccata.
+     */
+    public function testDataResetAndAnomalyPostsRequireCsrfToken(): void
+    {
+        $pdo = self::pdo();
+        $pdo->exec("INSERT INTO tefa_ricevute (id, id_dominio, anno, mese, id_flusso, iur, iuv, stato, error_msg) VALUES
+            (1, '80000000001', 2026, 3, '2026-03-01PROVA', 'IUR-E', 'IUV-E', 'ERROR', 'x'),
+            (2, '80000000001', 2026, 3, '2026-03-01PROVA', 'IUR-S', 'IUV-S', 'SKIPPED', NULL),
+            (3, '80000000001', 2026, 3, '2026-03-01PROVA', 'IUR-A', 'IUV-A', 'SKIPPED', NULL)");
+        $snapshot = static fn(): array => $pdo->query('SELECT id, stato, data_pagamento FROM tefa_ricevute ORDER BY id')->fetchAll(\PDO::FETCH_ASSOC);
+        $before = $snapshot();
+        $c = $this->controller();
+        $actions = [
+            'retryErrors'   => static fn($req) => $c->retryErrors($req, new Response()),
+            'retrySkipped'  => static fn($req) => $c->retrySkipped($req, new Response()),
+            'fixDates'      => static fn($req) => $c->fixDates($req, new Response()),
+            'anomalyAccept' => static fn($req) => $c->anomalyAccept($req, new Response(), ['id' => '3']),
+            'anomalySkip'   => static fn($req) => $c->anomalySkip($req, new Response(), ['id' => '3']),
+        ];
+        foreach ($actions as $name => $action) {
+            foreach ([self::post([], false), self::post(['csrf_token' => 'sbagliato'], false)] as $req) {
+                $r = $action($req);
+                self::assertSame(403, $r->getStatusCode(), $name);
+                self::assertSame(JobControlCsrf::errorPayload(), self::json($r), $name);
+            }
+        }
+        self::assertSame($before, $snapshot(), 'nessuna riga modificata senza token');
+
+        self::assertSame(['ok' => true, 'reset' => 1], self::json($actions['retryErrors'](self::post())));
+        self::assertSame(['ok' => true, 'reset' => 2], self::json($actions['retrySkipped'](self::post())));
+        foreach (['fixDates', 'anomalyAccept', 'anomalySkip'] as $name) {
+            $r = $actions[$name](self::post());
+            self::assertSame(200, $r->getStatusCode(), $name . ': ' . $r->getBody());
+            self::assertTrue(self::json($r)['ok'], $name);
+        }
     }
 
     /** @return array<string,mixed> */

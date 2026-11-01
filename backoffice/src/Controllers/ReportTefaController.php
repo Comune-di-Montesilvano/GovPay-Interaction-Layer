@@ -265,6 +265,9 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $repo      = new TefaRepository();
@@ -281,6 +284,9 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $repo      = new TefaRepository();
@@ -296,6 +302,9 @@ class ReportTefaController
         $this->requireTefaEnabled($response);
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
@@ -436,6 +445,9 @@ class ReportTefaController
         if ($err = $this->requireAdminOrSuperadminJson($response)) {
             return $err;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
         $id        = (int)($args['id'] ?? 0);
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
         if ($id <= 0) {
@@ -455,6 +467,9 @@ class ReportTefaController
         $this->requireAuth();
         if ($err = $this->requireAdminOrSuperadminJson($response)) {
             return $err;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
         $id        = (int)($args['id'] ?? 0);
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');

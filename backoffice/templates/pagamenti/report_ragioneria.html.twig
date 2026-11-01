@@ -138,6 +138,7 @@
             <span class="text-muted small d-none d-md-inline">| Contatori globali e copertura scansione mensile</span>
           </div>
           <form method="post" action="/pagamenti/report-ragioneria/biz-reset-errors" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
             <input type="hidden" name="idDominio" value="{{ f.idDominio|default('') }}">
             <input type="hidden" name="return_url" value="/pagamenti/report-ragioneria?q=1&idDominio={{ f.idDominio|default('')|url_encode }}">
             {% set biz_resettable = biz.resettable_errors ?? biz.ERROR|default(0) %}
