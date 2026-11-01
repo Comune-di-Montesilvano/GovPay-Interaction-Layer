@@ -290,6 +290,21 @@ final class WorkerKernel
         self::createJobsTransport($dbal)->send(new Envelope(new RunJob($job, true)));
     }
 
+    /**
+     * C'e' gia' un "esegui ora" di $job in attesa sulla coda `jobs` (non ancora consegnato al
+     * worker)? Serve a non accodare giri manuali uno dietro l'altro a ogni clic.
+     */
+    public static function manualRunQueued(DbalConnection $dbal, string $job): bool
+    {
+        foreach (self::createJobsTransport($dbal)->all(200) as $envelope) {
+            $msg = $envelope->getMessage();
+            if ($msg instanceof RunJob && $msg->manual && $msg->job === $job) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Lancia se il DB non risponde o manca una delle tabelle. */
     public static function probeTables(DbalConnection $dbal, array $tables): void
     {

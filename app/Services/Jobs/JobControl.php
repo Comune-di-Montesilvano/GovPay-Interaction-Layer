@@ -37,14 +37,24 @@ final class JobControl
     /** @var \Closure(string): void */
     private readonly \Closure $enqueueManual;
 
-    /** @param (\Closure(string): void)|null $enqueueManual default WorkerKernel::enqueueManualRun */
+    /** @var \Closure(string): bool */
+    private readonly \Closure $manualQueued;
+
+    /**
+     * @param (\Closure(string): void)|null $enqueueManual default WorkerKernel::enqueueManualRun
+     * @param (\Closure(string): bool)|null $manualQueued default WorkerKernel::manualRunQueued
+     */
     public function __construct(
         private readonly JobStateRepository $state,
         ?\Closure $enqueueManual = null,
-        private readonly ?\Closure $massiveRepo = null
+        private readonly ?\Closure $massiveRepo = null,
+        ?\Closure $manualQueued = null
     ) {
         $this->enqueueManual = $enqueueManual ?? static function (string $job): void {
             WorkerKernel::enqueueManualRun(DbalConnectionFactory::get(), $job);
+        };
+        $this->manualQueued = $manualQueued ?? static function (string $job): bool {
+            return WorkerKernel::manualRunQueued(DbalConnectionFactory::get(), $job);
         };
     }
 
@@ -109,13 +119,18 @@ final class JobControl
     /**
      * Accoda un'esecuzione manuale (coda `jobs` del worker): parte anche se il lavoro e' in pausa,
      * tranne pendenze-massive (in pausa il gestore rilascerebbe subito le righe prese: solo
-     * giri a vuoto). Ritorna null se accodata, altrimenti il motivo del rifiuto.
+     * giri a vuoto). Con un giro in corso parte al suo termine (worker a processo singolo). Una
+     * richiesta gia' in coda per lo stesso lavoro non ne accoda un'altra (clic ripetuti).
+     * Ritorna null se accodata, altrimenti il motivo del rifiuto.
      */
     public function runNow(string $job): ?string
     {
         self::assertKnown($job);
         if ($job === MassiveEnqueueJob::NAME && !$this->state->isEnabled($job)) {
             return 'Pendenze massive in pausa: riattivare il servizio per elaborare le righe.';
+        }
+        if (($this->manualQueued)($job)) {
+            return "Esecuzione manuale già in coda: partirà appena il worker è libero (al termine del giro in corso, se ce n'è uno).";
         }
         ($this->enqueueManual)($job);
         return null;

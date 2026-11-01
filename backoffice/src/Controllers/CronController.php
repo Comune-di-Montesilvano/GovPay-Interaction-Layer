@@ -158,7 +158,7 @@ class CronController
 
         return $this->jsonResponse($response, [
             'ok' => true,
-            'message' => 'Esecuzione richiesta: il worker la avvia entro pochi secondi (se un giro è già in corso viene ignorata, vedi log).',
+            'message' => 'Esecuzione richiesta: il worker la avvia entro pochi secondi (se un giro è già in corso, parte al suo termine).',
         ]);
     }
 

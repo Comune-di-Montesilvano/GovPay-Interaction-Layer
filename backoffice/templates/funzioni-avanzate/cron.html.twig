@@ -113,7 +113,7 @@
                 <button class="btn btn-outline-primary btn-sm" onclick="jobRunNow('{{ jobKey }}')"
                         {% if not is_admin %}disabled title="Richiesti permessi amministrativi"
                         {% elseif massive_paused %}disabled title="Servizio in pausa: riattivarlo per elaborare le righe"
-                        {% elseif running %}title="Un giro è già in corso: la richiesta verrà ignorata"
+                        {% elseif running %}title="Un giro è già in corso: l'esecuzione richiesta parte al suo termine"
                         {% else %}title="Esegue subito un giro, anche se il servizio è in pausa"{% endif %}>
                   <i class="fas fa-bolt me-1" aria-hidden="true"></i>Esegui ora
                 </button>

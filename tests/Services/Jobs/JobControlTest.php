@@ -110,6 +110,32 @@ final class JobControlTest extends DbTestCase
         self::assertSame(1, $n);
     }
 
+    /**
+     * Fix round 1: clic ripetuti su "esegui ora" non accodano giri manuali uno dietro l'altro:
+     * finche' una richiesta per quel lavoro e' in coda (non consegnata), le altre sono rifiutate.
+     * Altri lavori e richieste gia' consegnate (giro in corso) non bloccano.
+     */
+    public function testRunNowRefusesWhenAManualRunForThatJobIsAlreadyQueued(): void
+    {
+        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'jobs'");
+        $control = new JobControl($this->state);
+        try {
+            self::assertNull($control->runNow('vocab'));
+            $reason = $control->runNow('vocab');
+            self::assertSame("Esecuzione manuale già in coda: partirà appena il worker è libero (al termine del giro in corso, se ce n'è uno).", $reason);
+            self::assertNull($control->runNow('biz'), 'altro lavoro: accodato');
+            self::assertSame(2, (int)self::pdo()->query("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'jobs'")->fetchColumn());
+
+            // consegnata al worker (giro manuale in corso): un nuovo clic ne accoda una per dopo
+            self::pdo()->exec("UPDATE messenger_messages SET delivered_at = NOW() WHERE queue_name = 'jobs'");
+            self::assertNull($control->runNow('vocab'));
+            self::assertNotNull($control->runNow('vocab'));
+            self::assertSame(3, (int)self::pdo()->query("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'jobs'")->fetchColumn());
+        } finally {
+            self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'jobs'");
+        }
+    }
+
     public function testLogShowsSummaryAndTopErrors(): void
     {
         $t0 = new \DateTimeImmutable('2026-11-01 09:00:00');
