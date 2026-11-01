@@ -36,9 +36,11 @@ use Symfony\Component\Scheduler\Schedule;
 /**
  * Processo worker (bin/worker): Symfony Scheduler + Messenger su MariaDB.
  *
- * - Ricevitori del Worker Messenger, in ordine: scheduler (SchedulerTick ogni 5 s, in memoria,
- *   solo l'ultimo tick perso) e trasporto Doctrine `jobs` (RunJob manuali da UI, auto_setup
- *   disattivato: tabelle dalla migrazione 036). Nessun retry (max_retries=0: nessun listener
+ * - Ricevitori del Worker Messenger, in ordine: trasporto Doctrine `jobs` (RunJob manuali da UI,
+ *   auto_setup disattivato: tabelle dalla migrazione 036) e scheduler (SchedulerTick ogni 5 s,
+ *   in memoria, solo l'ultimo tick perso). `jobs` per primo: il Worker riparte dal primo
+ *   ricevitore dopo ogni messaggio e, con un lavoro in arretrato, lo scheduler ha sempre un
+ *   tick perso pronto: in seconda posizione la coda manuale non verrebbe mai letta. Nessun retry (max_retries=0: nessun listener
  *   di retry/failure transport), un messaggio fallito viene scartato.
  * - SchedulerTick -> RunJob periodico per ogni lavoro scaduto, gestito subito in sequenza:
  *   un solo processo, nessun giro in parallelo nello stesso worker; tra worker diversi decide
@@ -308,8 +310,9 @@ final class WorkerKernel
 
         return new Worker(
             [
-                'scheduler' => new SchedulerTransport(new MessageGenerator($schedule, 'gil', $this->clock)),
+                // Ordine rilevante: vedi docblock della classe (coda manuale prima dello scheduler).
                 self::QUEUE => $this->jobsTransport,
+                'scheduler' => new SchedulerTransport(new MessageGenerator($schedule, 'gil', $this->clock)),
             ],
             $this->bus,
             null,

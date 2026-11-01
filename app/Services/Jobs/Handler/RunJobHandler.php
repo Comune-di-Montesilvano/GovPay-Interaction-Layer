@@ -46,6 +46,10 @@ final class RunJobHandler
                 return;
             }
         }
-        $this->runner->run($this->registry->get($name), $message->manual);
+        $result = $this->runner->run($this->registry->get($name), $message->manual);
+        if ($result === null && $message->manual) {
+            // Nessuna riga di storico per i giri non partiti: una riga di log per la richiesta persa.
+            ($this->output)("esecuzione manuale di '{$name}' ignorata: " . ($this->runner->lastSkipReason() ?? 'motivo sconosciuto'));
+        }
     }
 }

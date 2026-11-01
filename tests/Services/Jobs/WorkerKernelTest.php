@@ -311,4 +311,60 @@ final class WorkerKernelTest extends DbTestCase
         $this->expectException(\Throwable::class);
         WorkerKernel::probeTables($this->dbal, ['gil_jobs', 'tabella_migrazione_mancante']);
     }
+
+    public function testManualMessageIsNotStarvedByBusyScheduler(): void
+    {
+        $kernel = null;
+        $enqueued = false;
+        // backlog: hadWork sempre, ogni batch 60 s -> giri da 1800 s, sempre di nuovo scaduto,
+        // tick persi a raffica (processOnlyLastMissedRun) dopo ogni giro
+        $busy = new StubPeriodicJob('busy', function () use (&$enqueued): JobResult {
+            $this->clock->sleep(60);
+            if (!$enqueued) {
+                $enqueued = true;
+                WorkerKernel::enqueueManualRun($this->dbal, 'manuale');
+            }
+            return new JobResult(1, 1, 0, 0, true);
+        });
+        $manual = self::job('manuale', false, static function () use (&$kernel): void {
+            $kernel->requestStop();
+        });
+        $this->state->setEnabled('busy', true);
+        $kernel = $this->kernel(new JobRegistry([$busy, $manual]));
+
+        $kernel->run(20000.0);
+
+        $jobs = array_column(self::runs(), 'job');
+        self::assertSame(['busy', 'manuale'], array_slice($jobs, 0, 2), 'il manuale parte subito dopo il giro in corso');
+        self::assertSame(1, $manual->calls);
+    }
+
+    public function testSkippedManualRunIsLoggedWithReason(): void
+    {
+        $job = self::job('occupato');
+        $locks = new LockFactory(new DoctrineDbalStore($this->dbal, [], 0.0));
+        $held = (new LockFactory(new DoctrineDbalStore(DbalConnectionFactory::create(), [], 0.0)))->createLock('job:occupato', 60);
+        self::assertTrue($held->acquire());
+        $kernel = new WorkerKernel(
+            new JobRegistry([$job]),
+            $this->state,
+            $this->dbal,
+            $this->clock,
+            function (string $line): void { $this->out[] = $line; },
+            function (string $suite, \Throwable $e): void { $this->reported[] = $e; },
+            null,
+            $locks,
+            sys_get_temp_dir() . '/gil-worker-test-cache-assente'
+        );
+        try {
+            $kernel->bus()->dispatch(new \App\Services\Jobs\Message\RunJob('occupato', true));
+        } finally {
+            $held->release();
+        }
+
+        self::assertSame(0, $job->calls);
+        self::assertCount(1, $this->out);
+        self::assertStringContainsString("esecuzione manuale di 'occupato' ignorata", $this->out[0]);
+        self::assertStringContainsString('lock occupato', $this->out[0]);
+    }
 }
