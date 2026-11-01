@@ -176,7 +176,8 @@ services:
     volumes:
       - cache:/var/www/cache:ro
       - gil_certs:/var/www/certificate:ro
-    # Tenere allineato all'environment del backoffice (APP_SUITE a parte).
+    # Allineato all'environment del backoffice (APP_SUITE a parte), senza i segreti che i lavori
+    # non leggono: MASTER_TOKEN (solo API interne frontoffice) e DB_PASSWORD_CITTADINI.
     environment:
       - APP_SUITE=worker
       - COMPOSER_VENDOR_DIR=/var/www/html/vendor
@@ -186,13 +187,11 @@ services:
       - DB_NAME=${DB_NAME:-govpay}
       - DB_USER=${BACKOFFICE_DB_USER:-govpay}
       - "DB_PASSWORD=${BACKOFFICE_DB_PASSWORD:?BACKOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
-      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
       - "APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY obbligatoria: vedi .env.example}"
       - "FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY:?FRONTOFFICE_LINK_SIGNING_KEY obbligatoria: vedi .env.example}"
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
-      - "MASTER_TOKEN=${MASTER_TOKEN:?MASTER_TOKEN obbligatoria: vedi .env.example}"
     restart: unless-stopped
     # Stop: SIGTERM -> il giro in corso finisce il batch corrente, nessun batch nuovo.
     # L'immagine php:apache dichiara STOPSIGNAL SIGWINCH (stop graceful di Apache), che il
