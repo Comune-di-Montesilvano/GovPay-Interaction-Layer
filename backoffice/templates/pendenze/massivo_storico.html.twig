@@ -59,6 +59,7 @@
                         {# Bottoni Pausa / Riprendi #}
                         {% if b.pending > 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/pausa" style="display:inline-block">
+                            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
                             <button class="btn btn-outline-warning btn-xs mb-1" title="Sospendi le elaborazioni del lotto in coda">
                               <i class="fas fa-pause"></i> Pausa
                             </button>
@@ -66,6 +67,7 @@
                         {% endif %}
                         {% if b.paused > 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/riprendi" style="display:inline-block">
+                            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
                             <button class="btn btn-outline-success btn-xs mb-1" title="Riprendi le elaborazioni (torneranno in coda)">
                               <i class="fas fa-play"></i> Riprendi
                             </button>
@@ -75,6 +77,7 @@
                         {# Bottone Elimina (solo se sicuri di non aver inviato niente) #}
                         {% if b.processing == 0 and b.success == 0 and b.error == 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/elimina" onsubmit="return confirm('Eliminare fisicamente questo batch per ripulire la tabella?');" style="display:inline-block">
+                            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
                             <button class="btn btn-outline-danger btn-xs mb-1" title="Elimina intero lotto in coda">
                               <i class="fas fa-xmark"></i> Elimina
                             </button>
@@ -84,6 +87,7 @@
                         {# Bottone Annulla al Nodo (solo per pendenze successfully create) #}
                         {% if b.success > 0 %}
                           <form method="POST" action="/pendenze/massivo/{{ b.file_batch_id }}/annulla" onsubmit="return confirm('ATTENZIONE: Stai per richiamare in blocco l\'annullamento al Nodo per tutte le {{ b.success }} pendenze andate a buon fine in questo lotto. Vuoi procedere?');" style="display:inline-block">
+                            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
                             <button class="btn btn-outline-danger btn-xs mb-1 ms-1" title="Annulla le pendenze completate di questo batch">
                               <i class="fas fa-triangle-exclamation"></i> Annulla Pendenze (*{{ b.success }})
                             </button>

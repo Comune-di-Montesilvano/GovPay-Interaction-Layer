@@ -361,6 +361,13 @@ class ReportRagioneriaController
             @session_start();
         }
 
+        // Stesso ruolo delle azioni TEFA/Cron: l'azione riaccoda scansioni verso pagoPA Biz Events.
+        $role = $_SESSION['user']['role'] ?? '';
+        if (!in_array($role, ['admin', 'superadmin'], true)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => 'Accesso negato: richiesto ruolo amministrativo.'];
+            return $response->withHeader('Location', '/pagamenti/report-ragioneria')->withStatus(302);
+        }
+
         if (!JobControlCsrf::isValid($request)) {
             $_SESSION['flash'][] = ['type' => 'error', 'text' => JobControlCsrf::ERROR_MESSAGE];
             return $response->withHeader('Location', '/pagamenti/report-ragioneria')->withStatus(302);

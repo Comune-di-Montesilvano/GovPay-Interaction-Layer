@@ -8,6 +8,7 @@ use App\Database\Connection;
 use App\Database\EntrateRepository;
 use App\Database\MassivePendenzeRepository;
 use App\Database\MassivoExportRepository;
+use App\Security\JobControlCsrf;
 use App\Services\MassivoCsvParser;
 use App\Services\MassivoExportService;
 use App\Services\MassivoRateizzazioneService;
@@ -96,6 +97,9 @@ class MassivePendenzeController
 
     public function upload(Request $request, Response $response): Response
     {
+        if ($denied = $this->csrfDeniedForm($request, $response, '/pendenze/massivo/inserimento')) {
+            return $denied;
+        }
         $this->exposeCurrentUser();
         $files = $request->getUploadedFiles();
         $file = $files['csv_file'] ?? null;
@@ -203,6 +207,9 @@ class MassivePendenzeController
 
     public function conferma(Request $request, Response $response): Response
     {
+        if ($denied = $this->csrfDeniedForm($request, $response, '/pendenze/massivo/inserimento')) {
+            return $denied;
+        }
         $this->exposeCurrentUser();
         $params = (array)($request->getParsedBody() ?? []);
         $batchId = trim((string)($params['batch_id'] ?? ''));
@@ -284,6 +291,9 @@ class MassivePendenzeController
 
     public function azioneBatch(Request $request, Response $response, string $batchId, string $azione): Response
     {
+        if ($denied = $this->csrfDeniedForm($request, $response, '/pendenze/massivo/storico')) {
+            return $denied;
+        }
         $repo = new MassivePendenzeRepository();
         $msg = '';
         $type = 'success';
@@ -344,6 +354,9 @@ class MassivePendenzeController
      */
     public function avviaExportAvvisi(Request $request, Response $response, string $batchId): Response
     {
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->json($response, ['ok' => false, 'success' => false, 'error' => JobControlCsrf::ERROR_MESSAGE, 'message' => JobControlCsrf::ERROR_MESSAGE], 403);
+        }
         if ($batchId === '') return $this->json($response, ['ok' => false, 'error' => 'Batch mancante'], 400);
         if ((new MassivePendenzeRepository())->countByBatch($batchId, 'SUCCESS') === 0) {
             return $this->json($response, ['ok' => false, 'error' => 'Nessuna pendenza creata in questo batch'], 409);
@@ -406,6 +419,19 @@ class MassivePendenzeController
             'created_by' => (string)($job['created_by'] ?? ''),
             'updated_at' => (string)($job['updated_at'] ?? ''),
         ];
+    }
+
+    /** POST da form senza token CSRF valido: errore flash e ritorno alla pagina, nessuna modifica. */
+    private function csrfDeniedForm(Request $request, Response $response, string $backTo): ?Response
+    {
+        if (JobControlCsrf::isValid($request)) {
+            return null;
+        }
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            @session_start();
+        }
+        $_SESSION['flash'][] = ['type' => 'error', 'text' => JobControlCsrf::ERROR_MESSAGE];
+        return $response->withHeader('Location', $backTo)->withStatus(303);
     }
 
     private function json(Response $response, array $data, int $status = 200): Response

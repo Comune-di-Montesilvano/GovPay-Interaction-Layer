@@ -20,6 +20,7 @@ use App\Middleware\SetupMiddleware;
 use App\Middleware\FlashMiddleware;
 use App\Middleware\CurrentPathMiddleware;
 use App\Middleware\ReleaseSessionLockMiddleware;
+use App\Middleware\CsrfMiddleware;
 use App\Auth\UserRepository;
 use App\Logger;
 
@@ -211,6 +212,8 @@ return (function (): array {
     // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack
     // (in Slim il middleware viene eseguito in ordine inverso all'aggiunta — l'ultimo aggiunto è il primo eseguito)
     $app->add(new SetupMiddleware());
+    // CSRF globale: dopo Session/Flash (sessione e flash disponibili), prima di Setup/Auth: copre anche login e reset password.
+    $app->add(new CsrfMiddleware());
     $app->add(new FlashMiddleware($twig));
     $app->add(new SessionMiddleware());
     $app->add(new CurrentPathMiddleware($twig));
