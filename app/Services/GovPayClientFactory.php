@@ -11,6 +11,7 @@ namespace App\Services;
 use App\Config\SettingsRepository;
 use App\Logger;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Middleware;
 use Psr\Http\Message\RequestInterface as HttpRequest;
@@ -28,8 +29,9 @@ class GovPayClientFactory
     /**
      * Client HTTP per chiamate raw verso GovPay Backoffice v1.
      *
-     * Include: TLS v1.2 forzato, Connection:close, retry automatico su cURL 35/28/56
-     * (backoff esponenziale con jitter, max 5 tentativi, 0–2000 ms). 28 (timeout) e
+     * Include: TLS v1.2 forzato, Connection:close, retry automatico su cURL 35/28/56, SOLO per metodi
+     * idempotenti (GET/HEAD/PUT/DELETE/OPTIONS; mai POST/PATCH). Backoff esponenziale con jitter
+     * (0–2000 ms), max 5 retry (28 timeout: max 2, solo se timeout <= 30 s). 28 (timeout) e
      * 56 (connection reset) sono transitori tipici al riavvio dei container (GovPay
      * o rete non ancora pronti), oltre al TLS handshake instabile di 35.
      * Stack di default Guzzle incluso (http_errors): un 4xx/5xx GovPay lancia
@@ -93,56 +95,87 @@ class GovPayClientFactory
         $handlerStack->remove('allow_redirects');
         $guzzleOptions['allow_redirects'] = false;
 
+        // Circuit breaker PIU' ESTERNO del retry (push = piu' esterno): vede una sola volta l'esito
+        // finale, quindi i retry di rete non gonfiano il conteggio guasti (3 = apertura).
+        $handlerStack->push(self::circuitBreakerMiddleware(), 'circuit_breaker');
+
         $handlerStack->push(Middleware::mapRequest(
             static function (HttpRequest $request): HttpRequest {
                 return $request->withHeader('Connection', 'close');
             }
         ));
 
+        // Test hook: callable(int $retries): int ms. Default = backoff esponenziale con jitter.
+        $delayFn = $guzzleOptions['retry_delay'] ?? null;
+        unset($guzzleOptions['retry_delay']);
+
+        // Tetti di retry per errno. 35 (TLS handshake) e 56 (reset): fino a 5, il guasto e' tipico
+        // al riavvio dei container. 28 (timeout): max 2 retry E solo se il timeout
+        // effettivo e' <= 30 s. Le richieste lunghe (PUT di creazione a 90 s) NON si ritentano su 28: il worker
+        // (sequenziale) resterebbe bloccato minuti e il frontoffice scade a 30 s; un timeout puo' inoltre
+        // scattare dopo l'invio (esito incerto). Subentrano retry Messenger / 'riprova' sullo stesso idPendenza.
         $maxNetworkRetries = 5;
-        $handlerStack->push(Middleware::retry(
-            function (int $retries, $request, $response = null, $exception = null) use ($maxNetworkRetries): bool {
-                if (!$exception instanceof RequestException) {
+        $maxTimeoutRetries = 2;
+        $maxTimeoutForRetry = 30.0; // s: cURL 28 ritentato solo se il timeout effettivo della richiesta e' <= 30
+        // Solo metodi idempotenti: POST (es. /incassi, checkout) e PATCH mai ritentati, perche' una
+        // seconda esecuzione duplicherebbe l'effetto. Le PUT GovPay in uso (create/update pendenza
+        // PUT /pendenze/{a2a}/{id}) sono idempotenti.
+        $idempotentMethods = ['GET', 'HEAD', 'PUT', 'DELETE', 'OPTIONS'];
+        // Il decider di Middleware::retry non riceve $options: RetryMiddleware si costruisce per
+        // richiesta con un decider che chiude sul timeout effettivo (client default gia' fuso in $options).
+        $retryDelay = $delayFn ?? static function (int $retries): int {
+            if ($retries <= 0) {
+                return 0;
+            }
+            $baseDelay = 200 * (1 << ($retries - 1));
+            $jitter    = random_int(0, 100);
+            return (int)min(2000, $baseDelay + $jitter);
+        };
+        $handlerStack->push(static function (callable $next) use ($maxNetworkRetries, $maxTimeoutRetries, $maxTimeoutForRetry, $idempotentMethods, $retryDelay) {
+            return static function (HttpRequest $request, array $options) use ($next, $maxNetworkRetries, $maxTimeoutRetries, $maxTimeoutForRetry, $idempotentMethods, $retryDelay) {
+                $timeout = (float)($options['timeout'] ?? 0);
+                $decider = static function (int $retries, $request, $response = null, $exception = null) use ($maxNetworkRetries, $maxTimeoutRetries, $maxTimeoutForRetry, $idempotentMethods, $timeout): bool {
+                // Guzzle 7: cURL 35/28 arrivano come ConnectException (NON RequestException); 56 come RequestException.
+                if (!$exception instanceof ConnectException && !$exception instanceof RequestException) {
                     return false;
                 }
-                $context = $exception->getHandlerContext();
+                if (!in_array(strtoupper($request->getMethod()), $idempotentMethods, true)) {
+                    return false;
+                }
+                $context = method_exists($exception, 'getHandlerContext') ? $exception->getHandlerContext() : [];
                 $errno   = (int)($context['errno'] ?? 0);
                 $message = strtolower($exception->getMessage());
+                if ($errno === 0 && preg_match('/curl error (\d+)/', $message, $m)) {
+                    $errno = (int)$m[1];
+                }
                 // 35 = TLS handshake, 28 = timeout, 56 = connection reset by peer.
-                // Tutti transitori tipici al riavvio dei container (GovPay/rete non
-                // ancora pronti), non errori applicativi reali.
-                $retryableErrnos = [35, 28, 56];
-                $isRetryable = in_array($errno, $retryableErrnos, true)
-                    || str_contains($message, 'curl error 35')
-                    || str_contains($message, 'curl error 28')
-                    || str_contains($message, 'curl error 56');
-                if (!$isRetryable) {
+                if ($errno === 56) {
+                    if (!$exception instanceof RequestException) {
+                        return false;
+                    }
+                } elseif ($errno !== 35 && $errno !== 28) {
                     return false;
                 }
-                if ($retries >= $maxNetworkRetries) {
+                if ($errno === 28 && ($timeout <= 0.0 || $timeout > $maxTimeoutForRetry)) {
+                    return false;
+                }
+                $cap = $errno === 28 ? $maxTimeoutRetries : $maxNetworkRetries;
+                if ($retries >= $cap) {
                     Logger::getInstance()->error(sprintf(
                         'GovPay network error after %d retries (errno %s): %s',
-                        $maxNetworkRetries, $errno ?: 'n/a', $exception->getMessage()
+                        $cap, $errno, $exception->getMessage()
                     ));
                     return false;
                 }
                 Logger::getInstance()->warning(sprintf(
                     'Retry GovPay call after network error (attempt %d/%d, errno %s)',
-                    $retries + 1, $maxNetworkRetries, $errno ?: 'n/a'
+                    $retries + 1, $cap, $errno
                 ));
                 return true;
-            },
-            static function (int $retries): int {
-                if ($retries <= 0) {
-                    return 0;
-                }
-                $baseDelay = 200 * (1 << ($retries - 1));
-                $jitter    = random_int(0, 100);
-                return (int)min(2000, $baseDelay + $jitter);
-            }
-        ));
-
-        $handlerStack->push(self::circuitBreakerMiddleware(), 'circuit_breaker');
+                };
+                return (new \GuzzleHttp\RetryMiddleware($decider, $next, $retryDelay))($request, $options);
+            };
+        });
 
         $guzzleOptions['handler'] = $handlerStack;
 
