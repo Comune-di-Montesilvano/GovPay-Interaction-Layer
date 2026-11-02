@@ -31,6 +31,10 @@ final class RendicontazioneJob implements PeriodicJob
 {
     public const COUNTER_SECTION = 'rendicontazione';
     public const COUNTER_KEY = 'scansioni_senza_novita';
+    /** Soglia (giorni in IN_ATTESA_CONFERMA) e intervallo minimo tra due solleciti allo stesso gruppo. Costante, non setting. */
+    public const SOLLECITO_GIORNI = 7;
+    /** settings rendicontazione.<prefisso><group_id> = data Y-m-d dell'ultimo sollecito inviato a quel gruppo. */
+    public const SOLLECITO_KEY_PREFIX = 'ultimo_sollecito_gruppo_';
 
     private \PDO $pdo;
 
@@ -128,6 +132,14 @@ final class RendicontazioneJob implements PeriodicJob
                 \Sentry\captureException($e);
                 $ctx->debug('ERRORE invio digest: ' . $e->getMessage());
                 $details[] = ['ref' => 'digest', 'reason' => 'Errore invio digest'];
+            }
+            // Solo qui (ramo digest, mai per riga). Indipendente dall'esito del digest.
+            try {
+                $this->sendSolleciti($ctx, $details);
+            } catch (\Throwable $e) {
+                \Sentry\captureException($e);
+                $ctx->debug('ERRORE invio solleciti: ' . $e->getMessage());
+                $details[] = ['ref' => 'sollecito', 'reason' => 'Errore invio solleciti'];
             }
             $counter = 0;
         }
@@ -251,6 +263,115 @@ final class RendicontazioneJob implements PeriodicJob
         )->execute([':ro' => $righeOperatoreInviate, ':ra' => $righeAdminInviate]);
 
         $ctx->debug(sprintf('Digest inviato: operatore=%d admin=%d', $righeOperatoreInviate, $righeAdminInviate));
+    }
+
+    /**
+     * Promemoria alle persone del gruppo per le righe IN_ATTESA_CONFERMA (tipologie
+     * NOTIFICA_E_SMARCATURA) ferme da almeno SOLLECITO_GIORNI giorni. Al massimo un sollecito ogni
+     * SOLLECITO_GIORNI giorni per gruppo (guard per gruppo in settings, scritto solo a invio OK):
+     * un gruppo che fallisce viene ritentato al prossimo digest senza rimandare ai gruppi gia' serviti,
+     * e un digest saltato un giorno non fa perdere il sollecito (nessun "giorno esatto" da centrare).
+     * Destinatari: membri del gruppo + utenti con notifica globale; admin_emails solo con
+     * notifica_admin_auto (stessa condizione del digest admin).
+     *
+     * @param list<array{ref:string,reason:string}> $details
+     */
+    private function sendSolleciti(JobContext $ctx, array &$details): void
+    {
+        $scadute = $this->repo->getDaSollecitare($this->idDominio, self::SOLLECITO_GIORNI);
+        if ($scadute === []) {
+            return;
+        }
+
+        $oggi = date('Y-m-d');
+        $baseUrlVista = rtrim((string)Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''), '/') . '/rendicontazione/da-confermare';
+        $globalEmails = $this->userRepo->getGlobalNotificationEmails();
+        $adminEmails = [];
+        if ((string)SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false') === 'true') {
+            $rawAdminEmails = (string)SettingsRepository::get('rendicontazione', 'admin_emails', '');
+            $adminEmails = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/', $rawAdminEmails) ?: [])));
+        }
+
+        $stmtGruppi = $this->pdo->prepare(
+            'SELECT DISTINCT group_id FROM rendicontazione_gruppo_tipologie WHERE id_dominio = :dom'
+        );
+        $stmtGruppi->execute([':dom' => $this->idDominio]);
+
+        $inviati = 0;
+        foreach ($stmtGruppi->fetchAll(\PDO::FETCH_ASSOC) as $g) {
+            $groupId = (int)$g['group_id'];
+            $tipologie = $this->groupRepo->getRendicontazioneTipologie($groupId, $this->idDominio);
+            $entrateSmarcatura = array_column(array_filter($tipologie, static fn($t) => $t['modalita'] === 'NOTIFICA_E_SMARCATURA'), 'id_entrata');
+            $righeGruppo = array_values(array_filter(
+                $scadute,
+                static fn($r) => in_array((string)($r['cod_entrata'] ?? ''), $entrateSmarcatura, true)
+            ));
+            if ($righeGruppo === []) {
+                continue;
+            }
+
+            $ultimo = $this->readSollecitoDate($groupId);
+            if ($ultimo !== '' && $this->giorniTra($ultimo, $oggi) < self::SOLLECITO_GIORNI) {
+                continue;
+            }
+
+            $emails = array_values(array_unique(array_merge($this->groupRepo->getMemberEmails($groupId), $globalEmails, $adminEmails)));
+            $groupInfo = $this->groupRepo->findById($groupId);
+            $esito = $this->mailer->sendRendicontazioneSollecitoSmarcatura(
+                $emails,
+                (string)($groupInfo['nome'] ?? "Gruppo {$groupId}"),
+                $righeGruppo,
+                $baseUrlVista,
+                self::SOLLECITO_GIORNI
+            );
+
+            if (($esito['esito'] ?? '') === 'OK') {
+                $this->writeSollecitoDate($groupId, $oggi);
+                $inviati++;
+            } elseif (($esito['esito'] ?? '') === 'ERRORE') {
+                $ctx->debug('ERRORE invio sollecito operatore: ' . ($esito['errore'] ?? 'Errore sconosciuto'));
+                $details[] = ['ref' => 'sollecito-gruppo-' . $groupId, 'reason' => 'Invio sollecito operatore fallito'];
+            }
+            // SKIPPED (nessun destinatario): niente guard, nessun errore.
+        }
+
+        if ($inviati > 0) {
+            $ctx->debug(sprintf('Solleciti smarcatura inviati: gruppi=%d', $inviati));
+        }
+    }
+
+    private function giorniTra(string $da, string $a): int
+    {
+        try {
+            return (int)(new \DateTimeImmutable($da))->diff(new \DateTimeImmutable($a))->format('%r%a');
+        } catch (\Throwable) {
+            return PHP_INT_MAX; // guard illeggibile: meglio un sollecito in piu' che nessuno
+        }
+    }
+
+    /** Letto direttamente da DB (settings cache stale in un processo longevo). '' se assente o errore. */
+    private function readSollecitoDate(int $groupId): string
+    {
+        try {
+            $stmt = $this->pdo->prepare('SELECT value FROM settings WHERE section = :s AND key_name = :k');
+            $stmt->execute([':s' => self::COUNTER_SECTION, ':k' => self::SOLLECITO_KEY_PREFIX . $groupId]);
+            $v = $stmt->fetchColumn();
+            return $v === false ? '' : (string)$v;
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    private function writeSollecitoDate(int $groupId, string $date): void
+    {
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO settings (section, key_name, value, encrypted) VALUES (:s, :k, :v, 0)
+                 ON DUPLICATE KEY UPDATE value = :v2'
+            )->execute([':s' => self::COUNTER_SECTION, ':k' => self::SOLLECITO_KEY_PREFIX . $groupId, ':v' => $date, ':v2' => $date]);
+        } catch (\Throwable $e) {
+            \App\Logger::getInstance()->warning('Rendicontazione: salvataggio data ultimo sollecito fallito', ['error' => \App\Services\ThrowableSummary::of($e)]);
+        }
     }
 
     /** Letto direttamente da DB (non dalla cache di SettingsRepository, stale in un processo longevo). */

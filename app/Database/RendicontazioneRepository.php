@@ -195,6 +195,29 @@ class RendicontazioneRepository
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * Righe in attesa di conferma operatore da almeno $giorni giorni (data flusso, altrimenti data
+     * pagamento, <= oggi - $giorni). Il cutoff e' calcolato in PHP (stesso fuso del guard giornaliero
+     * del job) e passato come parametro. Righe senza alcuna data escluse.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getDaSollecitare(string $idDominio, int $giorni): array
+    {
+        $cutoff = date('Y-m-d', strtotime('-' . max(1, $giorni) . ' days'));
+        $stmt = $this->pdo->prepare(
+            "SELECT f.*, b.descrizione AS causale, b.cf_debitore, b.nominativo_debitore
+             FROM flussi_rendicontazioni f
+             LEFT JOIN biz_ricevute b ON f.iur = b.iur AND f.id_dominio = b.id_dominio
+             WHERE f.id_dominio = :dom AND f.is_govpay = 1
+               AND f.rendicontazione_stato = 'IN_ATTESA_CONFERMA'
+               AND COALESCE(f.data_flusso, f.data_pagamento) <= :cutoff
+             ORDER BY f.cod_entrata ASC, f.id_flusso ASC, f.id ASC"
+        );
+        $stmt->execute([':dom' => $idDominio, ':cutoff' => $cutoff]);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+    }
+
     public function marcaNotificate(array $ids): void
     {
         if (empty($ids)) {

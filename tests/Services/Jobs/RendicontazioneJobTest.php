@@ -78,6 +78,12 @@ final class RendicontazioneJobTest extends DbTestCase
     /** @var list<array<string,mixed>|\Throwable> */
     private array $adminResults = [];
 
+    /** @var list<array{emails:array,gruppo:string,righe:array,url:string,giorni:int}> */
+    private array $solCalls = [];
+
+    /** @var list<array<string,mixed>|\Throwable> */
+    private array $solResults = [];
+
     private MailerService $mailer;
 
     protected function setUp(): void
@@ -98,8 +104,20 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->adminCalls = [];
         $this->opResults = [];
         $this->adminResults = [];
+        $this->solCalls = [];
+        $this->solResults = [];
 
         $this->mailer = $this->createStub(MailerService::class);
+        $this->mailer->method('sendRendicontazioneSollecitoSmarcatura')->willReturnCallback(
+            function (array $emails, string $gruppo, array $righe, string $url, int $giorni): array {
+                $this->solCalls[] = ['emails' => $emails, 'gruppo' => $gruppo, 'righe' => $righe, 'url' => $url, 'giorni' => $giorni];
+                $r = array_shift($this->solResults) ?? ['esito' => 'OK'];
+                if ($r instanceof \Throwable) {
+                    throw $r;
+                }
+                return $r;
+            }
+        );
         $this->mailer->method('sendRendicontazioneOperatoreDigest')->willReturnCallback(
             function (array $emails, string $gruppo, array $daConf, array $info, string $url): array {
                 $this->opCalls[] = ['emails' => $emails, 'gruppo' => $gruppo, 'daConfermare' => $daConf, 'informative' => $info, 'url' => $url];
@@ -1115,5 +1133,190 @@ final class RendicontazioneJobTest extends DbTestCase
 
         $this->assertSame(1, $res->processed);
         $this->assertTrue($res->hadWork);
+    }
+
+    // ------------------------------------------------------------ solleciti smarcatura
+
+    /** Data Y-m-d dell'ultimo sollecito del gruppo ('' se mai inviato). */
+    private function sollecitoGuard(int $groupId): string
+    {
+        $st = self::pdo()->prepare('SELECT value FROM settings WHERE section = ? AND key_name = ?');
+        $st->execute([RendicontazioneJob::COUNTER_SECTION, RendicontazioneJob::SOLLECITO_KEY_PREFIX . $groupId]);
+        $v = $st->fetchColumn();
+        return $v === false ? '' : (string)$v;
+    }
+
+    private function setSollecitoGuard(int $groupId, string $date): void
+    {
+        self::pdo()->prepare('INSERT INTO settings (section, key_name, value, encrypted) VALUES (?, ?, ?, 0) ON DUPLICATE KEY UPDATE value = VALUES(value)')
+            ->execute([RendicontazioneJob::COUNTER_SECTION, RendicontazioneJob::SOLLECITO_KEY_PREFIX . $groupId, $date]);
+    }
+
+    /** Scenario base: soglia quiete 1 (digest a ogni giro), un gruppo con smarcatura su TARI. */
+    private function scenarioSollecito(): int
+    {
+        $this->setting('scansioni_quiete_soglia', '1');
+        return $this->gruppo('Tributi', ['TARI' => 'NOTIFICA_E_SMARCATURA'], [$this->user('op@example.test')]);
+    }
+
+    public function testSollecitoInviatoAllaSogliaDi7GiorniEUnaSolaVoltaAlGiorno(): void
+    {
+        $gid = $this->scenarioSollecito();
+        $this->user('globale@example.test', true);
+        $vecchia = $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(7)]);
+        $this->riga(2, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(6)]);                       // troppo recente
+        $this->riga(3, ['rendicontazione_stato' => 'GESTITO', 'data_flusso' => self::today(30)]);                                 // non in attesa
+        $this->riga(4, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(30), 'cod_entrata' => 'IMU']); // tipologia senza smarcatura
+        $this->riga(5, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(30), 'is_govpay' => 0]);     // non GovPay
+        $this->riga(6, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(30), 'id_dominio' => '80000000002']); // altro dominio
+
+        $res = $this->runJob();
+
+        $this->assertCount(1, $this->solCalls);
+        $c = $this->solCalls[0];
+        $this->assertSame('Tributi', $c['gruppo']);
+        $this->assertSame(7, $c['giorni']);
+        $this->assertSame('/rendicontazione/da-confermare', $c['url']);
+        $this->assertSame([$vecchia], array_map(static fn($r) => (int)$r['id'], $c['righe']));
+        $emails = $c['emails'];
+        sort($emails);
+        $this->assertSame(['globale@example.test', 'op@example.test'], $emails);
+        $this->assertSame(self::today(), $this->sollecitoGuard($gid));
+        $this->assertSame(0, $res->errors);
+
+        // stesso giorno, altri giri (anche con nuova istanza del job): nessun secondo sollecito
+        $this->runJob($this->job());
+        $this->runJob($this->job());
+        $this->assertCount(1, $this->solCalls, 'una sola volta al giorno');
+    }
+
+    public function testSollecitoRipetutoSoloDopoAltriGiorniDiAttesa(): void
+    {
+        $gid = $this->scenarioSollecito();
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(20)]);
+
+        $this->setSollecitoGuard($gid, self::today(6));
+        $this->runJob();
+        $this->assertCount(0, $this->solCalls, 'ultimo sollecito 6 giorni fa: non ancora');
+
+        $this->setSollecitoGuard($gid, self::today(7));
+        $this->runJob();
+        $this->assertCount(1, $this->solCalls, 'ultimo sollecito 7 giorni fa: di nuovo');
+        $this->assertSame(self::today(), $this->sollecitoGuard($gid));
+    }
+
+    public function testSollecitoNonPartePerRigaMaSoloNelRamoDigest(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '99');
+        $gid = $this->gruppo('Tributi', ['TARI' => 'NOTIFICA_E_SMARCATURA'], [$this->user('op@example.test')]);
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(30)]);
+
+        $this->runJob();
+        $this->runJob();
+
+        $this->assertSame([], $this->solCalls);
+        $this->assertSame('', $this->sollecitoGuard($gid));
+    }
+
+    public function testSollecitoNessunaRigaNessunaMail(): void
+    {
+        $gid = $this->scenarioSollecito();
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(6)]);
+        $this->riga(2, ['rendicontazione_stato' => 'GESTITO', 'data_flusso' => self::today(60)]);
+
+        $res = $this->runJob();
+
+        $this->assertSame([], $this->solCalls);
+        $this->assertSame('', $this->sollecitoGuard($gid));
+        $this->assertSame(0, $res->errors);
+    }
+
+    public function testSollecitoErroreMailerNonScriveGuardRegistraDettaglioERitenta(): void
+    {
+        $gid = $this->scenarioSollecito();
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(8)]);
+        $this->solResults = [['esito' => 'ERRORE', 'errore' => 'smtp down segreto']];
+
+        $res = $this->runJob();
+
+        $this->assertCount(1, $this->solCalls);
+        $this->assertSame('', $this->sollecitoGuard($gid), 'guard non scritto su errore');
+        $sol = array_values(array_filter($res->errorDetails, static fn($d) => str_starts_with($d['ref'], 'sollecito')));
+        $this->assertSame([['ref' => 'sollecito-gruppo-' . $gid, 'reason' => 'Invio sollecito operatore fallito']], $sol);
+        $this->assertStringNotContainsString('segreto', json_encode($res->errorDetails));
+
+        // al giro successivo viene ritentato e va a buon fine
+        $res2 = $this->runJob();
+        $this->assertCount(2, $this->solCalls);
+        $this->assertSame(self::today(), $this->sollecitoGuard($gid));
+        $this->assertSame([], array_values(array_filter($res2->errorDetails, static fn($d) => str_starts_with($d['ref'], 'sollecito'))));
+    }
+
+    public function testSollecitoEccezioneMailerSegnalatoSenzaMessaggioENonFermaIlGiro(): void
+    {
+        $gid = $this->scenarioSollecito();
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(8)]);
+        $this->solResults = [new \RuntimeException('boom segreto')];
+
+        $res = $this->runJob();
+
+        $this->assertSame('', $this->sollecitoGuard($gid));
+        $this->assertContains(['ref' => 'sollecito', 'reason' => 'Errore invio solleciti'], $res->errorDetails);
+        $this->assertStringNotContainsString('segreto', json_encode($res->errorDetails));
+        $this->assertSame('0', $this->counter(), 'contatore comunque gestito');
+    }
+
+    public function testSollecitoGruppoFallitoNonRimandaAiGruppiGiaServiti(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '1');
+        $g1 = $this->gruppo('Alfa', ['TARI' => 'NOTIFICA_E_SMARCATURA'], [$this->user('a@example.test')]);
+        $g2 = $this->gruppo('Beta', ['IMU' => 'NOTIFICA_E_SMARCATURA'], [$this->user('b@example.test')]);
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(9), 'cod_entrata' => 'TARI']);
+        $this->riga(2, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(9), 'cod_entrata' => 'IMU']);
+        $this->solResults = [['esito' => 'OK'], ['esito' => 'ERRORE', 'errore' => 'x']];
+
+        $this->runJob();
+        $this->assertCount(2, $this->solCalls);
+        $this->assertSame(self::today(), $this->sollecitoGuard($g1));
+        $this->assertSame('', $this->sollecitoGuard($g2));
+
+        $this->runJob();
+        $this->assertCount(3, $this->solCalls, 'solo il gruppo fallito viene ritentato');
+        $this->assertSame('Beta', $this->solCalls[2]['gruppo']);
+        $this->assertSame(self::today(), $this->sollecitoGuard($g2));
+    }
+
+    public function testSollecitoSenzaDestinatariSkippedSenzaGuardNeErrori(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '1');
+        $gid = $this->gruppo('Vuoto', ['TARI' => 'NOTIFICA_E_SMARCATURA'], []);
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(8)]);
+        $this->solResults = [['esito' => 'SKIPPED']];
+
+        $res = $this->runJob();
+
+        $this->assertCount(1, $this->solCalls);
+        $this->assertSame([], $this->solCalls[0]['emails']);
+        $this->assertSame('', $this->sollecitoGuard($gid));
+        $this->assertSame([], array_values(array_filter($res->errorDetails, static fn($d) => str_starts_with($d['ref'], 'sollecito'))));
+    }
+
+    public function testSollecitoAdminInCopiaSoloConNotificaAdminAuto(): void
+    {
+        $this->scenarioSollecito();
+        $this->setting('admin_emails', 'admin@example.test; op@example.test');
+        $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(8)]);
+
+        $this->runJob();
+        $this->assertCount(1, $this->solCalls);
+        $this->assertSame(['op@example.test'], $this->solCalls[0]['emails'], 'notifica_admin_auto assente: nessun admin');
+
+        $this->setting('notifica_admin_auto', 'true');
+        $this->setSollecitoGuard((int)self::pdo()->query('SELECT MIN(id) FROM user_groups')->fetchColumn(), self::today(7));
+        $this->runJob();
+        $this->assertCount(2, $this->solCalls);
+        $emails = $this->solCalls[1]['emails'];
+        sort($emails);
+        $this->assertSame(['admin@example.test', 'op@example.test'], $emails, 'admin aggiunti, duplicati rimossi');
     }
 }
