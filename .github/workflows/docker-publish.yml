@@ -306,6 +306,9 @@ jobs:
       # Firma keyless cosign e attestazioni: certificato Sigstore sull'identita' OIDC del workflow.
       id-token: write
       attestations: write
+      # Storage record dell'immagine (actions/attest con push-to-registry): senza, warning
+      # "Please check that the artifact-metadata:write permission has been included".
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -449,14 +452,14 @@ jobs:
       # Verifica: scripts/verify-images.sh.
       - name: Attestazione provenance · ${{ matrix.app }}
         id: provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
       - name: Attestazione SBOM · ${{ matrix.app }}
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -531,6 +534,9 @@ jobs:
       # Firma keyless cosign e attestazioni: certificato Sigstore sull'identita' OIDC del workflow.
       id-token: write
       attestations: write
+      # Storage record dell'immagine (actions/attest con push-to-registry): senza, warning
+      # "Please check that the artifact-metadata:write permission has been included".
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -666,14 +672,14 @@ jobs:
       # Verifica: scripts/verify-images.sh.
       - name: Attestazione provenance · ${{ matrix.image }}
         id: provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
       - name: Attestazione SBOM · ${{ matrix.image }}
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
