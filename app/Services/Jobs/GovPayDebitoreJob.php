@@ -16,7 +16,7 @@ use App\Services\GovPayDebitoreService;
  * log + sleep 30s) restano nello script: un'eccezione di getBatch si propaga da
  * runOnce(). Se hadWork e' false lo script attende prima di richiamare runOnce().
  */
-final class GovPayDebitoreJob implements PeriodicJob
+final class GovPayDebitoreJob implements PeriodicJob, CountsRemaining
 {
     public const BATCH_SIZE = 100;
 
@@ -35,6 +35,15 @@ final class GovPayDebitoreJob implements PeriodicJob
     }
 
     /** @throws \Throwable se il recupero del batch fallisce */
+    /** IUR GovPay che getBatch selezionerebbe ora (senza biz_ricevute o ERROR fuori backoff). */
+    public function remaining(): ?int
+    {
+        SettingsRepository::flush();
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        $minDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+        return $this->service->countDue($this->idDominio, $minDate);
+    }
+
     public function runOnce(JobContext $ctx): JobResult
     {
         // Ogni iterazione rilegge i settings: in un processo longevo la cache statica

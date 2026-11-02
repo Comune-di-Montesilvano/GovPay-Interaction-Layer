@@ -1315,4 +1315,17 @@ final class RendicontazioneJobTest extends DbTestCase
         sort($emails);
         $this->assertSame(['admin@example.test', 'op@example.test'], $emails, 'admin inclusi con notifica_admin_auto=false, duplicati rimossi');
     }
+
+    /** remaining() = righe GovPay PENDING/ERRORE nella finestra max_giorni_retry (come getPendingOrError). */
+    public function testRemainingCountsPendingAndErrorRowsInRetryWindow(): void
+    {
+        $this->setting('max_giorni_retry', '7');
+        $this->riga(1);
+        $this->riga(2, ['rendicontazione_stato' => 'ERRORE']);
+        $this->riga(3, ['rendicontazione_stato' => 'GESTITO']);
+        $this->riga(4, ['data_pagamento' => self::today(30)]);
+        $this->riga(5, ['is_govpay' => 0]);
+
+        self::assertSame(2, $this->job()->remaining());
+    }
 }

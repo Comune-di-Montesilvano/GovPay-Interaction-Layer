@@ -643,4 +643,23 @@ final class GovPayDebitoreJobTest extends DbTestCase
         self::assertTrue($res->hadWork);
         self::assertNull($this->biz($second));
     }
+
+    /** remaining() = righe che getBatch selezionerebbe ora: ERROR in backoff esclusi, gia' arricchite escluse. */
+    public function testRemainingMirrorsBatchSelection(): void
+    {
+        $this->flusso(1);
+        $this->flusso(2);
+        $done = $this->flusso(3);
+        $this->bizRow($done);
+        $inBackoff = $this->flusso(4);
+        $retry = $this->flusso(5);
+        foreach ([$inBackoff, $retry] as $iur) {
+            self::pdo()->prepare("INSERT INTO biz_ricevute (id_dominio, id_flusso, iur, iuv, anno, mese, data_pagamento, importo, stato) VALUES (?, '2026-03-01TEST-0001', ?, 'GIL00000000000001', 2026, 3, '2026-03-01', 10.50, 'ERROR')")
+                ->execute([self::DOMINIO, $iur]);
+        }
+        $this->backdateBiz($retry, 61);
+        $this->flusso(6, ['id_pendenza' => '']);
+
+        self::assertSame(3, $this->job([])->remaining(), 'IUR 1, 2 e 5 (ERROR fuori backoff)');
+    }
 }

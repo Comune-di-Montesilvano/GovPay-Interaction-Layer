@@ -16,8 +16,15 @@ use App\Services\BizScannerService;
  * Pause di idle (15 minuti) e stop file restano nello script: se hadWork e' false
  * lo script attende prima di richiamare runOnce().
  */
-final class BizScanJob implements PeriodicJob
+final class BizScanJob implements PeriodicJob, CountsRemaining
 {
+    /**
+     * Ricevute elaborate al massimo in un runOnce (poi hadWork=true, il runner ripete): ogni
+     * chiamata Biz Events e' seguita da 5 s di pausa, senza cap un batch durerebbe quanto
+     * l'intero arretrato (avanzamento invisibile, lock `job:biz` non rinnovato oltre il TTL).
+     */
+    public const MAX_ITEMS_PER_BATCH = 50;
+
     /** Le righe ERROR tornano PENDING solo dopo questo intervallo dall'errore (backoff). */
     public const ERROR_RETRY_MINUTES = 60;
 
@@ -105,6 +112,9 @@ final class BizScanJob implements PeriodicJob
             foreach ($rows as $i => $row) {
                 if ($ctx->shouldStop()) {
                     return new JobResult($processed, $ok, $skipped, $errors, $processed > 0, $details);
+                }
+                if ($processed >= self::MAX_ITEMS_PER_BATCH) {
+                    return new JobResult($processed, $ok, $skipped, $errors, true, $details);
                 }
                 $n   = $i + 1;
                 $iur = (string)$row['iur'];
@@ -195,6 +205,23 @@ final class BizScanJob implements PeriodicJob
     {
         return 'biz';
     }
+
+    /** Ricevute PENDING in-scope + IUR non-GovPay non ancora accodati in biz_ricevute. */
+    public function remaining(): ?int
+    {
+        SettingsRepository::flush();
+        $minDate = self::minDate();
+        return $this->repo->countPendingForProcessing($this->idDominio, $minDate)
+            + $this->flussiRepo->countUnprocessedForBiz($this->idDominio, $minDate);
+    }
+
+    /** Filtro data del lavoro (backoffice.ragioneria_scan_da), come in runOnce. */
+    private static function minDate(): ?string
+    {
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+    }
+
 
     /** Coda vuota: 15 minuti. */
     public function emptyQueueIntervalSeconds(): int

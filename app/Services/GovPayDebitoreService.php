@@ -27,6 +27,12 @@ class GovPayDebitoreService
         return $this->flussiRepo->countUnprocessedGovPayForDebitore($idDominio, $minDate);
     }
 
+    /** Righe che getBatch() selezionerebbe ora (senza LIMIT). */
+    public function countDue(string $idDominio, ?string $minDate = null): int
+    {
+        return $this->flussiRepo->countDueGovPayForDebitore($idDominio, $minDate);
+    }
+
     /**
      * @return array<int,array<string,mixed>>
      */

@@ -733,6 +733,35 @@ class FlussiRendicontazioniRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * Quante righe getUnprocessedGovPayForDebitore() selezionerebbe ora (stesso WHERE, senza
+     * LIMIT; ERROR ancora in backoff esclusi): avanzamento del lavoro govpay-debitore.
+     */
+    public function countDueGovPayForDebitore(string $idDominio, ?string $minDate = null): int
+    {
+        $sql = "SELECT COUNT(*)
+                FROM flussi_rendicontazioni f
+                LEFT JOIN biz_ricevute b
+                  ON b.id_dominio = f.id_dominio
+                 AND b.iur = f.iur
+                WHERE f.id_dominio = :id_dominio
+                  AND f.is_govpay = 1
+                  AND f.id_pendenza IS NOT NULL
+                  AND f.id_pendenza != ''
+                  AND (b.id IS NULL
+                       OR (b.stato = 'ERROR'
+                           AND b.updated_at < NOW() - INTERVAL " . self::DEBITORE_ERROR_RETRY_MINUTES . ' MINUTE))';
+
+        $params = [':id_dominio' => $idDominio];
+        if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
+            $sql .= ' AND f.data_pagamento >= :min_date';
+            $params[':min_date'] = $minDate;
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn();
+    }
+
     /** Da arricchire: senza biz_ricevute o con tentativo fallito (ERROR, anche se in backoff). */
     public function countUnprocessedGovPayForDebitore(string $idDominio, ?string $minDate = null): int
     {

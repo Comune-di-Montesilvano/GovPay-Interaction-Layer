@@ -27,7 +27,7 @@ use App\Services\RendicontazioneEngineService;
  * Il job non rilancia le eccezioni dei sotto-passi (come il loop originale): le segnala in
  * errorDetails (solo id/fase, mai testi upstream).
  */
-final class RendicontazioneJob implements PeriodicJob
+final class RendicontazioneJob implements PeriodicJob, CountsRemaining
 {
     public const COUNTER_SECTION = 'rendicontazione';
     public const COUNTER_KEY = 'scansioni_senza_novita';
@@ -57,6 +57,14 @@ final class RendicontazioneJob implements PeriodicJob
     ) {
         $this->engineFactory = $engineFactory;
         $this->pdo = $pdo ?? Connection::getPDO();
+    }
+
+    /** Righe GovPay PENDING/ERRORE nella finestra di retry (stessa selezione del motore). */
+    public function remaining(): ?int
+    {
+        SettingsRepository::flush();
+        $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'));
+        return $this->repo->countPendingOrError($this->idDominio, date('Y-m-d', strtotime("-{$maxGiorniRetry} days")));
     }
 
     public function runOnce(JobContext $ctx): JobResult

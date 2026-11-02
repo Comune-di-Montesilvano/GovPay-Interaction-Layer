@@ -98,6 +98,10 @@ final class JobStateRepository
      * Registra un'esecuzione conclusa (riga storico + primi 50 errori) e aggiorna lo stato del
      * lavoro (ultimo esito, prossimo giro). Ritorna l'id della riga in gil_job_runs.
      *
+     * Con $runId (riga 'running' di startRun) la riga esistente viene chiusa invece di inserirne
+     * una nuova; se nel frattempo non e' piu' 'running' (es. chiusa come interrotta) se ne
+     * inserisce una nuova.
+     *
      * @param 'ok'|'error' $status
      * @param list<array{ref:string,reason:string}> $errorDetails
      */
@@ -111,29 +115,60 @@ final class JobStateRepository
         ?string $errorMessage,
         array $errorDetails,
         \DateTimeImmutable $nextRunAt,
-        bool $manual = false
+        bool $manual = false,
+        ?int $runId = null,
+        ?int $totalItems = null,
+        ?int $remainingItems = null
     ): int {
         $pdo = $this->pdo();
         $pdo->beginTransaction();
         try {
-            $st = $pdo->prepare(
-                'INSERT INTO gil_job_runs (job, started_at, finished_at, batches, processed, ok, skipped, errors, status, manual, error_message)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            );
-            $st->execute([
-                $job,
-                $startedAt->format(self::DT),
-                $finishedAt->format(self::DT),
-                $batches,
-                $totals->processed,
-                $totals->ok,
-                $totals->skipped,
-                $totals->errors,
-                $status,
-                $manual ? 1 : 0,
-                $errorMessage,
-            ]);
-            $runId = (int)$pdo->lastInsertId();
+            $updated = 0;
+            if ($runId !== null) {
+                // Riga 'running' creata da startRun(): la chiude (stesso id visto in UI durante il giro).
+                $st = $pdo->prepare(
+                    "UPDATE gil_job_runs SET finished_at = ?, batches = ?, processed = ?, ok = ?, skipped = ?, errors = ?,
+                       total_items = ?, remaining_items = ?, status = ?, error_message = ?
+                     WHERE id = ? AND job = ? AND status = 'running'"
+                );
+                $st->execute([
+                    $finishedAt->format(self::DT),
+                    $batches,
+                    $totals->processed,
+                    $totals->ok,
+                    $totals->skipped,
+                    $totals->errors,
+                    $totalItems,
+                    $remainingItems,
+                    $status,
+                    $errorMessage,
+                    $runId,
+                    $job,
+                ]);
+                $updated = $st->rowCount();
+            }
+            if ($updated === 0) {
+                $st = $pdo->prepare(
+                    'INSERT INTO gil_job_runs (job, started_at, finished_at, batches, processed, ok, skipped, errors, total_items, remaining_items, status, manual, error_message)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                );
+                $st->execute([
+                    $job,
+                    $startedAt->format(self::DT),
+                    $finishedAt->format(self::DT),
+                    $batches,
+                    $totals->processed,
+                    $totals->ok,
+                    $totals->skipped,
+                    $totals->errors,
+                    $totalItems,
+                    $remainingItems,
+                    $status,
+                    $manual ? 1 : 0,
+                    $errorMessage,
+                ]);
+                $runId = (int)$pdo->lastInsertId();
+            }
 
             if ($errorDetails !== []) {
                 $ins = $pdo->prepare('INSERT INTO gil_job_run_errors (run_id, ref, reason) VALUES (?, ?, ?)');
@@ -171,6 +206,72 @@ final class JobStateRepository
             }
             throw $e;
         }
+    }
+
+    /** Motivo registrato sulle righe 'running' lasciate da un processo terminato durante il giro. */
+    public const INTERRUPTED_MESSAGE = 'Interrotto: processo del worker terminato durante il giro';
+
+    /**
+     * Riga storico all'AVVIO del giro (status 'running', finished_at NULL): visibile in UI con i
+     * contatori aggiornati da updateRunProgress(). Chiusa da recordRun($runId) o rimossa da
+     * deleteRun() se il giro si rivela silenzioso.
+     */
+    public function startRun(string $job, \DateTimeImmutable $startedAt, bool $manual, ?int $totalItems = null): int
+    {
+        // Stesso PDO per INSERT e lastInsertId(): il provider puo' fare un ping (riconnessione).
+        $pdo = $this->pdo();
+        $st = $pdo->prepare(
+            "INSERT INTO gil_job_runs (job, started_at, finished_at, status, manual, total_items, remaining_items)
+             VALUES (?, ?, NULL, 'running', ?, ?, ?)"
+        );
+        $st->execute([$job, $startedAt->format(self::DT), $manual ? 1 : 0, $totalItems, $totalItems]);
+        return (int)$pdo->lastInsertId();
+    }
+
+    /** Contatori del giro in corso dopo un batch (solo righe ancora 'running'). */
+    public function updateRunProgress(int $runId, int $batches, JobResult $totals, ?int $totalItems, ?int $remainingItems): void
+    {
+        $st = $this->pdo()->prepare(
+            "UPDATE gil_job_runs SET batches = ?, processed = ?, ok = ?, skipped = ?, errors = ?, total_items = ?, remaining_items = ?
+             WHERE id = ? AND status = 'running'"
+        );
+        $st->execute([$batches, $totals->processed, $totals->ok, $totals->skipped, $totals->errors, $totalItems, $remainingItems, $runId]);
+    }
+
+    /** Giro rivelatosi silenzioso (nessun lavoro): la riga 'running' non resta nello storico. */
+    public function deleteRun(int $runId): void
+    {
+        $st = $this->pdo()->prepare("DELETE FROM gil_job_runs WHERE id = ? AND status = 'running'");
+        $st->execute([$runId]);
+    }
+
+    /**
+     * Chiude come 'error' (INTERRUPTED_MESSAGE) le righe 'running' di $job: chiamato da JobRunner
+     * con il lock `job:<name>` appena preso, quindi nessun altro giro di $job e' vivo.
+     */
+    public function failStaleRunning(string $job): int
+    {
+        $st = $this->pdo()->prepare(
+            "UPDATE gil_job_runs SET status = 'error', finished_at = ?, error_message = ? WHERE job = ? AND status = 'running'"
+        );
+        $st->execute([$this->clock->now()->format(self::DT), self::INTERRUPTED_MESSAGE, $job]);
+        return $st->rowCount();
+    }
+
+    /**
+     * Ultima riga 'running' per lavoro (giro in corso, o lasciata da un processo ucciso: vale
+     * solo insieme al lock, vedi JobControl::statuses()).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function runningRuns(): array
+    {
+        $st = $this->pdo()->query("SELECT * FROM gil_job_runs WHERE status = 'running' ORDER BY id");
+        $out = [];
+        foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $out[(string)$row['job']] = $row;
+        }
+        return $out;
     }
 
     /**

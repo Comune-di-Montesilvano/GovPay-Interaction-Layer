@@ -17,7 +17,7 @@ use App\Database\MappingPendenzeRepository;
  * Ordine di applicazione: MappingPendenzeRepository::sortForAssignment() (prefisso piu' lungo
  * prima, a parita' di lunghezza il custom; transazioni_count non conta).
  */
-final class MappingL1Job implements PeriodicJob
+final class MappingL1Job implements PeriodicJob, CountsRemaining
 {
     public function __construct(
         private readonly MappingPendenzeRepository $repo,
@@ -36,6 +36,12 @@ final class MappingL1Job implements PeriodicJob
      * processed = righe assegnate + righe passate a NO_MATCH; ok = assegnate; skipped = NO_MATCH;
      * hadWork = assegnazioni > 0.
      */
+    /** Righe PENDING pronte per L1 (Biz PROCESSED, e TEFA SKIPPED se abilitato). */
+    public function remaining(): ?int
+    {
+        return $this->repo->countReadyForMapping($this->idDominio);
+    }
+
     public function runOnce(JobContext $ctx): JobResult
     {
         // Ogni iterazione rilegge i settings: in un processo longevo la cache statica

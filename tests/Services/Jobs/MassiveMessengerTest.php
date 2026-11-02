@@ -884,4 +884,19 @@ final class MassiveMessengerTest extends DbTestCase
 
         self::assertSame(['J', 'M', 'M', 'M'], $order);
     }
+
+    /** remaining() = righe da prendere in carico; 0 con la coda piena (giro silenzioso per contropressione). */
+    public function testEnqueueRemainingCountsClaimableRowsAndIsZeroUnderBackpressure(): void
+    {
+        $this->insertRow('PENDING', self::payload(1), riga: 1);
+        $this->insertRow('CANCEL_PENDING', self::payload(2), riga: 2);
+        $this->insertRow('ERROR', self::payload(3), riga: 3);
+        self::assertSame(2, $this->enqueueJob()->remaining());
+
+        $transport = WorkerKernel::createMassiveTransport($this->dbal);
+        for ($i = 0; $i < MassiveEnqueueJob::BATCH_SIZE; $i++) {
+            $transport->send(new Envelope(new ProcessMassiveRow(999000 + $i, 'x')));
+        }
+        self::assertSame(0, $this->enqueueJob()->remaining());
+    }
 }
