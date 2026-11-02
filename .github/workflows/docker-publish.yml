@@ -5,6 +5,10 @@ name: Docker Publish
 # keyless → smoke test dello stack di produzione con i 3 digest → publish dei tag.
 # Nessun tag (1.6.8, 1.6, latest, latest-YYYYMMDD) esiste prima di Trivy + smoke: un'immagine
 # che fallisce resta un digest orfano, rimosso da ghcr-cleanup.yml.
+# Tag pre-release (vX.Y.Z-rc1, qualsiasi suffisso `-`): stessa pipeline, pubblicano solo il
+# proprio tag (1.6.9-rc1), mai latest/X.Y/latest-YYYYMMDD, nessuna GitHub Release.
+# Tag vX.Y.Z non pre-release: dopo il publish, job release crea la GitHub Release (se assente)
+# e allega SBOM CycloneDX + bundle di provenance di ogni immagine.
 # Verifica al deploy: scripts/verify-images.sh <tag>.
 
 on:
@@ -66,6 +70,7 @@ jobs:
       skip: ${{ inputs.dry_run && 'true' || steps.mode.outputs.skip || steps.check.outputs.skip || 'false' }}
       reason: ${{ steps.check.outputs.reason || steps.mode.outputs.reason }}
       auto_tag: ${{ steps.mode.outputs.auto_tag }}
+      prerelease: ${{ steps.mode.outputs.prerelease || 'false' }}
     steps:
       # Traffico in uscita limitato agli host elencati (anche dentro i container avviati dal
       # job). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
@@ -106,7 +111,14 @@ jobs:
           auto=false
           skip=""
           reason=""
+          prerelease=false
           if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Solo semver vX.Y.Z o vX.Y.Z-<pre> (metadata-action type=semver non produrrebbe
+            # tag per altri formati e il publish fallirebbe dopo tutta la pipeline).
+            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::tag $GITHUB_REF_NAME non semver (attesi vX.Y.Z o vX.Y.Z-rc1)"
+              exit 1
+            fi
             # Verifica origine: il commit del tag deve essere gia' su main (passato da PR e
             # required check). Un tag su un branch qualsiasi non produce immagini.
             if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
@@ -114,6 +126,11 @@ jobs:
               exit 1
             fi
             reason="tag $GITHUB_REF_NAME"
+            # Pre-release: pipeline completa, ma solo il proprio tag (mai latest ne' X.Y).
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+              prerelease=true
+              reason="tag $GITHUB_REF_NAME (pre-release)"
+            fi
           elif [[ "$EVENT_NAME" == "schedule" ]]; then
             auto=true
           elif [[ "$REBUILD_LATEST" == "true" ]]; then
@@ -136,6 +153,7 @@ jobs:
             echo "skip=$skip"
             echo "reason=$reason"
             echo "auto_tag=latest-$(date -u +%Y%m%d)"
+            echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
       # Report Trivy delle immagini latest pubblicate, letti da rebuild-check. Mai bloccanti
       # qui: un'immagine assente o uno scan fallito diventano una causa di rebuild.
@@ -356,10 +374,14 @@ jobs:
           # Tag previsti, NON applicati qui: l'immagine va su GHCR solo per digest e il job
           # publish li applica dopo Trivy, firma e smoke test di TUTTE le immagini.
           # Tag git vX.Y.Z → X.Y.Z, X.Y, latest; rebuild automatico → latest, latest-YYYYMMDD.
+          # Pre-release vX.Y.Z-rc1 → solo X.Y.Z-rc1 (type=semver salta {{major}}.{{minor}} sulle
+          # pre-release; latest escluso qui e con latest=false, il publish lo ricontrolla).
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || needs.setup.outputs.auto == 'true' }}
+            type=raw,value=latest,enable=${{ (startsWith(github.ref, 'refs/tags/') && needs.setup.outputs.prerelease != 'true') || needs.setup.outputs.auto == 'true' }}
             type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
       - name: Build & push · ${{ matrix.app }}
@@ -426,6 +448,7 @@ jobs:
       # provenance SLSA (repo, commit, workflow e run che hanno prodotto l'immagine) e SBOM.
       # Verifica: scripts/verify-images.sh.
       - name: Attestazione provenance · ${{ matrix.app }}
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}
@@ -464,6 +487,27 @@ jobs:
         with:
           name: digest-${{ matrix.image_suffix }}
           path: handoff/
+          retention-days: 1
+          if-no-files-found: error
+
+      # Asset della GitHub Release (solo tag vX.Y.Z non pre-release, job release): SBOM
+      # CycloneDX e bundle Sigstore della provenance SLSA (una riga JSON, verificabile con
+      # `gh attestation verify --bundle`).
+      - name: Prepara asset release · ${{ matrix.app }}
+        if: startsWith(github.ref, 'refs/tags/v') && needs.setup.outputs.prerelease != 'true'
+        env:
+          IMG: ${{ matrix.image_suffix }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp "sbom-$IMG.cdx.json" "release-assets/govpay-interaction-layer-$IMG.cdx.json"
+          cp "$BUNDLE" "release-assets/govpay-interaction-layer-$IMG.intoto.jsonl"
+      - if: startsWith(github.ref, 'refs/tags/v') && needs.setup.outputs.prerelease != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.image_suffix }}
+          path: release-assets/
           retention-days: 1
           if-no-files-found: error
 
@@ -550,10 +594,14 @@ jobs:
           # Tag previsti, NON applicati qui: l'immagine va su GHCR solo per digest e il job
           # publish li applica dopo Trivy, firma e smoke test di TUTTE le immagini.
           # Tag git vX.Y.Z → X.Y.Z, X.Y, latest; rebuild automatico → latest, latest-YYYYMMDD.
+          # Pre-release vX.Y.Z-rc1 → solo X.Y.Z-rc1 (type=semver salta {{major}}.{{minor}} sulle
+          # pre-release; latest escluso qui e con latest=false, il publish lo ricontrolla).
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || needs.setup.outputs.auto == 'true' }}
+            type=raw,value=latest,enable=${{ (startsWith(github.ref, 'refs/tags/') && needs.setup.outputs.prerelease != 'true') || needs.setup.outputs.auto == 'true' }}
             type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
       - name: Build & push · ${{ matrix.image }}
@@ -617,6 +665,7 @@ jobs:
       # provenance SLSA (repo, commit, workflow e run che hanno prodotto l'immagine) e SBOM.
       # Verifica: scripts/verify-images.sh.
       - name: Attestazione provenance · ${{ matrix.image }}
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}
@@ -655,6 +704,27 @@ jobs:
         with:
           name: digest-${{ matrix.image }}
           path: handoff/
+          retention-days: 1
+          if-no-files-found: error
+
+      # Asset della GitHub Release (solo tag vX.Y.Z non pre-release, job release): SBOM
+      # CycloneDX e bundle Sigstore della provenance SLSA (una riga JSON, verificabile con
+      # `gh attestation verify --bundle`).
+      - name: Prepara asset release · ${{ matrix.image }}
+        if: startsWith(github.ref, 'refs/tags/v') && needs.setup.outputs.prerelease != 'true'
+        env:
+          IMG: ${{ matrix.image }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp "sbom-$IMG.cdx.json" "release-assets/govpay-interaction-layer-$IMG.cdx.json"
+          cp "$BUNDLE" "release-assets/govpay-interaction-layer-$IMG.intoto.jsonl"
+      - if: startsWith(github.ref, 'refs/tags/v') && needs.setup.outputs.prerelease != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.image }}
+          path: release-assets/
           retention-days: 1
           if-no-files-found: error
 
@@ -732,13 +802,17 @@ jobs:
   # ── Publish: tag su tutte e 3 le immagini insieme, solo dopo Trivy + firma + smoke ─
   # Mai un tag misto tra revisioni (frontoffice usa le API /api/frontoffice/* del backoffice
   # della stessa revisione): si controllano prima tutti i digest, poi si tagga.
-  # Tag git vX.Y.Z → X.Y.Z, X.Y, latest; rebuild automatico → latest, latest-YYYYMMDD
-  # (liste calcolate da metadata-action nei job di build).
+  # Tag git vX.Y.Z → X.Y.Z, X.Y, latest; rebuild automatico → latest, latest-YYYYMMDD;
+  # pre-release vX.Y.Z-rc1 → solo X.Y.Z-rc1 (liste calcolate da metadata-action nei build).
+  # Ordine: prima i tag di versione di tutte e 3, poi latest-YYYYMMDD, `latest` per ultimo,
+  # ogni imagetools create con 3 tentativi: un errore prima dell'ultima fase non sposta latest
+  # (resta la revisione precedente per tutte e 3); solo un errore persistente durante l'ultima
+  # fase puo' lasciare latest misto (rilanciare la run: i tag gia' applicati non cambiano).
   publish:
     needs: [setup, build-php, build-services, smoke]
     if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -766,30 +840,123 @@ jobs:
       - name: Pubblica tag
         env:
           ORG: ${{ env.ORG }}
+          PRERELEASE: ${{ needs.setup.outputs.prerelease }}
         run: |
           set -euo pipefail
-          for img in backoffice frontoffice db; do
-            [ -s "handoff/$img.digest" ] || { echo "::error::digest mancante per $img"; exit 1; }
-            grep -q . "handoff/$img.tags" || { echo "::error::nessun tag da pubblicare per $img"; exit 1; }
-          done
-          for img in backoffice frontoffice db; do
+          imgs=(backoffice frontoffice db)
+          # 3 tentativi con pausa crescente (errori transitori del registry). imagetools create
+          # sullo stesso digest e' idempotente: ripeterlo non cambia il risultato.
+          retry() {
+            local n
+            for n in 1 2 3; do
+              "$@" && return 0
+              if [ "$n" -lt 3 ]; then
+                echo "tentativo $n/3 fallito, riprovo: $*" >&2
+                sleep $((n * 15))
+              fi
+            done
+            echo "3 tentativi falliti: $*" >&2
+            return 1
+          }
+          tag_digest() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -re .digest; }
+          # Tag di una fase: version (tutti tranne latest*), dated (latest-YYYYMMDD), latest.
+          tags_of() {
+            local image="ghcr.io/$ORG/govpay-interaction-layer-$1" t
+            while IFS= read -r t; do
+              [ -n "$t" ] || continue
+              case "$2:${t#"$image:"}" in
+                version:latest | version:latest-*) ;;
+                version:* | dated:latest-* | latest:latest) echo "$t" ;;
+              esac
+            done < "handoff/$1.tags"
+          }
+          # Applica i tag (argomenti dopo immagine e digest) e controlla che ognuno punti al digest.
+          apply() {
+            local image=$1 digest=$2 t tagged
+            shift 2
+            [ "$#" -gt 0 ] || return 0
+            local args=()
+            for t in "$@"; do args+=(-t "$t"); done
+            # --prefer-index=false: copia identica del manifest firmato. Di default imagetools
+            # create avvolge un manifest singolo in un nuovo index (digest diverso, non firmato).
+            retry docker buildx imagetools create --prefer-index=false "${args[@]}" "$image@$digest"
+            for t in "$@"; do
+              tagged=$(retry tag_digest "$t")
+              [ "$tagged" = "$digest" ] || { echo "::error::$t punta a $tagged, non al digest firmato $digest"; exit 1; }
+            done
+            echo "::notice::$image@$digest → $*"
+          }
+
+          # Controlli su tutte e 3 prima di toccare qualunque tag.
+          for img in "${imgs[@]}"; do
             image="ghcr.io/$ORG/govpay-interaction-layer-$img"
-            args=()
+            grep -qE '^sha256:[0-9a-f]{64}$' "handoff/$img.digest" || { echo "::error::digest mancante o non valido per $img"; exit 1; }
+            grep -q . "handoff/$img.tags" || { echo "::error::nessun tag da pubblicare per $img"; exit 1; }
             while IFS= read -r t; do
               [ -n "$t" ] || continue
               # Solo tag della stessa immagine (metadata-action li produce gia' completi).
               [[ "$t" == "$image:"* ]] || { echo "::error::tag inatteso per $img: $t"; exit 1; }
-              args+=(-t "$t")
+              # Pre-release: unico tag ammesso = il proprio (mai latest, X.Y, latest-YYYYMMDD).
+              if [ "$PRERELEASE" = "true" ] && [ "$t" != "$image:${GITHUB_REF_NAME#v}" ]; then
+                echo "::error::pre-release $GITHUB_REF_NAME: tag non ammesso $t"
+                exit 1
+              fi
             done < "handoff/$img.tags"
-            digest=$(cat "handoff/$img.digest")
-            # --prefer-index=false: copia identica del manifest firmato. Di default imagetools
-            # create avvolge un manifest singolo in un nuovo index (digest diverso, non firmato).
-            docker buildx imagetools create --prefer-index=false "${args[@]}" "$image@$digest"
-            first=$(head -n1 "handoff/$img.tags")
-            tagged=$(docker buildx imagetools inspect "$first" --format '{{json .Manifest}}' | jq -r .digest)
-            [ "$tagged" = "$digest" ] || { echo "::error::$first punta a $tagged, non al digest firmato $digest"; exit 1; }
-            echo "::notice::$image@$digest → $(tr '\n' ' ' < "handoff/$img.tags")"
           done
+
+          for phase in version dated latest; do
+            for img in "${imgs[@]}"; do
+              mapfile -t tags < <(tags_of "$img" "$phase")
+              apply "ghcr.io/$ORG/govpay-interaction-layer-$img" "$(cat "handoff/$img.digest")" "${tags[@]}"
+            done
+          done
+
+  # ── GitHub Release (Scorecard Signed-Releases): solo tag vX.Y.Z non pre-release ──
+  # Dopo il publish: crea la Release se assente (note generate da GitHub) e allega per ogni
+  # immagine SBOM CycloneDX (*.cdx.json) e bundle Sigstore della provenance (*.intoto.jsonl).
+  # Release gia' creata a mano: solo gli asset (sovrascritti se la run viene rilanciata).
+  release:
+    needs: [setup, publish]
+    if: needs.setup.outputs.skip != 'true' && startsWith(github.ref, 'refs/tags/v') && needs.setup.outputs.prerelease != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # API GitHub + host di upload degli asset delle release.
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            uploads.github.com:443
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Crea release e allega asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for img in backoffice frontoffice db; do
+            for f in "govpay-interaction-layer-$img.cdx.json" "govpay-interaction-layer-$img.intoto.jsonl"; do
+              [ -s "release-assets/$f" ] || { echo "::error::asset mancante: $f"; exit 1; }
+            done
+          done
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG gia' presente: allego solo gli asset."
+          else
+            # Se nel frattempo l'ha creata qualcun altro, create fallisce e la view passa.
+            gh release create "$TAG" -R "$REPO" --verify-tag --generate-notes --title "$TAG" \
+              || gh release view "$TAG" -R "$REPO" >/dev/null
+          fi
+          gh release upload "$TAG" -R "$REPO" --clobber release-assets/*
+          echo "::notice::Release $TAG: $(find release-assets -type f -printf '%f ')"
 
   # ── Rebuild automatico fallito: issue (latest resta la build precedente) ───
   # Tipico: vulnerabilità con fix non ancora nelle immagini base, host bloccato da
