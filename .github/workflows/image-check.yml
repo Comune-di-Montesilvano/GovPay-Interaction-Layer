@@ -161,10 +161,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
-      # Data del giorno: come docker-publish, invalida il layer apt di runtime-base.
+      # Ora (UTC): invalida il layer apt di runtime-base piu' spesso di docker-publish (chiave
+      # giornaliera), cosi' una patch Debian uscita dopo il primo build del giorno entra subito e il
+      # gate Trivy in coda non resta bloccato fino a mezzanotte UTC (visto 2026-11-02, linux-libc-dev).
       - name: Resolve apt refresh key
         id: apt
-        run: echo "apt_refresh=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+        run: echo "apt_refresh=$(date -u +%FT%H)" >> "$GITHUB_OUTPUT"
 
       # Solo build locale: nessun push, nessun cache-to (la cache la scrive docker-publish).
       - name: Build (load) · ${{ matrix.image }}
