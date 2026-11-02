@@ -9,26 +9,28 @@ name: Dependabot auto-merge
 # in auto-merge: e' la patch di sicurezza che il rebuild-check deve portare in latest.
 #
 # Token GitHub App (secret GIL_BOT_CLIENT_ID / GIL_BOT_PRIVATE_KEY) invece di GITHUB_TOKEN:
-# le azioni di merge fatte con GITHUB_TOKEN non triggerano altri workflow (CI sul merge). Sul trigger pull_request di dependabot sono
-# visibili solo i secret Dependabot: i due secret vanno salvati sia come Actions che come
-# Dependabot secret.
+# gli eventi generati con GITHUB_TOKEN non avviano altri workflow e il merge finale e'
+# attribuito a chi ha abilitato l'auto-merge: con GITHUB_TOKEN il push su main non farebbe
+# partire i workflow di main (CI, trivy-fs, semgrep).
+# Il job gira solo su pull_request aperte da dependabot, dove sono visibili solo i Dependabot
+# secret: i due secret servono come Dependabot secret (come Actions secret li usa
+# security-alerts.yml).
 # Permessi App (repo): Contents RW, Pull requests RW, Workflows RW (le PR github-actions
 # toccano .github/workflows/), Metadata R.
 on:
   pull_request:
     types: [opened, reopened, synchronize]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   enable-automerge:
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
