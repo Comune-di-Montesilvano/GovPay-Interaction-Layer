@@ -195,7 +195,7 @@ class IncassiTassonomiaController
                 (string)($row['indice'] ?? ''),
                 (string)($row['stato'] ?? ''),
                 (string)($row['tipo'] ?? ''),
-                (string)number_format((float)($row['importo'] ?? 0), 2, '.', ''),
+                (string)number_format((float)($row['importo'] ?? 0), 2, ',', ''),
                 (string)($row['id_voce_pendenza'] ?? ''),
                 (string)($row['incasso'] ?? ''),
             ], ';', '"', '\\');
