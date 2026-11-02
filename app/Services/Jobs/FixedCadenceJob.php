@@ -11,7 +11,7 @@ namespace App\Services\Jobs;
  * ogni ciclo). Con "hadWork -> subito" quelle righe verrebbero ritentate a raffica (GovPay,
  * ponte GERI, contatore digest) invece che ogni N minuti: cadenza invariata rispetto ad oggi.
  */
-final class FixedCadenceJob implements PeriodicJob
+final class FixedCadenceJob implements PeriodicJob, CountsRemaining
 {
     public function __construct(private readonly PeriodicJob $inner) {}
 
@@ -23,6 +23,11 @@ final class FixedCadenceJob implements PeriodicJob
     public function emptyQueueIntervalSeconds(): int
     {
         return $this->inner->emptyQueueIntervalSeconds();
+    }
+
+    public function remaining(): ?int
+    {
+        return $this->inner instanceof CountsRemaining ? $this->inner->remaining() : null;
     }
 
     public function runOnce(JobContext $ctx): JobResult

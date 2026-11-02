@@ -200,7 +200,10 @@ final class JobRunnerTest extends DbTestCase
         $silent = new FakePeriodicJob([fn() => new JobResult(0, 0, 0, 0, false, [], true)], 30);
         $this->runner()->run($silent, true);
         self::assertCount(2, self::runs(), 'manuale: sempre registrato');
-        self::assertCount(2, $this->out);
+        // primo giro: avanzamento del batch che prosegue + riepilogo; manuale: avvio + riepilogo
+        self::assertCount(4, $this->out);
+        self::assertStringContainsString('batch 1: +3 (ok 3, saltati 0, errori 0)', $this->out[0]);
+        self::assertStringContainsString('giro manuale avviato', $this->out[2]);
     }
 
     public function testLoopsWhileHadWorkInOneRun(): void

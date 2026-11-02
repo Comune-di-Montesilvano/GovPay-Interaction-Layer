@@ -64,6 +64,23 @@ final class JobRegistry
         return ($this->factories[$name])();
     }
 
+    /**
+     * Sotto-registro con i soli lavori $names (processo figlio del worker: scheduler e coda
+     * manuale del suo gruppo). Nomi sconosciuti ignorati.
+     *
+     * @param list<string> $names
+     */
+    public function only(array $names): self
+    {
+        $sub = new self();
+        foreach ($this->factories as $name => $factory) {
+            if (in_array($name, $names, true)) {
+                $sub->factories[$name] = $factory;
+            }
+        }
+        return $sub;
+    }
+
     /** @return list<string> in ordine di registrazione */
     public function names(): array
     {

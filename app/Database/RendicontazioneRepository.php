@@ -29,6 +29,19 @@ class RendicontazioneRepository
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
 
+    /** Quante righe getPendingOrError() selezionerebbe (senza LIMIT). */
+    public function countPendingOrError(string $idDominio, string $minDataPagamento): int
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM flussi_rendicontazioni
+             WHERE id_dominio = :dom AND is_govpay = 1
+               AND rendicontazione_stato IN ('PENDING', 'ERRORE')
+               AND data_pagamento >= :min_data"
+        );
+        $stmt->execute([':dom' => $idDominio, ':min_data' => $minDataPagamento]);
+        return (int)$stmt->fetchColumn();
+    }
+
     public function markInAttesaConferma(int $id): void
     {
         $this->pdo->prepare(

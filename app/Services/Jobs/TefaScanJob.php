@@ -16,8 +16,11 @@ use App\Services\TefaScannerService;
  * Il gate `tefa_enabled`, l'allineamento retroattivo all'avvio, la pausa di idle (15 minuti)
  * e lo stop file restano nello script.
  */
-final class TefaScanJob implements PeriodicJob
+final class TefaScanJob implements PeriodicJob, CountsRemaining
 {
+    /** Classificazioni al massimo in un runOnce (poi hadWork=true): avanzamento visibile per batch. */
+    public const MAX_ITEMS_PER_BATCH = 500;
+
     /** Le righe ERROR tornano PENDING solo dopo questo intervallo dall'errore (backoff). */
     public const ERROR_RETRY_MINUTES = 60;
 
@@ -102,6 +105,9 @@ final class TefaScanJob implements PeriodicJob
                 if ($ctx->shouldStop()) {
                     return new JobResult($processed, $ok, $skipped, $errors, $processed > 0, $details);
                 }
+                if ($processed >= self::MAX_ITEMS_PER_BATCH) {
+                    return new JobResult($processed, $ok, $skipped, $errors, true, $details);
+                }
                 $n   = $i + 1;
                 $iur = (string)$row['iur'];
                 $ctx->debug("  Pendenza {$n}/{$total} IUR={$iur}: classifico TEFA...");
@@ -165,6 +171,23 @@ final class TefaScanJob implements PeriodicJob
     {
         return 'tefa';
     }
+
+    /** Righe tefa_ricevute PENDING in-scope + ricevute Biz PROCESSED non ancora in tefa_ricevute. */
+    public function remaining(): ?int
+    {
+        SettingsRepository::flush();
+        $minDate = self::minDate();
+        return $this->repo->countPendingForProcessing($this->idDominio, $minDate)
+            + $this->bizRepo->countProcessedForTefa($this->idDominio, $minDate);
+    }
+
+    /** Filtro data del lavoro (backoffice.ragioneria_scan_da), come in runOnce. */
+    private static function minDate(): ?string
+    {
+        $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $scanDa) ? $scanDa : null;
+    }
+
 
     /** Coda vuota: 15 minuti. */
     public function emptyQueueIntervalSeconds(): int

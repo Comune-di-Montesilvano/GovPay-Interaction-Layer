@@ -523,4 +523,24 @@ final class BizScanJobTest extends DbTestCase
         self::assertSame([0, 0, 0, 0, false], [$res->processed, $res->ok, $res->skipped, $res->errors, $res->hadWork]);
         self::assertCount(0, $this->requests);
     }
+
+    /**
+     * Worker parallelo: un runOnce elabora al massimo MAX_ITEMS_PER_BATCH ricevute (avanzamento
+     * per batch, lock rinnovato tra batch); remaining() = PENDING in-scope + IUR non accodati.
+     */
+    public function testBatchIsCappedAndRemainingCountsQueuedAndUnqueuedIurs(): void
+    {
+        $n = BizScanJob::MAX_ITEMS_PER_BATCH + 10;
+        for ($i = 1; $i <= $n; $i++) {
+            $this->flusso($i);
+        }
+        $job = $this->job(array_fill(0, $n, self::http(500)));
+        self::assertSame($n, $job->remaining(), 'nessuno ancora accodato: tutti da elaborare');
+
+        $res = $job->runOnce(new RecordingJobContext());
+
+        self::assertSame(BizScanJob::MAX_ITEMS_PER_BATCH, $res->processed);
+        self::assertTrue($res->hadWork, 'resto della coda al batch successivo');
+        self::assertSame(10, $job->remaining(), 'restano i PENDING accodati non ancora elaborati');
+    }
 }

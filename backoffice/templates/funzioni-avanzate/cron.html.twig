@@ -83,6 +83,27 @@
                 </span>
               </div>
               <p class="text-muted small mb-1">{{ job.description }}</p>
+              {% set cur = running ? (st.current_run ?? null) : null %}
+              {% if cur %}
+                <div class="small" id="job-progress-{{ jobKey }}">
+                  <div class="d-flex justify-content-between text-muted mb-1">
+                    <span><i class="fas fa-person-running me-1" aria-hidden="true"></i>Giro in corso dal <strong>{{ cur.started_at|date('d/m H:i:s') }}</strong>{% if cur.manual %} (manuale){% endif %}</span>
+                    <span>
+                      {% if cur.total is not null %}
+                        <strong>{{ cur.processed }} / {{ cur.total }}</strong> ({{ cur.percent }}%)
+                      {% else %}
+                        <strong>{{ cur.processed }}</strong> elaborati
+                      {% endif %}
+                    </span>
+                  </div>
+                  {% if cur.total is not null %}
+                    <div class="progress" style="height:6px" role="progressbar" aria-label="Avanzamento giro {{ job.label }}" aria-valuenow="{{ cur.percent }}" aria-valuemin="0" aria-valuemax="100">
+                      <div class="progress-bar bg-info" style="width: {{ cur.percent }}%"></div>
+                    </div>
+                  {% endif %}
+                  <div class="text-muted mt-1">{{ cur.batches }} batch · ok {{ cur.ok }} · saltati {{ cur.skipped }} · errori {{ cur.errors }}{% if cur.remaining is not null %} · restanti {{ cur.remaining }}{% endif %}</div>
+                </div>
+              {% endif %}
               <div class="small text-muted">
                 <i class="fas fa-clock-rotate-left me-1" aria-hidden="true"></i>Ultimo giro:
                 {% if st.last_finished_at ?? null %}
@@ -247,6 +268,13 @@
       document.getElementById('daemon-log-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       await refreshLog();
     };
+
+    // Pannello log aperto su un servizio: aggiornamento automatico (avanzamento del giro in corso).
+    setInterval(() => {
+      if (currentLogJob && !document.getElementById('daemon-log-panel').classList.contains('d-none')) {
+        window.refreshLog();
+      }
+    }, 10000);
 
     window.refreshLog = async function () {
       if (!currentLogJob) return;

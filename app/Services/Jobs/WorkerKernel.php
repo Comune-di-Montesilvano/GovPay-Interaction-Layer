@@ -18,7 +18,6 @@ use App\Services\Jobs\Message\ProcessMassiveRow;
 use App\Services\Jobs\Message\RunJob;
 use App\Services\Jobs\Message\SchedulerTick;
 use App\Services\Jobs\Messenger\ArrayContainer;
-use App\Services\Jobs\Messenger\FairShareReceiver;
 use App\Services\Jobs\Messenger\TransientOnlyRetryStrategy;
 use Doctrine\DBAL\Connection as DbalConnection;
 use Sentry\State\Scope;
@@ -48,38 +47,44 @@ use Symfony\Component\Scheduler\RecurringMessage;
 use Symfony\Component\Scheduler\Schedule;
 
 /**
- * Processo worker (bin/worker): Symfony Scheduler + Messenger su MariaDB.
+ * Un processo del worker (bin/worker): Symfony Scheduler + Messenger su MariaDB, limitato a un
+ * WorkerScope. In produzione WorkerSupervisor (PID 1, `gil:worker`) avvia un processo figlio per
+ * gruppo di lavori (`gil:worker:job <gruppo>`, JobCatalog::processGroups) e uno per la coda
+ * `massive` (`gil:worker:massive`): i lavori girano IN PARALLELO, come i vecchi demoni.
  *
- * - Ricevitori del Worker Messenger, in ordine: trasporto Doctrine `jobs` (RunJob manuali da UI,
- *   auto_setup disattivato: tabelle dalla migrazione 036), trasporto Doctrine `massive` (un
- *   ProcessMassiveRow per riga pendenze massive, accodati da MassiveEnqueueJob) e scheduler
- *   (SchedulerTick ogni 5 s, in memoria, solo l'ultimo tick perso). `jobs` per primo: il Worker
- *   riparte dal primo ricevitore dopo ogni messaggio e, con un lavoro in arretrato, lo scheduler
- *   ha sempre un tick perso pronto: in seconda posizione la coda manuale non verrebbe mai letta.
- *   `massive` cede il turno allo scheduler ogni MASSIVE_FAIR_SHARE messaggi (FairShareReceiver):
- *   la coda e' limitata a BATCH_SIZE messaggi (contropressione di MassiveEnqueueJob) e ogni
- *   messaggio dura al massimo il timeout della PUT (90 s) + verifiche IUV vincolato.
- * - Retry: `jobs` e scheduler nessuno (max_retries=0, messaggio fallito scartato). `massive`:
- *   solo TransientMassiveFailure, 3 retry a 30/60/120 s (TransientOnlyRetryStrategy, listener
- *   standard di Messenger che rimette il messaggio in coda con DelayStamp). Tentativi esauriti o
- *   errore non ritentabile: riga nello stato di errore (onMassiveFailed).
- * - SchedulerTick -> RunJob periodico per ogni lavoro scaduto, gestito subito in sequenza:
- *   un solo processo, nessun giro in parallelo nello stesso worker; tra worker diversi decide
- *   il lock `job:<name>` di JobRunner.
- * - Una sola connessione DBAL condivisa per trasporto e store del lock.
- * - Avvio: attende DB e tabelle (riprova ogni 5 s, una riga per tentativo, mai resa), poi
- *   import una tantum dei file .autostart e pulizia dello storico esecuzioni oltre 30 giorni
- *   (ripetuta circa ogni 24 ore).
+ * - Ricevitori del Worker Messenger, in ordine: code "esegui ora" `jobs.<name>` dei lavori del
+ *   processo (RunJob manuali da UI; in scope all() anche la coda legacy `jobs`), coda `massive`
+ *   (solo scope massive()/all(): un ProcessMassiveRow per riga, accodati da MassiveEnqueueJob) e
+ *   scheduler (SchedulerTick ogni 5 s, in memoria, solo l'ultimo tick perso; solo con lavori).
+ *   Le code manuali per prime: il Worker riparte dal primo ricevitore dopo ogni messaggio e, con
+ *   un lavoro in arretrato, lo scheduler ha sempre un tick perso pronto.
+ *   Trasporti Doctrine con auto_setup disattivato (tabelle dalla migrazione 036; queue_name e'
+ *   una colonna: le code per lavoro non richiedono schema).
+ * - Retry: code manuali e scheduler nessuno (max_retries=0, messaggio fallito scartato).
+ *   `massive`: solo TransientMassiveFailure, 3 retry a 30/60/120 s (TransientOnlyRetryStrategy,
+ *   listener standard di Messenger che rimette il messaggio in coda con DelayStamp). Tentativi
+ *   esauriti o errore non ritentabile: riga nello stato di errore (onMassiveFailed).
+ * - SchedulerTick -> RunJob periodico per ogni lavoro del processo scaduto, gestito subito. Il
+ *   lock `job:<name>` di JobRunner garantisce un solo giro per lavoro anche tra processi.
+ * - Una sola connessione DBAL condivisa per trasporti e store del lock (per processo).
+ * - Avvio: attende DB e tabelle (riprova ogni 5 s, una riga per tentativo, mai resa). Solo con
+ *   housekeeping (supervisore o all()): import una tantum dei file .autostart e pulizia dello
+ *   storico esecuzioni oltre 30 giorni (ripetuta circa ogni 24 ore).
  * - SIGTERM/SIGINT: requestStop(); il batch in corso finisce, il giro si chiude (JobRunner
  *   rilegge lo stop tra un batch e l'altro), il Worker esce, exit 0.
- * - stdout: riepiloghi di JobRunner, errori, righe di avvio/arresto; tick silenzioso.
+ * - stdout: avvio/avanzamento/riepiloghi di JobRunner, errori, righe di avvio/arresto (prefisso
+ *   [worker:<gruppo>]); tick silenzioso.
  */
 final class WorkerKernel
 {
+    /**
+     * Coda "esegui ora" legacy (worker sequenziale, immagini fino alla 1.7.x): svuotata dal
+     * supervisore all'avvio (drainLegacyManualQueue), consumata direttamente solo in scope all().
+     */
     public const QUEUE = 'jobs';
+    /** Prefisso delle code "esegui ora" per lavoro: `jobs.<name>` (queueFor). */
+    public const QUEUE_PREFIX = 'jobs.';
     public const MASSIVE_QUEUE = MassiveEnqueueJob::QUEUE;
-    /** Messaggi `massive` consecutivi prima di cedere il turno allo scheduler. */
-    public const MASSIVE_FAIR_SHARE = 10;
     public const TICK_SECONDS = 5;
     public const DB_RETRY_SECONDS = 5;
     public const DEFAULT_CACHE_DIR = '/var/www/cache';
@@ -93,8 +98,14 @@ final class WorkerKernel
     /** Tabelle senza le quali il worker non parte (migrazione 036 non ancora applicata = attesa). */
     public const REQUIRED_TABLES = ['gil_jobs', 'gil_job_runs', 'gil_job_run_errors', 'messenger_messages', 'lock_keys'];
 
-    /** Colonne senza le quali il worker non parte (migrazione 037: claim delle pendenze massive). */
-    public const REQUIRED_COLUMNS = ['pendenze_massive' => ['claimed_at', 'claim_token']];
+    /**
+     * Colonne senza le quali il worker non parte (migrazione 037: claim delle pendenze massive;
+     * 038: avanzamento dei giri in gil_job_runs).
+     */
+    public const REQUIRED_COLUMNS = [
+        'pendenze_massive' => ['claimed_at', 'claim_token'],
+        'gil_job_runs' => ['total_items', 'remaining_items'],
+    ];
 
     private bool $stopRequested = false;
     private ?Worker $worker = null;
@@ -110,9 +121,12 @@ final class WorkerKernel
     private readonly JobRunner $runner;
     // Non readonly: il gestore del tick lo richiama da una closure creata prima dell'assegnazione.
     private MessageBus $bus;
-    private readonly DoctrineTransport $jobsTransport;
     private readonly DoctrineTransport $massiveTransport;
-    private readonly FairShareReceiver $massiveReceiver;
+    /** @var array<string, DoctrineTransport> coda => trasporto "esegui ora" dei lavori del processo */
+    private readonly array $manualTransports;
+    private readonly WorkerScope $scope;
+    /** Registro dei soli lavori del processo (scheduler e RunJob). */
+    private readonly JobRegistry $scopedRegistry;
     private readonly EventDispatcher $events;
     /** @var \Closure(): MassivePendenzeProcessor */
     private readonly \Closure $massiveProcessorFactory;
@@ -123,6 +137,7 @@ final class WorkerKernel
      * @param (\Closure(): void)|null $databaseProbe lancia se DB/tabelle non pronti (default: REQUIRED_TABLES)
      * @param (\Closure(): MassivePendenzeProcessor)|null $massiveProcessorFactory processore per messaggio (default: GovPay reale)
      * @param RetryStrategyInterface|null $massiveRetryStrategy retry della coda `massive` (default: TransientOnlyRetryStrategy)
+     * @param WorkerScope|null $scope cosa esegue il processo (default: all(), tutto in un processo)
      */
     public function __construct(
         private readonly JobRegistry $registry,
@@ -135,11 +150,14 @@ final class WorkerKernel
         ?LockFactory $locks = null,
         private readonly string $cacheDir = self::DEFAULT_CACHE_DIR,
         ?\Closure $massiveProcessorFactory = null,
-        ?RetryStrategyInterface $massiveRetryStrategy = null
+        ?RetryStrategyInterface $massiveRetryStrategy = null,
+        ?WorkerScope $scope = null
     ) {
+        $this->scope = $scope ?? WorkerScope::all();
+        $this->scopedRegistry = $this->scope->jobs === null ? $this->registry : $this->registry->only($this->scope->jobs);
         $this->clock = $clock ?? new NativeClock();
         $this->output = $output ?? static function (string $line): void {
-            echo $line, "\n";
+            echo $line . "\n"; // una sola write(): righe dei processi paralleli non si mescolano
             flush();
         };
         $this->reportException = $reportException ?? static function (string $suite, \Throwable $e): void {
@@ -161,9 +179,15 @@ final class WorkerKernel
             $this->reportException,
             fn(): bool => $this->stopRequested
         );
-        $this->jobsTransport = self::createJobsTransport($this->dbal);
+        $manual = [];
+        if ($this->scope->legacyQueue) {
+            $manual[self::QUEUE] = self::createJobsTransport($this->dbal);
+        }
+        foreach ($this->scopedRegistry->names() as $name) {
+            $manual[self::queueFor($name)] = self::createJobsTransport($this->dbal, $name);
+        }
+        $this->manualTransports = $manual;
         $this->massiveTransport = self::createMassiveTransport($this->dbal);
-        $this->massiveReceiver = new FairShareReceiver($this->massiveTransport, self::MASSIVE_FAIR_SHARE);
         $this->massiveProcessorFactory = $massiveProcessorFactory ?? static fn(): MassivePendenzeProcessor => self::defaultMassiveProcessor();
 
         $this->events = new EventDispatcher();
@@ -174,20 +198,22 @@ final class WorkerKernel
         // Dopo il listener di retry (priorita' 100): willRetry() e' gia' deciso.
         $this->events->addListener(WorkerMessageFailedEvent::class, fn(WorkerMessageFailedEvent $e) => $this->onMassiveFailed($e), -100);
         // Ad ogni giro del Worker (anche a vuoto): la pulizia dello storico e' a cadenza giornaliera.
-        $this->events->addListener(WorkerRunningEvent::class, fn() => $this->purgeHistoryIfDue());
+        if ($this->scope->housekeeping) {
+            $this->events->addListener(WorkerRunningEvent::class, fn() => $this->purgeHistoryIfDue());
+        }
 
         $line = fn(string $msg) => $this->line($msg);
         $massiveLine = fn(string $msg) => ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . JobRunner::suiteFor(MassiveEnqueueJob::NAME) . '] ' . $msg);
         $this->bus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
             SchedulerTick::class => [new SchedulerTickHandler(
                 $this->state,
-                $this->registry,
+                $this->scopedRegistry,
                 $this->clock,
                 fn(RunJob $m) => $this->bus->dispatch($m),
                 fn(): bool => $this->stopRequested,
                 $line
             )],
-            RunJob::class => [new RunJobHandler($this->registry, $this->runner, $this->state, $this->clock, $line)],
+            RunJob::class => [new RunJobHandler($this->scopedRegistry, $this->runner, $this->state, $this->clock, $line)],
             ProcessMassiveRow::class => [new ProcessMassiveRowHandler(
                 $this->massiveProcessorFactory,
                 $massiveLine,
@@ -257,15 +283,20 @@ final class WorkerKernel
         }
     }
 
-    /** Worker di produzione: catalogo lavori, connessioni applicative, stdout + Sentry. */
-    public static function create(string $cacheDir = self::DEFAULT_CACHE_DIR): self
+    /**
+     * Processo di produzione: catalogo lavori, connessioni applicative, stdout + Sentry.
+     *
+     * @param WorkerScope|null $scope default all()
+     */
+    public static function create(string $cacheDir = self::DEFAULT_CACHE_DIR, ?WorkerScope $scope = null): self
     {
         $out = static function (string $line): void {
-            echo $line, "\n";
+            echo $line . "\n"; // una sola write(): righe dei processi paralleli non si mescolano
             flush();
         };
-        $catalogOut = static function (string $msg) use ($out): void {
-            $out('[' . date('Y-m-d H:i:s') . '] [worker] ' . $msg);
+        $label = ($scope ?? WorkerScope::all())->label;
+        $catalogOut = static function (string $msg) use ($out, $label): void {
+            $out('[' . date('Y-m-d H:i:s') . '] [' . $label . '] ' . $msg);
         };
         return new self(
             JobCatalog::registry($catalogOut),
@@ -276,38 +307,96 @@ final class WorkerKernel
             null,
             null,
             null,
-            $cacheDir
+            $cacheDir,
+            null,
+            null,
+            $scope
         );
     }
 
-    /** Trasporto Doctrine `jobs` (tabella messenger_messages, auto_setup disattivato). */
-    public static function createJobsTransport(DbalConnection $dbal): DoctrineTransport
+    /** Coda "esegui ora" del lavoro $job (consumata dal processo figlio del suo gruppo). */
+    public static function queueFor(string $job): string
+    {
+        return self::QUEUE_PREFIX . $job;
+    }
+
+    /**
+     * Trasporto Doctrine "esegui ora" (tabella messenger_messages, auto_setup disattivato): coda
+     * del lavoro $job (`jobs.<name>`), o la coda legacy `jobs` con $job null.
+     */
+    public static function createJobsTransport(DbalConnection $dbal, ?string $job = null): DoctrineTransport
     {
         return new DoctrineTransport(
             new DoctrineTransportConnection([
                 'table_name' => 'messenger_messages',
-                'queue_name' => self::QUEUE,
+                'queue_name' => $job === null ? self::QUEUE : self::queueFor($job),
                 'auto_setup' => false,
             ], $dbal),
             new PhpSerializer()
         );
     }
 
-    /** "Esegui ora" (UI): accoda RunJob manuale, eseguito dal worker anche se il lavoro e' disabilitato. */
+    /**
+     * "Esegui ora" (UI): accoda RunJob manuale sulla coda del lavoro, eseguito dal suo processo
+     * (anche se il lavoro e' disabilitato e mentre altri lavori girano).
+     */
     public static function enqueueManualRun(DbalConnection $dbal, string $job): void
     {
-        self::createJobsTransport($dbal)->send(new Envelope(new RunJob($job, true)));
+        self::createJobsTransport($dbal, $job)->send(new Envelope(new RunJob($job, true)));
     }
 
     /**
-     * C'e' gia' un "esegui ora" di $job in attesa sulla coda `jobs` (non ancora consegnato al
-     * worker)? Serve a non accodare giri manuali uno dietro l'altro a ogni clic.
+     * C'e' gia' un "esegui ora" di $job in attesa (non ancora consegnato) sulla sua coda o sulla
+     * coda legacy `jobs`? Serve a non accodare giri manuali uno dietro l'altro a ogni clic.
      */
     public static function manualRunQueued(DbalConnection $dbal, string $job): bool
     {
-        foreach (self::createJobsTransport($dbal)->all(200) as $envelope) {
+        foreach ([self::createJobsTransport($dbal, $job), self::createJobsTransport($dbal)] as $transport) {
+            foreach ($transport->all(200) as $envelope) {
+                $msg = $envelope->getMessage();
+                if ($msg instanceof RunJob && $msg->manual && $msg->job === $job) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sposta i RunJob rimasti sulla coda legacy `jobs` (accodati con il worker sequenziale) sulle
+     * code per lavoro, senza duplicare un "esegui ora" gia' in attesa. Messaggi di lavori
+     * sconosciuti o di altro tipo scartati. Ritorna i messaggi spostati.
+     *
+     * @param list<string> $known lavori del catalogo
+     */
+    public static function drainLegacyManualQueue(DbalConnection $dbal, array $known): int
+    {
+        $legacy = self::createJobsTransport($dbal);
+        $moved = 0;
+        // Limite di sicurezza: get() consegna un messaggio alla volta.
+        for ($i = 0; $i < 1000; $i++) {
+            $envelopes = [...$legacy->get()];
+            if ($envelopes === []) {
+                break;
+            }
+            foreach ($envelopes as $envelope) {
+                $msg = $envelope->getMessage();
+                if ($msg instanceof RunJob && in_array($msg->job, $known, true)
+                    && !self::queuedOn(self::createJobsTransport($dbal, $msg->job), $msg->job)) {
+                    self::createJobsTransport($dbal, $msg->job)->send(new Envelope(new RunJob($msg->job, $msg->manual)));
+                    $moved++;
+                }
+                $legacy->ack($envelope);
+            }
+        }
+        return $moved;
+    }
+
+    private static function queuedOn(DoctrineTransport $transport, string $job): bool
+    {
+        foreach ($transport->all(200) as $envelope) {
             $msg = $envelope->getMessage();
-            if ($msg instanceof RunJob && $msg->manual && $msg->job === $job) {
+            if ($msg instanceof RunJob && $msg->job === $job) {
                 return true;
             }
         }
@@ -408,23 +497,18 @@ final class WorkerKernel
      */
     public function run(?float $timeLimit = null): int
     {
-        $this->line('avvio worker (' . count($this->registry->names()) . ' lavori, tick ' . self::TICK_SECONDS . ' s)');
+        $names = $this->scopedRegistry->names();
+        $this->line($this->scope->label === 'worker'
+            ? 'avvio worker (' . count($names) . ' lavori, tick ' . self::TICK_SECONDS . ' s)'
+            : 'avvio processo (' . ($names !== [] ? 'lavori: ' . implode(', ', $names) : 'coda ' . self::MASSIVE_QUEUE) . ')');
         if (!$this->waitForDatabase()) {
             $this->line('arresto richiesto durante l\'attesa del DB.');
             return 0;
         }
 
-        try {
-            $imported = (new AutostartImporter($this->state, $this->registry->names()))->importOnce($this->cacheDir);
-            if ($imported > 0) {
-                $this->line("import .autostart: {$imported} lavori abilitati");
-            }
-        } catch (\Throwable $e) {
-            ($this->reportException)('worker', $e);
-            $this->line('ERRORE import .autostart: ' . JobRunner::errorMessage($e));
+        if ($this->scope->housekeeping) {
+            $this->housekeepingAtStartup();
         }
-
-        $this->purgeHistoryIfDue();
 
         $started = $this->clock->now();
         while (!$this->stopRequested) {
@@ -453,8 +537,40 @@ final class WorkerKernel
             }
         }
 
-        $this->line('worker arrestato.');
+        $this->line($this->scope->label === 'worker' ? 'worker arrestato.' : 'processo arrestato.');
         return 0;
+    }
+
+    /**
+     * Import una tantum dei file .autostart (in gil_jobs) e pulizia dello storico. Una sola volta
+     * per avvio, in un solo processo (il supervisore, o il processo all()): mai in concorrenza.
+     * Non lancia. In scope all() anche la coda legacy e' consumata direttamente: non serve drenarla.
+     */
+    public function housekeepingAtStartup(): void
+    {
+        try {
+            $imported = (new AutostartImporter($this->state, $this->registry->names()))->importOnce($this->cacheDir);
+            if ($imported > 0) {
+                $this->line("import .autostart: {$imported} lavori abilitati");
+            }
+        } catch (\Throwable $e) {
+            ($this->reportException)('worker', $e);
+            $this->line('ERRORE import .autostart: ' . JobRunner::errorMessage($e));
+        }
+
+        if (!$this->scope->legacyQueue) {
+            try {
+                $moved = self::drainLegacyManualQueue($this->dbal, $this->registry->names());
+                if ($moved > 0) {
+                    $this->line("coda legacy '" . self::QUEUE . "': {$moved} esecuzioni manuali spostate sulle code per lavoro");
+                }
+            } catch (\Throwable $e) {
+                ($this->reportException)('worker', $e);
+                $this->line('ERRORE coda legacy: ' . JobRunner::errorMessage($e));
+            }
+        }
+
+        $this->purgeHistoryIfDue();
     }
 
     /**
@@ -484,17 +600,20 @@ final class WorkerKernel
 
     private function buildWorker(): Worker
     {
-        $schedule = (new Schedule())
-            ->add(RecurringMessage::every(self::TICK_SECONDS . ' seconds', new SchedulerTick(), $this->clock->now()))
-            ->processOnlyLastMissedRun(true);
+        // Ordine rilevante: vedi docblock della classe (code manuali, poi massive, poi scheduler).
+        $receivers = $this->manualTransports;
+        if ($this->scope->massive) {
+            $receivers[self::MASSIVE_QUEUE] = $this->massiveTransport;
+        }
+        if ($this->scopedRegistry->names() !== []) {
+            $schedule = (new Schedule())
+                ->add(RecurringMessage::every(self::TICK_SECONDS . ' seconds', new SchedulerTick(), $this->clock->now()))
+                ->processOnlyLastMissedRun(true);
+            $receivers['scheduler'] = new SchedulerTransport(new MessageGenerator($schedule, 'gil', $this->clock));
+        }
 
         return new Worker(
-            [
-                // Ordine rilevante: vedi docblock della classe (coda manuale, poi massive, poi scheduler).
-                self::QUEUE => $this->jobsTransport,
-                self::MASSIVE_QUEUE => $this->massiveReceiver,
-                'scheduler' => new SchedulerTransport(new MessageGenerator($schedule, 'gil', $this->clock)),
-            ],
+            $receivers,
             $this->bus,
             $this->events,
             null,
@@ -505,6 +624,6 @@ final class WorkerKernel
 
     private function line(string $msg): void
     {
-        ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [worker] ' . $msg);
+        ($this->output)('[' . $this->clock->now()->format('Y-m-d H:i:s') . '] [' . $this->scope->label . '] ' . $msg);
     }
 }

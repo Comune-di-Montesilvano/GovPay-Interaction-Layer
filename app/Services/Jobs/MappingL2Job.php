@@ -15,7 +15,7 @@ use App\Database\MappingPendenzeRepository;
  * refresh diagnostics. Loop, pause (15 min a vuoto), stop file, log e gestione errore di
  * caricamento vocabolario restano nello script.
  */
-final class MappingL2Job implements PeriodicJob
+final class MappingL2Job implements PeriodicJob, CountsRemaining
 {
     public function __construct(
         private readonly MappingPendenzeRepository $repo,
@@ -28,6 +28,12 @@ final class MappingL2Job implements PeriodicJob
      * processed = righe classificate + righe NO_MATCH; ok = classificate (keyword + default);
      * skipped = NO_MATCH; hadWork = classificate > 0.
      */
+    /** Righe mapping PROCESSED con vocab PENDING. */
+    public function remaining(): ?int
+    {
+        return $this->repo->countPendingVocab($this->idDominio);
+    }
+
     public function runOnce(JobContext $ctx): JobResult
     {
         // Ogni iterazione rilegge i settings: in un processo longevo la cache statica

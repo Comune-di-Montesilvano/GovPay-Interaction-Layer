@@ -60,6 +60,7 @@ class HomeController
             $jobs[$key] = [
                 'enabled' => (bool)($st['enabled'] ?? false),
                 'running' => (bool)($st['running'] ?? false),
+                'current_run' => $st['current_run'] ?? null,
                 'last_finished_at' => $st['last_finished_at'] ?? null,
                 'last_status' => $st['last_status'] ?? null,
                 'next_run_at' => $st['next_run_at'] ?? null,

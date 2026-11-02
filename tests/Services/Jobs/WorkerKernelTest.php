@@ -14,7 +14,10 @@ use App\Services\Jobs\LazyJob;
 use App\Services\Jobs\Message\SchedulerTick;
 use App\Services\Jobs\PeriodicJob;
 use App\Services\Jobs\TefaScanJob;
+use App\Services\Jobs\Message\RunJob;
 use App\Services\Jobs\WorkerKernel;
+use App\Services\Jobs\WorkerScope;
+use Symfony\Component\Messenger\Envelope;
 use Doctrine\DBAL\Connection as DbalConnection;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
@@ -423,5 +426,131 @@ final class WorkerKernelTest extends DbTestCase
         self::assertCount(1, $this->out);
         self::assertStringContainsString("esecuzione manuale di 'occupato' ignorata", $this->out[0]);
         self::assertStringContainsString('lock occupato', $this->out[0]);
+    }
+
+    private function scoped(JobRegistry $registry, WorkerScope $scope): WorkerKernel
+    {
+        return new WorkerKernel(
+            $registry,
+            $this->state,
+            $this->dbal,
+            $this->clock,
+            function (string $line): void { $this->out[] = $line; },
+            function (string $suite, \Throwable $e): void { $this->reported[] = $e; },
+            null,
+            new LockFactory(new DoctrineDbalStore($this->dbal, [], 0.0)),
+            sys_get_temp_dir() . '/gil-worker-test-cache-assente',
+            null,
+            null,
+            $scope
+        );
+    }
+
+    /** @return list<string> */
+    private static function queueNames(): array
+    {
+        return self::pdo()->query('SELECT queue_name FROM messenger_messages ORDER BY id')->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * Worker parallelo: "esegui ora" va sulla coda del lavoro e la consuma solo il processo del
+     * suo gruppo; il processo di un altro gruppo non la tocca (ne' esegue quel lavoro).
+     */
+    public function testManualRunIsRoutedToTheJobsOwnProcess(): void
+    {
+        $a = self::job('aaa');
+        $b = self::job('bbb');
+        $registry = new JobRegistry([$a, $b]);
+        WorkerKernel::enqueueManualRun($this->dbal, 'aaa');
+        WorkerKernel::enqueueManualRun($this->dbal, 'bbb');
+        self::assertSame(['jobs.aaa', 'jobs.bbb'], self::queueNames());
+        self::assertTrue(WorkerKernel::manualRunQueued($this->dbal, 'aaa'));
+
+        $this->scoped($registry, WorkerScope::jobGroup('aaa', ['aaa']))->run(3.0);
+
+        self::assertSame([1, 0], [$a->calls, $b->calls]);
+        self::assertSame(['jobs.bbb'], self::queueNames());
+        self::assertFalse(WorkerKernel::manualRunQueued($this->dbal, 'aaa'));
+        self::assertTrue(WorkerKernel::manualRunQueued($this->dbal, 'bbb'));
+        self::assertStringContainsString('[worker:aaa] avvio processo (lavori: aaa)', $this->out[0]);
+        self::assertStringContainsString('[worker:aaa] processo arrestato.', end($this->out));
+
+        $this->scoped($registry, WorkerScope::jobGroup('bbb', ['bbb']))->run(3.0);
+        self::assertSame([1, 1], [$a->calls, $b->calls]);
+        self::assertSame([], self::queueNames());
+    }
+
+    public function testJobProcessSchedulesOnlyItsGroup(): void
+    {
+        $mine = self::job('mio');
+        $companion = self::job('mio-discovery');
+        $other = self::job('altro');
+        foreach (['mio', 'mio-discovery', 'altro'] as $n) {
+            $this->state->setEnabled($n, true);
+        }
+
+        $this->scoped(new JobRegistry([$mine, $companion, $other]), WorkerScope::jobGroup('mio', ['mio', 'mio-discovery']))->run(12.0);
+
+        self::assertSame([1, 1, 0], [$mine->calls, $companion->calls, $other->calls]);
+        self::assertNull($this->state->state('altro')['next_run_at'], 'lavoro di un altro gruppo intatto');
+    }
+
+    /** Coda legacy `jobs` (worker sequenziale): spostata sulle code per lavoro, senza duplicati. */
+    public function testLegacyManualQueueIsDrainedToPerJobQueues(): void
+    {
+        $legacy = WorkerKernel::createJobsTransport($this->dbal);
+        $legacy->send(new Envelope(new RunJob('biz', true)));
+        $legacy->send(new Envelope(new RunJob('tefa', true)));
+        $legacy->send(new Envelope(new RunJob('rimosso', true)));
+        WorkerKernel::enqueueManualRun($this->dbal, 'tefa'); // gia' in coda per lavoro
+
+        $moved = WorkerKernel::drainLegacyManualQueue($this->dbal, ['biz', 'tefa']);
+
+        self::assertSame(1, $moved);
+        self::assertSame(['jobs.tefa', 'jobs.biz'], self::queueNames());
+    }
+
+    public function testSupervisorHousekeepingImportsAutostartAndDrainsLegacyQueueOnce(): void
+    {
+        $cache = sys_get_temp_dir() . '/gil-worker-test-cache-' . bin2hex(random_bytes(4));
+        mkdir($cache);
+        touch($cache . '/daemon-biz.autostart');
+        WorkerKernel::createJobsTransport($this->dbal)->send(new Envelope(new RunJob('biz', true)));
+        try {
+            $kernel = new WorkerKernel(
+                new JobRegistry([self::job('biz')]),
+                $this->state,
+                $this->dbal,
+                $this->clock,
+                function (string $line): void { $this->out[] = $line; },
+                function (string $suite, \Throwable $e): void { $this->reported[] = $e; },
+                null,
+                null,
+                $cache,
+                null,
+                null,
+                WorkerScope::housekeeping()
+            );
+            $kernel->housekeepingAtStartup();
+        } finally {
+            @unlink($cache . '/daemon-biz.autostart');
+            @rmdir($cache);
+        }
+
+        self::assertTrue($this->state->isEnabled('biz'));
+        self::assertTrue($this->state->autostartImported());
+        self::assertSame(['jobs.biz'], self::queueNames());
+        self::assertStringContainsString('1 esecuzioni manuali spostate', implode("\n", $this->out));
+    }
+
+    public function testAllScopeStillConsumesTheLegacyQueue(): void
+    {
+        $job = self::job('vecchio');
+        WorkerKernel::createJobsTransport($this->dbal)->send(new Envelope(new RunJob('vecchio', true)));
+
+        $this->kernel(new JobRegistry([$job]))->run(3.0);
+
+        self::assertSame(1, $job->calls);
+        self::assertSame([], self::queueNames());
     }
 }

@@ -31,9 +31,15 @@ use Symfony\Component\Lock\Store\DoctrineDbalStore;
  *   intervallo normale). run() non lancia mai: gli errori sono registrati/riportati.
  * - L'intero giro gira in uno scope Sentry con tag `suite` (withSuiteScope): anche le catture
  *   dirette dei lavori e Logger::error/warning portano la suite del lavoro.
- * - stdout: una riga di riepilogo per esecuzione + una per errore (solo ref/motivo).
- * - Esecuzione non manuale con soli batch `silent` (JobResult::$silent): nessuna riga storico ne'
- *   stdout, solo next_run_at.
+ * - stdout: riga di avvio (con il totale da elaborare se il lavoro e' CountsRemaining), una riga
+ *   di avanzamento per ogni batch che prosegue (progressLine), una di riepilogo (contatori +
+ *   durata) e una per errore (solo ref/motivo). Mai URL, corpi di risposta o dati personali.
+ * - Storico: riga gil_job_runs 'running' creata all'avvio (startRun; con coda nota e vuota solo
+ *   al primo batch non silenzioso), contatori e avanzamento (total/remaining) aggiornati dopo
+ *   ogni batch, chiusa a fine giro (recordRun). Righe 'running' lasciate da un processo ucciso:
+ *   chiuse come errore (INTERRUPTED_MESSAGE) appena il lock del lavoro e' di nuovo preso.
+ * - Esecuzione non manuale con soli batch `silent` (JobResult::$silent): la riga 'running' e'
+ *   eliminata, nessuna riga storico ne' stdout, solo next_run_at.
  */
 final class JobRunner
 {
@@ -48,6 +54,8 @@ final class JobRunner
     private ?string $lastSkipReason = null;
     /** @var array<string, true> lavori con errore di avvio gia' segnalato (serie in corso) */
     private array $startFailing = [];
+    /** @var array<string, true> lavori con errore di conteggio coda gia' segnalato (serie in corso) */
+    private array $countFailing = [];
 
     private readonly ClockInterface $clock;
     /** @var \Closure(string): void */
@@ -72,7 +80,7 @@ final class JobRunner
     ) {
         $this->clock = $clock ?? new NativeClock();
         $this->output = $output ?? static function (string $line): void {
-            echo $line, "\n";
+            echo $line . "\n"; // una sola write(): righe dei processi paralleli non si mescolano
             flush();
         };
         $this->reportException = $reportException ?? static function (string $suite, \Throwable $e): void {
@@ -235,7 +243,7 @@ final class JobRunner
 
             public function debug(string $msg): void
             {
-                // stdout del worker: solo riepiloghi ed errori (scritti da JobRunner).
+                // stdout del worker: solo riepiloghi, avanzamento ed errori (scritti da JobRunner).
             }
         };
 
@@ -247,9 +255,29 @@ final class JobRunner
         $allSilent = true;
         $status = 'ok';
         $errorMessage = null;
+        $runId = null;
+        $runOpenTried = false;
+        $total = null;
+        $remaining = null;
 
         try {
+            $this->closeInterruptedRuns($name, $suite);
             $this->state->markStarted($name, $startedAt);
+
+            // Totale del giro = coda all'avvio. Riga storico 'running' subito (visibile in UI
+            // durante il primo batch), tranne con coda nota e vuota: giro quasi certamente
+            // silenzioso, niente INSERT/DELETE a ogni giro a vuoto.
+            $remaining = $total = $this->countRemaining($job, $suite);
+            if ($manual || $remaining === null || $remaining > 0) {
+                $runOpenTried = true;
+                $runId = $this->openRun($name, $startedAt, $manual, $total, $suite);
+            }
+            if ($remaining !== null && $remaining > 0) {
+                $this->line($suite, sprintf('giro%s avviato: %d da elaborare', $manual ? ' manuale' : '', $remaining));
+            } elseif ($manual) {
+                $this->line($suite, 'giro manuale avviato');
+            }
+
             while (true) {
                 $r = $job->runOnce($ctx);
                 $batches++;
@@ -265,6 +293,25 @@ final class JobRunner
                 }
                 $lastHadWork = $r->hadWork;
                 $allSilent = $allSilent && $r->silent;
+
+                if (!$r->silent) {
+                    $remaining = $this->countRemaining($job, $suite);
+                    if ($remaining !== null) {
+                        // La coda puo' crescere durante il giro: il totale non scende mai sotto fatto + restanti.
+                        $total = max($total ?? 0, $processed + $remaining);
+                    }
+                    if ($runId === null && !$runOpenTried) {
+                        $runOpenTried = true;
+                        $runId = $this->openRun($name, $startedAt, $manual, $total, $suite);
+                    }
+                    if ($runId !== null) {
+                        $soFar = new JobResult($processed, $ok, $skipped, $errors, $r->hadWork);
+                        $this->saveProgress($runId, $batches, $soFar, $total, $remaining);
+                    }
+                    if ($r->hadWork) {
+                        $this->line($suite, self::progressLine($batches, $r, $processed, $total, $remaining));
+                    }
+                }
 
                 if (!$r->hadWork || ($this->stopSignal)()) {
                     break;
@@ -299,6 +346,9 @@ final class JobRunner
 
         if ($status === 'ok' && $allSilent && !$manual) {
             try {
+                if ($runId !== null) {
+                    $this->state->deleteRun($runId);
+                }
                 $this->state->setNextRunAt($name, $nextRunAt, $startedAt);
             } catch (\Throwable $e) {
                 ($this->reportException)($suite, $e);
@@ -306,9 +356,9 @@ final class JobRunner
             return $totals;
         }
 
-        $runId = null;
+        $recordedId = null;
         try {
-            $runId = $this->state->recordRun(
+            $recordedId = $this->state->recordRun(
                 $name,
                 $startedAt,
                 $finishedAt,
@@ -318,7 +368,10 @@ final class JobRunner
                 $errorMessage,
                 $details,
                 $nextRunAt,
-                $manual
+                $manual,
+                $runId,
+                $total,
+                $remaining
             );
         } catch (\Throwable $e) {
             ($this->reportException)($suite, $e);
@@ -333,8 +386,8 @@ final class JobRunner
         }
 
         $this->line($suite, sprintf(
-            '%s%s%s: batch=%d processed=%d ok=%d skipped=%d errors=%d durata=%ds prossimo=%s%s',
-            $runId !== null ? 'run #' . $runId . ' ' : '',
+            '%s%s%s: batch=%d processed=%d ok=%d skipped=%d errors=%d%s durata=%ds prossimo=%s%s',
+            $recordedId !== null ? 'run #' . $recordedId . ' ' : '',
             $manual ? 'manuale ' : '',
             $status,
             $batches,
@@ -342,6 +395,7 @@ final class JobRunner
             $ok,
             $skipped,
             $errors,
+            $remaining !== null ? ' restanti=' . $remaining : '',
             $finishedAt->getTimestamp() - $startedAt->getTimestamp(),
             $nextRunAt->format('Y-m-d H:i:s'),
             $errorMessage !== null ? ' (' . $errorMessage . ')' : ''
@@ -354,6 +408,94 @@ final class JobRunner
         }
 
         return $totals;
+    }
+
+    /**
+     * Riga di avanzamento di un batch (solo contatori, mai ref/URL/dati personali), es.
+     * `batch 12: +100 (ok 98, saltati 0, errori 2) — elaborate 1200/5400, restanti 4200`.
+     */
+    public static function progressLine(int $batch, JobResult $r, int $processedSoFar, ?int $total, ?int $remaining): string
+    {
+        $line = sprintf(
+            'batch %d: +%d (ok %d, saltati %d, errori %d) — elaborate %d',
+            $batch,
+            $r->processed,
+            $r->ok,
+            $r->skipped,
+            $r->errors,
+            $processedSoFar
+        );
+        if ($total !== null) {
+            $line .= '/' . $total;
+        }
+        if ($remaining !== null) {
+            $line .= ', restanti ' . $remaining;
+        }
+        return $line;
+    }
+
+    /**
+     * Elementi in coda del lavoro (CountsRemaining), null se non misurabile. Un errore del
+     * conteggio non ferma il giro: segnalato una volta per serie (come gli errori di avvio).
+     */
+    private function countRemaining(PeriodicJob $job, string $suite): ?int
+    {
+        if (!$job instanceof CountsRemaining) {
+            return null;
+        }
+        $name = $job->name();
+        try {
+            $n = $job->remaining();
+            unset($this->countFailing[$name]);
+            return $n === null ? null : max(0, $n);
+        } catch (\Throwable $e) {
+            if (!isset($this->countFailing[$name])) {
+                $this->countFailing[$name] = true;
+                ($this->reportException)($suite, $e);
+                $this->line($suite, 'ERRORE conteggio coda: ' . self::errorMessage($e) . ' (segnalato una volta fino al ripristino)');
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Righe 'running' rimaste da un processo terminato durante il giro (il lock e' nostro: nessun
+     * altro giro del lavoro e' vivo) -> 'error' interrotto. Storico non scrivibile: ignorato qui,
+     * lo segnala recordRun a fine giro.
+     */
+    private function closeInterruptedRuns(string $name, string $suite): void
+    {
+        try {
+            $n = $this->state->failStaleRunning($name);
+        } catch (\Throwable) {
+            return;
+        }
+        if ($n > 0) {
+            $this->line($suite, sprintf('giro precedente interrotto (processo terminato): %d esecuzioni chiuse come errore', $n));
+        }
+    }
+
+    /**
+     * Riga 'running' in gil_job_runs; null se non scrivibile: il giro prosegue senza avanzamento
+     * in UI e recordRun inserisce la riga a fine giro (e ne segnala l'eventuale errore).
+     */
+    private function openRun(string $name, \DateTimeImmutable $startedAt, bool $manual, ?int $total, string $suite): ?int
+    {
+        try {
+            return $this->state->startRun($name, $startedAt, $manual, $total);
+        } catch (\Throwable $e) {
+            $this->line($suite, 'ERRORE registrazione avvio giro: ' . self::errorMessage($e));
+            return null;
+        }
+    }
+
+    private function saveProgress(int $runId, int $batches, JobResult $soFar, ?int $total, ?int $remaining): void
+    {
+        try {
+            $this->state->updateRunProgress($runId, $batches, $soFar, $total, $remaining);
+        } catch (\Throwable) {
+            // Solo avanzamento: il riepilogo finale (recordRun) lo riscrive e ne segnala gli errori.
+        }
     }
 
     /**

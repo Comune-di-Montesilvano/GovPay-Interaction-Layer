@@ -43,7 +43,7 @@ use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
  * hadWork = almeno una riga presa (il runner ripete subito: il giro successivo trova la coda
  * piena e si ferma). Coda vuota: IDLE_SECONDS (15 min, come oggi).
  */
-final class MassiveEnqueueJob implements PeriodicJob
+final class MassiveEnqueueJob implements PeriodicJob, CountsRemaining
 {
     public const NAME = 'pendenze-massive';
     public const QUEUE = 'massive';
@@ -74,6 +74,19 @@ final class MassiveEnqueueJob implements PeriodicJob
     public static function forgetStaleReset(): void
     {
         self::$lastStaleResetAt = null;
+    }
+
+    /**
+     * Righe in attesa di presa in carico (PENDING + CANCEL_PENDING); 0 con la coda `massive`
+     * piena (contropressione): il giro non prenderebbe nulla ed e' `silent`, nessuna riga
+     * storico ne' stdout.
+     */
+    public function remaining(): ?int
+    {
+        if ($this->outstandingMessages() >= self::BATCH_SIZE) {
+            return 0;
+        }
+        return (int)$this->dbal->fetchOne("SELECT COUNT(*) FROM pendenze_massive WHERE stato IN ('PENDING','CANCEL_PENDING')");
     }
 
     public function name(): string

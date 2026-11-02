@@ -14,7 +14,7 @@ use Tests\Support\DbTestCase;
 #[Group('db')]
 final class JobControlTest extends DbTestCase
 {
-    protected static array $tables = ['gil_jobs', 'gil_job_runs', 'gil_job_run_errors', 'lock_keys', 'pendenze_massive'];
+    protected static array $tables = ['gil_jobs', 'gil_job_run_errors', 'gil_job_runs', 'lock_keys', 'pendenze_massive'];
 
     private JobStateRepository $state;
     /** @var list<string> */
@@ -101,39 +101,74 @@ final class JobControlTest extends DbTestCase
         self::assertSame(['biz', 'pendenze-massive'], $this->enqueued);
     }
 
-    public function testRunNowDefaultEnqueuesManualMessageOnJobsQueue(): void
+    public function testRunNowDefaultEnqueuesManualMessageOnThatJobsQueue(): void
     {
-        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'jobs'");
-        (new JobControl($this->state))->runNow('vocab');
-        $n = (int)self::pdo()->query("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'jobs'")->fetchColumn();
-        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'jobs'");
-        self::assertSame(1, $n);
+        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name LIKE 'jobs%'");
+        try {
+            (new JobControl($this->state))->runNow('vocab');
+            $queues = self::pdo()->query("SELECT queue_name FROM messenger_messages WHERE queue_name LIKE 'jobs%'")->fetchAll(\PDO::FETCH_COLUMN);
+            self::assertSame(['jobs.vocab'], $queues, 'coda del lavoro, consumata dal suo processo');
+        } finally {
+            self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name LIKE 'jobs%'");
+        }
     }
 
     /**
      * Fix round 1: clic ripetuti su "esegui ora" non accodano giri manuali uno dietro l'altro:
      * finche' una richiesta per quel lavoro e' in coda (non consegnata), le altre sono rifiutate.
-     * Altri lavori e richieste gia' consegnate (giro in corso) non bloccano.
+     * Altri lavori e richieste gia' consegnate (giro in corso) non bloccano. Anche una richiesta
+     * rimasta sulla coda legacy `jobs` (worker sequenziale) conta come gia' in coda.
      */
     public function testRunNowRefusesWhenAManualRunForThatJobIsAlreadyQueued(): void
     {
-        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'jobs'");
+        self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name LIKE 'jobs%'");
         $control = new JobControl($this->state);
+        $count = static fn(): int => (int)self::pdo()->query("SELECT COUNT(*) FROM messenger_messages WHERE queue_name LIKE 'jobs%'")->fetchColumn();
         try {
             self::assertNull($control->runNow('vocab'));
-            $reason = $control->runNow('vocab');
-            self::assertSame("Esecuzione manuale già in coda: partirà appena il worker è libero (al termine del giro in corso, se ce n'è uno).", $reason);
+            self::assertSame(JobControl::QUEUED_MESSAGE, $control->runNow('vocab'));
             self::assertNull($control->runNow('biz'), 'altro lavoro: accodato');
-            self::assertSame(2, (int)self::pdo()->query("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'jobs'")->fetchColumn());
+            self::assertSame(2, $count());
 
             // consegnata al worker (giro manuale in corso): un nuovo clic ne accoda una per dopo
-            self::pdo()->exec("UPDATE messenger_messages SET delivered_at = NOW() WHERE queue_name = 'jobs'");
+            self::pdo()->exec("UPDATE messenger_messages SET delivered_at = NOW() WHERE queue_name LIKE 'jobs%'");
             self::assertNull($control->runNow('vocab'));
             self::assertNotNull($control->runNow('vocab'));
-            self::assertSame(3, (int)self::pdo()->query("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'jobs'")->fetchColumn());
+            self::assertSame(3, $count());
+
+            // richiesta legacy (coda `jobs`) in attesa: rifiutata, sara' spostata dal supervisore
+            \App\Services\Jobs\WorkerKernel::createJobsTransport(\App\Database\DbalConnectionFactory::get())
+                ->send(new \Symfony\Component\Messenger\Envelope(new \App\Services\Jobs\Message\RunJob('tefa', true)));
+            self::assertSame(JobControl::QUEUED_MESSAGE, $control->runNow('tefa'));
         } finally {
-            self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name = 'jobs'");
+            self::pdo()->exec("DELETE FROM messenger_messages WHERE queue_name LIKE 'jobs%'");
         }
+    }
+
+    public function testStatusAndLogShowRunningRunWithProgress(): void
+    {
+        $t0 = new \DateTimeImmutable('2026-11-01 09:00:00');
+        $id = $this->state->startRun('biz', $t0, false, 5400);
+        $this->state->updateRunProgress($id, 12, new \App\Services\Jobs\JobResult(1200, 1176, 0, 24, true), 5400, 4200);
+        self::pdo()->exec("INSERT INTO lock_keys (key_id, key_token, key_expiration) VALUES ('job:biz', 't', UNIX_TIMESTAMP() + 600)");
+
+        $st = $this->control()->statuses()['biz'];
+        self::assertTrue($st['running']);
+        self::assertNotNull($st['current_run']);
+        self::assertSame([1200, 5400, 4200, 22, 12], [
+            $st['current_run']['processed'], $st['current_run']['total'], $st['current_run']['remaining'],
+            $st['current_run']['percent'], $st['current_run']['batches'],
+        ]);
+        self::assertSame('1200 / 5400 (22%)', JobControl::progressText($st['current_run']));
+
+        $text = $this->control()->logText('biz');
+        self::assertStringContainsString('Giro in corso dal 2026-11-01 09:00:00: [####................] 1200 / 5400 (22%), 12 batch', $text);
+        self::assertStringContainsString('[2026-11-01 09:00:00 -> in corso] IN CORSO: 12 batch, elaborati 1200/5400', $text);
+        self::assertStringNotContainsString('nessuna esecuzione registrata', $text);
+
+        // senza lock (processo ucciso, riga orfana): niente giro in corso in stato
+        self::pdo()->exec('DELETE FROM lock_keys');
+        self::assertNull($this->control()->statuses()['biz']['current_run']);
     }
 
     public function testLogShowsSummaryAndTopErrors(): void

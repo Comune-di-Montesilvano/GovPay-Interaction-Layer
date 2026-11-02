@@ -76,3 +76,6 @@ plans/
 # Override generato dal job smoke di docker-publish.yml (image@sha256 dei 3 servizi)
 /docker-compose.smoke.yml
 .phpunit.result.cache
+
+# Stato runtime del Circuit Breaker GovPay (file + lock, creati anche dai test)
+/backoffice/storage/tmp/

@@ -107,6 +107,24 @@ final class MassiveMessengerTest extends DbTestCase
         );
     }
 
+    private function scopedKernel(JobRegistry $registry, \App\Services\Jobs\WorkerScope $scope): WorkerKernel
+    {
+        return new WorkerKernel(
+            $registry,
+            $this->state,
+            $this->dbal,
+            $this->clock,
+            function (string $line): void { $this->out[] = $line; },
+            function (string $suite, \Throwable $e): void { $this->reported[] = $e; },
+            null,
+            new LockFactory(new DoctrineDbalStore($this->dbal, [], 0.0)),
+            sys_get_temp_dir() . '/gil-worker-test-cache-assente',
+            fn(): MassivePendenzeProcessor => new MassivePendenzeProcessor($this->gp, new MassivePendenzeRepository(self::pdo())),
+            new TransientOnlyRetryStrategy(new MultiplierRetryStrategy(3, 0, 1, 0, 0.0)),
+            $scope
+        );
+    }
+
     private function enqueueJob(?SenderInterface $sender = null): MassiveEnqueueJob
     {
         return new MassiveEnqueueJob($this->dbal, $sender ?? WorkerKernel::createMassiveTransport($this->dbal), $this->clock);
@@ -829,36 +847,30 @@ final class MassiveMessengerTest extends DbTestCase
     }
 
     /**
-     * Ordine dei ricevitori: jobs, massive, scheduler. Con una coda `massive` piena lo scheduler
-     * ottiene comunque il turno ogni MASSIVE_FAIR_SHARE messaggi. Ogni PUT dura 1 s (finto).
-     * Il primo turno dello scheduler (dopo 10 messaggi, +10 s) inizializza solo il suo checkpoint
-     * (nessun tick perso prima della prima lettura); al secondo turno (+20 s) il tick e' scaduto.
-     * Senza cap: 25 M e poi P.
+     * Worker parallelo: il processo `massive` consuma solo la coda massive (nessun lavoro
+     * periodico); un processo di gruppo esegue i suoi lavori e non tocca la coda massive.
      */
-    public function testMassiveQueueYieldsToSchedulerEveryTenMessages(): void
+    public function testMassiveProcessAndJobProcessConsumeOnlyTheirOwnQueues(): void
     {
-        for ($i = 1; $i <= 25; $i++) {
+        for ($i = 1; $i <= 3; $i++) {
             $this->insertRow('PENDING', self::payload($i), riga: $i);
         }
         $this->enqueueJob()->runOnce(new RecordingJobContext());
-        self::assertSame(25, self::messages());
-        $order = [];
-        for ($i = 1; $i <= 25; $i++) {
-            $this->gp->mock->append(function () use (&$order) {
-                $order[] = 'M';
-                $this->clock->modify('+1 second');
-                return new Response(201, [], '{}');
-            });
-        }
-        $periodic = new StubPeriodicJob('periodico', static function () use (&$order): JobResult {
-            $order[] = 'P';
-            return new JobResult(0, 0, 0, 0, false);
-        });
+        self::assertSame(3, self::messages());
+        $periodic = new StubPeriodicJob('periodico', static fn(): JobResult => new JobResult(0, 0, 0, 0, false));
         $this->state->setEnabled('periodico', true);
+        $registry = new JobRegistry([$periodic]);
 
-        $this->kernel(new JobRegistry([$periodic]))->run(30.0);
+        $this->scopedKernel($registry, \App\Services\Jobs\WorkerScope::jobGroup('periodico', ['periodico']))->run(12.0);
+        self::assertSame(1, $periodic->calls);
+        self::assertSame(3, self::messages(), 'coda massive non toccata dal processo dei lavori');
 
-        self::assertSame(array_merge(array_fill(0, 20, 'M'), ['P'], array_fill(0, 5, 'M')), $order);
+        for ($i = 1; $i <= 3; $i++) {
+            $this->gp->mock->append(new Response(201, [], '{}'));
+        }
+        $this->scopedKernel($registry, \App\Services\Jobs\WorkerScope::massive())->run(5.0);
+        self::assertSame(0, self::messages());
+        self::assertSame(1, $periodic->calls, 'nessun lavoro periodico nel processo massive');
     }
 
     public function testManualJobsQueueIsReadBeforeMassiveQueue(): void
@@ -883,5 +895,20 @@ final class MassiveMessengerTest extends DbTestCase
         $this->kernel(new JobRegistry([$manual]))->run(5.0);
 
         self::assertSame(['J', 'M', 'M', 'M'], $order);
+    }
+
+    /** remaining() = righe da prendere in carico; 0 con la coda piena (giro silenzioso per contropressione). */
+    public function testEnqueueRemainingCountsClaimableRowsAndIsZeroUnderBackpressure(): void
+    {
+        $this->insertRow('PENDING', self::payload(1), riga: 1);
+        $this->insertRow('CANCEL_PENDING', self::payload(2), riga: 2);
+        $this->insertRow('ERROR', self::payload(3), riga: 3);
+        self::assertSame(2, $this->enqueueJob()->remaining());
+
+        $transport = WorkerKernel::createMassiveTransport($this->dbal);
+        for ($i = 0; $i < MassiveEnqueueJob::BATCH_SIZE; $i++) {
+            $transport->send(new Envelope(new ProcessMassiveRow(999000 + $i, 'x')));
+        }
+        self::assertSame(0, $this->enqueueJob()->remaining());
     }
 }

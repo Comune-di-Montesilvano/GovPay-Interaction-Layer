@@ -13,7 +13,7 @@ use App\Config\SettingsRepository;
  * fabbrica e' un errore del giro (registrato da JobRunner, prossimo giro all'intervallo di
  * ripiego), non un crash del worker.
  */
-final class LazyJob implements PeriodicJob
+final class LazyJob implements PeriodicJob, CountsRemaining
 {
     private ?PeriodicJob $inner = null;
 
@@ -37,6 +37,22 @@ final class LazyJob implements PeriodicJob
     public function runOnce(JobContext $ctx): JobResult
     {
         return $this->inner()->runOnce($ctx);
+    }
+
+    /**
+     * Costruisce il lavoro reale se serve (come farebbe il primo runOnce). Un errore della
+     * fabbrica (configurazione) qui da' null: si ripresenta identico nel runOnce e diventa
+     * l'errore del giro, segnalato una volta sola.
+     */
+    public function remaining(): ?int
+    {
+        try {
+            $inner = $this->inner();
+        } catch (\Throwable) {
+            // Configurazione mancante: non e' un errore di conteggio, runOnce la riporta come errore del giro.
+            return null;
+        }
+        return $inner instanceof CountsRemaining ? $inner->remaining() : null;
     }
 
     /** Lavoro reale dell'esecuzione (costruito alla prima chiamata). */
