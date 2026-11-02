@@ -1,9 +1,12 @@
 name: Toolchain version check
 # Tool fissati a mano che dependabot non aggiorna: binario Trivy (input `version:` di
-# trivy-action, che di default usa un binario vecchio) e immagine semgrep (`container:` di
-# semgrep.yml, versione+digest). Apre una issue quando esce una versione piu' nuova, dopo un
-# cooldown come dependabot (una release compromessa e ritirata nel frattempo non arriva mai a
-# una PR). Nessun fail su CI: un gate bloccherebbe ogni PR il giorno di una release.
+# trivy-action, che di default usa un binario vecchio), immagine semgrep (`container:` di
+# semgrep.yml, versione+digest) e immagine cosign (servizio `verify-images` di
+# docker-compose.yml, variante -dev con shell, e scripts/verify-images.sh, versione+digest).
+# Apre una issue quando esce una versione piu' nuova, dopo un cooldown come dependabot (una
+# release compromessa e ritirata nel frattempo non arriva mai a una PR). Il job fallisce se i
+# punti dello stesso tool divergono. Nessun fail su CI: un gate bloccherebbe ogni PR il giorno
+# di una release.
 on:
   schedule:
     - cron: "0 6 * * 1"
@@ -23,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tool: [trivy, semgrep]
+        tool: [trivy, semgrep, cosign]
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -51,6 +54,33 @@ jobs:
               | jq -r '[.tag_name, .published_at] | @tsv')
             where='input `version:` di tutti gli step `aquasecurity/trivy-action` (`grep -rn "version: v" .github/workflows`)'
             notes="https://github.com/aquasecurity/trivy/releases/tag/"
+          elif [ "$TOOL" = cosign ]; then
+            # Due punti, stessa versione: compose (tag vX.Y.Z-dev, busybox per lo script del
+            # toggle VERIFY_IMAGES) e scripts/verify-images.sh (tag vX.Y.Z). Uno per file.
+            files=(docker-compose.yml scripts/verify-images.sh)
+            pin_re='ghcr\.io/sigstore/cosign/cosign:v[0-9]+\.[0-9]+\.[0-9]+(-dev)?@sha256:[0-9a-f]{64}'
+            for f in "${files[@]}"; do
+              n=$(grep -coE "$pin_re" "$f" || true)
+              [ "$n" -eq 1 ] || { echo "::error::$f: attesa 1 immagine cosign pinnata per digest, trovate $n"; exit 1; }
+            done
+            pinned=$(grep -hoE "$pin_re" "${files[@]}" | sed -E 's/.*:(v[0-9]+\.[0-9]+\.[0-9]+)(-dev)?@.*/\1/' | sort -u)
+            release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+              https://api.github.com/repos/sigstore/cosign/releases/latest \
+              | jq -r '[.tag_name, .published_at] | @tsv')
+            # Digest degli indici multi-arch dell'ultima release (pull anonimo GHCR), per l'issue.
+            latest_tag=$(cut -f1 <<<"$release")
+            if [ -n "$latest_tag" ]; then
+              tok=$(curl -fsSL --retry 3 'https://ghcr.io/token?scope=repository:sigstore/cosign/cosign:pull' | jq -r .token)
+              for t in "$latest_tag" "$latest_tag-dev"; do
+                d=$(curl -fsSI --retry 3 -H "Authorization: Bearer $tok" \
+                  -H 'Accept: application/vnd.oci.image.index.v1+json' \
+                  "https://ghcr.io/v2/sigstore/cosign/cosign/manifests/$t" \
+                  | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}' || true)
+                digest="${digest:+$digest, }$t → ${d:-non trovato}"
+              done
+            fi
+            where='`image:` del servizio `verify-images` in `docker-compose.yml` (tag **-dev**, con shell) e `COSIGN=` in `scripts/verify-images.sh` (tag senza -dev), ciascuno con il **proprio** digest `sha256:` dell indice multi-arch'
+            notes="https://github.com/sigstore/cosign/releases/tag/"
           else
             pinned=$(grep -hoE 'semgrep/semgrep:[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/*.yml | cut -d: -f2 | sort -u)
             # Ultima stabile X.Y.Z su Docker Hub (esclusi canary/nonroot/develop), con data e digest.
