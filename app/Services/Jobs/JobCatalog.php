@@ -55,6 +55,26 @@ final class JobCatalog
     /** Lavori che si abilitano insieme a uno slug importato da .autostart (UI: un solo interruttore). */
     public const COMPANIONS = ['mapping' => ['mapping-discovery']];
 
+    /**
+     * Un processo figlio del worker per gruppo (WorkerSupervisor): ogni lavoro da solo, tranne i
+     * COMPANIONS che girano nello stesso processo del lavoro principale (mapping +
+     * mapping-discovery: il vecchio demone li eseguiva in sequenza nello stesso script, e
+     * scrivono le stesse tabelle mapping/flussi).
+     *
+     * @return array<string, list<string>> gruppo => lavori
+     */
+    public static function processGroups(): array
+    {
+        $companions = array_merge(...array_values(self::COMPANIONS));
+        $groups = [];
+        foreach (self::NAMES as $name) {
+            if (!in_array($name, $companions, true)) {
+                $groups[$name] = array_merge([$name], self::COMPANIONS[$name] ?? []);
+            }
+        }
+        return $groups;
+    }
+
     /** @param (\Closure(string): void)|null $output righe informative (default: nessuna) */
     public static function registry(?\Closure $output = null): JobRegistry
     {

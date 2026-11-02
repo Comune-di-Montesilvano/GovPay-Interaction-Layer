@@ -5,19 +5,30 @@
  * License: European Union Public Licence v1.2 (EUPL-1.2)
  *
  * Worker GIL: esegue i lavori periodici (ex demoni scripts/cron_*.php) con Symfony Scheduler +
- * Messenger su MariaDB. Vedi App\Services\Jobs\WorkerKernel.
+ * Messenger su MariaDB, un processo per lavoro (in parallelo, come i vecchi demoni).
  *
  *   php bin/worker [gil:worker] [--cache-dir=/var/www/cache] [--time-limit=SECONDI]
+ *       supervisore (PID 1 del container): attesa DB, import .autostart, poi un processo figlio
+ *       per gruppo di lavori + uno per la coda `massive`; riavvia i figli che muoiono, inoltra
+ *       SIGTERM/SIGINT e attende la loro uscita. Vedi App\Services\Jobs\WorkerSupervisor.
+ *   php bin/worker gil:worker:job <gruppo> [--time-limit=SECONDI]
+ *       processo figlio: scheduler e coda "esegui ora" dei soli lavori del gruppo.
+ *   php bin/worker gil:worker:massive [--time-limit=SECONDI]
+ *       processo figlio: consuma la coda `massive` (righe pendenze massive).
  */
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use App\Monitoring\SentryReporter;
+use App\Services\Jobs\JobCatalog;
 use App\Services\Jobs\WorkerKernel;
+use App\Services\Jobs\WorkerScope;
+use App\Services\Jobs\WorkerSupervisor;
 use Dotenv\Dotenv;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -31,21 +42,67 @@ if (!getenv('DB_HOST')) {
 
 set_time_limit(0);
 
-$command = (new Command('gil:worker'))
-    ->setDescription('Esegue i lavori periodici GIL (scheduler ogni 5 s + coda "esegui ora")')
+$timeLimit = static function (InputInterface $input): ?float {
+    $v = $input->getOption('time-limit');
+    return $v !== null ? max(1.0, (float)$v) : null;
+};
+
+$runKernel = static function (WorkerScope $scope, ?float $limit): int {
+    SentryReporter::init('worker');
+    $kernel = WorkerKernel::create(WorkerKernel::DEFAULT_CACHE_DIR, $scope);
+    $kernel->installSignalHandlers();
+    return $kernel->run($limit);
+};
+
+$supervisor = (new Command('gil:worker'))
+    ->setDescription('Supervisore: un processo per lavoro (in parallelo) + coda massive')
     ->addOption('cache-dir', null, InputOption::VALUE_REQUIRED, 'Directory dei file daemon-<slug>.autostart (import una tantum)', WorkerKernel::DEFAULT_CACHE_DIR)
     ->addOption('time-limit', null, InputOption::VALUE_REQUIRED, 'Termina dopo N secondi (diagnostica)')
-    ->setCode(static function (InputInterface $input, OutputInterface $output): int {
+    ->setCode(static function (InputInterface $input, OutputInterface $output) use ($timeLimit): int {
         SentryReporter::init('worker');
+        // Processo del supervisore: niente lavori, solo housekeeping (DB, .autostart, storico).
+        $kernel = WorkerKernel::create((string)$input->getOption('cache-dir'), WorkerScope::housekeeping());
+        $sup = new WorkerSupervisor(
+            WorkerSupervisor::defaultCommands(__FILE__),
+            null,
+            static function () use ($kernel): bool {
+                if (!$kernel->waitForDatabase()) {
+                    return false;
+                }
+                $kernel->housekeepingAtStartup();
+                return true;
+            },
+            static fn() => $kernel->purgeHistoryIfDue(),
+            static fn() => $kernel->requestStop()
+        );
+        $sup->installSignalHandlers();
+        return $sup->run($timeLimit($input));
+    });
 
-        $kernel = WorkerKernel::create((string)$input->getOption('cache-dir'));
-        $kernel->installSignalHandlers();
+$job = (new Command('gil:worker:job'))
+    ->setDescription('Processo figlio: lavori periodici di un gruppo (scheduler + "esegui ora")')
+    ->addArgument('gruppo', InputArgument::REQUIRED, 'Gruppo di lavori: ' . implode(', ', array_keys(JobCatalog::processGroups())))
+    ->addOption('time-limit', null, InputOption::VALUE_REQUIRED, 'Termina dopo N secondi (diagnostica)')
+    ->setCode(static function (InputInterface $input, OutputInterface $output) use ($timeLimit, $runKernel): int {
+        $group = (string)$input->getArgument('gruppo');
+        $groups = JobCatalog::processGroups();
+        if (!isset($groups[$group])) {
+            $output->writeln("gruppo di lavori sconosciuto: '" . mb_substr($group, 0, 64) . "'");
+            return 2;
+        }
+        return $runKernel(WorkerScope::jobGroup($group, $groups[$group]), $timeLimit($input));
+    });
 
-        $timeLimit = $input->getOption('time-limit');
-        return $kernel->run($timeLimit !== null ? max(1.0, (float)$timeLimit) : null);
+$massive = (new Command('gil:worker:massive'))
+    ->setDescription('Processo figlio: coda massive (righe pendenze massive)')
+    ->addOption('time-limit', null, InputOption::VALUE_REQUIRED, 'Termina dopo N secondi (diagnostica)')
+    ->setCode(static function (InputInterface $input, OutputInterface $output) use ($timeLimit, $runKernel): int {
+        return $runKernel(WorkerScope::massive(), $timeLimit($input));
     });
 
 $app = new Application('gil-worker');
-$app->addCommand($command);
+$app->addCommand($supervisor);
+$app->addCommand($job);
+$app->addCommand($massive);
 $app->setDefaultCommand('gil:worker');
 $app->run();

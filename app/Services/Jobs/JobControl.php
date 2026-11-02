@@ -15,7 +15,9 @@ use App\Database\MassivePendenzeRepository;
  * Azioni della pagina Cron / Servizi e del GIL Services Hub sui lavori del worker:
  * stato (gil_jobs + lock), abilita/pausa, esegui ora, storico esecuzioni, rescan ragioneria,
  * "riprova" delle righe massive. Nessun processo, PID o file di stop: tutto via DB, il worker
- * (servizio compose `worker`) legge i flag a ogni tick (5 s) e tra un batch e l'altro.
+ * (servizio compose `worker`, un processo per lavoro) legge i flag a ogni tick (5 s) e tra un
+ * batch e l'altro. Giro in corso: riga gil_job_runs 'running' con contatori e avanzamento
+ * (fatto/totale) aggiornati a ogni batch (current_run in statuses()).
  */
 final class JobControl
 {
@@ -32,6 +34,8 @@ final class JobControl
     ];
 
     public const LOG_RUNS = 20;
+
+    public const QUEUED_MESSAGE = "Esecuzione manuale già in coda: partirà al termine del giro in corso di questo servizio (gli altri servizi non la ritardano).";
     public const LOG_ERRORS_PER_RUN = 10;
 
     /** @var \Closure(string): void */
@@ -69,20 +73,27 @@ final class JobControl
     }
 
     /**
-     * Stato per lavoro visibile: enabled, running (lock tenuto), ultimo giro/esito, prossimo giro.
+     * Stato per lavoro visibile: enabled, running (lock tenuto), ultimo giro/esito, prossimo giro,
+     * current_run (giro in corso: riga 'running' + avanzamento, solo con il lock tenuto; per
+     * mapping anche il giro di mapping-discovery).
      *
-     * @return array<string, array{enabled:bool, running:bool, last_started_at:?string, last_finished_at:?string, last_status:?string, next_run_at:?string}>
+     * @return array<string, array{enabled:bool, running:bool, last_started_at:?string, last_finished_at:?string, last_status:?string, next_run_at:?string, current_run:?array<string, mixed>}>
      */
     public function statuses(): array
     {
         $rows = $this->state->allStates();
         $running = $this->state->runningJobs();
+        $runningRows = $this->state->runningRuns();
         $out = [];
         foreach (self::VISIBLE as $name) {
             $row = $rows[$name] ?? [];
             $isRunning = in_array($name, $running, true);
+            $current = $isRunning && isset($runningRows[$name]) ? self::progress($runningRows[$name]) : null;
             foreach (JobCatalog::COMPANIONS[$name] ?? [] as $companion) {
-                $isRunning = $isRunning || in_array($companion, $running, true);
+                if (in_array($companion, $running, true)) {
+                    $isRunning = true;
+                    $current ??= isset($runningRows[$companion]) ? self::progress($runningRows[$companion]) : null;
+                }
             }
             $out[$name] = [
                 'enabled' => (int)($row['enabled'] ?? 0) === 1,
@@ -91,9 +102,57 @@ final class JobControl
                 'last_finished_at' => self::str($row['last_finished_at'] ?? null),
                 'last_status' => self::str($row['last_status'] ?? null),
                 'next_run_at' => self::str($row['next_run_at'] ?? null),
+                'current_run' => $current,
             ];
         }
         return $out;
+    }
+
+    /**
+     * Avanzamento di una riga gil_job_runs: started_at, batches, contatori, total/remaining
+     * (null se non misurabili) e percent (0-100, null senza totale).
+     *
+     * @param array<string, mixed> $run
+     * @return array{id:int, job:string, started_at:string, manual:bool, batches:int, processed:int, ok:int, skipped:int, errors:int, total:?int, remaining:?int, percent:?int}
+     */
+    public static function progress(array $run): array
+    {
+        $processed = (int)($run['processed'] ?? 0);
+        $total = isset($run['total_items']) ? (int)$run['total_items'] : null;
+        $percent = null;
+        if ($total !== null) {
+            $percent = $total > 0 ? (int)min(100, floor($processed * 100 / $total)) : 100;
+        }
+        return [
+            'id' => (int)($run['id'] ?? 0),
+            'job' => (string)($run['job'] ?? ''),
+            'started_at' => (string)($run['started_at'] ?? ''),
+            'manual' => (int)($run['manual'] ?? 0) === 1,
+            'batches' => (int)($run['batches'] ?? 0),
+            'processed' => $processed,
+            'ok' => (int)($run['ok'] ?? 0),
+            'skipped' => (int)($run['skipped'] ?? 0),
+            'errors' => (int)($run['errors'] ?? 0),
+            'total' => $total,
+            'remaining' => isset($run['remaining_items']) ? (int)$run['remaining_items'] : null,
+            'percent' => $percent,
+        ];
+    }
+
+    /** "1200 / 5400 (22%)" o "1200" senza totale. */
+    public static function progressText(array $p): string
+    {
+        if ($p['total'] === null) {
+            return (string)$p['processed'];
+        }
+        return sprintf('%d / %d (%d%%)', $p['processed'], $p['total'], (int)$p['percent']);
+    }
+
+    /** Barra testuale per il pannello log, es. "[#####...............]". */
+    private static function textBar(?int $percent, int $width = 20): string
+    {
+        $filled = $percent === null ? 0 : (int)round($width * $percent / 100);
+        return '[' . str_repeat('#', $filled) . str_repeat('.', $width - $filled) . ']';
     }
 
     public function isEnabled(string $job): bool
@@ -117,9 +176,10 @@ final class JobControl
     }
 
     /**
-     * Accoda un'esecuzione manuale (coda `jobs` del worker): parte anche se il lavoro e' in pausa,
-     * tranne pendenze-massive (in pausa il gestore rilascerebbe subito le righe prese: solo
-     * giri a vuoto). Con un giro in corso parte al suo termine (worker a processo singolo). Una
+     * Accoda un'esecuzione manuale (coda `jobs.<name>`, consumata dal processo del lavoro): parte
+     * anche se il lavoro e' in pausa, tranne pendenze-massive (in pausa il gestore rilascerebbe
+     * subito le righe prese: solo giri a vuoto). Con un giro dello STESSO lavoro in corso parte
+     * al suo termine; gli altri lavori girano in processi separati e non la ritardano. Una
      * richiesta gia' in coda per lo stesso lavoro non ne accoda un'altra (clic ripetuti).
      * Ritorna null se accodata, altrimenti il motivo del rifiuto.
      */
@@ -130,7 +190,7 @@ final class JobControl
             return 'Pendenze massive in pausa: riattivare il servizio per elaborare le righe.';
         }
         if (($this->manualQueued)($job)) {
-            return "Esecuzione manuale già in coda: partirà appena il worker è libero (al termine del giro in corso, se ce n'è uno).";
+            return self::QUEUED_MESSAGE;
         }
         ($this->enqueueManual)($job);
         return null;
@@ -157,7 +217,7 @@ final class JobControl
         self::assertKnown($job);
         $runs = [];
         foreach ($this->state->recentRuns($job, $limit) as $run) {
-            $run['top_errors'] = (int)$run['errors'] > 0 || $run['status'] === 'error'
+            $run['top_errors'] = $run['status'] !== 'running' && ((int)$run['errors'] > 0 || $run['status'] === 'error')
                 ? array_slice($this->state->errorsForRun((int)$run['id']), 0, self::LOG_ERRORS_PER_RUN)
                 : [];
             $runs[] = $run;
@@ -177,6 +237,20 @@ final class JobControl
                 $status['running'] ? ' (giro in esecuzione)' : '',
                 $status['enabled'] ? ($status['next_run_at'] ?? 'al prossimo tick') : '-'
             );
+            $cur = $status['current_run'];
+            if ($cur !== null) {
+                $lines[] = sprintf(
+                    'Giro in corso dal %s: %s %s, %d batch, ok %d, saltati %d, errori %d%s',
+                    $cur['started_at'],
+                    self::textBar($cur['percent']),
+                    self::progressText($cur),
+                    $cur['batches'],
+                    $cur['ok'],
+                    $cur['skipped'],
+                    $cur['errors'],
+                    $cur['remaining'] !== null ? ', restanti ' . $cur['remaining'] : ''
+                );
+            }
             $lines[] = '';
         }
         $runs = $this->recentRuns($job, $limit);
@@ -185,14 +259,16 @@ final class JobControl
             return implode("\n", $lines);
         }
         foreach ($runs as $run) {
+            $running = $run['status'] === 'running';
+            $p = self::progress($run);
             $lines[] = sprintf(
-                '[%s -> %s] %s%s: %d batch, elaborati %d, ok %d, saltati %d, errori %d',
+                '[%s -> %s] %s%s: %d batch, elaborati %s, ok %d, saltati %d, errori %d',
                 $run['started_at'],
-                substr((string)$run['finished_at'], 11),
-                strtoupper((string)$run['status']),
+                $running ? 'in corso' : substr((string)$run['finished_at'], 11),
+                $running ? 'IN CORSO' : strtoupper((string)$run['status']),
                 (int)$run['manual'] === 1 ? ' (manuale)' : '',
                 (int)$run['batches'],
-                (int)$run['processed'],
+                $p['total'] !== null ? $p['processed'] . '/' . $p['total'] : (string)$p['processed'],
                 (int)$run['ok'],
                 (int)$run['skipped'],
                 (int)$run['errors']
