@@ -22,8 +22,8 @@ x-php-runtime: &php-runtime
   sysctls:
     net.ipv4.ip_unprivileged_port_start: 80
 
-# tmpfs nei servizi PHP con mode=1777 (mai uid=/gid=: il Docker di prod li rifiuta, "unknown
-# mount option"): /tmp = sessioni PHP, upload, temporanei di
+# tmpfs nei servizi PHP con mode=1777 (mai uid=/gid=: Podman li rifiuta, "unknown mount
+# option"): /tmp = sessioni PHP, upload, temporanei di
 # backup/restore, certificato self-signed con SSL=on (un restore grande occupa RAM finche'
 # dura); run/lock di Apache (PID per il reload del watchdog frontoffice); storage/logs e
 # storage/tmp dell'app (log anche su stdout/Sentry, persi al riavvio; storage/tmp = stato del
