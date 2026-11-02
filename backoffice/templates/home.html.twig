@@ -261,6 +261,17 @@
                 </span>
               </div>
               <p class="daemon-service-desc">{{ item.desc }}</p>
+              {% if d.running and d.current_run %}
+                {% set cur = d.current_run %}
+                <div class="small text-muted mb-1">
+                  In corso: {% if cur.total is not null %}<strong>{{ cur.processed }} / {{ cur.total }}</strong> ({{ cur.percent }}%){% else %}<strong>{{ cur.processed }}</strong> elaborati{% endif %}{% if cur.errors > 0 %} · <span class="text-danger">{{ cur.errors }} errori</span>{% endif %}
+                  {% if cur.total is not null %}
+                    <div class="progress mt-1" style="height:4px" role="progressbar" aria-label="Avanzamento {{ item.name }}" aria-valuenow="{{ cur.percent }}" aria-valuemin="0" aria-valuemax="100">
+                      <div class="progress-bar bg-info" style="width: {{ cur.percent }}%"></div>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endif %}
               <div class="small text-muted mb-1">
                 Ultimo giro: {% if d.last_finished_at %}<strong>{{ d.last_finished_at|date('d/m H:i') }}</strong>{% if d.last_status == 'error' %} <span class="text-danger">(errore)</span>{% endif %}{% else %}mai{% endif %}
                 {% if d.enabled %} · Prossimo: <strong>{{ d.next_run_at ? d.next_run_at|date('d/m H:i') : 'a breve' }}</strong>{% endif %}
