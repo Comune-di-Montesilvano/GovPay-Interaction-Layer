@@ -797,9 +797,9 @@ jobs:
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img@$digest"
               echo "    container_name: gil-smoke-$img"
             done
-            # Worker e volume-perms: stessa immagine del backoffice, stesso digest (niente
+            # Worker: stessa immagine del backoffice, stesso digest (niente
             # container_name nel compose).
-            for svc in worker volume-perms; do
+            for svc in worker; do
               echo "  $svc:"
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice@$(cat handoff/backoffice.digest)"
             done

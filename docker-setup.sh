@@ -97,12 +97,12 @@ export GIL_SSL_CERT GIL_SSL_KEY
 
 # Frontoffice: la pubblicazione di frontoffice/public in /var/www/html/public avviene a build
 # time (Dockerfile, stage runtime-frontoffice). Nessun chown/chmod qui: il processo e' www-data e
-# owner dei volumi lo sistema il servizio one-shot `volume-perms` del compose (chown -R prima
-# dell'avvio). Qui solo un avviso se una radice di volume non e' comunque scrivibile.
+# senza capability. Volumi creati da root (es. `docker cp`, bind mount, restore come root) vanno
+# sistemati a mano: `chown -R 33:33 <path>`. Qui solo un avviso se una radice non e' scrivibile.
 if [ "$APP_SUITE" != "frontoffice" ]; then
   for d in /var/www/cache /var/www/certificate /var/www/html/public/img /backups; do
     if [ ! -w "$d" ]; then
-      echo "⚠️  $d non scrivibile da $(id -un) (servizio volume-perms non eseguito?)" >&2
+      echo "⚠️  $d non scrivibile da $(id -un) (chown -R 33:33 sul volume)" >&2
     fi
   done
 fi

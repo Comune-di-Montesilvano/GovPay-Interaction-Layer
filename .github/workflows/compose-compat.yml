@@ -74,9 +74,9 @@ jobs:
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img:$VERSION"
               echo "    container_name: gil-smoke-$img"
             done
-            # Worker e volume-perms con l'immagine backoffice di release: senza override
+            # Worker con l'immagine backoffice di release: senza override
             # userebbero :latest.
-            for svc in worker volume-perms; do
+            for svc in worker; do
               echo "  $svc:"
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice:$VERSION"
             done
