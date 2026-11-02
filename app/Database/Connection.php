@@ -30,6 +30,23 @@ class Connection
     }
 
     /**
+     * Parametri di connessione (env, poi config.json, poi default). Unica fonte anche per la
+     * connessione doctrine/dbal di Messenger/Lock (DbalConnectionFactory).
+     *
+     * @return array{host:string, port:string, dbname:string, user:string, password:string}
+     */
+    public static function params(): array
+    {
+        return [
+            'host'     => (string)(getenv('DB_HOST') ?: ConfigLoader::get('db.host', 'db')),
+            'port'     => (string)(getenv('DB_PORT') ?: ConfigLoader::get('db.port', '3306')),
+            'dbname'   => (string)(getenv('DB_NAME') ?: ConfigLoader::get('db.name', 'govpay')),
+            'user'     => (string)(getenv('DB_USER') ?: ConfigLoader::get('db.user', 'govpay')),
+            'password' => (string)(ConfigLoader::get('db.password') ?: getenv('DB_PASSWORD') ?: ''),
+        ];
+    }
+
+    /**
      * Apre una nuova connessione con retry/backoff: assorbe la race di avvio tra
      * container app e container db (db non ancora pronto ad accettare connessioni
      * quando il container GIL riparte), oltre alle disconnessioni causate da un
@@ -37,11 +54,7 @@ class Connection
      */
     private static function connect(int $maxAttempts = 5): PDO
     {
-        $host   = getenv('DB_HOST') ?: ConfigLoader::get('db.host', 'db');
-        $port   = getenv('DB_PORT') ?: ConfigLoader::get('db.port', '3306');
-        $dbname = getenv('DB_NAME') ?: ConfigLoader::get('db.name', 'govpay');
-        $user   = getenv('DB_USER') ?: ConfigLoader::get('db.user', 'govpay');
-        $pass   = ConfigLoader::get('db.password') ?: getenv('DB_PASSWORD') ?: '';
+        ['host' => $host, 'port' => $port, 'dbname' => $dbname, 'user' => $user, 'password' => $pass] = self::params();
 
         $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $dbname);
         $options = [

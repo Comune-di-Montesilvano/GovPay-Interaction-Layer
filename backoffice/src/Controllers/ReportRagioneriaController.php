@@ -13,6 +13,7 @@ use App\Database\BizRepository;
 use App\Database\EntrateRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\MappingPendenzeRepository;
+use App\Security\JobControlCsrf;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -57,16 +58,19 @@ class ReportRagioneriaController
             'iuv'        => trim((string)($params['iuv'] ?? '')),
         ];
 
-        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0];
+        $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0, 'resettable_errors' => 0];
         $govpayDebitore = ['total' => 0, 'scansionate' => 0, 'da_scansionare' => 0];
         if ($filters['idDominio'] !== '') {
             $cacheKey = 'report_ragioneria_counts_' . $filters['idDominio'];
             $cached = \App\Services\CacheService::get($cacheKey, 60, function() use ($filters) {
-                $bc = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0];
+                $bc = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0, 'not_queued' => 0, 'resettable_errors' => 0];
                 $gd = ['total' => 0, 'scansionate' => 0, 'da_scansionare' => 0];
                 try {
-                    $bc = (new BizRepository())->getCounts($filters['idDominio']);
+                    $bizRepo = new BizRepository();
+                    $bc = $bizRepo->getCounts($filters['idDominio']);
                     $bc['not_queued'] = 0;
+                    // Etichetta "Reset errori Biz (N)": solo le righe che il reset tocca davvero.
+                    $bc['resettable_errors'] = $bizRepo->countResettableErrors($filters['idDominio']);
                 } catch (\Throwable $_) {}
                 try {
                     $flussiRepo = new FlussiRendicontazioniRepository();
@@ -355,6 +359,11 @@ class ReportRagioneriaController
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
+        }
+
+        if (!JobControlCsrf::isValid($request)) {
+            $_SESSION['flash'][] = ['type' => 'error', 'text' => JobControlCsrf::ERROR_MESSAGE];
+            return $response->withHeader('Location', '/pagamenti/report-ragioneria')->withStatus(302);
         }
 
         $body = (array)($request->getParsedBody() ?? []);

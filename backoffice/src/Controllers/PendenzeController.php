@@ -13,6 +13,7 @@ use App\Database\EntrateRepository;
 use App\Logger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Middleware;
 use GovPay\Backoffice\Api\PendenzeApi as BackofficePendenzeApi;
@@ -29,6 +30,9 @@ use App\Services\ValidationService;
 
 class PendenzeController
 {
+    /** Timeout (s) della PUT di creazione/aggiornamento pendenza in sendPendenzaToBackoffice. */
+    public const CREATE_PUT_TIMEOUT = 90;
+
     public function __construct(private readonly Twig $twig, private ?TracciatoService $tracciatoService = null)
     {
     }
@@ -1652,91 +1656,31 @@ class PendenzeController
      */
     public function sendPendenzaToBackoffice(array $payload, ?string $idPendenza = null): array
     {
-        $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
-        $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
+        $ctx = $this->createRequestContext();
+        if (isset($ctx['errors'])) {
+            return ['success' => false, 'errors' => $ctx['errors']];
+        }
+        [$backofficeUrl, $idA2A, $guzzleOptions] = [$ctx['backofficeUrl'], $ctx['idA2A'], $ctx['guzzleOptions']];
         $errors = [];
         $warnings = [];
-        if (empty($backofficeUrl)) {
-            $errors[] = 'GOVPAY_BACKOFFICE_URL non impostata';
-            return ['success' => false, 'errors' => $errors];
-        }
-        if ($idA2A === '') {
-            $errors[] = 'ID_A2A non impostata';
-            return ['success' => false, 'errors' => $errors];
-        }
 
-        $guzzleOptions = [];
-        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
-        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
-            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
-            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
-            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
-            if (!empty($cert) && !empty($key)) {
-                $guzzleOptions['cert'] = $cert;
-                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
-            } else {
-                $errors[] = 'mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati';
-                return ['success' => false, 'errors' => $errors];
-            }
-        }
-
+        $idP = '';
         try {
-            $httpClient = new Client($guzzleOptions);
+            // GovPayClientFactory: TLS 1.2, Connection: close, retry di rete. Il retry di rete
+            // e' sicuro anche sulla PUT: PUT /pendenze/{idA2A}/{idPendenza} e' idempotente
+            // sull'idPendenza (spec GovPay addPendenza: id gia' presente -> aggiornamento) e il
+            // retry riusa la stessa richiesta (stesso idPendenza generato qui sotto).
+            $httpClient = $this->makeHttpClient($guzzleOptions);
             // Genera idPendenza se non fornito
             $idP = trim((string)($idPendenza ?? ($payload['idPendenza'] ?? '')));
             if ($idP === '') {
-                $iuvPrefix = null;
-                $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
-                $idDominioPayload = trim((string)($payload['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
-                if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
-                    try {
-                        $details = (new EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
-                        $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
-                    } catch (\Throwable $_) {
-                        // fallback to GIL-
-                    }
+                $gen = $this->generateIdPendenza($httpClient, $backofficeUrl, $idA2A, $payload);
+                if (isset($gen['errors'])) {
+                    return ['success' => false, 'errors' => $gen['errors']];
                 }
-
-                if ($iuvPrefix !== null) {
-                    $chkUser = SettingsRepository::get('govpay', 'user', '');
-                    $chkPass = SettingsRepository::get('govpay', 'password', '');
-                    $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
-                    if ($chkUser !== '' && $chkPass !== '') {
-                        $chkOpts['auth'] = [$chkUser, $chkPass];
-                    }
-                    $maxAttempts = 10;
-                    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-                        $candidate = $this->generateVincolatoId($iuvPrefix);
-                        $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
-                        try {
-                            $chkResp = $httpClient->request('GET', $chkUrl, $chkOpts);
-                            $chkCode = $chkResp->getStatusCode();
-                            if ($chkCode === 404) {
-                                $idP = $candidate;
-                                break;
-                            } elseif ($chkCode !== 200) {
-                                $idP = $candidate;
-                                break;
-                            }
-                            // 200 = exists, try another candidate
-                        } catch (\Throwable $_) {
-                            $idP = $candidate;
-                            break;
-                        }
-                    }
-                    if ($idP === '') {
-                        $errors[] = 'Impossibile generare ID univoco per IUV vincolato dopo ' . $maxAttempts . ' tentativi';
-                        return ['success' => false, 'errors' => $errors];
-                    }
-                    $payload['numeroAvviso'] = $idP;
-                } else {
-                    try {
-                        $rand = bin2hex(random_bytes(8));
-                    } catch (\Throwable $_) {
-                        $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid());
-                    }
-                    $idPCand = 'GIL-' . substr($rand, 0, 16);
-                    $idP = preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35));
+                $idP = $gen['idPendenza'];
+                if ($gen['numeroAvviso'] !== null) {
+                    $payload['numeroAvviso'] = $gen['numeroAvviso'];
                 }
             }
 
@@ -1777,6 +1721,9 @@ class PendenzeController
             $requestOptions = [
                 'headers' => ['Accept' => 'application/json'],
                 'json' => $payload,
+                // Override per richiesta del timeout della factory (15s): una creazione lenta ma
+                // riuscita non deve diventare un errore (pendenza orfana su GovPay).
+                'timeout' => self::CREATE_PUT_TIMEOUT,
             ];
             if ($username !== '' && $password !== '') {
                 $requestOptions['auth'] = [$username, $password];
@@ -1790,7 +1737,19 @@ class PendenzeController
             $code = $resp->getStatusCode();
             $body = (string)$resp->getBody();
             $data = json_decode($body, true);
-            return ['success' => $code >= 200 && $code < 300, 'idPendenza' => $idP, 'errors' => [], 'response' => $data];
+            if ($code < 200 || $code >= 300) {
+                // Con http_errors resta solo il 3xx (redirect mai seguiti dalla factory): fallimento
+                // CON dettaglio, mai errors=[] (il percorso rate e i chiamanti che leggono solo
+                // 'errors' lo prenderebbero per un successo).
+                return [
+                    'success' => false,
+                    'idPendenza' => $idP,
+                    'errors' => ['HTTP ' . $code],
+                    'httpStatus' => $code,
+                    'problem' => self::problemJsonFields($data),
+                ];
+            }
+            return ['success' => true, 'idPendenza' => $idP, 'errors' => [], 'response' => $data];
         } catch (ClientException $ce) {
             $detail = '';
             $resp = $ce->getResponse();
@@ -1817,11 +1776,194 @@ class PendenzeController
                 $tmp = json_decode($detail, true);
                 $parsed = (json_last_error() === JSON_ERROR_NONE) ? $tmp : $detail;
             }
-            return ['success' => false, 'errors' => $errors, 'response' => $parsed];
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'response' => $parsed,
+                'httpStatus' => $resp ? $resp->getStatusCode() : null,
+                'problem' => self::problemJsonFields($parsed),
+            ];
         } catch (\Throwable $e) {
             $errors[] = $e->getMessage();
-            return ['success' => false, 'errors' => $errors];
+            $out = ['success' => false, 'errors' => $errors, 'exceptionClass' => get_class($e)];
+            if ($e instanceof ConnectException || ($e instanceof RequestException && $e->getResponse() === null)) {
+                // Errore di trasporto senza risposta HTTP: la PUT puo' essere arrivata a GovPay
+                // (es. timeout cURL 28). Esito incerto: si restituisce l'idPendenza usato (e il
+                // numeroAvviso per IUV vincolato) cosi' un nuovo tentativo aggiorna la stessa
+                // pendenza (PUT idempotente) invece di crearne una nuova.
+                $handlerCtx = $e->getHandlerContext();
+                $out['esitoIncerto'] = true;
+                if ($e->getMessage() === GovPayClientFactory::CIRCUIT_OPEN_MESSAGE) {
+                    // Rifiuto locale del circuit breaker: la PUT non e' partita (resta transitorio).
+                    $out['circuitBreakerOpen'] = true;
+                }
+                $out['curlErrno'] = isset($handlerCtx['errno']) ? (int)$handlerCtx['errno'] : null;
+                if ($idP !== '') {
+                    $out['idPendenza'] = $idP;
+                    if (isset($payload['numeroAvviso']) && is_scalar($payload['numeroAvviso']) && (string)$payload['numeroAvviso'] !== '') {
+                        $out['numeroAvviso'] = (string)$payload['numeroAvviso'];
+                    }
+                }
+            }
+            if ($e instanceof RequestException && $e->getResponse() !== null) {
+                $out['httpStatus'] = $e->getResponse()->getStatusCode();
+                try {
+                    $out['problem'] = self::problemJsonFields(json_decode((string)$e->getResponse()->getBody(), true));
+                } catch (\Throwable $_) {
+                    $out['problem'] = [];
+                }
+            }
+            return $out;
         }
+    }
+
+    /**
+     * Assegna l'idPendenza di una nuova pendenza SENZA crearla (stessa regola di
+     * sendPendenzaToBackoffice: idPendenza esplicito nel payload; IUV vincolato -> candidato
+     * verificato con GET e numeroAvviso = idPendenza; altrimenti 'GIL-' + 16 hex). Serve al
+     * chiamante per salvare l'id PRIMA della PUT e poi passarlo a sendPendenzaToBackoffice
+     * (con payload['numeroAvviso'] = numeroAvviso), cosi' un nuovo tentativo dopo un processo
+     * interrotto aggiorna la stessa pendenza (PUT idempotente) invece di crearne un'altra.
+     *
+     * @return array{success:true,idPendenza:string,numeroAvviso:?string}|array{success:false,errors:list<string>,exceptionClass?:string}
+     */
+    public function allocateIdPendenza(array $payload): array
+    {
+        $ctx = $this->createRequestContext();
+        if (isset($ctx['errors'])) {
+            return ['success' => false, 'errors' => $ctx['errors']];
+        }
+        $explicit = trim((string)($payload['idPendenza'] ?? ''));
+        if ($explicit !== '') {
+            return ['success' => true, 'idPendenza' => $explicit, 'numeroAvviso' => null];
+        }
+        try {
+            $httpClient = $this->makeHttpClient($ctx['guzzleOptions']);
+            $gen = $this->generateIdPendenza($httpClient, $ctx['backofficeUrl'], $ctx['idA2A'], $payload);
+        } catch (\Throwable $e) {
+            return ['success' => false, 'errors' => [$e->getMessage()], 'exceptionClass' => get_class($e)];
+        }
+        if (isset($gen['errors'])) {
+            return ['success' => false, 'errors' => $gen['errors']];
+        }
+        return ['success' => true, 'idPendenza' => $gen['idPendenza'], 'numeroAvviso' => $gen['numeroAvviso']];
+    }
+
+    /**
+     * URL backoffice, idA2A e opzioni mTLS per le chiamate di creazione, oppure gli errori di
+     * configurazione (stessi testi di sempre).
+     *
+     * @return array{backofficeUrl:string,idA2A:string,guzzleOptions:array<string,mixed>}|array{errors:list<string>}
+     */
+    private function createRequestContext(): array
+    {
+        $backofficeUrl = (string)SettingsRepository::get('govpay', 'backoffice_url', '');
+        $idA2A = (string)SettingsRepository::get('entity', 'id_a2a', '');
+        if (empty($backofficeUrl)) {
+            return ['errors' => ['GOVPAY_BACKOFFICE_URL non impostata']];
+        }
+        if ($idA2A === '') {
+            return ['errors' => ['ID_A2A non impostata']];
+        }
+
+        $guzzleOptions = [];
+        $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
+        if (in_array(strtolower($authMethod), ['ssl', 'sslheader'], true)) {
+            $cert = SettingsRepository::get('govpay', 'tls_cert_path', '');
+            $key = SettingsRepository::get('govpay', 'tls_key_path', '');
+            $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
+            if (!empty($cert) && !empty($key)) {
+                $guzzleOptions['cert'] = $cert;
+                $guzzleOptions['ssl_key'] = $keyPass ? [$key, $keyPass] : $key;
+            } else {
+                return ['errors' => ['mTLS abilitato ma GOVPAY_TLS_CERT/GOVPAY_TLS_KEY non impostati']];
+            }
+        }
+        return ['backofficeUrl' => $backofficeUrl, 'idA2A' => $idA2A, 'guzzleOptions' => $guzzleOptions];
+    }
+
+    /**
+     * Genera un nuovo idPendenza: IUV vincolato (iuv_prefix della tipologia) -> candidato a 18
+     * cifre verificato con GET (404/altro = libero, 200 = gia' usato, max 10 tentativi) e
+     * numeroAvviso = idPendenza; altrimenti 'GIL-' + 16 hex.
+     *
+     * @return array{idPendenza:string,numeroAvviso:?string}|array{errors:list<string>}
+     */
+    private function generateIdPendenza(Client $httpClient, string $backofficeUrl, string $idA2A, array $payload): array
+    {
+        $idP = '';
+        $iuvPrefix = null;
+        $idTipoPendenza = trim((string)($payload['idTipoPendenza'] ?? ''));
+        $idDominioPayload = trim((string)($payload['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', '')));
+        if ($idTipoPendenza !== '' && $idDominioPayload !== '') {
+            try {
+                $details = (new EntrateRepository())->findDetails($idDominioPayload, $idTipoPendenza);
+                $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
+            } catch (\Throwable $_) {
+                // fallback to GIL-
+            }
+        }
+
+        if ($iuvPrefix !== null) {
+            $chkUser = SettingsRepository::get('govpay', 'user', '');
+            $chkPass = SettingsRepository::get('govpay', 'password', '');
+            $chkOpts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => false];
+            if ($chkUser !== '' && $chkPass !== '') {
+                $chkOpts['auth'] = [$chkUser, $chkPass];
+            }
+            $maxAttempts = 10;
+            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                $candidate = $this->generateVincolatoId($iuvPrefix);
+                $chkUrl = rtrim($backofficeUrl, '/') . '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($candidate);
+                try {
+                    $chkResp = $httpClient->request('GET', $chkUrl, $chkOpts);
+                    $chkCode = $chkResp->getStatusCode();
+                    if ($chkCode === 404) {
+                        $idP = $candidate;
+                        break;
+                    } elseif ($chkCode !== 200) {
+                        $idP = $candidate;
+                        break;
+                    }
+                    // 200 = exists, try another candidate
+                } catch (\Throwable $_) {
+                    $idP = $candidate;
+                    break;
+                }
+            }
+            if ($idP === '') {
+                return ['errors' => ['Impossibile generare ID univoco per IUV vincolato dopo ' . $maxAttempts . ' tentativi']];
+            }
+            return ['idPendenza' => $idP, 'numeroAvviso' => $idP];
+        }
+
+        try {
+            $rand = bin2hex(random_bytes(8));
+        } catch (\Throwable $_) {
+            $rand = preg_replace('/[^A-Za-z0-9]/', '', uniqid());
+        }
+        $idPCand = 'GIL-' . substr($rand, 0, 16);
+        return ['idPendenza' => (string)preg_replace('/[^A-Za-z0-9\-_]/', '-', substr($idPCand, 0, 35)), 'numeroAvviso' => null];
+    }
+
+    /**
+     * Solo i campi "codice" di un ProblemJson GovPay (categoria/codice/descrizione), stringhe
+     * troncate a 255. Mai 'dettaglio' ne' il resto del corpo (puo' riecheggiare dati personali).
+     *
+     * @return array<string,string>
+     */
+    public static function problemJsonFields(mixed $decoded): array
+    {
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $out = [];
+        foreach (['categoria', 'codice', 'descrizione'] as $k) {
+            if (isset($decoded[$k]) && is_scalar($decoded[$k]) && trim((string)$decoded[$k]) !== '') {
+                $out[$k] = mb_substr(trim((string)$decoded[$k]), 0, 255);
+            }
+        }
+        return $out;
     }
 
     /**
@@ -2961,6 +3103,11 @@ class PendenzeController
 
         try {
             $govResp     = $this->fetchAvvisoPdfResponse($idDominio, $numeroAvviso);
+            if ($govResp->getStatusCode() < 200 || $govResp->getStatusCode() >= 300) {
+                // 3xx (redirect mai seguiti dalla factory): non e' un PDF, non servirlo come allegato
+                $response->getBody()->write('Errore scaricamento avviso: HTTP ' . $govResp->getStatusCode());
+                return $response->withStatus(502);
+            }
             $contentType = $govResp->getHeaderLine('Content-Type') ?: 'application/pdf';
             $filename    = 'avviso-' . $idDominio . '-' . $numeroAvviso . '.pdf';
             $response    = $response
@@ -2971,11 +3118,11 @@ class PendenzeController
             return $response;
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $msg  = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . $ce->getMessage());
+            $msg  = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . \App\Services\ThrowableSummary::forDisplay($ce));
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
         } catch (\Throwable $e) {
-            $response->getBody()->write('Errore scaricamento avviso: ' . $e->getMessage());
+            $response->getBody()->write('Errore scaricamento avviso: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(500);
         }
     }
@@ -3088,14 +3235,12 @@ class PendenzeController
         } catch (\GovPay\Pendenze\ApiException $e) {
             $code = $e->getCode() ?: 502;
             $body = method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null;
-            $obj = method_exists($e, 'getResponseObject') ? $e->getResponseObject() : null;
-            $msg = is_object($obj) ? ($obj->descrizione ?? json_encode($obj)) : ($body ?? $e->getMessage());
             Logger::getInstance()->error('Errore getAvvisiDocumento (Pendenze v2 client)', ['code' => $code, 'body' => $body, 'exception' => $e->getMessage()]);
-            $response->getBody()->write('Errore chiamata Pendenze v2: ' . $msg);
+            $response->getBody()->write('Errore chiamata Pendenze v2: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus($code);
         } catch (\Throwable $e) {
             Logger::getInstance()->error('Errore getAvvisiDocumento generico', ['error' => $e->getMessage()]);
-            $response->getBody()->write('Errore chiamata Pendenze v2: ' . $e->getMessage());
+            $response->getBody()->write('Errore chiamata Pendenze v2: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(502);
         }
     }
@@ -3112,6 +3257,11 @@ class PendenzeController
 
         try {
             $govResp     = $this->fetchRicevutaPdfResponse($idDominio, $iuv, $ccp);
+            if ($govResp->getStatusCode() < 200 || $govResp->getStatusCode() >= 300) {
+                // 3xx (redirect mai seguiti dalla factory): non e' un PDF, non servirlo come allegato
+                $response->getBody()->write('Errore scaricamento ricevuta: HTTP ' . $govResp->getStatusCode());
+                return $response->withStatus(502);
+            }
             $contentType = $govResp->getHeaderLine('Content-Type') ?: 'application/pdf';
             $filename    = 'rt-' . $iuv . '-' . $ccp . '.pdf';
             $response    = $response
@@ -3122,11 +3272,11 @@ class PendenzeController
             return $response;
         } catch (ClientException $ce) {
             $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
-            $msg  = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . $ce->getMessage());
+            $msg  = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . \App\Services\ThrowableSummary::forDisplay($ce));
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
         } catch (\Throwable $e) {
-            $response->getBody()->write('Errore scaricamento ricevuta: ' . $e->getMessage());
+            $response->getBody()->write('Errore scaricamento ricevuta: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(500);
         }
     }
@@ -3272,7 +3422,7 @@ class PendenzeController
             $response->getBody()->write('Logo non disponibile');
             return $response->withStatus(404);
         } catch (\Throwable $e) {
-            $response->getBody()->write('Errore recupero logo: ' . $e->getMessage());
+            $response->getBody()->write('Errore recupero logo: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus(500);
         }
     }
@@ -4881,7 +5031,14 @@ class PendenzeController
             GovPayClientFactory::basicAuthOptions()
         );
 
-        $resp   = $this->makeHttpClient()->request('POST', $checkoutUrl . '/pagamenti', $opts);
+        try {
+            $resp = $this->makeHttpClient()->request('POST', $checkoutUrl . '/pagamenti', $opts);
+        } catch (\GuzzleHttp\Exception\BadResponseException $e) {
+            // Come su main (stack senza http_errors): ogni risposta HTTP non-201, 4xx o 5xx, e' la
+            // stessa RuntimeException "Risposta inattesa" -> 404 lato frontoffice API, che ripiega su
+            // pagoPA standard. Solo lo status: il messaggio Guzzle contiene URL ed estratto del corpo.
+            throw new \RuntimeException('Risposta inattesa da GovPay checkout: HTTP ' . $e->getResponse()->getStatusCode(), 0, $e);
+        }
         $status = $resp->getStatusCode();
 
         if ($status !== 201) {

@@ -107,6 +107,26 @@ class MappingPendenzeRepository
     }
 
     /**
+     * Ordine di applicazione delle regole L1 (bulkAssignL1): prefisso piu' lungo prima; a parita'
+     * di lunghezza vince il custom (is_custom=1); poi pattern_iuv per determinismo.
+     * transazioni_count non entra nell'ordine. getRules() resta nell'ordine di visualizzazione UI.
+     *
+     * @param array<int,array<string,mixed>> $rules
+     * @return list<array<string,mixed>>
+     */
+    public static function sortForAssignment(array $rules): array
+    {
+        $rules = array_values($rules);
+        usort($rules, static function (array $a, array $b): int {
+            $pa = (string)($a['pattern_iuv'] ?? '');
+            $pb = (string)($b['pattern_iuv'] ?? '');
+            return [mb_strlen($pb), (int)(bool)($b['is_custom'] ?? false), $pa]
+                <=> [mb_strlen($pa), (int)(bool)($a['is_custom'] ?? false), $pb];
+        });
+        return $rules;
+    }
+
+    /**
      * Aggiunge o aggiorna un pattern IUV (Livello 1).
      */
     public function savePatternRule(string $idDominio, string $patternIuv, ?string $fornitore, ?string $codEntrata, int $isCustom = 1): void
@@ -587,40 +607,50 @@ class MappingPendenzeRepository
     /**
      * Assegna in blocco il fornitore L1 a tutte le righe con IUV che inizia per $prefix.
      * Processa sia righe PENDING che NO_MATCH: se un pattern attivo le copre, vengono
-     * promosse a PROCESSED e rimesse in coda a L2 (vocab_stato = PENDING).
+     * promosse a PROCESSED; le NO_MATCH vengono anche rimesse in coda a L2
+     * (vocab_stato = PENDING, cod_entrata = NULL).
+     *
+     * Due UPDATE separati (uno per stato di partenza) invece di IF(f.mapping_stato ...) nello
+     * stesso SET: in un UPDATE multi-tabella MariaDB la IF puo' leggere il valore gia' aggiornato
+     * a seconda del piano di esecuzione, e il reset del vocab saltava (difetto M4).
      * Restituisce righe aggiornate.
      */
     public function bulkAssignL1(string $idDominio, string $prefix, string $fornitore): int
     {
         $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
 
-        if ($tefaEnabled) {
-            $sql = "UPDATE flussi_rendicontazioni f
-                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
-                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
+        $joins = "INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'"
+            . ($tefaEnabled
+                ? "
+                    INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'"
+                : '');
+        $where = "WHERE f.id_dominio = :dom
+                      AND f.is_govpay = 0
+                      AND f.iuv LIKE :prefix";
+
+        $sqlNoMatch = "UPDATE flussi_rendicontazioni f
+                    $joins
                     SET f.mapping_stato = 'PROCESSED',
                         f.fornitore     = :fornitore,
-                        f.vocab_stato   = IF(f.mapping_stato = 'NO_MATCH', 'PENDING', f.vocab_stato),
-                        f.cod_entrata   = IF(f.mapping_stato = 'NO_MATCH', NULL, f.cod_entrata)
-                    WHERE f.id_dominio = :dom
-                      AND f.is_govpay = 0
-                      AND f.mapping_stato IN ('PENDING', 'NO_MATCH')
-                      AND f.iuv LIKE :prefix";
-        } else {
-            $sql = "UPDATE flussi_rendicontazioni f
-                    INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                        f.vocab_stato   = 'PENDING',
+                        f.cod_entrata   = NULL
+                    $where
+                      AND f.mapping_stato = 'NO_MATCH'";
+        $sqlPending = "UPDATE flussi_rendicontazioni f
+                    $joins
                     SET f.mapping_stato = 'PROCESSED',
-                        f.fornitore     = :fornitore,
-                        f.vocab_stato   = IF(f.mapping_stato = 'NO_MATCH', 'PENDING', f.vocab_stato),
-                        f.cod_entrata   = IF(f.mapping_stato = 'NO_MATCH', NULL, f.cod_entrata)
-                    WHERE f.id_dominio = :dom
-                      AND f.is_govpay = 0
-                      AND f.mapping_stato IN ('PENDING', 'NO_MATCH')
-                      AND f.iuv LIKE :prefix";
+                        f.fornitore     = :fornitore
+                    $where
+                      AND f.mapping_stato = 'PENDING'";
+
+        $params = [':dom' => $idDominio, ':fornitore' => $fornitore, ':prefix' => $prefix . '%'];
+        $n = 0;
+        foreach ([$sqlNoMatch, $sqlPending] as $sql) {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            $n += $stmt->rowCount();
         }
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':dom' => $idDominio, ':fornitore' => $fornitore, ':prefix' => $prefix . '%']);
-        return $stmt->rowCount();
+        return $n;
     }
 
     /**
@@ -726,29 +756,46 @@ class MappingPendenzeRepository
     }
 
     /**
-     * Segna tutte le righe L1-PROCESSED vocab-PENDING rimanenti come vocab NO_MATCH.
+     * Segna come vocab NO_MATCH le righe L1-PROCESSED vocab-PENDING rimanenti.
+     *
+     * $prefixes = pattern effettivamente valutati da L2 in questo giro (chiavi di getVocabRules()):
+     * solo le righe con IUV che inizia per uno di questi vengono marcate; le altre (pattern senza
+     * fornitore risolto, o nessun pattern) restano PENDING (difetto M5). [] = nessuna riga.
+     * null = tutte le righe (comportamento storico, non usato dal demone).
+     *
+     * @param list<string>|null $prefixes
      */
-    public function bulkSetVocabNoMatch(string $idDominio): int
+    public function bulkSetVocabNoMatch(string $idDominio, ?array $prefixes = null): int
     {
-                $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
+        if ($prefixes === []) {
+            return 0;
+        }
+        $tefaEnabled = \App\Config\SettingsRepository::get('backoffice', 'tefa_enabled', 'false') === 'true';
 
-                if ($tefaEnabled) {
-                        $sql = "UPDATE flussi_rendicontazioni f
-                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
-                                        INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'
-                                        SET f.vocab_stato = 'NO_MATCH'
-                                        WHERE f.id_dominio = :dom AND f.is_govpay = 0
-                                            AND f.mapping_stato = 'PROCESSED' AND f.vocab_stato = 'PENDING'";
-                } else {
-                        $sql = "UPDATE flussi_rendicontazioni f
-                                        INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
-                                        SET f.vocab_stato = 'NO_MATCH'
-                                        WHERE f.id_dominio = :dom AND f.is_govpay = 0
-                                            AND f.mapping_stato = 'PROCESSED' AND f.vocab_stato = 'PENDING'";
-                }
-        return Connection::retryOnDeadlock(function () use ($sql, $idDominio): int {
+        $params = [':dom' => $idDominio];
+        $prefixCond = '';
+        if ($prefixes !== null) {
+            $likes = [];
+            foreach (array_values($prefixes) as $i => $p) {
+                $likes[] = "f.iuv LIKE :p{$i}";
+                $params[":p{$i}"] = $p . '%';
+            }
+            $prefixCond = ' AND (' . implode(' OR ', $likes) . ')';
+        }
+
+        $tefaJoin = $tefaEnabled
+            ? "INNER JOIN tefa_ricevute t ON t.iur = f.iur AND t.id_dominio = f.id_dominio AND t.stato = 'SKIPPED'"
+            : '';
+        $sql = "UPDATE flussi_rendicontazioni f
+                INNER JOIN biz_ricevute b ON b.iur = f.iur AND b.id_dominio = f.id_dominio AND b.stato = 'PROCESSED'
+                $tefaJoin
+                SET f.vocab_stato = 'NO_MATCH'
+                WHERE f.id_dominio = :dom AND f.is_govpay = 0
+                  AND f.mapping_stato = 'PROCESSED' AND f.vocab_stato = 'PENDING'$prefixCond";
+
+        return Connection::retryOnDeadlock(function () use ($sql, $params): int {
             $stmt = $this->pdo->prepare($sql);
-            $stmt->execute([':dom' => $idDominio]);
+            $stmt->execute($params);
             return $stmt->rowCount();
         });
     }
@@ -759,7 +806,8 @@ class MappingPendenzeRepository
      * Esegue la scoperta automatica dei pattern analizzando le pendenze esterne.
      * Discovery a cascata: 5-char prima, poi 4-char escludendo IUV già coperti da 5-char,
      * poi 3-char escludendo IUV già coperti da 5 o 4-char.
-     * Così transazioni_count riflette solo le righe non ancora coperte da un prefisso più lungo.
+     * Nota: ogni IUV >= 5 char forma già un prefisso 5-char, quindi i livelli 4/3 vedono solo
+     * IUV lunghi esattamente 4/3 char (con IUV reali nascono solo pattern 5-char).
      */
     public function discoverPatterns(string $idDominio): int
     {

@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "apt refresh: ${APT_REFRESH}" && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libicu-dev libzip-dev libonig-dev \
     ca-certificates curl unzip openssl \
-    && docker-php-ext-install intl mbstring pdo_mysql zip \
+    && docker-php-ext-install intl mbstring pdo_mysql zip pcntl \
     && apt-get purge -y libicu-dev libzip-dev libonig-dev \
     && a2enmod ssl rewrite headers \
     && echo "ServerName localhost" >> /etc/apache2/apache2.conf \
@@ -175,6 +175,8 @@ CMD ["apache2-foreground"]
 FROM runtime-base AS runtime-backoffice
 COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
 COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
+# Worker dei lavori periodici (servizio `worker` del compose): accanto agli script di backoffice/bin.
+COPY --chown=www-app:www-data bin/worker /var/www/html/bin/worker
 COPY --chown=www-app:www-data scripts/ /var/www/html/scripts/
 RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && ln -s /var/www/html/backoffice/src/routes /var/www/html/routes \

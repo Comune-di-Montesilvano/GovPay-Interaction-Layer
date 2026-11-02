@@ -157,13 +157,40 @@ class BizRepository
         $stmt->execute([':msg' => mb_substr($reason, 0, 500), ':id' => $id]);
     }
 
-    public function resetErrors(string $idDominio): int
+    /** Righe ERROR che resetErrors() rimette in PENDING (escluse quelle GovPay del debitore). */
+    private const RESETTABLE_ERRORS_WHERE = 'b.stato = \'ERROR\' AND b.id_dominio = :id_dominio
+               AND NOT EXISTS (
+                   SELECT 1 FROM flussi_rendicontazioni f
+                    WHERE f.id_dominio = b.id_dominio AND f.iur = b.iur AND f.is_govpay = 1
+               )';
+
+    /** Quante righe resetErrors() senza soglia (retry da UI) rimetterebbe in PENDING adesso. */
+    public function countResettableErrors(string $idDominio): int
     {
-        $stmt = $this->pdo->prepare(
-            'UPDATE biz_ricevute SET stato = \'PENDING\', error_msg = NULL, updated_at = NOW()
-             WHERE stato = \'ERROR\' AND id_dominio = :id_dominio'
-        );
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM biz_ricevute b WHERE ' . self::RESETTABLE_ERRORS_WHERE);
         $stmt->execute([':id_dominio' => $idDominio]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Resetta ERROR -> PENDING. Con $olderThanMinutes (demone) solo le righe il cui ultimo
+     * aggiornamento (updated_at = momento dell'errore) e' piu' vecchio della soglia: backoff tra
+     * un tentativo e l'altro. Senza soglia (retry manuale da UI) resetta tutto.
+     *
+     * Esclude sempre gli IUR GovPay (is_govpay=1): le loro righe ERROR sono scritte dal demone
+     * GovPay debitore, che le ritenta da se'; in PENDING verrebbero inviate a Biz Events.
+     */
+    public function resetErrors(string $idDominio, ?int $olderThanMinutes = null): int
+    {
+        $sql = 'UPDATE biz_ricevute b SET b.stato = \'PENDING\', b.error_msg = NULL, b.updated_at = NOW()
+             WHERE ' . self::RESETTABLE_ERRORS_WHERE;
+        $params = [':id_dominio' => $idDominio];
+        if ($olderThanMinutes !== null) {
+            $sql .= ' AND b.updated_at < NOW() - INTERVAL :minuti MINUTE';
+            $params[':minuti'] = max(0, $olderThanMinutes);
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
         return $stmt->rowCount();
     }
 
@@ -287,23 +314,29 @@ class BizRepository
 
     /**
      * Inserisce dati debitore GovPay direttamente come PROCESSED (senza passare per la coda PENDING).
-     * Usato dal demone cron_govpay_debitore_scanner.php.
+     * Usato dal lavoro GovPayDebitoreJob. Con $stato = 'NOT_FOUND' registra una
+     * pendenza assente in GovPay (404): esito definitivo, mai ritentato.
      * @param array{id_dominio:string,anno:int,mese:int,id_flusso:?string,iur:string,iuv:?string,data_pagamento:?string,importo:?float,descrizione:?string,cf_debitore:?string,nominativo_debitore:?string} $data
+     * @param 'PROCESSED'|'NOT_FOUND' $stato
      */
-    public function insertGovPayProcessed(array $data): void
+    public function insertGovPayProcessed(array $data, string $stato = 'PROCESSED'): void
     {
+        if ($stato !== 'PROCESSED' && $stato !== 'NOT_FOUND') {
+            throw new \InvalidArgumentException('Stato non ammesso: ' . $stato);
+        }
         $stmt = $this->pdo->prepare(
             'INSERT INTO biz_ricevute
                 (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, importo,
                  stato, descrizione, cf_debitore, nominativo_debitore, created_at, updated_at)
              VALUES
                 (:id_dominio, :anno, :mese, :id_flusso, :iur, :iuv, :data_pagamento, :importo,
-                 \'PROCESSED\', :descrizione, :cf_debitore, :nominativo_debitore, NOW(), NOW())
+                 :stato, :descrizione, :cf_debitore, :nominativo_debitore, NOW(), NOW())
              ON DUPLICATE KEY UPDATE
-                stato               = \'PROCESSED\',
+                stato               = VALUES(stato),
                 descrizione         = VALUES(descrizione),
                 cf_debitore         = VALUES(cf_debitore),
                 nominativo_debitore = VALUES(nominativo_debitore),
+                error_msg           = NULL,
                 updated_at          = NOW()'
         );
         $stmt->execute([
@@ -318,6 +351,40 @@ class BizRepository
             ':descrizione'         => $data['descrizione'] ?? null,
             ':cf_debitore'         => $data['cf_debitore'] ?? null,
             ':nominativo_debitore' => $data['nominativo_debitore'] ?? null,
+            ':stato'               => $stato,
+        ]);
+    }
+
+    /**
+     * Registra un tentativo fallito del demone GovPay debitore: riga ERROR (senza dati debitore)
+     * con updated_at = ora del fallimento, usato per il backoff della coda. Se la riga esiste gia'
+     * aggiorna solo una riga ancora ERROR (mai sovrascrive un esito definitivo).
+     * @param array{id_dominio:string,anno:int,mese:int,id_flusso:?string,iur:string,iuv:?string,data_pagamento:?string,importo:?float} $data
+     * @param string $msg motivo gia' ripulito (mai corpi di risposta upstream)
+     */
+    public function upsertGovPayError(array $data, string $msg): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO biz_ricevute
+                (id_dominio, anno, mese, id_flusso, iur, iuv, data_pagamento, importo,
+                 stato, error_msg, created_at, updated_at)
+             VALUES
+                (:id_dominio, :anno, :mese, :id_flusso, :iur, :iuv, :data_pagamento, :importo,
+                 \'ERROR\', :msg, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE
+                error_msg  = IF(stato = \'ERROR\', VALUES(error_msg), error_msg),
+                updated_at = IF(stato = \'ERROR\', NOW(), updated_at)'
+        );
+        $stmt->execute([
+            ':id_dominio'     => $data['id_dominio'],
+            ':anno'           => $data['anno'],
+            ':mese'           => $data['mese'],
+            ':id_flusso'      => $data['id_flusso'] ?? null,
+            ':iur'            => $data['iur'],
+            ':iuv'            => $data['iuv'] ?? null,
+            ':data_pagamento' => ($data['data_pagamento'] ?? '') !== '' ? $data['data_pagamento'] : null,
+            ':importo'        => $data['importo'] ?? null,
+            ':msg'            => mb_substr($msg, 0, 1000),
         ]);
     }
 
@@ -422,7 +489,7 @@ class BizRepository
   nominativo_pagante   VARCHAR(255),
   company_name         VARCHAR(255),
   trasferimenti        JSON,
-  stato                ENUM('PENDING','PROCESSED','ERROR','SKIPPED') NOT NULL DEFAULT 'PENDING',
+  stato                ENUM('PENDING','PROCESSED','ERROR','SKIPPED','NOT_FOUND') NOT NULL DEFAULT 'PENDING',
   error_msg            TEXT,
   created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

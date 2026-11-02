@@ -1246,6 +1246,11 @@ return function (App $app, Twig $twig): void {
     $displayErrorDetails = \App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true';
     // Espone un flag globale a Twig per consentire controlli condizionali lato template
     $twig->getEnvironment()->addGlobal('app_debug', $displayErrorDetails);
+    // Token CSRF dei POST di controllo lavori (Cron, Services Hub, riprova massive, report TEFA)
+    $twig->getEnvironment()->addFunction(new \Twig\TwigFunction(
+        'job_csrf_token',
+        static fn(): string => \App\Security\JobControlCsrf::token()
+    ));
     if ($displayErrorDetails) {
         $app->get('/_test-error', function() {
             throw new \RuntimeException('Errore di test intenzionale');
@@ -1453,8 +1458,15 @@ return function (App $app, Twig $twig): void {
     $app->post('/funzioni-avanzate/cron/ragioneria/rescan', function (Request $request, Response $response) use ($twig): Response {
         return (new CronController($twig))->forceRescan($request, $response);
     });
+    $app->post('/funzioni-avanzate/cron/{job}/enabled', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->setEnabled($request, $response, $args);
+    });
+    // Compatibilita': vecchio "Ferma" = pausa (enabled=0)
     $app->post('/funzioni-avanzate/cron/{job}/stop', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->stop($request, $response, $args);
+    });
+    $app->post('/funzioni-avanzate/cron/pendenze-massive/{rowId:[0-9]+}/retry', function (Request $request, Response $response, array $args) use ($twig): Response {
+        return (new CronController($twig))->retryMassiveRow($request, $response, $args);
     });
     $app->get('/funzioni-avanzate/cron/{job}/log', function (Request $request, Response $response, array $args) use ($twig): Response {
         return (new CronController($twig))->log($request, $response, $args);

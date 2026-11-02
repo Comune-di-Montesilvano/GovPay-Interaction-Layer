@@ -14,14 +14,22 @@ final class LoggerTest extends TestCase
     {
         self::$logFile = sys_get_temp_dir() . '/gil-logger-test-' . uniqid('', true) . '.log';
         putenv('APP_LOG_PATH=' . self::$logFile);
+        // il singleton puo' essere gia' stato creato da un test precedente (altro path di log)
+        self::resetLoggerInstance();
     }
 
     public static function tearDownAfterClass(): void
     {
         putenv('APP_LOG_PATH');
+        self::resetLoggerInstance();
         if (is_file(self::$logFile)) {
             @unlink(self::$logFile);
         }
+    }
+
+    private static function resetLoggerInstance(): void
+    {
+        (new \ReflectionProperty(Logger::class, 'instance'))->setValue(null, null);
     }
 
     public function testErrorWithoutExceptionWritesLogFile(): void

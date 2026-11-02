@@ -19,12 +19,74 @@ class FlussiRendicontazioniRepository
     }
 
     /**
+     * Upsert; ritorna il numero di righe INSERITE.
+     *
      * @param array<int,array<string,mixed>> $rows
      */
     public function upsertBatch(array $rows): int
     {
+        return $this->upsertBatchCounts($rows)['inserted'];
+    }
+
+    /**
+     * Chiave univoca (id_dominio|iur|indice) di una riga mappata, normalizzata come in upsertBatchCounts.
+     *
+     * @param array<string,mixed> $row
+     */
+    public static function rowKey(array $row): string
+    {
+        $v = $row['indice'] ?? null;
+        $indice = ($v === null || $v === '') ? 1 : (int)$v;   // come normalizeInt(...) ?? 1
+        return (string)($row['id_dominio'] ?? '') . '|' . (string)($row['iur'] ?? '') . '|' . $indice;
+    }
+
+    /**
+     * Impronta (MD5) dei campi aggiornati dall'upsert per le chiavi date (formato rowKey()).
+     * Le chiavi assenti in DB non compaiono nel risultato.
+     *
+     * @param list<string> $keys
+     * @return array<string,string> rowKey => md5
+     */
+    public function fingerprints(array $keys): array
+    {
+        $out = [];
+        foreach (array_chunk(array_values(array_unique($keys)), 200) as $chunk) {
+            $tuples = [];
+            $params = [];
+            foreach ($chunk as $k) {
+                [$dom, $iur, $indice] = array_pad(explode('|', $k, 3), 3, '');
+                $tuples[] = '(?, ?, ?)';
+                array_push($params, $iur, $dom, (int)$indice);
+            }
+            $cols = ['id_flusso', 'data_flusso', 'data_regolamento', 'trn', 'id_psp', 'ragione_psp', 'anno', 'mese',
+                'iuv', 'importo', 'esito', 'stato_rend', 'data_pagamento', 'cod_entrata', 'descrizione_entrata',
+                'id_pendenza', 'is_govpay', 'is_multibeneficiario'];
+            $concat = implode(', ', array_map(static fn(string $c): string => "IFNULL($c, '\0')", $cols));
+            $stmt = $this->pdo->prepare(
+                "SELECT id_dominio, iur, indice, MD5(CONCAT_WS('|', $concat)) AS fp
+                 FROM flussi_rendicontazioni
+                 WHERE (iur, id_dominio, indice) IN (" . implode(',', $tuples) . ')'
+            );
+            $stmt->execute($params);
+            while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $out[$r['id_dominio'] . '|' . $r['iur'] . '|' . (int)$r['indice']] = (string)$r['fp'];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Upsert con conteggio separato: inserted = righe nuove, updated = righe esistenti con almeno un
+     * campo cambiato (righe identiche non contano). synced_at si aggiorna solo quando la riga cambia
+     * (ON UPDATE CURRENT_TIMESTAMP della colonna), cosi' un rescan identico non risulta "modifica".
+     *
+     * @param array<int,array<string,mixed>> $rows
+     * @return array{inserted:int,updated:int}
+     */
+    public function upsertBatchCounts(array $rows): array
+    {
         if ($rows === []) {
-            return 0;
+            return ['inserted' => 0, 'updated' => 0];
         }
 
         $sql = 'INSERT INTO flussi_rendicontazioni
@@ -54,11 +116,11 @@ class FlussiRendicontazioniRepository
              descrizione_entrata = VALUES(descrizione_entrata),
              id_pendenza = VALUES(id_pendenza),
              is_govpay = VALUES(is_govpay),
-             is_multibeneficiario = VALUES(is_multibeneficiario),
-             synced_at = CURRENT_TIMESTAMP';
+             is_multibeneficiario = VALUES(is_multibeneficiario)';
 
         $stmt = $this->pdo->prepare($sql);
         $inserted = 0;
+        $updated = 0;
 
         foreach ($rows as $row) {
             $stmt->execute([
@@ -85,14 +147,17 @@ class FlussiRendicontazioniRepository
                 ':is_multibeneficiario' => $this->normalizeBoolInt($row['is_multibeneficiario'] ?? null),
             ]);
 
-            // MySQL rowCount for INSERT ... ON DUPLICATE KEY UPDATE:
-            // 1 = inserted row, 2 = duplicate row updated.
-            if ($stmt->rowCount() === 1) {
+            // MySQL rowCount for INSERT ... ON DUPLICATE KEY UPDATE (senza CLIENT_FOUND_ROWS):
+            // 1 = inserted row, 2 = duplicate row updated, 0 = duplicate row unchanged.
+            $rc = $stmt->rowCount();
+            if ($rc === 1) {
                 $inserted++;
+            } elseif ($rc === 2) {
+                $updated++;
             }
         }
 
-        return $inserted;
+        return ['inserted' => $inserted, 'updated' => $updated];
     }
 
     /**
@@ -612,7 +677,25 @@ class FlussiRendicontazioniRepository
     }
 
     /**
-     * IUR GovPay senza entry in biz_ricevute — coda per il demone cron_govpay_debitore_scanner.
+     * Marca mapping_stato = NO_MATCH le righe non-GovPay ancora PENDING di uno IUR che non potra'
+     * mai essere mappato (ricevuta assente in Biz Events, biz_ricevute SKIPPED).
+     */
+    public function markMappingNoMatchByIur(string $idDominio, string $iur): int
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni SET mapping_stato = \'NO_MATCH\'
+             WHERE id_dominio = :dom AND iur = :iur AND is_govpay = 0 AND mapping_stato = \'PENDING\''
+        );
+        $stmt->execute([':dom' => $idDominio, ':iur' => $iur]);
+        return $stmt->rowCount();
+    }
+
+    /** Backoff del demone GovPay debitore: una riga ERROR torna in coda dopo questi minuti. */
+    public const DEBITORE_ERROR_RETRY_MINUTES = 60;
+
+    /**
+     * IUR GovPay senza entry in biz_ricevute, o con un tentativo fallito (ERROR) piu' vecchio di
+     * DEBITORE_ERROR_RETRY_MINUTES — coda per il lavoro govpay-debitore.
      * @return array<int,array<string,mixed>>
      */
     public function getUnprocessedGovPayForDebitore(string $idDominio, int $limit, ?string $minDate = null): array
@@ -629,7 +712,9 @@ class FlussiRendicontazioniRepository
                   AND f.is_govpay = 1
                   AND f.id_pendenza IS NOT NULL
                   AND f.id_pendenza != \'\'
-                  AND b.id IS NULL';
+                  AND (b.id IS NULL
+                       OR (b.stato = \'ERROR\'
+                           AND b.updated_at < NOW() - INTERVAL ' . self::DEBITORE_ERROR_RETRY_MINUTES . ' MINUTE))';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND f.data_pagamento >= :min_date';
@@ -648,6 +733,7 @@ class FlussiRendicontazioniRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /** Da arricchire: senza biz_ricevute o con tentativo fallito (ERROR, anche se in backoff). */
     public function countUnprocessedGovPayForDebitore(string $idDominio, ?string $minDate = null): int
     {
         $sql = 'SELECT COUNT(DISTINCT f.iur)
@@ -659,7 +745,7 @@ class FlussiRendicontazioniRepository
                   AND f.is_govpay = 1
                   AND f.id_pendenza IS NOT NULL
                   AND f.id_pendenza != \'\'
-                  AND b.id IS NULL';
+                  AND (b.id IS NULL OR b.stato = \'ERROR\')';
 
         if ($minDate !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $minDate)) {
             $sql .= ' AND f.data_pagamento >= :min_date';

@@ -5,6 +5,9 @@
 #   - backoffice healthy e /health 200;
 #   - frontoffice 200 su /;
 #   - query su `settings` (schema init del DB applicato);
+#   - worker (servizio `worker`, stessa immagine del backoffice) healthy, nessun riavvio,
+#     www-data senza capability ne' porte; immagine nuova: riga di avvio + marker
+#     `__import__` in gil_jobs; immagine vecchia (senza bin/worker): attesa inerte;
 #   - nessun `Fatal`/`Parse error` nei log;
 # con porte privilegiate riservate a root+NET_BIND_SERVICE come sull'host di produzione.
 # e lo distrugge sempre (down -v) all'uscita.
@@ -18,6 +21,9 @@
 # I container_name fissi del compose (gil-*) vanno rinominati nell'override, altrimenti
 # collidono con lo stack locale: vedi il blocco generato nel job smoke.
 #
+# SMOKE_WORKER: `new` (default, immagini appena buildate: bin/worker obbligatorio), `legacy`
+# (immagine senza bin/worker) o `auto` (decide dall'immagine: compose-compat con le release).
+#
 # Uso locale:
 #   SMOKE_FILE=/percorso/docker-compose.smoke.yml scripts/smoke-stack.sh
 set -euo pipefail
@@ -29,6 +35,8 @@ PROJECT=${SMOKE_PROJECT:-gil-smoke}
 BO_PORT=${SMOKE_BACKOFFICE_PORT:-18443}
 FO_PORT=${SMOKE_FRONTOFFICE_PORT:-18444}
 TIMEOUT=${SMOKE_TIMEOUT:-300}
+WORKER_MODE=${SMOKE_WORKER:-new}
+case "$WORKER_MODE" in new | legacy | auto) ;; *) echo "::error::SMOKE_WORKER=$WORKER_MODE (new|legacy|auto)"; exit 1 ;; esac
 
 [ -f "$SMOKE_FILE" ] || { echo "::error::override $SMOKE_FILE assente"; exit 1; }
 
@@ -120,6 +128,77 @@ ok "frontoffice / 200"
 "${COMPOSE[@]}" exec -T db mariadb -uroot -p"$DB_ROOT_PASSWORD" "$DB_NAME" \
   -e 'SELECT COUNT(*) FROM settings' >/dev/null || fail "query su settings fallita"
 ok "schema DB presente (settings)"
+
+# Worker: avviato da `up -d` dopo backoffice healthy (depends_on).
+wk_id=$("${COMPOSE[@]}" ps -q worker)
+[ -n "$wk_id" ] || fail "container worker non creato"
+# bin/worker cercato nell'immagine (container usa-e-getta), non nel container del worker: un
+# worker in crash loop non risponde a exec. Path dentro `sh -c`: git-bash (Windows) riscrive gli
+# argomenti che iniziano con / e test -f fallirebbe in silenzio.
+wk_image=$(docker inspect -f '{{.Config.Image}}' "$wk_id")
+# Esito di docker run distinto da quello di test: 0 = file presente, 1 = assente (test -f),
+# altro (125/126/127, immagine non avviabile) = errore docker, non "senza bin/worker".
+rc=0
+docker run --rm --network none --entrypoint sh "$wk_image" -c 'test -f /var/www/html/bin/worker' || rc=$?
+case "$rc" in
+  0) has_bin=1 ;;
+  1) has_bin=0 ;;
+  *) fail "docker run su $wk_image fallito (exit $rc): impossibile verificare bin/worker" ;;
+esac
+if [ "$WORKER_MODE" = auto ]; then
+  if [ "$has_bin" = 1 ]; then WORKER_MODE=new; else WORKER_MODE=legacy; fi
+fi
+if [ "$WORKER_MODE" = new ] && [ "$has_bin" = 0 ]; then fail "immagine backoffice senza bin/worker"; fi
+if [ "$WORKER_MODE" = legacy ] && [ "$has_bin" = 1 ]; then fail "immagine con bin/worker, atteso legacy"; fi
+echo "worker: modalita' $WORKER_MODE"
+
+# Healthcheck (PID 1 = worker o attesa immagini vecchie, interval 30s): healthy = vivo da almeno
+# un intervallo. Un crash loop (exit + restart unless-stopped) non arriva mai a healthy.
+status=
+for ((i = 0; i < 120; i += 5)); do
+  status=$(docker inspect -f '{{.State.Health.Status}}' "$wk_id" 2>/dev/null || echo missing)
+  [ "$status" = healthy ] && break
+  [ "$status" = unhealthy ] && break
+  sleep 5
+done
+[ "$status" = healthy ] || fail "worker non healthy entro 120s (stato: $status)"
+ok "worker healthy"
+
+# Hardening come da compose (C5): www-data, cap_drop ALL senza cap_add, nessuna porta.
+user=$(docker inspect -f '{{.Config.User}}' "$wk_id")
+[ "$user" = www-data ] || fail "worker user=$user, atteso www-data"
+uid=$("${COMPOSE[@]}" exec -T worker sh -c "awk '/^Uid:/ {print \$2}' /proc/1/status")
+[ "$uid" = 33 ] || fail "worker PID 1 uid=$uid, atteso 33 (www-data)"
+caps=$(docker inspect -f '{{json .HostConfig.CapAdd}}|{{json .HostConfig.CapDrop}}|{{json .HostConfig.PortBindings}}' "$wk_id")
+[[ "$caps" =~ ^(null|\[\])\|\[\"ALL\"\]\|(null|\{\})$ ]] || fail "worker capability/porte inattese: $caps"
+ok "worker www-data, nessuna capability, nessuna porta"
+
+if [ "$WORKER_MODE" = new ]; then
+  # Riga di avvio, poi attesa DB + import .autostart (volume cache vuoto: 0 lavori, solo marker).
+  found=
+  for ((i = 0; i < 60; i += 3)); do
+    n=$("${COMPOSE[@]}" exec -T db mariadb -uroot -p"$DB_ROOT_PASSWORD" "$DB_NAME" -N \
+      -e "SELECT COUNT(*) FROM gil_jobs WHERE name='__import__' AND autostart_imported=1" 2>/dev/null || true)
+    [ "$n" = 1 ] && { found=1; break; }
+    sleep 3
+  done
+  # Log letti in una variabile: `grep -q` in pipe con pipefail puo' fallire per SIGPIPE.
+  wlog=$("${COMPOSE[@]}" logs --no-color worker)
+  grep -q '\[worker\] avvio worker (' <<<"$wlog" || fail "riga di avvio del worker assente nei log"
+  [ -n "$found" ] || fail "marker __import__ assente in gil_jobs (worker non ha raggiunto il DB?)"
+  if grep -E '\[worker\] ERRORE' <<<"$wlog"; then fail "errori del worker nei log"; fi
+  ok "worker avviato: riga di avvio e marker __import__ in gil_jobs"
+else
+  wlog=$("${COMPOSE[@]}" logs --no-color worker)
+  grep -q 'immagine senza bin/worker, nessuna azione' <<<"$wlog" || fail "riga di attesa (immagine vecchia) assente"
+  ok "worker inerte con immagine senza bin/worker"
+fi
+
+# Ultimo controllo dopo tutti gli altri: nessun riavvio dall'avvio (crash loop).
+restarts=$(docker inspect -f '{{.RestartCount}}' "$wk_id")
+running=$(docker inspect -f '{{.State.Running}}' "$wk_id")
+[ "$restarts" = 0 ] && [ "$running" = true ] || fail "worker riavviato ($restarts) o fermo (running=$running)"
+ok "worker in esecuzione, 0 riavvii"
 
 if "${COMPOSE[@]}" logs --no-color | grep -E 'Fatal|Parse error'; then
   fail "errori PHP fatali nei log"

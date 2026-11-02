@@ -7,18 +7,19 @@ use App\Config\SettingsRepository;
 use App\Database\BizRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\BadResponseException;
 
 /**
  * Recupera dati debitore da GovPay Backoffice API per IUR is_govpay=1
  * e li salva direttamente in biz_ricevute come PROCESSED.
- * Usato da cron_govpay_debitore_scanner.php.
+ * Usato da GovPayDebitoreJob.
  */
 class GovPayDebitoreService
 {
     public function __construct(
         private readonly BizRepository $bizRepo,
-        private readonly FlussiRendicontazioniRepository $flussiRepo
+        private readonly FlussiRendicontazioniRepository $flussiRepo,
+        private readonly ?Client $http = null
     ) {}
 
     public function countPending(string $idDominio, ?string $minDate = null): int
@@ -54,19 +55,25 @@ class GovPayDebitoreService
         try {
             $resp = $this->buildClient()->request('GET', $url, ['headers' => ['Accept' => 'application/json']]);
             $data = json_decode((string)$resp->getBody(), true);
-        } catch (ClientException $e) {
+        } catch (BadResponseException $e) {
+            // 4xx e 5xx: il motivo conserva lo status code (safeReason -> "HTTP <code>", mai il corpo).
             $code = $e->getResponse()->getStatusCode();
             if ($code === 404) {
-                $this->bizRepo->insertGovPayProcessed($this->baseRecord($row));
+                // Esito definitivo: NOT_FOUND (mai ritentato), distinto da PROCESSED con dati.
+                $this->bizRepo->insertGovPayProcessed($this->baseRecord($row), 'NOT_FOUND');
                 return ['status' => 'SKIPPED', 'reason' => 'Pendenza non trovata in GovPay (404)'];
             }
-            return ['status' => 'ERROR', 'reason' => "HTTP $code: " . mb_substr($e->getMessage(), 0, 200)];
+            return $this->fail($row, "HTTP $code: " . mb_substr($e->getMessage(), 0, 200));
         } catch (\Throwable $e) {
-            return ['status' => 'ERROR', 'reason' => mb_substr($e->getMessage(), 0, 200)];
+            return $this->fail($row, mb_substr($e->getMessage(), 0, 200));
         }
 
         if (!is_array($data)) {
-            return ['status' => 'ERROR', 'reason' => 'Risposta GovPay non valida (non JSON array)'];
+            return $this->fail($row, 'Risposta GovPay non valida (non JSON array)');
+        }
+        if ($data === []) {
+            // `{}`/`[]`: nessuna pendenza nel corpo, non salvarla come PROCESSED senza dati.
+            return $this->fail($row, 'Risposta GovPay non valida (vuota)');
         }
 
         $soggetto    = is_array($data['soggettoPagatore'] ?? null) ? $data['soggettoPagatore'] : null;
@@ -79,7 +86,11 @@ class GovPayDebitoreService
             $nomDebitore = $v !== '' ? mb_substr($v, 0, 255) : null;
         }
 
-        $causale     = trim((string)($data['causale'] ?? $data['nome'] ?? ''));
+        // Causale vuota/solo spazi: fallback su nome come se fosse assente.
+        $causale     = trim((string)($data['causale'] ?? ''));
+        if ($causale === '') {
+            $causale = trim((string)($data['nome'] ?? ''));
+        }
         $descrizione = $causale !== '' ? mb_substr($causale, 0, 512) : null;
 
         $this->bizRepo->insertGovPayProcessed([
@@ -90,6 +101,39 @@ class GovPayDebitoreService
         ]);
 
         return ['status' => 'PROCESSED', 'reason' => ''];
+    }
+
+    /**
+     * Registra un tentativo fallito (riga biz_ricevute ERROR + timestamp): la riga esce dalla coda
+     * per FlussiRendicontazioniRepository::DEBITORE_ERROR_RETRY_MINUTES, poi viene ritentata.
+     * @param array<string,mixed> $row
+     * @param string $safeReason motivo gia' ripulito (mai corpi/messaggi upstream)
+     */
+    public function recordError(array $row, string $safeReason): void
+    {
+        $this->bizRepo->upsertGovPayError($this->baseRecord($row), $safeReason);
+    }
+
+    /** Riduce il motivo d'errore a testo fisso/status code: mai corpi di risposta upstream. */
+    public static function safeReason(string $reason): string
+    {
+        if (preg_match('/^HTTP (\d{3}):/', $reason, $m) === 1) {
+            return 'HTTP ' . $m[1];
+        }
+        if (str_starts_with($reason, 'Risposta GovPay non valida')) {
+            return 'Risposta GovPay non valida';
+        }
+        return 'Errore chiamata GovPay';
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array{status:string,reason:string}
+     */
+    private function fail(array $row, string $reason): array
+    {
+        $this->recordError($row, self::safeReason($reason));
+        return ['status' => 'ERROR', 'reason' => $reason];
     }
 
     /**
@@ -115,17 +159,11 @@ class GovPayDebitoreService
 
     private function buildClient(): Client
     {
-        $opts = [
-            'connect_timeout' => 5,
-            'timeout'         => 20,
-        ];
-
-        $username = SettingsRepository::get('govpay', 'user', '');
-        $password = SettingsRepository::get('govpay', 'password', '');
-        if ($username !== '' && $password !== '') {
-            $opts['auth'] = [$username, $password];
+        // Client iniettato (test): bypassa factory/credenziali.
+        if ($this->http !== null) {
+            return $this->http;
         }
 
-        return GovPayClientFactory::makeBackofficeClient($opts);
+        return GovPayClientFactory::makeBackofficeBasicAuthClient(['connect_timeout' => 5, 'timeout' => 20]);
     }
 }

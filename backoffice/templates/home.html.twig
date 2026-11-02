@@ -101,9 +101,9 @@
             <i class="fas fa-database" aria-hidden="true"></i>
           </div>
           <span class="bo-hero-card-label">Sincronizzazione Ragioneria</span>
-          <div class="bo-hero-card-value">{{ daemons.ragioneria.running ? 'Attivo' : 'Arrestato' }}</div>
+          <div class="bo-hero-card-value">{{ jobs.ragioneria.enabled ? 'Attivo' : 'In pausa' }}</div>
           <div class="bo-hero-card-meta">
-            <span class="status-dot {{ daemons.ragioneria.running ? 'active' : 'stopped' }}" aria-hidden="true"></span>
+            <span class="status-dot {{ jobs.ragioneria.enabled ? 'active' : 'stopped' }}" aria-hidden="true"></span>
             <span>Sincronizza dal: <strong>{{ ragioneria_scan_da_formatted }}</strong></span>
           </div>
         </div>
@@ -239,85 +239,50 @@
           <div class="d-flex flex-column gap-3">
             {% set is_superadmin = current_user.role == 'superadmin' %}
             
-            {# Daemon: Ragioneria Sync #}
+            {% set hub_items = [
+              {key: 'ragioneria', name: 'Sincronizzazione Flussi Interni', icon: 'fa-database', desc: 'Scarica e sincronizza i flussi FDR ragioneria da GovPay nel database locale.'},
+              {key: 'biz', name: 'Scanner Flussi Esterni (pagoPA)', icon: 'fa-receipt', desc: 'Accoda pendenze non-GovPay e arricchisce i dati leggendo da Biz Events pagoPA.'},
+              {key: 'tefa', name: 'Classificatore TEFA', icon: 'fa-building-columns', desc: 'Classifica i flussi Biz Events identificando la quota provinciale TEFA.', only_tefa: true}
+            ] %}
+            {% for item in hub_items|filter(i => not (i.only_tefa ?? false) or tefa_enabled|default(false)) %}
+            {% set d = jobs[item.key] %}
             <div class="daemon-service-item">
               <div class="d-flex align-items-center justify-content-between">
                 <span class="daemon-service-name">
-                  <i class="fas fa-database" aria-hidden="true"></i> Sincronizzazione Flussi Interni
+                  <i class="fas {{ item.icon }}" aria-hidden="true"></i> {{ item.name }}
                 </span>
-                <span class="badge {{ daemons.ragioneria.running ? 'bg-success' : 'bg-secondary' }}">
-                  {{ daemons.ragioneria.running ? 'Attivo' : 'Arrestato' }}
+                <span class="d-flex gap-1">
+                  {% if d.running %}
+                    <span class="badge bg-info text-dark" title="Giro in corso"><i class="fas fa-spinner fa-spin" aria-hidden="true"></i></span>
+                  {% endif %}
+                  <span class="badge {{ d.enabled ? 'bg-success' : 'bg-secondary' }}">
+                    {{ d.enabled ? 'Attivo' : 'In pausa' }}
+                  </span>
                 </span>
               </div>
-              <p class="daemon-service-desc">Scarica e sincronizza i flussi FDR ragioneria da GovPay nel database locale.</p>
+              <p class="daemon-service-desc">{{ item.desc }}</p>
+              <div class="small text-muted mb-1">
+                Ultimo giro: {% if d.last_finished_at %}<strong>{{ d.last_finished_at|date('d/m H:i') }}</strong>{% if d.last_status == 'error' %} <span class="text-danger">(errore)</span>{% endif %}{% else %}mai{% endif %}
+                {% if d.enabled %} · Prossimo: <strong>{{ d.next_run_at ? d.next_run_at|date('d/m H:i') : 'a breve' }}</strong>{% endif %}
+              </div>
               {% if is_superadmin %}
                 <div class="daemon-service-controls">
-                  {% if daemons.ragioneria.running %}
-                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon('ragioneria', 'stop')">
-                      <i class="fas fa-stop me-1" aria-hidden="true"></i> Arresta
+                  {% if d.enabled %}
+                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon(event, '{{ item.key }}', 0)">
+                      <i class="fas fa-pause me-1" aria-hidden="true"></i> Pausa
                     </button>
                   {% else %}
-                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon('ragioneria', 'run')">
-                      <i class="fas fa-play me-1" aria-hidden="true"></i> Avvia
+                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon(event, '{{ item.key }}', 1)">
+                      <i class="fas fa-play me-1" aria-hidden="true"></i> Attiva
                     </button>
                   {% endif %}
+                  <button type="button" class="btn btn-outline-primary btn-sm py-1" onclick="runDaemonNow(event, '{{ item.key }}')">
+                    <i class="fas fa-bolt me-1" aria-hidden="true"></i> Esegui ora
+                  </button>
                 </div>
               {% endif %}
             </div>
-
-            {# Daemon: Biz Scanner #}
-            <div class="daemon-service-item">
-              <div class="d-flex align-items-center justify-content-between">
-                <span class="daemon-service-name">
-                  <i class="fas fa-receipt" aria-hidden="true"></i> Scanner Flussi Esterni (pagoPA)
-                </span>
-                <span class="badge {{ daemons.biz.running ? 'bg-success' : 'bg-secondary' }}">
-                  {{ daemons.biz.running ? 'Attivo' : 'Arrestato' }}
-                </span>
-              </div>
-              <p class="daemon-service-desc">Accoda pendenze non-GovPay e arricchisce i dati leggendo da Biz Events pagoPA.</p>
-              {% if is_superadmin %}
-                <div class="daemon-service-controls">
-                  {% if daemons.biz.running %}
-                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon('biz', 'stop')">
-                      <i class="fas fa-stop me-1" aria-hidden="true"></i> Arresta
-                    </button>
-                  {% else %}
-                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon('biz', 'run')">
-                      <i class="fas fa-play me-1" aria-hidden="true"></i> Avvia
-                    </button>
-                  {% endif %}
-                </div>
-              {% endif %}
-            </div>
-
-            {# Daemon: TEFA Classificator #}
-            {% if tefa_enabled|default(false) %}
-            <div class="daemon-service-item">
-              <div class="d-flex align-items-center justify-content-between">
-                <span class="daemon-service-name">
-                  <i class="fas fa-building-columns" aria-hidden="true"></i> Classificatore TEFA
-                </span>
-                <span class="badge {{ daemons.tefa.running ? 'bg-success' : 'bg-secondary' }}">
-                  {{ daemons.tefa.running ? 'Attivo' : 'Arrestato' }}
-                </span>
-              </div>
-              <p class="daemon-service-desc">Classifica i flussi Biz Events identificando la quota provinciale TEFA.</p>
-              {% if is_superadmin %}
-                <div class="daemon-service-controls">
-                  {% if daemons.tefa.running %}
-                    <button type="button" class="btn btn-danger btn-sm py-1" onclick="toggleDaemon('tefa', 'stop')">
-                      <i class="fas fa-stop me-1" aria-hidden="true"></i> Arresta
-                    </button>
-                  {% else %}
-                    <button type="button" class="btn btn-success btn-sm py-1" onclick="toggleDaemon('tefa', 'run')">
-                      <i class="fas fa-play me-1" aria-hidden="true"></i> Avvia
-                    </button>
-                  {% endif %}
-                </div>
-              {% endif %}
-            </div>
-            {% endif %}
+            {% endfor %}
             
           </div>
         </div>
@@ -651,32 +616,45 @@
     }
 
     // ── Daemon Controller AJAX ───────────────────────────────────────
-    async function toggleDaemon(job, action) {
-      if (!confirm(`Sei sicuro di voler ${action === 'run' ? 'avviare' : 'arrestare'} il servizio ${job}?`)) {
-        return;
-      }
-      
-      const btn = event?.currentTarget;
+    const JOB_CSRF = '{{ job_csrf_token()|e('js') }}';
+
+    async function postDaemon(btn, url, body) {
       if (btn) {
         btn.disabled = true;
         btn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i> Attendi...`;
       }
-      
       try {
-        const response = await fetch(`/funzioni-avanzate/cron/${job}/${action}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
+        const payload = body || new URLSearchParams();
+        payload.set('csrf_token', JOB_CSRF);
+        const response = await fetch(url, { method: "POST", body: payload });
         const result = await response.json();
         if (result.ok) {
-          window.location.reload();
-        } else {
-          alert("Errore: " + (result.error || "Impossibile completare l'azione."));
-          if (btn) btn.disabled = false;
+          return result;
         }
+        alert("Errore: " + (result.error || "Impossibile completare l'azione."));
       } catch (e) {
         alert("Errore di rete: " + e.message);
-        if (btn) btn.disabled = false;
+      }
+      if (btn) btn.disabled = false;
+      return null;
+    }
+
+    async function toggleDaemon(ev, job, enabled) {
+      if (!confirm(`Sei sicuro di voler ${enabled ? 'attivare' : 'mettere in pausa'} il servizio ${job}?`)) {
+        return;
+      }
+      const body = new URLSearchParams();
+      body.append('enabled', String(enabled));
+      if (await postDaemon(ev?.currentTarget, `/funzioni-avanzate/cron/${job}/enabled`, body)) {
+        window.location.reload();
+      }
+    }
+
+    async function runDaemonNow(ev, job) {
+      const result = await postDaemon(ev?.currentTarget, `/funzioni-avanzate/cron/${job}/run`);
+      if (result) {
+        alert(result.message || 'Esecuzione richiesta.');
+        window.location.reload();
       }
     }
 

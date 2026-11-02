@@ -10,9 +10,10 @@ x-hardening: &hardening
   cap_drop:
     - ALL
 
-# backoffice/frontoffice: Apache master root, worker www-data; docker-setup.sh fa chown/chmod
-# su directory non di root; i demoni cron (docker exec, root) scrivono in directory setgid.
-# KILL serve al master per segnalare i worker www-data (graceful reload, stop).
+# backoffice/frontoffice: Apache master root, processi figli www-data; docker-setup.sh fa
+# chown/chmod su directory non di root (le directory condivise sono setgid).
+# KILL serve al master per segnalare i figli www-data (graceful reload, stop).
+# Il servizio `worker` non usa questo blocco: PHP CLI come www-data, nessuna capability.
 # NET_BIND_SERVICE: Apache fa bind su :80 da root. Docker >=20.10 abbassa
 # ip_unprivileged_port_start a 0 e lo nasconde, altri runtime/host no (prod: bind :80 negato).
 x-php-caps: &php-caps
@@ -149,7 +150,67 @@ services:
     networks:
       - govpay-network
 
-
+  # Lavori periodici (ex demoni cron_*.php): Symfony Scheduler + Messenger su MariaDB, stessa
+  # immagine del backoffice. UN SOLO worker (niente replicas/scale): il lock per lavoro ha TTL
+  # 900 s, inferiore alla durata massima di un giro, e il retry delle pendenze massive non e'
+  # atomico. Abilitazione/pausa/esegui ora/log: Backoffice -> Funzioni avanzate -> Cron /
+  # Servizi (tabelle gil_jobs*).
+  # Immagini vecchie (senza bin/worker): resta fermo in attesa, i demoni girano ancora nel
+  # container backoffice via .autostart (nessuna doppia esecuzione). Le immagini nuove non
+  # avviano piu' i demoni nel backoffice: al primo avvio il worker importa una sola volta i
+  # file daemon-<slug>.autostart dal volume cache (montato in sola lettura).
+  # Nessuna porta e nessuna capability: PHP CLI come www-data.
+  worker:
+    <<: *hardening
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
+    user: "www-data"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -f /var/www/html/bin/worker ]; then
+          exec php /var/www/html/bin/worker gil:worker
+        fi
+        echo "worker: immagine senza bin/worker, nessuna azione (i demoni girano nel backoffice)"
+        trap 'exit 0' TERM INT
+        while true; do sleep 3600 & wait $$!; done
+    volumes:
+      - cache:/var/www/cache:ro
+      - gil_certs:/var/www/certificate:ro
+    # Allineato all'environment del backoffice (APP_SUITE a parte), senza i segreti che i lavori
+    # non leggono: MASTER_TOKEN (solo API interne frontoffice) e DB_PASSWORD_CITTADINI.
+    environment:
+      - APP_SUITE=worker
+      - COMPOSER_VENDOR_DIR=/var/www/html/vendor
+      - SSL=${SSL:-off}
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-govpay}
+      - DB_USER=${BACKOFFICE_DB_USER:-govpay}
+      - "DB_PASSWORD=${BACKOFFICE_DB_PASSWORD:?BACKOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
+      - "APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY obbligatoria: vedi .env.example}"
+      - "FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY:?FRONTOFFICE_LINK_SIGNING_KEY obbligatoria: vedi .env.example}"
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
+    restart: unless-stopped
+    # Stop: SIGTERM -> il giro in corso finisce il batch corrente, nessun batch nuovo.
+    # L'immagine php:apache dichiara STOPSIGNAL SIGWINCH (stop graceful di Apache), che il
+    # worker ignorerebbe: senza questa riga ogni stop/restart attende il kill dopo la grazia.
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
+    # PID 1 e' il worker (o l'attesa delle immagini vecchie): se esce, restart policy.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa -e bin/worker /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Il backoffice applica le migrazioni all'avvio (tabelle gil_jobs, messenger_messages, lock_keys).
+    depends_on:
+      backoffice:
+        condition: service_healthy
+    networks:
+      - govpay-network
 
   db:
     <<: *hardening
@@ -203,7 +264,7 @@ volumes:
   db_data:
   # Archivi di backup — accessibili a backoffice
   gil_backups:
-  # Certificati GovPay (mTLS client cert+key) — usati solo dal backoffice
+  # Certificati GovPay (mTLS client cert+key) — backoffice (RW) e worker (RO)
   gil_certs:
   # Immagini pubbliche ente (logo, favicon) — RW backoffice, RO frontoffice
   gil_images:

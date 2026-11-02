@@ -233,27 +233,9 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
   fi
 fi
 
-if [ "$APP_SUITE" != "frontoffice" ]; then
-  shopt -s nullglob
-  for autostart_file in /var/www/cache/daemon-*.autostart; do
-    job="${autostart_file##*/daemon-}"
-    job="${job%.autostart}"
-    case "$job" in
-      biz)             script="scripts/cron_biz_scanner.php" ;;
-      ragioneria)       script="scripts/cron_ragioneria.php" ;;
-      tefa)             script="scripts/cron_tefa_scanner.php" ;;
-      pendenze-massive) script="scripts/cron_pendenze_massive.php" ;;
-      mapping)          script="scripts/cron_mapping_pendenze.php" ;;
-      vocab)            script="scripts/cron_vocab_mapping.php" ;;
-      govpay-debitore)  script="scripts/cron_govpay_debitore_scanner.php" ;;
-      rendicontazione-govpay) script="scripts/cron_rendicontazione_govpay.php" ;;
-      *) continue ;;
-    esac
-    echo "ℹ️  Auto-avvio daemon: ${job}"
-    php "/var/www/html/${script}" >> "/var/www/cache/daemon-${job}.log" 2>&1 &
-  done
-  shopt -u nullglob
-fi
+# I lavori periodici (ex demoni cron_*.php) girano nel container `worker`, non qui: nessun avvio
+# da .autostart. I file daemon-<slug>.autostart restano nel volume cache e il worker li importa
+# una sola volta nei flag gil_jobs.enabled.
 
 echo "--- Avvio Apache. ---"
 
