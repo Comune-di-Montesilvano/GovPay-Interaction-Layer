@@ -8,6 +8,12 @@ use DateTimeImmutable;
 
 class MassivePendenzeRepository
 {
+    /**
+     * ALTER ... MODIFY di ensureTable() gia' eseguito in questo processo: prende un lock di metadati
+     * sulla tabella, quindi non a ogni costruzione (il worker crea un repository per messaggio).
+     */
+    private static bool $enumAltered = false;
+
     public function __construct(private ?PDO $pdo = null)
     {
         $this->pdo = $this->pdo ?: Connection::getPDO();
@@ -48,10 +54,15 @@ class MassivePendenzeRepository
         return (string)$json;
     }
 
-    public function setProcessing(int $id): void
+    /**
+     * PENDING -> PROCESSING (percorso legacy). Condizionale: false se la riga non e' piu' PENDING
+     * (es. presa nel frattempo dal worker): il chiamante la salta.
+     */
+    public function setProcessing(int $id): bool
     {
-        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "PROCESSING", updated_at = NOW() WHERE id = :id');
+        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "PROCESSING", updated_at = NOW() WHERE id = :id AND stato = "PENDING"');
         $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() === 1;
     }
 
     public function setResult(int $id, bool $ok, ?array $response = null, ?string $errore = null): void
@@ -198,12 +209,129 @@ class MassivePendenzeRepository
     }
 
     /**
-     * Marca una riga in elaborazione per l'annullamento.
+     * Una riga per id (colonne di fetchCancelPending + claimed_at/claim_token), null se non esiste.
+     * @return array<string,mixed>|null
      */
-    public function setCancelProcessing(int $id): void
+    public function findById(int $id): ?array
     {
-        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "CANCEL_PROCESSING", updated_at = NOW() WHERE id = :id');
+        $stmt = $this->pdo->prepare('SELECT id, file_batch_id, riga, stato, payload_json, response_json, claimed_at, claim_token FROM pendenze_massive WHERE id = :id');
         $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * CANCEL_PENDING -> CANCEL_PROCESSING (percorso legacy). Condizionale: false se la riga non e'
+     * piu' CANCEL_PENDING (es. presa nel frattempo dal worker): il chiamante la salta.
+     */
+    public function setCancelProcessing(int $id): bool
+    {
+        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET stato = "CANCEL_PROCESSING", updated_at = NOW() WHERE id = :id AND stato = "CANCEL_PENDING"');
+        $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Rinfresca claimed_at di un claim ancora valido (stessa riga, stesso token, stato in corso):
+     * un'elaborazione in corso non viene mai scambiata per un claim abbandonato (> 1 h).
+     * Nessun esito: il chiamante rilegge la riga e confronta token/stato (rowCount di MariaDB
+     * conta solo le righe cambiate: con claimed_at gia' uguale a NOW() sarebbe 0).
+     */
+    public function touchClaim(int $id, string $token): void
+    {
+        $stmt = $this->pdo->prepare("UPDATE pendenze_massive SET claimed_at = NOW() WHERE id = :id AND claim_token = :t AND stato IN ('PROCESSING','CANCEL_PROCESSING')");
+        $stmt->execute([':id' => $id, ':t' => $token]);
+    }
+
+    /**
+     * Salva l'idPendenza (e il numeroAvviso per IUV vincolato) PRIMA della PUT di creazione: se
+     * il processo muore durante la PUT, il nuovo tentativo riusa lo stesso id (PUT idempotente).
+     *
+     * @param array{idPendenza:string,numeroAvviso?:string} $ids
+     */
+    public function storeAllocatedId(int $id, array $ids): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE pendenze_massive SET response_json = :resp, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':resp' => self::safeJsonEncode($ids), ':id' => $id]);
+    }
+
+    /**
+     * Errore transitorio (rete/esito incerto, GovPay 5xx) su una creazione presa dal worker: la
+     * riga RESTA PROCESSING (claim invariato) in attesa del nuovo tentativo del messaggio;
+     * errore/response_json gia' nel formato finale, cosi' dopo l'ultimo tentativo basta failClaim().
+     */
+    public function recordTransientFailure(int $id, string $token, ?array $response, string $errore): void
+    {
+        $stmt = $this->pdo->prepare("UPDATE pendenze_massive SET response_json = :resp, errore = :err, updated_at = NOW() WHERE id = :id AND claim_token = :t AND stato = 'PROCESSING'");
+        $stmt->execute([
+            ':resp' => $response ? self::safeJsonEncode($response) : null,
+            ':err' => $errore,
+            ':id' => $id,
+            ':t' => $token,
+        ]);
+    }
+
+    /**
+     * Esito finale di un messaggio fallito (tentativi esauriti o errore non ritentabile):
+     * creazione -> ERROR (errore nuovo solo se dato, altrimenti resta quello del tentativo),
+     * annullamento -> SUCCESS con errore (come il catch di oggi). Solo se il claim e' ancora quello
+     * del messaggio. true se la riga e' stata aggiornata.
+     */
+    public function failClaim(int $id, string $token, ?string $errore): bool
+    {
+        $stmt = $this->pdo->prepare("UPDATE pendenze_massive
+            SET stato = CASE stato WHEN 'CANCEL_PROCESSING' THEN 'SUCCESS' ELSE 'ERROR' END,
+                errore = COALESCE(:err, errore), updated_at = NOW()
+            WHERE id = :id AND claim_token = :t AND stato IN ('PROCESSING','CANCEL_PROCESSING')");
+        $stmt->execute([':err' => $errore, ':id' => $id, ':t' => $token]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Pausa (lavoro `pendenze-massive` disabilitato): rilascia un claim ancora valido senza esito.
+     * Creazione -> PENDING, annullamento -> CANCEL_PENDING; response_json (idPendenza salvato) ed
+     * errore restano; claim azzerato (il prossimo claim riparte con un messaggio nuovo e tutti i
+     * tentativi). true se la riga e' stata rilasciata.
+     */
+    public function releaseClaim(int $id, string $token): bool
+    {
+        $stmt = $this->pdo->prepare("UPDATE pendenze_massive
+            SET stato = CASE stato WHEN 'CANCEL_PROCESSING' THEN 'CANCEL_PENDING' ELSE 'PENDING' END,
+                claimed_at = NULL, claim_token = NULL, updated_at = NOW()
+            WHERE id = :id AND claim_token = :t AND stato IN ('PROCESSING','CANCEL_PROCESSING')");
+        $stmt->execute([':id' => $id, ':t' => $token]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * "Riprova" (UI): rimette in coda una creazione fallita. Solo da ERROR e solo per righe gia'
+     * elaborate dal worker (claimed_at valorizzato): le righe ERROR scartate in validazione
+     * all'import (duplicati, CF non valido, ...) non hanno mai avuto un claim e non devono finire
+     * su GovPay. Conserva response_json (idPendenza/numeroAvviso salvati: la PUT aggiorna la stessa
+     * pendenza) e azzera il claim. Gli annullamenti falliti (tornano SUCCESS) non sono toccati.
+     */
+    public function retry(int $rowId): bool
+    {
+        $stmt = $this->pdo->prepare("UPDATE pendenze_massive SET stato = 'PENDING', claimed_at = NULL, claim_token = NULL, updated_at = NOW() WHERE id = :id AND stato = 'ERROR' AND claimed_at IS NOT NULL");
+        $stmt->execute([':id' => $rowId]);
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Motivo per cui "riprova" non si applica alla riga (stessa condizione di retry()), null se
+     * riprovabile. $row = findById()/listByBatch().
+     *
+     * @param array<string, mixed> $row
+     */
+    public static function retryBlockReason(array $row): ?string
+    {
+        if (($row['stato'] ?? '') !== 'ERROR') {
+            return "la riga non e' in errore";
+        }
+        if (($row['claimed_at'] ?? null) === null || $row['claimed_at'] === '') {
+            return "scartata in validazione all'import: mai inviata a GovPay, correggere il CSV e ricaricarla";
+        }
+        return null;
     }
 
     /**
@@ -225,6 +353,10 @@ class MassivePendenzeRepository
     {
         try {
             $this->pdo->query('SELECT 1 FROM pendenze_massive LIMIT 1');
+            if (self::$enumAltered) {
+                return;
+            }
+            self::$enumAltered = true;
             // Try to alter table safely (adds PAUSED, CANCELLED, CANCEL_PENDING, CANCEL_PROCESSING to enum if missing)
             try {
                 $this->pdo->exec("ALTER TABLE pendenze_massive MODIFY COLUMN stato ENUM('PENDING','PROCESSING','SUCCESS','ERROR','PAUSED','CANCELLED','CANCEL_PENDING','CANCEL_PROCESSING') NOT NULL DEFAULT 'PENDING'");
@@ -242,6 +374,8 @@ class MassivePendenzeRepository
   errore TEXT NULL,
   payload_json JSON NULL,
   response_json JSON NULL,
+  claimed_at DATETIME NULL,
+  claim_token CHAR(32) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_batch (file_batch_id),

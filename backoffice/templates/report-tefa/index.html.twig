@@ -440,25 +440,33 @@
     pollInterval = setInterval(pollStatus, 15000);
   }
 
+  const JOB_CSRF = '{{ job_csrf_token()|e('js') }}';
+  function jobPost() {
+    return { method: 'POST', body: new URLSearchParams({ csrf_token: JOB_CSRF }) };
+  }
+  function jobFail(d) {
+    if (d && !d.ok && (d.error || d.message)) alert(d.error || d.message);
+  }
+
   window.retryErrors = function () {
-    fetch('/pagamenti/report-tefa/retry-errors', { method: 'POST' })
+    fetch('/pagamenti/report-tefa/retry-errors', jobPost())
       .then(r => r.json())
-      .then(d => { if (d.ok) { alert(d.reset + ' errori reimpostati come PENDING.'); pollStatus(); } })
+      .then(d => { if (d.ok) { alert(d.reset + ' errori reimpostati come PENDING.'); pollStatus(); } else { jobFail(d); } })
       .catch(() => {});
   };
 
   window.retrySkipped = function () {
     if (!confirm('Rimettere in coda tutti i record non-TEFA? Verranno ri-elaborati.')) return;
-    fetch('/pagamenti/report-tefa/retry-skipped', { method: 'POST' })
+    fetch('/pagamenti/report-tefa/retry-skipped', jobPost())
       .then(r => r.json())
-      .then(d => { if (d.ok) { alert(d.reset + ' record rimessi in coda.'); location.reload(); } })
+      .then(d => { if (d.ok) { alert(d.reset + ' record rimessi in coda.'); location.reload(); } else { jobFail(d); } })
       .catch(() => {});
   };
 
   window.anomalyAction = function (id, action) {
     var label = action === 'accept' ? 'Accettare questa pendenza come TEFA nonostante il ratio anomalo?' : 'Confermare questa pendenza come non TEFA?';
     if (!confirm(label)) return;
-    fetch('/pagamenti/report-tefa/anomaly/' + id + '/' + action, { method: 'POST' })
+    fetch('/pagamenti/report-tefa/anomaly/' + id + '/' + action, jobPost())
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) {

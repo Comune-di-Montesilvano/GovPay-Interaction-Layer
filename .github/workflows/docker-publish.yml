@@ -718,9 +718,15 @@ jobs:
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img@$digest"
               echo "    container_name: gil-smoke-$img"
             done
+            # Worker: stessa immagine del backoffice, stesso digest (niente container_name nel compose).
+            echo "  worker:"
+            echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice@$(cat handoff/backoffice.digest)"
           } > docker-compose.smoke.yml
           cat docker-compose.smoke.yml
+      # Immagini appena buildate: bin/worker obbligatorio, worker avviato con marker in gil_jobs.
       - name: Smoke test
+        env:
+          SMOKE_WORKER: new
         run: scripts/smoke-stack.sh
 
   # ── Publish: tag su tutte e 3 le immagini insieme, solo dopo Trivy + firma + smoke ─

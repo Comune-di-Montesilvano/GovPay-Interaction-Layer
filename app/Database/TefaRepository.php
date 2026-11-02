@@ -200,14 +200,22 @@ class TefaRepository
         $stmt->execute([':msg' => mb_substr($reason, 0, 500), ':id' => $id]);
     }
 
-    /** Resetta ERROR → PENDING per retry manuale. Ritorna n. righe modificate. */
-    public function resetErrors(string $idDominio): int
+    /**
+     * Resetta ERROR → PENDING. Ritorna n. righe modificate. Con $olderThanMinutes (demone) solo
+     * le righe il cui updated_at (momento dell'errore) e' piu' vecchio della soglia; senza soglia
+     * (retry manuale da UI) resetta tutto.
+     */
+    public function resetErrors(string $idDominio, ?int $olderThanMinutes = null): int
     {
-        $stmt = $this->pdo->prepare(
-            'UPDATE tefa_ricevute SET stato = \'PENDING\', error_msg = NULL, updated_at = NOW()
-             WHERE stato = \'ERROR\' AND id_dominio = :id_dominio'
-        );
-        $stmt->execute([':id_dominio' => $idDominio]);
+        $sql = 'UPDATE tefa_ricevute SET stato = \'PENDING\', error_msg = NULL, updated_at = NOW()
+             WHERE stato = \'ERROR\' AND id_dominio = :id_dominio';
+        $params = [':id_dominio' => $idDominio];
+        if ($olderThanMinutes !== null) {
+            $sql .= ' AND updated_at < NOW() - INTERVAL :minuti MINUTE';
+            $params[':minuti'] = max(0, $olderThanMinutes);
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
         return $stmt->rowCount();
     }
 

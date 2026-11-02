@@ -37,7 +37,7 @@ class RendicontazioneController
         $totale = empty($idEntrateView) ? 0 : $repo->countDaConfermarePerTipologie($idDominio, $idEntrateView);
 
         // Debitore: preso da biz_ricevute (join in getDaConfermarePerTipologie, popolato dal
-        // cron_govpay_debitore_scanner). Fallback a chiamata live GovPay solo se la riga non è
+        // lavoro govpay-debitore). Fallback a chiamata live GovPay solo se la riga non è
         // ancora stata scansionata — evita 25 chiamate HTTP sequenziali ad ogni page load.
         $backofficeUrl = SettingsRepository::get('govpay', 'backoffice_url', '');
         $idA2A = SettingsRepository::get('entity', 'id_a2a', '');
@@ -168,7 +168,7 @@ class RendicontazioneController
 
     /**
      * Ritenta una singola riga ERRORE bypassando la finestra rendicontazione.max_giorni_retry
-     * (che filtra solo il ciclo automatico cron_rendicontazione_govpay.php). Non tocca
+     * (che filtra solo il ciclo automatico del lavoro rendicontazione-govpay). Non tocca
      * rendicontazione_regolarizzato: se il flusso era già regolarizzato, controllaERegolarizzaFlussoPerRiga()
      * fa return early su isFlussoRegolarizzato() — nessuna doppia chiamata GovPay regolarizzaIncasso.
      */
@@ -212,7 +212,7 @@ class RendicontazioneController
         return $response->withHeader('Location', '/rendicontazione/errori')->withStatus(302);
     }
 
-    /** Stessa costruzione client usata da scripts/cron_rendicontazione_govpay.php::buildGovPayClientForRendicontazione(). */
+    /** Stessa costruzione client usata da il lavoro rendicontazione-govpay. */
     private function buildGovPayClient(): \GuzzleHttp\Client
     {
         $opts = ['headers' => ['Accept' => 'application/json'], 'connect_timeout' => 10, 'timeout' => 30];

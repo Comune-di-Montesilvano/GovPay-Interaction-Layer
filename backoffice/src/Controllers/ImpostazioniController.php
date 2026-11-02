@@ -167,23 +167,6 @@ class ImpostazioniController
             $data = array_merge($data, $confCtrl->getTabData($tab, $request));
         }
 
-        // Tab Cron: lista job e storico esecuzioni
-        if ($tab === 'cron' && $this->isSuperadmin()) {
-            $data['jobs'] = CronController::getJobs();
-            $daemonStatus = [];
-            foreach ($data['jobs'] as $key => $job) {
-                if ($job['daemon'] ?? false) {
-                    $daemonStatus[$key] = CronController::isDaemonRunning($key);
-                }
-            }
-            $data['daemon_status'] = $daemonStatus;
-            $data['ragioneria_scan_da'] = SettingsRepository::get(
-                'backoffice',
-                'ragioneria_scan_da',
-                date('Y-01-01', strtotime('-1 year'))
-            );
-        }
-
         // Tab Info GIL: stato container e info sistema
         if ($tab === 'info-gil') {
             $gilInfo = [

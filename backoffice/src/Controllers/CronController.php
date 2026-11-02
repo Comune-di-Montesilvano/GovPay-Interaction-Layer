@@ -11,125 +11,109 @@ use App\Config\SettingsRepository;
 use App\Database\BizRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Database\TefaRepository;
+use App\Logger;
+use App\Security\JobControlCsrf;
+use App\Services\Jobs\JobControl;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
 
+/**
+ * Pagina Cron / Servizi: i lavori periodici girano nel container `worker` (gil_jobs). Qui solo
+ * flag abilitazione, "esegui ora", storico esecuzioni, rescan ragioneria, riprova massive.
+ */
 class CronController
 {
-    private const BASE_PATH = '/var/www/html';
-    private const LOG_DIR   = '/var/www/cache';
-
     private const JOBS = [
         'biz' => [
             'label'       => 'Biz: Scanner ricevute',
-            'description' => 'Loop continuo: accoda pendenze non-GovPay da flussi ragioneria, chiama Biz Events e salva descrizione/soggetto pagante/trasferimenti in biz_ricevute. Funziona per qualsiasi ente con Biz Events configurato.',
-            'script'      => 'scripts/cron_biz_scanner.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Accoda pendenze non-GovPay da flussi ragioneria, chiama Biz Events e salva descrizione/soggetto pagante/trasferimenti in biz_ricevute. Funziona per qualsiasi ente con Biz Events configurato.',
             'icon'        => 'fa-receipt',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-biz',
-            'pid_file'    => '/tmp/cron-biz-scanner.pid',
         ],
         'tefa' => [
-            'label'       => 'TEFA: Classificatore loop',
-            'description' => 'Loop continuo: accoda IUR da biz_ricevute (PROCESSED) e li classifica come TEFA/non-TEFA. Richiede il demone Biz attivo. Si ferma con segnale di stop.',
-            'script'      => 'scripts/cron_tefa_scanner.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'label'       => 'TEFA: Classificatore',
+            'description' => 'Accoda IUR da biz_ricevute (PROCESSED) e li classifica come TEFA/non-TEFA. Richiede il servizio Biz attivo.',
             'icon'        => 'fa-building-columns',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-tefa',
-            'pid_file'    => '/tmp/cron-tefa-scanner.pid',
         ],
         'ragioneria' => [
             'label'       => 'Ragioneria: sincronizza flussi',
-            'description' => 'Daemon: scarica flussi FDR da GovPay dalla data impostata e li salva in DB. Report ragioneria e TEFA leggono da qui.',
-            'script'      => 'scripts/cron_ragioneria.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Scarica i flussi FDR da GovPay dalla data impostata e li salva in DB. Report ragioneria e TEFA leggono da qui.',
             'icon'        => 'fa-database',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-ragioneria',
-            'pid_file'    => '/tmp/cron-ragioneria.pid',
         ],
         'pendenze-massive' => [
             'label'       => 'Pendenze massive: elabora batch',
-            'description' => 'Daemon continuo: processa pendenze massive in stato PENDING, attende 30s quando la coda è vuota.',
-            'script'      => 'scripts/cron_pendenze_massive.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Prende in carico le pendenze massive in stato PENDING e le invia a GovPay (3 nuovi tentativi sugli errori temporanei). In pausa le righe già prese tornano in coda senza chiamate GovPay.',
             'icon'        => 'fa-list-check',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-pendenze-massive',
-            'pid_file'    => '/tmp/cron-pendenze-massive.pid',
         ],
         'mapping' => [
             'label'       => 'Ragioneria: Mapping L1 (fornitore)',
-            'description' => 'Loop continuo: scopre prefissi IUV e assegna il fornitore alle pendenze esterne (Livello 1). Solo pattern con ≥5 transazioni sono usati. Deve precedere il demone Vocab.',
-            'script'      => 'scripts/cron_mapping_pendenze.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Scopre i prefissi IUV (ogni 60 s) e assegna il fornitore alle pendenze esterne (Livello 1). Solo pattern con ≥5 transazioni sono usati. Deve precedere il servizio Vocab.',
             'icon'        => 'fa-route',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-mapping',
-            'pid_file'    => '/tmp/cron-mapping.pid',
         ],
         'vocab' => [
             'label'       => 'Ragioneria: Vocab L2 (tipologia)',
-            'description' => 'Loop continuo: classifica le pendenze già identificate da L1 tramite vocabolario di keyword per assegnare la tipologia contabile (cod_entrata). Richiede il demone Mapping L1 attivo.',
-            'script'      => 'scripts/cron_vocab_mapping.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Classifica le pendenze già identificate da L1 tramite vocabolario di keyword per assegnare la tipologia contabile (cod_entrata). Richiede il servizio Mapping L1 attivo.',
             'icon'        => 'fa-book-open',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-vocab',
-            'pid_file'    => '/tmp/cron-vocab.pid',
         ],
         'govpay-debitore' => [
             'label'       => 'GovPay: Scanner debitore',
-            'description' => 'Loop continuo: recupera dati debitore (CF/nominativo, causale) da GovPay Backoffice API per le pendenze interne (is_govpay=1) e li salva in biz_ricevute. Arricchisce il CSV ragioneria con i dati debitore per le pendenze GovPay.',
-            'script'      => 'scripts/cron_govpay_debitore_scanner.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Recupera dati debitore (CF/nominativo, causale) da GovPay Backoffice API per le pendenze interne (is_govpay=1) e li salva in biz_ricevute, per il CSV ragioneria.',
             'icon'        => 'fa-user-check',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-govpay-debitore',
-            'pid_file'    => '/tmp/cron-govpay-debitore.pid',
         ],
         'rendicontazione-govpay' => [
             'label'       => 'Rendicontazione: motore GovPay',
-            'description' => 'Loop continuo: instrada le pendenze GovPay dei flussi non rendicontati (smarcatura automatica, manuale operatore, o handoff Geri/Dilazione via bridge legacy) e invia i digest mail.',
-            'script'      => 'scripts/cron_rendicontazione_govpay.php',
-            'args_tpl'    => '',
-            'params'      => [],
+            'description' => 'Instrada le pendenze GovPay dei flussi non rendicontati (smarcatura automatica, manuale operatore, o handoff Geri/Dilazione via bridge legacy) e invia i digest mail.',
             'icon'        => 'fa-scale-balanced',
-            'daemon'      => true,
-            'stop_file'   => '/tmp/cron-stop-rendicontazione-govpay',
-            'pid_file'    => '/tmp/cron-rendicontazione-govpay.pid',
         ],
     ];
 
-    public function __construct(private readonly Twig $twig) {}
+    private ?JobControl $control;
+
+    public function __construct(private readonly Twig $twig, ?JobControl $control = null)
+    {
+        $this->control = $control;
+    }
+
+    private function control(): JobControl
+    {
+        return $this->control ??= JobControl::default();
+    }
 
     public static function getJobs(): array
     {
         return self::JOBS;
     }
 
-    public static function isDaemonRunning(string $jobKey): bool
+    /**
+     * Compatibilita' (tab Impostazioni, mapping pendenze, report TEFA): "attivo" = lavoro
+     * abilitato in gil_jobs (lo esegue il container worker), non piu' un processo con PID.
+     */
+    public static function isJobEnabled(string $jobKey): bool
     {
-        $job = self::JOBS[$jobKey] ?? null;
-        if ($job === null || !($job['daemon'] ?? false)) {
+        if (!isset(self::JOBS[$jobKey])) {
             return false;
         }
-        $pidFile = $job['pid_file'] ?? '';
-        if ($pidFile === '' || !file_exists($pidFile)) {
+        try {
+            return JobControl::default()->isEnabled($jobKey);
+        } catch (\Throwable) {
             return false;
         }
-        $pid = (int)file_get_contents($pidFile);
-        return $pid > 0 && file_exists('/proc/' . $pid);
+    }
+
+    /**
+     * Stato dei lavori per pagina Cron e Services Hub; vuoto (tutti in pausa) se il DB non
+     * risponde o le tabelle gil_jobs/lock_keys mancano ancora.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function jobStatuses(?JobControl $control = null): array
+    {
+        try {
+            return ($control ?? JobControl::default())->statuses();
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('Stato lavori non disponibile: ' . $e->getMessage());
+            return [];
+        }
     }
 
     public function index(Request $request, Response $response): Response
@@ -138,14 +122,6 @@ class CronController
         $this->exposeCurrentUser();
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
-        $jobs = self::JOBS;
-
-        $daemonStatus = [];
-        foreach ($jobs as $key => $job) {
-            if ($job['daemon'] ?? false) {
-                $daemonStatus[$key] = self::isDaemonRunning($key);
-            }
-        }
 
         $ragioneriaScanDa = SettingsRepository::get(
             'backoffice',
@@ -154,85 +130,100 @@ class CronController
         );
 
         return $this->twig->render($response, 'funzioni-avanzate/cron.html.twig', [
-            'jobs' => $jobs,
-            'daemon_status' => $daemonStatus,
+            'jobs' => self::JOBS,
+            'job_status' => self::jobStatuses($this->control()),
             'ragioneria_scan_da' => $ragioneriaScanDa,
             'id_dominio' => $idDominio,
         ]);
     }
 
+    /** "Esegui ora": accoda un'esecuzione manuale al worker. */
     public function run(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
             return $this->jsonResponse($response, ['ok' => false, 'error' => 'Job non trovato'], 404);
         }
 
-        $job = self::JOBS[$jobKey];
-
-        $body    = (array)($request->getParsedBody() ?? []);
-        $argsStr = $job['args_tpl'] ?? '';
-        foreach ($job['params'] ?? [] as $paramDef) {
-            $name = $paramDef['name'];
-            $val  = trim((string)($body[$name] ?? ''));
-            if ($val !== '') {
-                $argsStr = str_replace('{' . $name . '}', escapeshellarg($val), $argsStr);
-            } else {
-                $argsStr = trim(preg_replace('/--\w+=\{' . preg_quote($name, '/') . '\}/', '', $argsStr));
-            }
+        try {
+            $reason = $this->control()->runNow($jobKey);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Esegui ora fallito per ' . $jobKey . ': ' . $e->getMessage());
+            return $this->jsonResponse($response, ['ok' => false, 'error' => "Impossibile accodare l'esecuzione (database non raggiungibile?)."], 500);
+        }
+        if ($reason !== null) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => $reason], 409);
         }
 
-        $logFile = self::LOG_DIR . '/daemon-' . $jobKey . '.log';
-        $script  = self::BASE_PATH . '/' . $job['script'];
-        $cmd     = sprintf(
-            'php %s %s < /dev/null >> %s 2>&1 &',
-            escapeshellarg($script),
-            $argsStr,
-            escapeshellarg($logFile)
-        );
-        exec($cmd);
-        file_put_contents(self::LOG_DIR . '/daemon-' . $jobKey . '.autostart', '1');
-
-        return $this->jsonResponse($response, ['ok' => true, 'message' => 'Daemon avviato.']);
+        return $this->jsonResponse($response, [
+            'ok' => true,
+            'message' => 'Esecuzione richiesta: il worker la avvia entro pochi secondi (se un giro è già in corso, parte al suo termine).',
+        ]);
     }
 
+    /** Abilita (enabled=1) o mette in pausa (enabled=0) il lavoro. */
+    public function setEnabled(Request $request, Response $response, array $args): Response
+    {
+        $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
+
+        $jobKey = (string)($args['job'] ?? '');
+        if (!isset(self::JOBS[$jobKey])) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Job non trovato'], 404);
+        }
+        $body = (array)($request->getParsedBody() ?? []);
+        $raw = (string)($body['enabled'] ?? '');
+        if ($raw !== '0' && $raw !== '1') {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Parametro enabled mancante (0 o 1).'], 400);
+        }
+        return $this->applyEnabled($response, $jobKey, $raw === '1');
+    }
+
+    /** Compatibilita': il vecchio "Ferma" = pausa. */
     public function stop(Request $request, Response $response, array $args): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
+        }
 
         $jobKey = (string)($args['job'] ?? '');
         if (!isset(self::JOBS[$jobKey])) {
             return $this->jsonResponse($response, ['ok' => false, 'error' => 'Job non trovato'], 404);
         }
+        return $this->applyEnabled($response, $jobKey, false);
+    }
 
-        $job      = self::JOBS[$jobKey];
-        $stopFile = $job['stop_file'] ?? '';
-        if ($stopFile === '') {
-            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Stop non supportato per questo job'], 400);
+    private function applyEnabled(Response $response, string $jobKey, bool $enabled): Response
+    {
+        try {
+            $this->control()->setEnabled($jobKey, $enabled);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Cambio stato fallito per ' . $jobKey . ': ' . $e->getMessage());
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Impossibile salvare lo stato del servizio.'], 500);
         }
-
-        // Graceful stop signal (checked between iterations)
-        file_put_contents($stopFile, '1');
-
-        // Immediate SIGTERM if process is alive (handles hangs)
-        $pidFile = $job['pid_file'] ?? '';
-        if ($pidFile !== '' && file_exists($pidFile)) {
-            $pid = (int)file_get_contents($pidFile);
-            if ($pid > 0 && function_exists('posix_kill') && file_exists('/proc/' . $pid)) {
-                posix_kill($pid, 15); // 15 = SIGTERM (graceful stop)
-            }
-        }
-
-        @unlink(self::LOG_DIR . '/daemon-' . $jobKey . '.autostart');
-
-        return $this->jsonResponse($response, ['ok' => true, 'message' => 'Segnale di stop inviato.']);
+        return $this->jsonResponse($response, [
+            'ok' => true,
+            'enabled' => $enabled,
+            'message' => $enabled
+                ? 'Servizio attivato: parte entro pochi secondi.'
+                : 'Servizio in pausa: un giro in corso termina dopo il batch corrente.',
+        ]);
     }
 
     public function setScanDate(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedForm($request, $response)) {
+            return $denied;
+        }
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -254,6 +245,9 @@ class CronController
     public function resetDateRange(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedForm($request, $response)) {
+            return $denied;
+        }
 
         if (session_status() !== PHP_SESSION_ACTIVE) {
             @session_start();
@@ -307,16 +301,24 @@ class CronController
     public function forceRescan(Request $request, Response $response): Response
     {
         $this->requireAdminOrSuperadmin();
-
-        if (!self::isDaemonRunning('ragioneria')) {
-            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Daemon ragioneria non attivo.'], 400);
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
         }
 
-        file_put_contents('/tmp/cron-rescan-ragioneria', '1');
+        try {
+            $reason = $this->control()->requestRagioneriaRescan();
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Richiesta rescan ragioneria fallita: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Impossibile registrare la richiesta di rescan.'], 500);
+        }
+        if ($reason !== null) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => $reason], 400);
+        }
 
-        return $this->jsonResponse($response, ['ok' => true, 'message' => 'Segnale rescan inviato: il prossimo ciclo riscansionerà tutti i flussi dalla data configurata.']);
+        return $this->jsonResponse($response, ['ok' => true, 'message' => 'Rescan richiesto: il prossimo giro (entro pochi secondi, o al termine di quello in corso) riscansionerà tutti i flussi dalla data configurata.']);
     }
 
+    /** Storico esecuzioni (riepilogo + primi errori) da gil_job_runs / gil_job_run_errors. */
     public function log(Request $request, Response $response, array $args): Response
     {
         $this->requireAuth();
@@ -326,32 +328,52 @@ class CronController
             return $this->jsonResponse($response, ['ok' => false, 'error' => 'Job non trovato'], 404);
         }
 
-        $logFile = self::LOG_DIR . '/daemon-' . $jobKey . '.log';
-        $lines   = 300;
+        try {
+            return $this->jsonResponse($response, ['ok' => true, 'content' => $this->control()->logText($jobKey)]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Lettura storico lavori fallita per ' . $jobKey . ': ' . $e->getMessage());
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Storico esecuzioni non disponibile.'], 500);
+        }
+    }
 
-        if (!file_exists($logFile)) {
-            return $this->jsonResponse($response, ['ok' => true, 'content' => '(nessun log ancora)']);
+    /** "Riprova" di una riga pendenze massive in errore. */
+    public function retryMassiveRow(Request $request, Response $response, array $args): Response
+    {
+        $this->requireAdminOrSuperadmin();
+        if ($denied = $this->csrfDeniedJson($request, $response)) {
+            return $denied;
         }
 
-        // Read last $lines lines efficiently
-        $handle = fopen($logFile, 'r');
-        if ($handle === false) {
-            return $this->jsonResponse($response, ['ok' => true, 'content' => '(impossibile leggere il log)']);
+        $rowId = (int)($args['rowId'] ?? 0);
+        try {
+            $result = $this->control()->retryMassiveRow($rowId);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->error('Riprova riga massiva ' . $rowId . ' fallita: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['ok' => false, 'error' => 'Impossibile rimettere in coda la riga.'], 500);
         }
-
-        $buffer = [];
-        while (!feof($handle)) {
-            $line = fgets($handle);
-            if ($line !== false) {
-                $buffer[] = rtrim($line);
-                if (count($buffer) > $lines) {
-                    array_shift($buffer);
-                }
-            }
+        if (!$result['ok']) {
+            return $this->jsonResponse($response, ['ok' => false, 'error' => $result['message']], 409);
         }
-        fclose($handle);
+        return $this->jsonResponse($response, ['ok' => true, 'message' => $result['message']]);
+    }
 
-        return $this->jsonResponse($response, ['ok' => true, 'content' => implode("\n", $buffer)]);
+    /** POST JSON senza token CSRF valido: 403, nessuna modifica di stato. */
+    private function csrfDeniedJson(Request $request, Response $response): ?Response
+    {
+        if (JobControlCsrf::isValid($request)) {
+            return null;
+        }
+        return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+    }
+
+    /** POST da form senza token CSRF valido: errore flash e ritorno alla pagina Cron, nessuna modifica. */
+    private function csrfDeniedForm(Request $request, Response $response): ?Response
+    {
+        if (JobControlCsrf::isValid($request)) {
+            return null;
+        }
+        $_SESSION['flash'][] = ['type' => 'error', 'text' => JobControlCsrf::ERROR_MESSAGE];
+        return $response->withHeader('Location', '/funzioni-avanzate/cron')->withStatus(303);
     }
 
     private function requireAuth(): void

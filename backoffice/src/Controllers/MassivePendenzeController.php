@@ -237,6 +237,13 @@ class MassivePendenzeController
         if ($batchId === '') return $response->withStatus(400);
         $repo = new MassivePendenzeRepository();
         $rows = $repo->listByBatch($batchId, null, 1, 500);
+        // "Riprova" sulle righe in errore: motivo se non riprovabile (null = riprovabile).
+        foreach ($rows as &$row) {
+            $row['retry_block_reason'] = ($row['stato'] ?? '') === 'ERROR'
+                ? MassivePendenzeRepository::retryBlockReason($row)
+                : null;
+        }
+        unset($row);
         $exportJob = (new MassivoExportRepository())->findLatestByBatch($batchId);
         return $this->twig->render($response, 'pendenze/massivo_dettaglio.html.twig', [
             'batch_id' => $batchId,

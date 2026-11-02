@@ -138,10 +138,13 @@
             <span class="text-muted small d-none d-md-inline">| Contatori globali e copertura scansione mensile</span>
           </div>
           <form method="post" action="/pagamenti/report-ragioneria/biz-reset-errors" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
             <input type="hidden" name="idDominio" value="{{ f.idDominio|default('') }}">
             <input type="hidden" name="return_url" value="/pagamenti/report-ragioneria?q=1&idDominio={{ f.idDominio|default('')|url_encode }}">
-            <button type="submit" class="btn btn-outline-danger btn-sm" {% if (biz.ERROR|default(0)) <= 0 %}disabled{% endif %}>
-              Reset errori Biz ({{ biz.ERROR|default(0) }})
+            {% set biz_resettable = biz.resettable_errors ?? biz.ERROR|default(0) %}
+            <button type="submit" class="btn btn-outline-danger btn-sm" {% if biz_resettable <= 0 %}disabled{% endif %}
+                    title="Rimette in coda Biz le righe in errore delle pendenze esterne (quelle GovPay le ritenta lo scanner debitore)">
+              Reset errori Biz ({{ biz_resettable }})
             </button>
           </form>
         </div>

@@ -52,22 +52,20 @@ class HomeController
 
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
-        // Stato dei demoni GIL
-        $daemons = [];
+        // Stato dei servizi GIL (gil_jobs, eseguiti dal container worker)
+        $statuses = CronController::jobStatuses();
+        $jobs = [];
         foreach (['biz', 'tefa', 'ragioneria', 'pendenze-massive'] as $key) {
-            try {
-                $daemons[$key] = [
-                    'running' => CronController::isDaemonRunning($key),
-                    'label' => CronController::getJobs()[$key]['label'] ?? $key,
-                    'icon' => CronController::getJobs()[$key]['icon'] ?? 'fa-cogs',
-                ];
-            } catch (\Throwable $_) {
-                $daemons[$key] = [
-                    'running' => false,
-                    'label' => $key,
-                    'icon' => 'fa-cogs',
-                ];
-            }
+            $st = $statuses[$key] ?? [];
+            $jobs[$key] = [
+                'enabled' => (bool)($st['enabled'] ?? false),
+                'running' => (bool)($st['running'] ?? false),
+                'last_finished_at' => $st['last_finished_at'] ?? null,
+                'last_status' => $st['last_status'] ?? null,
+                'next_run_at' => $st['next_run_at'] ?? null,
+                'label' => CronController::getJobs()[$key]['label'] ?? $key,
+                'icon' => CronController::getJobs()[$key]['icon'] ?? 'fa-cogs',
+            ];
         }
 
         $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));
@@ -86,7 +84,7 @@ class HomeController
 
         return $this->twig->render($response, 'home.html.twig', [
             'id_dominio' => $idDominio,
-            'daemons' => $daemons,
+            'jobs' => $jobs,
             'ragioneria_scan_da_formatted' => $scanDaFormatted,
             'debug' => nl2br(htmlspecialchars($debug)),
         ]);

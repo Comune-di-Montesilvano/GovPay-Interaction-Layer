@@ -74,8 +74,15 @@ jobs:
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img:$VERSION"
               echo "    container_name: gil-smoke-$img"
             done
+            # Worker con l'immagine backoffice di release: senza override userebbe :latest.
+            echo "  worker:"
+            echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice:$VERSION"
           } > docker-compose.smoke.yml
           cat docker-compose.smoke.yml
 
+      # auto: release senza bin/worker -> worker inerte (nessun crash loop, 0 riavvii); release
+      # con bin/worker -> worker avviato come nel job smoke di docker-publish.yml.
       - name: Smoke test
+        env:
+          SMOKE_WORKER: auto
         run: scripts/smoke-stack.sh

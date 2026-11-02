@@ -9,6 +9,7 @@ namespace App\Controllers;
 
 use App\Config\SettingsRepository;
 use App\Database\TefaRepository;
+use App\Security\JobControlCsrf;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -19,7 +20,10 @@ use Slim\Views\Twig;
  */
 class ReportTefaController
 {
-    public function __construct(private readonly Twig $twig) {}
+    /**
+     * @param \Closure():\App\Services\Jobs\JobControl|null $jobControlFactory solo per i test
+     */
+    public function __construct(private readonly Twig $twig, private readonly ?\Closure $jobControlFactory = null) {}
 
     public function index(Request $request, Response $response): Response
     {
@@ -147,11 +151,28 @@ class ReportTefaController
         ]);
     }
 
-    private const SCANNER_PID_FILE  = '/tmp/cron-tefa-scanner.pid';
-    private const SCANNER_STOP_FILE = '/tmp/cron-stop-tefa';
-
-    private const BIZ_SCANNER_PID_FILE  = '/tmp/cron-biz-scanner.pid';
-    private const BIZ_SCANNER_STOP_FILE = '/tmp/cron-stop-biz';
+    /**
+     * I servizi TEFA/Biz girano nel container worker: "avvia"/"ferma" = flag gil_jobs
+     * (mai processi lanciati da qui, sarebbero doppi rispetto al worker).
+     */
+    private function setJobEnabled(Response $response, string $job, bool $enabled): ?Response
+    {
+        try {
+            $control = $this->jobControlFactory !== null
+                ? ($this->jobControlFactory)()
+                : new \App\Services\Jobs\JobControl(\App\Database\JobStateRepository::default());
+            $control->setEnabled($job, $enabled);
+            return null;
+        } catch (\Throwable $e) {
+            \App\Logger::getInstance()->error('Report TEFA: aggiornamento stato servizio fallito', [
+                'job' => $job, 'enabled' => $enabled, 'error' => \App\Services\ThrowableSummary::of($e),
+            ]);
+            return $this->jsonResponse($response, [
+                'ok' => false,
+                'error' => ($enabled ? 'Attivazione' : 'Pausa') . " del servizio {$job} non riuscita: riprovare.",
+            ], 500);
+        }
+    }
 
     public function scan(Request $request, Response $response): Response
     {
@@ -159,6 +180,9 @@ class ReportTefaController
         $this->requireTefaEnabled($response);
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
 
         $body   = (array)($request->getParsedBody() ?? []);
@@ -171,22 +195,12 @@ class ReportTefaController
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataDa) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataA)) {
                 return $this->jsonResponse($response, ['ok' => false, 'error' => 'Formato date non valido (YYYY-MM-DD)'], 400);
             }
-            // Ferma scanner eventualmente attivo (loop quotidiano)
-            file_put_contents(self::SCANNER_STOP_FILE, '1');
-            usleep(600_000); // 0.6s
         }
 
-        $script = '/var/www/html/scripts/cron_tefa_scanner.php';
-        $args   = $rangeMode
-            ? '--da=' . escapeshellarg($dataDa) . ' --a=' . escapeshellarg($dataA)
-            : '';
-
-        $cmd = sprintf(
-            'php %s %s < /dev/null > /dev/null 2>&1 &',
-            escapeshellarg($script),
-            $args
-        );
-        exec($cmd);
+        // Lo scanner TEFA non ha mai filtrato per intervallo: entrambe le modalita' = servizio attivo.
+        if ($errRes = $this->setJobEnabled($response, 'tefa', true)) {
+            return $errRes;
+        }
 
         $mode = $rangeMode ? 'range' : 'loop';
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
@@ -195,9 +209,11 @@ class ReportTefaController
             'ok'   => true,
             'mode' => $mode,
             'result' => [
+                // Il servizio TEFA non filtra per intervallo: in entrambe le modalita' viene solo
+                // attivato e la scansione (di tutte le ricevute in coda) parte al prossimo giro.
                 'message' => $mode === 'loop'
-                    ? 'Scansione quotidiana avviata (loop).'
-                    : "Scansione range {$dataDa}÷{$dataA} avviata.",
+                    ? 'Servizio TEFA attivato: la scansione parte al prossimo giro del worker.'
+                    : "Servizio TEFA attivato: la scansione parte al prossimo giro del worker ed elabora tutte le ricevute in coda, non solo l'intervallo {$dataDa}÷{$dataA}.",
             ],
         ]);
     }
@@ -209,8 +225,13 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
-        file_put_contents(self::SCANNER_STOP_FILE, '1');
+        if ($errRes = $this->setJobEnabled($response, 'tefa', false)) {
+            return $errRes;
+        }
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
@@ -234,11 +255,7 @@ class ReportTefaController
 
     private function isScannerRunning(): bool
     {
-        if (!file_exists(self::SCANNER_PID_FILE)) {
-            return false;
-        }
-        $pid = (int)file_get_contents(self::SCANNER_PID_FILE);
-        return $pid > 0 && file_exists('/proc/' . $pid);
+        return CronController::isJobEnabled('tefa');
     }
 
     public function retryErrors(Request $request, Response $response): Response
@@ -247,6 +264,9 @@ class ReportTefaController
         $this->requireTefaEnabled($response);
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
@@ -264,6 +284,9 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $repo      = new TefaRepository();
@@ -279,6 +302,9 @@ class ReportTefaController
         $this->requireTefaEnabled($response);
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
@@ -419,6 +445,9 @@ class ReportTefaController
         if ($err = $this->requireAdminOrSuperadminJson($response)) {
             return $err;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
         $id        = (int)($args['id'] ?? 0);
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
         if ($id <= 0) {
@@ -438,6 +467,9 @@ class ReportTefaController
         $this->requireAuth();
         if ($err = $this->requireAdminOrSuperadminJson($response)) {
             return $err;
+        }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
         }
         $id        = (int)($args['id'] ?? 0);
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
@@ -461,17 +493,20 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
-        $script = '/var/www/html/scripts/cron_biz_scanner.php';
-        $cmd    = sprintf('php %s < /dev/null > /dev/null 2>&1 &', escapeshellarg($script));
-        exec($cmd);
+        if ($errRes = $this->setJobEnabled($response, 'biz', true)) {
+            return $errRes;
+        }
 
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
 
         return $this->jsonResponse($response, [
             'ok'     => true,
-            'result' => ['message' => 'Demone Biz avviato.'],
+            'result' => ['message' => 'Servizio Biz attivato.'],
         ]);
     }
 
@@ -481,8 +516,13 @@ class ReportTefaController
         if ($errRes = $this->requireAdminOrSuperadminJson($response)) {
             return $errRes;
         }
+        if (!JobControlCsrf::isValid($request)) {
+            return $this->jsonResponse($response, JobControlCsrf::errorPayload(), 403);
+        }
 
-        file_put_contents(self::BIZ_SCANNER_STOP_FILE, '1');
+        if ($errRes = $this->setJobEnabled($response, 'biz', false)) {
+            return $errRes;
+        }
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         \App\Services\CacheService::clearDomainCache($idDominio);
         return $this->jsonResponse($response, ['ok' => true]);
@@ -505,11 +545,7 @@ class ReportTefaController
 
     private function isBizScannerRunning(): bool
     {
-        if (!file_exists(self::BIZ_SCANNER_PID_FILE)) {
-            return false;
-        }
-        $pid = (int)file_get_contents(self::BIZ_SCANNER_PID_FILE);
-        return $pid > 0 && file_exists('/proc/' . $pid);
+        return CronController::isJobEnabled('biz');
     }
 
     private function jsonResponse(Response $response, array $data, int $status = 200): Response

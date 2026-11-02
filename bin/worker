@@ -1,0 +1,51 @@
+#!/usr/bin/env php
+<?php
+/**
+ * SPDX-License-Identifier: EUPL-1.2
+ * License: European Union Public Licence v1.2 (EUPL-1.2)
+ *
+ * Worker GIL: esegue i lavori periodici (ex demoni scripts/cron_*.php) con Symfony Scheduler +
+ * Messenger su MariaDB. Vedi App\Services\Jobs\WorkerKernel.
+ *
+ *   php bin/worker [gil:worker] [--cache-dir=/var/www/cache] [--time-limit=SECONDI]
+ */
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use App\Monitoring\SentryReporter;
+use App\Services\Jobs\WorkerKernel;
+use Dotenv\Dotenv;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+
+if (file_exists(dirname(__DIR__) . '/.env')) {
+    Dotenv::createImmutable(dirname(__DIR__))->safeLoad();
+}
+if (!getenv('DB_HOST')) {
+    putenv('DB_HOST=db');
+}
+
+set_time_limit(0);
+
+$command = (new Command('gil:worker'))
+    ->setDescription('Esegue i lavori periodici GIL (scheduler ogni 5 s + coda "esegui ora")')
+    ->addOption('cache-dir', null, InputOption::VALUE_REQUIRED, 'Directory dei file daemon-<slug>.autostart (import una tantum)', WorkerKernel::DEFAULT_CACHE_DIR)
+    ->addOption('time-limit', null, InputOption::VALUE_REQUIRED, 'Termina dopo N secondi (diagnostica)')
+    ->setCode(static function (InputInterface $input, OutputInterface $output): int {
+        SentryReporter::init('worker');
+
+        $kernel = WorkerKernel::create((string)$input->getOption('cache-dir'));
+        $kernel->installSignalHandlers();
+
+        $timeLimit = $input->getOption('time-limit');
+        return $kernel->run($timeLimit !== null ? max(1.0, (float)$timeLimit) : null);
+    });
+
+$app = new Application('gil-worker');
+$app->addCommand($command);
+$app->setDefaultCommand('gil:worker');
+$app->run();

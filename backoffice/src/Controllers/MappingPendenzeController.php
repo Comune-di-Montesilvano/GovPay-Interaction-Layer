@@ -112,8 +112,8 @@ class MappingPendenzeController
             $noMatchExamples = $repo->getNoMatchExamples($idDominio);
         } catch (\Throwable $_) {}
 
-        $daemonRunning      = CronController::isDaemonRunning('mapping');
-        $daemonVocabRunning = CronController::isDaemonRunning('vocab');
+        $mappingEnabled     = CronController::isJobEnabled('mapping');
+        $vocabEnabled       = CronController::isJobEnabled('vocab');
 
         $flash = $_SESSION['flash'] ?? [];
         unset($_SESSION['flash']);
@@ -125,8 +125,8 @@ class MappingPendenzeController
             'stats'               => $stats,
             'tipologie_list'      => $tipologieList,
             'tipologie_custom'    => $tipologieCustom,
-            'daemon_running'       => $daemonRunning,
-            'daemon_vocab_running' => $daemonVocabRunning,
+            'mapping_job_enabled' => $mappingEnabled,
+            'vocab_job_enabled'   => $vocabEnabled,
             'flash'                => $flash,
             'current_user'         => $user,
             'no_match_examples'    => $noMatchExamples,
@@ -250,12 +250,12 @@ class MappingPendenzeController
             // Aggiorna transazioni_count prima di filtrare per >= 5
             try { $repo->discoverPatterns($idDominio); } catch (\Throwable $_) {}
 
-            // L1: patterns ordinati longest-first da getRules
+            // L1: stesso ordine del demone (prefisso piu' lungo prima, a parita' il custom)
             $rules = $repo->getRules($idDominio);
-            $activeRules = array_filter($rules, fn(array $r): bool =>
+            $activeRules = MappingPendenzeRepository::sortForAssignment(array_filter($rules, fn(array $r): bool =>
                 (!empty($r['fornitore']) && ((bool)($r['is_custom'] ?? false) || (int)($r['transazioni_count'] ?? 0) >= 5)) ||
                 (!empty($r['accorpato_a']) && !empty($r['fornitore']))
-            );
+            ));
 
             $l1Assigned = 0;
             foreach ($activeRules as $rule) {
@@ -279,7 +279,7 @@ class MappingPendenzeController
                     $l2Assigned += $repo->bulkAssignVocabDefault($idDominio, (string)$patternIuv, $defaultCod);
                 }
             }
-            $l2NoMatch = $repo->bulkSetVocabNoMatch($idDominio);
+            $l2NoMatch = $repo->bulkSetVocabNoMatch($idDominio, array_map('strval', array_keys($vocabIndex)));
 
             $_SESSION['flash'][] = [
                 'type' => 'success',

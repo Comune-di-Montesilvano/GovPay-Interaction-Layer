@@ -22,6 +22,9 @@ use Psr\Http\Message\RequestInterface as HttpRequest;
  */
 class GovPayClientFactory
 {
+    /** Messaggio della ConnectException con cui il circuit breaker aperto rifiuta (nessun invio). */
+    public const CIRCUIT_OPEN_MESSAGE = 'GovPay is offline (Circuit Breaker active)';
+
     /**
      * Client HTTP per chiamate raw verso GovPay Backoffice v1.
      *
@@ -29,6 +32,10 @@ class GovPayClientFactory
      * (backoff esponenziale con jitter, max 5 tentativi, 0–2000 ms). 28 (timeout) e
      * 56 (connection reset) sono transitori tipici al riavvio dei container (GovPay
      * o rete non ancora pronti), oltre al TLS handshake instabile di 35.
+     * Stack di default Guzzle incluso (http_errors): un 4xx/5xx GovPay lancia
+     * ClientException/ServerException come un `new Client()` (salvo 'http_errors' => false
+     * per richiesta). $extra['handler']: HandlerStack usato com'e', altro callable avvolto.
+     * Redirect mai seguiti: un 3xx torna come risposta (non-2xx), allow_redirects ignorato.
      *
      * @param array $extra Opzioni Guzzle aggiuntive (es. auth, headers specifici)
      */
@@ -66,13 +73,25 @@ class GovPayClientFactory
             $guzzleOptions['curl'] = ($guzzleOptions['curl'] ?? []) + $defaultCurlOptions;
         }
 
-        $handlerStack = $guzzleOptions['handler'] ?? null;
-        if ($handlerStack === null) {
-            $handlerStack = new \GuzzleHttp\HandlerStack();
-            $handlerStack->setHandler(new \GuzzleHttp\Handler\CurlHandler());
+        // Stack di default Guzzle (http_errors, cookies, prepare_body; redirect tolto sotto) come `new Client()`:
+        // senza http_errors un 4xx/5xx GovPay NON lancerebbe e i chiamanti (che si aspettano
+        // ClientException/ServerException, come prima della factory) lo tratterebbero come risposta
+        // valida. I middleware della factory vanno dopo: http_errors resta il piu' esterno, quindi
+        // retry e circuit breaker vedono ancora la risposta grezza (5xx = risposta, non guasto di rete).
+        // Un handler non-HandlerStack (es. MockHandler nei test) viene avvolto nello stesso stack.
+        $handler = $guzzleOptions['handler'] ?? null;
+        unset($guzzleOptions['handler']);
+        if ($handler instanceof \GuzzleHttp\HandlerStack) {
+            $handlerStack = $handler;
         } else {
-            unset($guzzleOptions['handler']);
+            $handlerStack = \GuzzleHttp\HandlerStack::create($handler ?? new \GuzzleHttp\Handler\CurlHandler());
         }
+        // Redirect MAI seguiti (come lo stack nudo di prima): Guzzle trasformerebbe POST/PUT in un
+        // GET "riuscito" su 301/302/303 (incasso, aggiornamento pendenza persi) e presenterebbe il
+        // certificato mTLS a un host diverso. Middleware tolto (non riattivabile con allow_redirects
+        // del chiamante, nemmeno per richiesta) e opzione a false: un 3xx torna come risposta non-2xx.
+        $handlerStack->remove('allow_redirects');
+        $guzzleOptions['allow_redirects'] = false;
 
         $handlerStack->push(Middleware::mapRequest(
             static function (HttpRequest $request): HttpRequest {
@@ -132,13 +151,11 @@ class GovPayClientFactory
 
     /**
      * Path del file di stato del Circuit Breaker. Deliberatamente NON in
-     * sys_get_temp_dir() (/tmp ha lo sticky bit): un daemon lanciato via
-     * `docker exec` (di norma come root, nessun USER nell'immagine) e Apache
-     * (www-data) scrivono entrambi qui — su /tmp lo sticky bit impedirebbe
-     * a www-data di fare unlink() su un file creato da root (Operation not
-     * permitted, vedi GOVPAY-GIL-K e duplicati). storage/tmp ha invece il
-     * bit setgid (2775, impostato in Dockerfile) così ogni nuovo file
-     * eredita il gruppo www-data indipendentemente da chi scrive.
+     * sys_get_temp_dir() (/tmp ha lo sticky bit): backoffice (Apache, www-data) e worker
+     * scrivono entrambi qui, e un file creato da un altro utente non sarebbe eliminabile
+     * (Operation not permitted, vedi GOVPAY-GIL-K e duplicati). storage/tmp ha invece il
+     * bit setgid (2775, impostato in Dockerfile) cosi' ogni nuovo file eredita il gruppo
+     * www-data indipendentemente da chi scrive.
      */
     private static function circuitBreakerFilePath(): string
     {
@@ -154,7 +171,7 @@ class GovPayClientFactory
      * A differenza di file_put_contents() in-place, rename() richiede solo
      * il permesso di scrittura sulla directory (come unlink) — non su un
      * eventuale file esistente scritto da un altro utente con mode 0644
-     * (owner-only write). Elimina il caso limite in cui root e www-data si
+     * (owner-only write). Elimina il caso limite in cui due utenti si
      * alternano nello scrivere lo stesso file e uno dei due resta bloccato.
      */
     private static function writeCircuitBreakerFile(string $cbFile, array $data): void
@@ -186,7 +203,7 @@ class GovPayClientFactory
                         if (time() - $lastFailure < $cooloff) {
                             return \GuzzleHttp\Promise\Create::rejectionFor(
                                 new \GuzzleHttp\Exception\ConnectException(
-                                    'GovPay is offline (Circuit Breaker active)',
+                                    self::CIRCUIT_OPEN_MESSAGE,
                                     $request
                                 )
                             );
@@ -267,6 +284,25 @@ class GovPayClientFactory
     }
 
     /**
+     * Client Backoffice con Basic Auth da impostazioni (se configurata) piu' $extra; mTLS e stack
+     * middleware come makeBackofficeClient(). Per i lavori del worker e i servizi senza Slim.
+     */
+    public static function makeBackofficeBasicAuthClient(array $extra = []): Client
+    {
+        return self::makeBackofficeClient($extra + self::basicAuthOptions());
+    }
+
+    /** Client dei lavori ragioneria / rendicontazione: JSON, connect 10 s, timeout 30 s. */
+    public static function makeBackofficeJobClient(): Client
+    {
+        return self::makeBackofficeBasicAuthClient([
+            'headers' => ['Accept' => 'application/json'],
+            'connect_timeout' => 10,
+            'timeout' => 30,
+        ]);
+    }
+
+    /**
      * Restituisce le opzioni Guzzle per Basic Auth GovPay (o array vuoto se non configurata).
      */
     public static function basicAuthOptions(): array
@@ -313,7 +349,8 @@ class GovPayClientFactory
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
             Logger::getInstance()->error('GovPay check status failed: ' . $msg);
-            return ['online' => false, 'error' => $msg];
+            // Servito da /api/govpay/status e /api/frontoffice/govpay-status: mai URL ne' corpo upstream.
+            return ['online' => false, 'error' => ThrowableSummary::forDisplay($e)];
         }
     }
 
