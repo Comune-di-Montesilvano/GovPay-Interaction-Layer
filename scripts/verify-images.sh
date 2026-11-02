@@ -22,12 +22,21 @@ COSIGN="ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c2735
 IDENTITY="^https://github.com/${REPO}/\.github/workflows/docker-publish\.yml@refs/(tags/v.*|heads/main)$"
 ISSUER="https://token.actions.githubusercontent.com"
 
-if command -v gh >/dev/null 2>&1; then
-  have_gh=true
-else
+if ! command -v gh >/dev/null 2>&1; then
   have_gh=false
   echo "AVVISO: gh non trovato, verifico solo la firma cosign (niente provenance/SBOM)." >&2
+elif ! gh auth status >/dev/null 2>&1; then
+  # gh attestation verify richiede un login (gh auth login o GH_TOKEN): senza, fallirebbe con
+  # un errore di autenticazione scambiato per attestazione mancante.
+  have_gh=false
+  echo "AVVISO: gh presente ma non autenticato (gh auth login o GH_TOKEN): verifico solo la firma cosign (niente provenance/SBOM)." >&2
+else
+  have_gh=true
 fi
+
+# stderr di cosign: mostrato solo se la verifica fallisce (su successo e' il riepilogo dei controlli).
+errlog=$(mktemp)
+trap 'rm -f "$errlog"' EXIT
 
 for img in backoffice frontoffice db; do
   ref="${REGISTRY}/govpay-interaction-layer-${img}:${TAG}"
@@ -35,8 +44,9 @@ for img in backoffice frontoffice db; do
   out=$("$CLI" run --rm "$COSIGN" verify \
     --certificate-identity-regexp "$IDENTITY" \
     --certificate-oidc-issuer "$ISSUER" \
-    --output json "$ref" 2>/dev/null) || {
-    echo "ERRORE: firma non valida o assente per $ref" >&2
+    --output json "$ref" 2>"$errlog") || {
+    cat "$errlog" >&2
+    echo "ERRORE: firma non valida o assente per $ref (output di cosign sopra)" >&2
     exit 1
   }
   digest=$(printf '%s' "$out" | grep -oE '"docker-manifest-digest":"sha256:[0-9a-f]{64}"' | head -n1 | cut -d'"' -f4)
