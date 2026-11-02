@@ -163,6 +163,7 @@ Tag immagini (verificati su GHCR): tag git `vX.Y.Z` → `:X.Y.Z` (senza `v`, es.
 
 ## Convenzioni di sviluppo
 
+- **CSRF globale backoffice**: `CsrfMiddleware` (backoffice/src/Middleware) (dopo Session/Flash, prima di Setup/Auth) richiede su ogni POST/PUT/PATCH/DELETE il token di sessione `cron_csrf` (`JobControlCsrf`) in campo `csrf_token` (anche multipart) o header `X-CSRF-Token`; accetta nel campo anche i token per-controller (impostazioni/backup/mapping/rendicontazione). Fallimento: JSON/XHR -> 403 `{success,ok,message,error}`, form -> flash + 303 al Referer same-origin (o `/`). Il token e' in `<meta name="csrf-token">` di `base.html.twig`; `assets/js/csrf-guard.js` aggiunge hidden `csrf_token` ai form POST (incluso `form.submit()`) e `X-CSRF-Token` a fetch/XHR same-origin: nuovi template che estendono `base` non fanno nulla. Template standalone (non `base`) devono includere meta+script. Allowlist `CsrfMiddleware::EXCLUDED_PATHS`: `/api/frontoffice/*` (Bearer MASTER_TOKEN) e `/setup*` (token wizard proprio). **Nuove route `/api` con Bearer vanno aggiunte all'allowlist**, altrimenti 403/303.
 - **Branch**: solo `main` (feature branch → PR squash → main). `dev` dismesso (fermo da maggio 2026)
 - **PHP**: PSR-4 autoloading via Composer; namespace `App\` per librerie condivise
 - **Routing**: Slim 4 con middleware per autenticazione e CSRF
