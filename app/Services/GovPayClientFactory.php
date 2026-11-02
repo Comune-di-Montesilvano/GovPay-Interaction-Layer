@@ -207,6 +207,29 @@ class GovPayClientFactory
      * (owner-only write). Elimina il caso limite in cui due utenti si
      * alternano nello scrivere lo stesso file e uno dei due resta bloccato.
      */
+    /**
+     * Esegue $fn sotto lock esclusivo (flock su <file>.lock): il conteggio dei fallimenti e' un
+     * leggi-modifica-scrivi e il file e' condiviso da piu' processi (Apache, e nel worker un
+     * processo per lavoro). Senza lock due fallimenti concorrenti ne contano uno solo. Lock non
+     * ottenibile (permessi/FS): $fn eseguita comunque (il rename resta atomico per i lettori).
+     */
+    private static function withCircuitBreakerLock(string $cbFile, callable $fn): void
+    {
+        $h = @fopen($cbFile . '.lock', 'c');
+        if ($h === false) {
+            $fn();
+            return;
+        }
+        @chmod($cbFile . '.lock', 0664);
+        try {
+            @flock($h, LOCK_EX);
+            $fn();
+        } finally {
+            @flock($h, LOCK_UN);
+            fclose($h);
+        }
+    }
+
     private static function writeCircuitBreakerFile(string $cbFile, array $data): void
     {
         $tmp = $cbFile . '.' . getmypid() . '.tmp';
@@ -262,24 +285,30 @@ class GovPayClientFactory
                         }
 
                         if ($isNetworkError) {
-                            $cbData = ['status' => 'CLOSED', 'failures' => 0, 'last_failure_time' => 0];
-                            if (file_exists($cbFile)) {
-                                $existing = json_decode((string)@file_get_contents($cbFile), true);
-                                if (is_array($existing)) {
-                                    $cbData = $existing;
+                            $opened = 0;
+                            self::withCircuitBreakerLock($cbFile, static function () use ($cbFile, $maxFailures, &$opened): void {
+                                $cbData = ['status' => 'CLOSED', 'failures' => 0, 'last_failure_time' => 0];
+                                if (file_exists($cbFile)) {
+                                    $existing = json_decode((string)@file_get_contents($cbFile), true);
+                                    if (is_array($existing)) {
+                                        $cbData = $existing;
+                                    }
                                 }
-                            }
-                            $cbData['failures'] = ($cbData['failures'] ?? 0) + 1;
-                            $cbData['last_failure_time'] = time();
+                                $cbData['failures'] = ($cbData['failures'] ?? 0) + 1;
+                                $cbData['last_failure_time'] = time();
 
-                            if ($cbData['failures'] >= $maxFailures) {
-                                $cbData['status'] = 'OPEN';
+                                if ($cbData['failures'] >= $maxFailures) {
+                                    $cbData['status'] = 'OPEN';
+                                    $opened = (int)$cbData['failures'];
+                                }
+                                self::writeCircuitBreakerFile($cbFile, $cbData);
+                            });
+                            if ($opened > 0) {
                                 Logger::getInstance()->error(sprintf(
                                     'Connessione a GovPay fallita per %d volte. Circuit Breaker APERTO.',
-                                    $cbData['failures']
+                                    $opened
                                 ));
                             }
-                            self::writeCircuitBreakerFile($cbFile, $cbData);
                         }
 
                         return \GuzzleHttp\Promise\Create::rejectionFor($reason);
