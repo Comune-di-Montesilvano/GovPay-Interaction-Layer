@@ -34,17 +34,27 @@ final class SignedLink
 
     /**
      * Verifica firma e scadenza dei parametri ricevuti (inclusi `expires` e `sig`).
+     * Non lancia mai: qualsiasi input non valido (chiave vuota, `sig`/`expires` assenti, non
+     * stringa — es. `sig[]=x` nella query — o malformati) da' false.
      *
-     * @param array<string, mixed> $params
+     * @param array<array-key, mixed> $params
      */
     public static function verify(array $params, string $key, int $now): bool
     {
-        $sig = $params['sig'] ?? '';
-        if ($sig === '') {
+        // Chiave vuota: chiunque potrebbe calcolare la firma, mai valida.
+        if ($key === '') {
             return false;
         }
-        $expires = (int)($params['expires'] ?? 0);
-        if ($expires === 0 || $now > $expires) {
+        $sig = $params['sig'] ?? null;
+        if (!is_string($sig) || preg_match('/^[0-9a-f]{64}$/', $sig) !== 1) {
+            return false;
+        }
+        // Solo intero decimale positivo (come lo scrive sign()): niente "1e9", " 123", array.
+        $expiresRaw = $params['expires'] ?? null;
+        if (!is_string($expiresRaw) || preg_match('/^[1-9][0-9]{0,17}$/', $expiresRaw) !== 1) {
+            return false;
+        }
+        if ($now > (int)$expiresRaw) {
             return false;
         }
         $check = $params;

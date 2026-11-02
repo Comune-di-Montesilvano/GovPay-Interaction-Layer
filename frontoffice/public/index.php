@@ -2937,11 +2937,17 @@ if (!function_exists('frontoffice_verify_link')) {
     /**
      * Verifica la firma e la scadenza di un URL firmato.
      * $params: i query param ricevuti (inclusi 'expires' e 'sig')
-     * Ritorna true se valido, false altrimenti.
+     * Ritorna true se valido, false altrimenti: mai eccezioni, cosi' ogni link non valido
+     * (anche con chiave di firma non configurata) finisce nella pagina 403 e non in un 500.
      */
     function frontoffice_verify_link(array $params): bool
     {
-        return \App\Security\SignedLink::verify($params, frontoffice_link_signing_key(), time());
+        $key = frontoffice_env_value('FRONTOFFICE_LINK_SIGNING_KEY', '');
+        if ($key === '') {
+            Logger::getInstance()->error('FRONTOFFICE_LINK_SIGNING_KEY non configurata: link firmati rifiutati');
+            return false;
+        }
+        return \App\Security\SignedLink::verify($params, $key, time());
     }
 }
 

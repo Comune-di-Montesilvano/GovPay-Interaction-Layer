@@ -85,7 +85,8 @@ COPY --chown=www-app:www-data --from=asset_builder /app/dist/litepicker/ /var/ww
 COPY --chown=www-app:www-data --from=asset_builder /app/dist/tom-select/ /var/www/html/public/assets/tom-select/
 RUN chmod -R 755 public/assets
 
-# (Documentativo) composer gestito nello stage vendor_builder
+# composer.json/lock: solo inventario delle dipendenze installate (vendor/ arriva gia' pronto
+# dallo stage vendor_builder; composer non e' nell'immagine runtime e nessuno li legge a runtime).
 COPY --chown=www-app:www-data composer.json composer.lock* /var/www/html/
 
 # ----------------------------------------------------------------------

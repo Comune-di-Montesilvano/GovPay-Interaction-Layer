@@ -45,8 +45,8 @@ runs:
 
         if [[ "${AUTO_BUILD}" == "true" ]]; then
           # Footer = ultimo tag rilasciato; build_date/commit (Sentry) distinguono il rebuild.
-          # Richiede checkout con fetch-depth: 0.
-          last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+          # Richiede checkout con fetch-depth: 0. Pre-release (vX.Y.Z-rc1) escluse: latest non e' una rc.
+          last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' 2>/dev/null || true)
           version="${last_tag:-${GITHUB_SHA::7}}"
           version_type="auto"
           version_label="${version}"

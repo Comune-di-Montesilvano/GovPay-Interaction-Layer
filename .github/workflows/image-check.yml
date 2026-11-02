@@ -45,10 +45,9 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-      # Cache di build letta dal registry GHCR (sola lettura, nessun push).
+      # Cache di build letta dal registry GHCR (sola lettura, nessun push). La cache GHA
+      # (type=gha) usa il token di runtime del runner, non GITHUB_TOKEN: nessun permesso.
       packages: read
-      # Cache GHA (sola lettura).
-      actions: read
     strategy:
       fail-fast: false
       matrix:

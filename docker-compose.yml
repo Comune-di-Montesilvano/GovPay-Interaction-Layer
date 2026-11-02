@@ -61,6 +61,9 @@ services:
           "$$R-backoffice:$$APP_VERSION" "$$R-frontoffice:$$APP_VERSION" \
           "$$R-db:$$APP_VERSION" >/dev/null
         echo "Firme verificate: $$APP_VERSION"
+    # Rete dello stack: senza, compose creerebbe la rete <progetto>_default solo per lui.
+    networks:
+      - govpay-network
 
   backoffice:
     <<: [*hardening, *php-caps]
@@ -75,7 +78,6 @@ services:
       - gil_backups:/backups
     environment:
       - APP_SUITE=backoffice
-      - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - SSL=${SSL:-off}
       - DB_HOST=db
       - DB_PORT=3306
@@ -119,7 +121,6 @@ services:
       - gil_images:/var/www/html/public/img:ro
     environment:
       - APP_SUITE=frontoffice
-      - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - SSL=${SSL:-off}
       # Sidecar: frontoffice chiama backoffice via API interna (Bearer MASTER_TOKEN).
       # Nessuna credenziale GovPay/pagoPA necessaria nel frontoffice.
@@ -180,7 +181,6 @@ services:
     # non leggono: MASTER_TOKEN (solo API interne frontoffice) e DB_PASSWORD_CITTADINI.
     environment:
       - APP_SUITE=worker
-      - COMPOSER_VENDOR_DIR=/var/www/html/vendor
       - SSL=${SSL:-off}
       - DB_HOST=db
       - DB_PORT=3306
