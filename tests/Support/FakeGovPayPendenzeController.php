@@ -85,7 +85,7 @@ final class FakeGovPayPendenzeController extends PendenzeController
                 return $inner($request, $options);
             };
         }
-        return GovPayClientFactory::makeBackofficeClient(array_merge($guzzleOptions, ['handler' => $handler]));
+        return GovPayClientFactory::makeBackofficeClient(array_merge(['retry_delay' => static fn(int $r): int => 0], $guzzleOptions, ['handler' => $handler]));
     }
 
     public function fetchPendenzaById(string $idPendenza): ?array

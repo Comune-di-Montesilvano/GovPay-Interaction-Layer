@@ -112,6 +112,138 @@ final class GovPayClientFactoryTest extends DbTestCase
         self::assertSame('close', $this->history[1]['request']->getHeaderLine('Connection'));
     }
 
+    private function connectFail(string $method, int $errno): ConnectException
+    {
+        return new ConnectException("cURL error $errno: simulated", new Request($method, self::BASE . '/pendenze/A/B'), null, ['errno' => $errno]);
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function noDelay(): array
+    {
+        return ['retry_delay' => static fn(int $r): int => 0];
+    }
+
+    public function testPutConnectErrno35IsRetriedThenSucceeds(): void
+    {
+        $mock = new MockHandler([$this->connectFail('PUT', 35), $this->connectFail('PUT', 35), new Response(200, [], 'ok')]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        self::assertSame('ok', (string)$client->request('PUT', self::BASE . '/pendenze/A/B')->getBody());
+        self::assertCount(3, $this->history);
+        self::assertFileDoesNotExist(FakeGovPayPendenzeController::circuitBreakerFile(), 'successo finale: breaker azzerato');
+    }
+
+    public function testPutTimeoutErrno28IsRetriedUpToCapOfTwoRetries(): void
+    {
+        $f = fn() => $this->connectFail('PUT', 28);
+        $mock = new MockHandler([$f(), $f(), $f(), $f(), new Response(200)]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        try {
+            $client->request('PUT', self::BASE . '/pendenze/A/B', ['timeout' => 15]);
+            self::fail('deve lanciare dopo i retry');
+        } catch (ConnectException $e) {
+            self::assertSame(28, $e->getHandlerContext()['errno']);
+        }
+        self::assertCount(3, $this->history, '1 invio + 2 retry');
+        $cb = json_decode((string)file_get_contents(FakeGovPayPendenzeController::circuitBreakerFile()), true);
+        self::assertSame(1, $cb['failures'], 'i retry non gonfiano il conteggio del breaker: solo il fallimento finale');
+    }
+
+    public function testPutErrno35IsRetriedUpToCapOfFiveRetries(): void
+    {
+        $f = fn() => $this->connectFail('PUT', 35);
+        $mock = new MockHandler([$f(), $f(), $f(), $f(), $f(), $f(), $f()]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        $this->expectException(ConnectException::class);
+        try {
+            $client->request('PUT', self::BASE . '/pendenze/A/B');
+        } finally {
+            self::assertCount(6, $this->history);
+        }
+    }
+
+    /** @return array<string, array{string,int}> */
+    public static function nonIdempotentProvider(): array
+    {
+        return [
+            'POST 28' => ['POST', 28], 'POST 35' => ['POST', 35],
+            'PATCH 28' => ['PATCH', 28], 'PATCH 35' => ['PATCH', 35],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('nonIdempotentProvider')]
+    public function testNonIdempotentMethodsAreNeverRetried(string $method, int $errno): void
+    {
+        $mock = new MockHandler([$this->connectFail($method, $errno), new Response(200)]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        try {
+            $client->request($method, self::BASE . '/incassi');
+            self::fail('deve lanciare');
+        } catch (ConnectException) {
+        }
+        self::assertCount(1, $this->history);
+    }
+
+    public function testPostCurl56ResetIsNotRetried(): void
+    {
+        $reset = new \GuzzleHttp\Exception\RequestException('cURL error 56: reset', new Request('POST', self::BASE . '/incassi'), null, null, ['errno' => 56]);
+        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$reset, new Response(200)]), $this->history, $this->noDelay());
+
+        try {
+            $client->request('POST', self::BASE . '/incassi');
+            self::fail('deve lanciare');
+        } catch (\GuzzleHttp\Exception\RequestException) {
+        }
+        self::assertCount(1, $this->history);
+    }
+
+    public function testPutTimeout90WithErrno28IsNotRetried(): void
+    {
+        $mock = new MockHandler([$this->connectFail('PUT', 28), new Response(200)]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        try {
+            $client->request('PUT', self::BASE . '/pendenze/A/B', ['timeout' => 90]);
+            self::fail('deve lanciare');
+        } catch (ConnectException) {
+        }
+        self::assertCount(1, $this->history);
+    }
+
+    public function testPutTimeout90WithErrno35IsStillRetried(): void
+    {
+        $mock = new MockHandler([$this->connectFail('PUT', 35), new Response(200, [], 'ok')]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        self::assertSame('ok', (string)$client->request('PUT', self::BASE . '/pendenze/A/B', ['timeout' => 90])->getBody());
+        self::assertCount(2, $this->history);
+    }
+
+    public function testGetConnectErrno28IsRetried(): void
+    {
+        $mock = new MockHandler([$this->connectFail('GET', 28), new Response(200, [], 'ok')]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        self::assertSame('ok', (string)$client->request('GET', self::BASE . '/info', ['timeout' => 10])->getBody());
+        self::assertCount(2, $this->history);
+    }
+
+    public function testConnectErrno7IsNotRetried(): void
+    {
+        $mock = new MockHandler([$this->connectFail('GET', 7), new Response(200)]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        try {
+            $client->request('GET', self::BASE . '/info');
+            self::fail('deve lanciare');
+        } catch (ConnectException) {
+        }
+        self::assertCount(1, $this->history);
+    }
+
     /**
      * Fix round 2 (B1): i redirect non si seguono MAI (lo stack nudo di prima non li seguiva): un 302
      * su POST/PUT non diventa un GET "riuscito" e il certificato mTLS non va a un altro host.
