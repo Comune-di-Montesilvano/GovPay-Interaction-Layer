@@ -35,12 +35,12 @@ final class MailerServiceRendicontazioneTest extends TestCase
             'Ufficio Tributi',
             [
                 [
-                    'iuv' => '00000000000479353',
+                    'iuv' => '00000000000000001',
                     'importo' => 2600.00,
                     'data_pagamento' => '2026-07-14',
-                    'causale' => 'concessione loculo 1 fila',
-                    'nominativo_debitore' => 'ANTONELLA PIERSANTE',
-                    'cf_debitore' => 'PRSNNL65C61F765S',
+                    'causale' => 'Diritti di segreteria',
+                    'nominativo_debitore' => 'MARIO ROSSI',
+                    'cf_debitore' => 'RSSMRA80A01H501U',
                     'id_pendenza' => 456
                 ]
             ],
@@ -57,13 +57,13 @@ final class MailerServiceRendicontazioneTest extends TestCase
             ['admin@example.com'],
             [
                 [
-                    'iuv' => '00000000000479353',
+                    'iuv' => '00000000000000001',
                     'importo' => 2600.00,
                     'rendicontazione_handler' => 'AUTO_ESTERNO',
                     'rendicontazione_stato' => 'OK'
                 ],
                 [
-                    'iuv' => '00000000000479252',
+                    'iuv' => '00000000000000002',
                     'importo' => 2400.00,
                     'rendicontazione_handler' => 'GERI',
                     'rendicontazione_stato' => 'ERRORE'
@@ -105,7 +105,7 @@ final class MailerServiceRendicontazioneTest extends TestCase
             'test@example.com',
             'Mario Rossi',
             ['causale' => 'Riscaldamento scolastico', 'importo' => 120.50],
-            '00000000000479353',
+            '00000000000000001',
             'Tassa',
             '2026-07-26',
             'http://frontoffice/receipt/123',

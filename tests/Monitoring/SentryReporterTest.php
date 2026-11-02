@@ -100,8 +100,8 @@ final class SentryReporterTest extends TestCase
     public function testScrubUrlRedactsSensitiveQueryParams(): void
     {
         $this->assertSame(
-            'http://example.it/link/checkout?action=checkout&cf=%5BREDACTED%5D&iuv=300000000000561336',
-            SentryReporter::scrubUrl('http://example.it/link/checkout?action=checkout&cf=BAXKDD85H58Z343X&iuv=300000000000561336')
+            'http://example.it/link/checkout?action=checkout&cf=%5BREDACTED%5D&iuv=300000000000000001',
+            SentryReporter::scrubUrl('http://example.it/link/checkout?action=checkout&cf=RSSMRA80A01H501U&iuv=300000000000000001')
         );
         $this->assertSame('http://example.it/path', SentryReporter::scrubUrl('http://example.it/path'));
     }
