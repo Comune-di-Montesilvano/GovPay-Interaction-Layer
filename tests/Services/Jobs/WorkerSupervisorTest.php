@@ -98,6 +98,8 @@ final class WorkerSupervisorTest extends TestCase
         self::assertStringContainsString('riavvio tra 0.4 s', $restartLines[2], 'fino al massimo');
         self::assertStringContainsString('processo crash riavviato (pid ', implode("\n", $this->out));
         self::assertStringContainsString('worker arrestato.', end($this->out));
+        // riga cercata da scripts/smoke-stack.sh
+        self::assertStringContainsString('avvio worker (supervisore, 1 processi: crash)', $this->out[0]);
     }
 
     public function testBackoffResetsAfterAStableRun(): void

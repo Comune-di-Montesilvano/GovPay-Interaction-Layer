@@ -62,7 +62,7 @@ final class WorkerSupervisor
         private readonly ?array $descriptors = null
     ) {
         $this->output = $output ?? static function (string $line): void {
-            echo '[' . date('Y-m-d H:i:s') . '] [worker] ' . $line, "\n";
+            echo '[' . date('Y-m-d H:i:s') . '] [worker] ' . $line . "\n"; // una sola write()
             flush();
         };
         foreach ($commands as $name => $argv) {
@@ -156,7 +156,8 @@ final class WorkerSupervisor
     /** @param float|null $timeLimit secondi, poi arresto come da SIGTERM (diagnostica/test) */
     public function run(?float $timeLimit = null): int
     {
-        $this->line(sprintf('avvio supervisore: %d processi (%s)', count($this->children), implode(', ', array_keys($this->children))));
+        // "avvio worker (" e' cercato da scripts/smoke-stack.sh (job smoke CI): non cambiarlo.
+        $this->line(sprintf('avvio worker (supervisore, %d processi: %s)', count($this->children), implode(', ', array_keys($this->children))));
         $began = microtime(true);
         if ($this->prepare !== null && !$this->stopRequested && !($this->prepare)()) {
             $this->line('arresto richiesto durante l\'avvio.');

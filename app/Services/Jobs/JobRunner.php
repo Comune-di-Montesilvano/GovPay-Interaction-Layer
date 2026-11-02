@@ -80,7 +80,7 @@ final class JobRunner
     ) {
         $this->clock = $clock ?? new NativeClock();
         $this->output = $output ?? static function (string $line): void {
-            echo $line, "\n";
+            echo $line . "\n"; // una sola write(): righe dei processi paralleli non si mescolano
             flush();
         };
         $this->reportException = $reportException ?? static function (string $suite, \Throwable $e): void {

@@ -157,7 +157,7 @@ final class WorkerKernel
         $this->scopedRegistry = $this->scope->jobs === null ? $this->registry : $this->registry->only($this->scope->jobs);
         $this->clock = $clock ?? new NativeClock();
         $this->output = $output ?? static function (string $line): void {
-            echo $line, "\n";
+            echo $line . "\n"; // una sola write(): righe dei processi paralleli non si mescolano
             flush();
         };
         $this->reportException = $reportException ?? static function (string $suite, \Throwable $e): void {
@@ -291,7 +291,7 @@ final class WorkerKernel
     public static function create(string $cacheDir = self::DEFAULT_CACHE_DIR, ?WorkerScope $scope = null): self
     {
         $out = static function (string $line): void {
-            echo $line, "\n";
+            echo $line . "\n"; // una sola write(): righe dei processi paralleli non si mescolano
             flush();
         };
         $label = ($scope ?? WorkerScope::all())->label;

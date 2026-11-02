@@ -540,8 +540,7 @@ final class WorkerKernelTest extends DbTestCase
         self::assertTrue($this->state->isEnabled('biz'));
         self::assertTrue($this->state->autostartImported());
         self::assertSame(['jobs.biz'], self::queueNames());
-        self::assertStringContainsString('1 esecuzioni manuali spostate', implode("
-", $this->out));
+        self::assertStringContainsString('1 esecuzioni manuali spostate', implode("\n", $this->out));
     }
 
     public function testAllScopeStillConsumesTheLegacyQueue(): void
