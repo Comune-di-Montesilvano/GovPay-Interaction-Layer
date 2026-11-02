@@ -165,7 +165,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice:latest
           format: json
           output: trivy-latest/backoffice.json
@@ -178,7 +178,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice:latest
           format: json
           output: trivy-latest/frontoffice.json
@@ -191,7 +191,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-db:latest
           format: json
           output: trivy-latest/db.json
@@ -426,7 +426,7 @@ jobs:
       - name: Trivy scan · ${{ matrix.app }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-${{ matrix.image_suffix }}.sarif
@@ -441,7 +441,7 @@ jobs:
       - name: SBOM (Trivy) · ${{ matrix.app }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           scan-type: image
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
           format: cyclonedx
@@ -647,7 +647,7 @@ jobs:
       - name: Trivy scan · ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
@@ -662,7 +662,7 @@ jobs:
       - name: SBOM (Trivy) · ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.75.0
+          version: v0.76.1
           scan-type: image
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}@${{ steps.build.outputs.digest }}
           format: cyclonedx
