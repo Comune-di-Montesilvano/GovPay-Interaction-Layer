@@ -191,3 +191,27 @@ Esiti registrati nel report del task.
   funziona col compose nuovo grazie alla porta invariata — da provare in D).
 - Compatibilità di `sysctls` con Portainer/podman: provare in D con Docker Compose v2;
   Portainer usa compose v2.
+
+## Aggiornamento 2026-11-02 — implementazione A/B dopo il worker
+
+I demoni cron non esistono più (container `worker`, v1.7.x): i punti su `docker exec`, PID/stop
+file e `.autostart` in A.3/A.4/A.6 e D4 non si applicano. Implementato in una sola PR
+(scelta utente), con queste differenze rispetto al testo sopra:
+
+- `user: "www-data"` anche nel compose (oltre a `USER` nell'immagine); anche il `worker` diventa
+  `read_only` con tmpfs (`/tmp`, `storage/logs`, `storage/tmp`).
+- `volume-perms` come da A.4, in più `network_mode: none`; `/var/www/cache` creata e chownata
+  nell'immagine (un volume nominato nuovo eredita owner dalla directory).
+- Healthcheck backoffice: `http` oppure `https://localhost:80` (con `SSL=on` era sempre
+  unhealthy, bug preesistente).
+- Fuori scope, preesistente: con `SSL=on` il frontoffice non raggiunge il backoffice (il compose
+  imposta `BACKOFFICE_INTERNAL_URL=http://backoffice`). Nessuna istanza usa `SSL=on`.
+- Compatibilità: compose nuovo + immagini ≤ 1.7.x → backoffice e worker vanno, frontoffice no
+  (copia runtime su fs read-only). Compose e immagini vanno aggiornati insieme; rollback
+  all'immagine precedente richiede anche il compose precedente. `compose-compat` resta rosso
+  fino alla prima release con queste immagini.
+- Validazione locale (stack `gil-f8`, volumi inizializzati con compose di main + `latest`, poi
+  upgrade): uid 33 e read-only su backoffice/frontoffice/worker; file root piantati nei volumi
+  richownati da `volume-perms` e scrivibili; sessioni/tmp/log PHP scrivibili; sidecar fo→bo OK
+  (`SSL=off`); restart e `--force-recreate` OK; `SSL=on` con self-signed in `/tmp` OK;
+  `scripts/smoke-stack.sh` verde; zero "Read-only file system"/"Permission denied" nei log.

@@ -794,9 +794,12 @@ jobs:
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img@$digest"
               echo "    container_name: gil-smoke-$img"
             done
-            # Worker: stessa immagine del backoffice, stesso digest (niente container_name nel compose).
-            echo "  worker:"
-            echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice@$(cat handoff/backoffice.digest)"
+            # Worker e volume-perms: stessa immagine del backoffice, stesso digest (niente
+            # container_name nel compose).
+            for svc in worker volume-perms; do
+              echo "  $svc:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice@$(cat handoff/backoffice.digest)"
+            done
           } > docker-compose.smoke.yml
           cat docker-compose.smoke.yml
       # Immagini appena buildate: bin/worker obbligatorio, worker avviato con marker in gil_jobs.

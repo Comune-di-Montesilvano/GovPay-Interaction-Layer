@@ -65,21 +65,11 @@ DB_NAME=govpay
   echo "SENTRY_ENVIRONMENT=smoke"
 } > "$ENV_FILE"
 
-# Porte privilegiate come in produzione: Docker >=20.10 mette ip_unprivileged_port_start=0 nel
-# netns del container e cosi' nasconde un NET_BIND_SERVICE mancante (Apache bind :80 negato in
-# prod, incidente 2026-10-28). Qui si rimette il default del kernel (1024).
-PORTS_FILE=$(mktemp --suffix=.yml)
-cat > "$PORTS_FILE" <<'EOF'
-services:
-  backoffice:
-    sysctls:
-      net.ipv4.ip_unprivileged_port_start: 1024
-  frontoffice:
-    sysctls:
-      net.ipv4.ip_unprivileged_port_start: 1024
-EOF
-
-COMPOSE=(docker compose -p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.yml -f "$SMOKE_FILE" -f "$PORTS_FILE")
+# Porte privilegiate: Docker >=20.10 mette ip_unprivileged_port_start=0 nel netns del container,
+# l'host di produzione no (bind :80 negato, incidente 2026-10-28). backoffice/frontoffice girano
+# come www-data e ascoltano su :80 solo grazie al sysctl =80 del compose: controllato sotto con
+# docker inspect, cosi' il default 0 di Docker non nasconde un sysctl mancante.
+COMPOSE=(docker compose -p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.yml -f "$SMOKE_FILE")
 
 cleanup() {
   local rc=$?
@@ -88,7 +78,7 @@ cleanup() {
     "${COMPOSE[@]}" logs --no-color --tail 100 || true
   fi
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -f "$ENV_FILE" "$PORTS_FILE"
+  rm -f "$ENV_FILE"
   exit "$rc"
 }
 trap cleanup EXIT
@@ -124,6 +114,17 @@ for ((i = 0; i < 60; i += 3)); do
 done
 [ "$code" = 200 ] || fail "frontoffice /: HTTP $code"
 ok "frontoffice / 200"
+
+# Runtime hardening backoffice/frontoffice: PID 1 www-data, nessuna capability, filesystem
+# read-only, sysctl porta 80 dal compose.
+for svc in backoffice frontoffice; do
+  cid=$("${COMPOSE[@]}" ps -q "$svc")
+  uid=$("${COMPOSE[@]}" exec -T "$svc" sh -c "awk '/^Uid:/ {print \$2}' /proc/1/status")
+  [ "$uid" = 33 ] || fail "$svc PID 1 uid=$uid, atteso 33 (www-data)"
+  hc=$(docker inspect -f '{{json .HostConfig.CapAdd}}|{{json .HostConfig.CapDrop}}|{{.HostConfig.ReadonlyRootfs}}|{{index .HostConfig.Sysctls "net.ipv4.ip_unprivileged_port_start"}}' "$cid")
+  [[ "$hc" =~ ^(null|\[\])\|\[\"ALL\"\]\|true\|80$ ]] || fail "$svc hardening inatteso (cap_add|cap_drop|read_only|sysctl): $hc"
+done
+ok "backoffice/frontoffice www-data, nessuna capability, read-only, sysctl porta 80"
 
 "${COMPOSE[@]}" exec -T db mariadb -uroot -p"$DB_ROOT_PASSWORD" "$DB_NAME" \
   -e 'SELECT COUNT(*) FROM settings' >/dev/null || fail "query su settings fallita"
@@ -204,3 +205,8 @@ if "${COMPOSE[@]}" logs --no-color | grep -E 'Fatal|Parse error'; then
   fail "errori PHP fatali nei log"
 fi
 ok "nessun Fatal/Parse error nei log"
+
+if "${COMPOSE[@]}" logs --no-color | grep -E 'Read-only file system|Permission denied'; then
+  fail "scritture negate nei log (read-only/permessi)"
+fi
+ok "nessuna scrittura negata nei log"

@@ -74,9 +74,12 @@ jobs:
               echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img:$VERSION"
               echo "    container_name: gil-smoke-$img"
             done
-            # Worker con l'immagine backoffice di release: senza override userebbe :latest.
-            echo "  worker:"
-            echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice:$VERSION"
+            # Worker e volume-perms con l'immagine backoffice di release: senza override
+            # userebbero :latest.
+            for svc in worker volume-perms; do
+              echo "  $svc:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice:$VERSION"
+            done
           } > docker-compose.smoke.yml
           cat docker-compose.smoke.yml
 

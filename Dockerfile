@@ -110,6 +110,11 @@ RUN rm /etc/apache2/sites-enabled/000-default.conf
 COPY --chown=root:root --link apache/000-default-ssl.conf /etc/apache2/sites-available/000-default.conf
 RUN a2ensite 000-default.conf
 
+# Apache gira come www-data (USER sotto): run/lock dir sue. Nel compose sono tmpfs
+# (read_only), qui servono per avvii senza tmpfs (docker run, CI). I log Apache dell'immagine
+# ufficiale sono gia' symlink a stdout/stderr.
+RUN chown www-data:www-data /var/run/apache2 /var/lock/apache2 /var/log/apache2
+
 # Hardening Apache: rimuove Indexes e aggiunge security headers
 RUN sed -i 's/Options Indexes FollowSymLinks/Options FollowSymLinks/g' /etc/apache2/apache2.conf && \
     printf '\n<IfModule mod_headers.c>\n  Header always set X-Content-Type-Options "nosniff"\n  Header always set X-Frame-Options "SAMEORIGIN"\n  Header always set Referrer-Policy "strict-origin-when-cross-origin"\n  Header always set X-XSS-Protection "1; mode=block"\n</IfModule>\n' > /etc/apache2/conf-enabled/security-headers.conf
@@ -162,11 +167,12 @@ ENV GIL_BUILD_DATE=$GIL_BUILD_DATE
 RUN printf '%s\n' "$GIL_IMAGE_TAG" > /var/www/html/VERSION \
     && php -r '$data = ["version" => getenv("GIL_IMAGE_TAG") ?: "development", "version_type" => getenv("GIL_VERSION_TYPE") ?: "development", "version_label" => getenv("GIL_VERSION_LABEL") ?: (getenv("GIL_IMAGE_TAG") ?: "development"), "commit" => getenv("GIT_COMMIT_SHA") ?: "unknown", "ref_url" => getenv("GIL_REF_URL") ?: "", "build_date" => getenv("GIL_BUILD_DATE") ?: ""]; file_put_contents("/var/www/html/VERSION_INFO.json", json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));'
 
-EXPOSE 443
+EXPOSE 80
 
-# Nessun USER di proposito: il master Apache resta root solo per bindare la porta, i worker
-# girano come www-data (APACHE_RUN_USER) — stesso falso positivo di Trivy DS-0002 (.trivyignore).
-# nosemgrep: dockerfile.security.missing-user.missing-user
+# Non-root: Apache (master compreso) gira come www-data e ascolta comunque su :80 grazie al
+# sysctl net.ipv4.ip_unprivileged_port_start=80 del compose (namespaced, nessuna capability).
+# Gli stage finali tornano a root solo per i RUN di build e rimettono USER www-data.
+USER www-data
 CMD ["apache2-foreground"]
 
 
@@ -174,6 +180,7 @@ CMD ["apache2-foreground"]
 # STAGE 4: Runtime Backoffice (Eredita tutto il caching del runtime-base)
 ######################################################################
 FROM runtime-base AS runtime-backoffice
+USER root
 COPY --chown=www-app:www-data backoffice/ /var/www/html/backoffice/
 COPY --chown=www-app:www-data backoffice/bin/ /var/www/html/bin/
 # Worker dei lavori periodici (servizio `worker` del compose): accanto agli script di backoffice/bin.
@@ -187,31 +194,34 @@ RUN ln -s /var/www/html/backoffice/src/bootstrap /var/www/html/bootstrap \
     && chown -R www-data:www-data /var/www/html/backoffice/storage \
     && chmod 2775 /var/www/html/backoffice/storage/logs /var/www/html/backoffice/storage/tmp \
     && chmod 664 /var/www/html/backoffice/storage/logs/app.log
-# storage/logs e storage/tmp: setgid (2775) + file pre-creati e chownati www-data.
-# I demoni cron sono lanciabili anche via `docker exec` (di norma come root, nessun
-# USER nel container) mentre Apache gira come www-data — senza setgid un file creato
-# da root finisce root:root e www-data non riesce più a fopen/unlink (Permission
-# denied / Operation not permitted, vedi GOVPAY-GIL-D/K e duplicati). Col bit setgid
-# ogni nuovo file eredita il gruppo www-data della directory indipendentemente da chi
-# lo crea, restando scrivibile da entrambi.
+# storage/logs e storage/tmp: www-data. Nel compose sono tmpfs (read_only); il setgid (2775)
+# resta per `docker exec -u root` occasionali, che altrimenti lascerebbero file root:root.
 COPY --chown=www-app:www-data --from=asset_builder /app/dist/chartjs/ /var/www/html/public/assets/chartjs/
 RUN cp -r /var/www/html/backoffice/src/public/. /var/www/html/public/ || true
 
-# Imposta ownership corretta sulle directory che saranno montate come volumi Docker.
-RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups \
-    && chown www-data:www-data /var/www/html/public/img /var/www/certificate /backups \
+# Volumi: un volume nominato nuovo eredita owner/permessi della directory dell'immagine,
+# niente chown a runtime (il container non e' piu' root).
+RUN mkdir -p /var/www/html/public/img /var/www/certificate /backups /var/www/cache \
+    && chown www-data:www-data /var/www/html/public/img /var/www/certificate /backups /var/www/cache \
     && chmod 755 /var/www/html/public/img /var/www/certificate \
-    && chmod 775 /backups
+    && chmod 775 /backups /var/www/cache
+USER www-data
 
 
 ######################################################################
 # STAGE 5: Runtime Frontoffice (Eredita tutto il caching del runtime-base)
 ######################################################################
 FROM runtime-base AS runtime-frontoffice
+USER root
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs \
     && touch /var/www/html/frontoffice/storage/logs/app.log \
     && chown -R www-data:www-data /var/www/html/frontoffice/storage \
     && chmod 2775 /var/www/html/frontoffice/storage/logs \
     && chmod 664 /var/www/html/frontoffice/storage/logs/app.log
-
+# Pubblicazione frontoffice a build time (prima la faceva docker-setup.sh a ogni avvio, come
+# root): DocumentRoot /var/www/html/public = asset comuni + frontoffice/public, mai debug/.
+RUN cp -R /var/www/html/frontoffice/public/. /var/www/html/public/ \
+    && rm -rf /var/www/html/public/debug \
+    && chown -R www-app:www-data /var/www/html/public
+USER www-data
