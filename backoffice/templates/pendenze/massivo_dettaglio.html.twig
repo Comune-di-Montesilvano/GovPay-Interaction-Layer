@@ -96,7 +96,8 @@
 
       btn.addEventListener('click', function () {
         btn.disabled = true;
-        fetch(base, { method: 'POST', credentials: 'same-origin' })
+        const body = new URLSearchParams({ csrf_token: '{{ job_csrf_token()|e('js') }}' });
+        fetch(base, { method: 'POST', credentials: 'same-origin', body: body })
           .then(r => r.json())
           .then(d => { if (d.ok) { render(d.job); } else { btn.disabled = false; alert(d.error || 'Errore avvio export'); } })
           .catch(() => { btn.disabled = false; alert('Errore avvio export'); });

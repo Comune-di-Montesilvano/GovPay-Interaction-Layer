@@ -80,4 +80,29 @@ final class ReportRagioneriaCsrfTest extends DbTestCase
         self::assertSame('success', $_SESSION['flash'][0]['type'] ?? null);
         self::assertStringStartsWith('Reset errori Biz completato', $_SESSION['flash'][0]['text'] ?? '');
     }
+
+    public function testResetByNonAdminIsRefusedEvenWithValidToken(): void
+    {
+        $token = JobControlCsrf::token();
+        $before = self::rows();
+        $twig = Twig::create(dirname(__DIR__, 2) . '/backoffice/templates');
+
+        foreach (['operator', 'user', ''] as $role) {
+            $_SESSION['user'] = ['id' => 2, 'role' => $role];
+            $_SESSION['flash'] = [];
+            $r = (new ReportRagioneriaController($twig))->resetBizErrors(self::post(['csrf_token' => $token]), new Response());
+            self::assertSame(302, $r->getStatusCode());
+            self::assertSame('error', $_SESSION['flash'][0]['type'] ?? null);
+            self::assertSame($before, self::rows());
+        }
+    }
+
+    public function testResetBySuperadminRuns(): void
+    {
+        $_SESSION['user'] = ['id' => 3, 'role' => 'superadmin'];
+        $_SESSION['flash'] = [];
+        $twig = Twig::create(dirname(__DIR__, 2) . '/backoffice/templates');
+        (new ReportRagioneriaController($twig))->resetBizErrors(self::post(['csrf_token' => JobControlCsrf::token()]), new Response());
+        self::assertSame('success', $_SESSION['flash'][0]['type'] ?? null);
+    }
 }
