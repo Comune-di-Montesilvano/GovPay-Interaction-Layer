@@ -1301,22 +1301,18 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->assertSame([], array_values(array_filter($res->errorDetails, static fn($d) => str_starts_with($d['ref'], 'sollecito'))));
     }
 
-    public function testSollecitoAdminInCopiaSoloConNotificaAdminAuto(): void
+    public function testSollecitoAdminSempreInCopiaAncheSenzaNotificaAdminAuto(): void
     {
         $this->scenarioSollecito();
+        $this->setting('notifica_admin_auto', 'false');
         $this->setting('admin_emails', 'admin@example.test; op@example.test');
         $this->riga(1, ['rendicontazione_stato' => 'IN_ATTESA_CONFERMA', 'data_flusso' => self::today(8)]);
 
         $this->runJob();
-        $this->assertCount(1, $this->solCalls);
-        $this->assertSame(['op@example.test'], $this->solCalls[0]['emails'], 'notifica_admin_auto assente: nessun admin');
 
-        $this->setting('notifica_admin_auto', 'true');
-        $this->setSollecitoGuard((int)self::pdo()->query('SELECT MIN(id) FROM user_groups')->fetchColumn(), self::today(7));
-        $this->runJob();
-        $this->assertCount(2, $this->solCalls);
-        $emails = $this->solCalls[1]['emails'];
+        $this->assertCount(1, $this->solCalls);
+        $emails = $this->solCalls[0]['emails'];
         sort($emails);
-        $this->assertSame(['admin@example.test', 'op@example.test'], $emails, 'admin aggiunti, duplicati rimossi');
+        $this->assertSame(['admin@example.test', 'op@example.test'], $emails, 'admin inclusi con notifica_admin_auto=false, duplicati rimossi');
     }
 }

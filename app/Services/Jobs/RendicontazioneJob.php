@@ -271,8 +271,8 @@ final class RendicontazioneJob implements PeriodicJob
      * SOLLECITO_GIORNI giorni per gruppo (guard per gruppo in settings, scritto solo a invio OK):
      * un gruppo che fallisce viene ritentato al prossimo digest senza rimandare ai gruppi gia' serviti,
      * e un digest saltato un giorno non fa perdere il sollecito (nessun "giorno esatto" da centrare).
-     * Destinatari: membri del gruppo + utenti con notifica globale; admin_emails solo con
-     * notifica_admin_auto (stessa condizione del digest admin).
+     * Destinatari: membri del gruppo + utenti con notifica globale + admin_emails (sempre,
+     * indipendentemente da notifica_admin_auto).
      *
      * @param list<array{ref:string,reason:string}> $details
      */
@@ -286,11 +286,8 @@ final class RendicontazioneJob implements PeriodicJob
         $oggi = date('Y-m-d');
         $baseUrlVista = rtrim((string)Config::get('BACKOFFICE_PUBLIC_BASE_URL', ''), '/') . '/rendicontazione/da-confermare';
         $globalEmails = $this->userRepo->getGlobalNotificationEmails();
-        $adminEmails = [];
-        if ((string)SettingsRepository::get('rendicontazione', 'notifica_admin_auto', 'false') === 'true') {
-            $rawAdminEmails = (string)SettingsRepository::get('rendicontazione', 'admin_emails', '');
-            $adminEmails = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/', $rawAdminEmails) ?: [])));
-        }
+        $rawAdminEmails = (string)SettingsRepository::get('rendicontazione', 'admin_emails', '');
+        $adminEmails = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/', $rawAdminEmails) ?: [])));
 
         $stmtGruppi = $this->pdo->prepare(
             'SELECT DISTINCT group_id FROM rendicontazione_gruppo_tipologie WHERE id_dominio = :dom'
