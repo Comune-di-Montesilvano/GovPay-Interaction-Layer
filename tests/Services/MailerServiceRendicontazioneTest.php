@@ -5,6 +5,7 @@ namespace Tests\Services;
 
 use App\Services\MailerService;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\Synthetic;
 
 final class MailerServiceRendicontazioneTest extends TestCase
 {
@@ -35,12 +36,12 @@ final class MailerServiceRendicontazioneTest extends TestCase
             'Ufficio Tributi',
             [
                 [
-                    'iuv' => '00000000000000001',
-                    'importo' => 2600.00,
+                    'iuv' => Synthetic::iuv('0', 4242),
+                    'importo' => 126.50,
                     'data_pagamento' => '2026-07-14',
-                    'causale' => 'Diritti di segreteria',
-                    'nominativo_debitore' => 'MARIO ROSSI',
-                    'cf_debitore' => 'RSSMRA80A01H501U',
+                    'causale' => 'Servizio di prova',
+                    'nominativo_debitore' => Synthetic::nome(3),
+                    'cf_debitore' => Synthetic::cf(3),
                     'id_pendenza' => 456
                 ]
             ],
@@ -50,6 +51,54 @@ final class MailerServiceRendicontazioneTest extends TestCase
         $this->assertSame('OK', $result['esito']);
     }
 
+    public function testSollecitoSmarcaturaVuotoRitornaSkipped(): void
+    {
+        $mailer = MailerService::forSuite('backoffice');
+        $this->assertSame('SKIPPED', $mailer->sendRendicontazioneSollecitoSmarcatura([], 'Gruppo Prova', [['iuv' => '1']], 'http://x', 7)['esito']);
+        $this->assertSame('SKIPPED', $mailer->sendRendicontazioneSollecitoSmarcatura(['test@example.com'], 'Gruppo Prova', [], 'http://x', 7)['esito']);
+    }
+
+    public function testRenderRendicontazioneSollecitoSmarcatura(): void
+    {
+        $mailer = MailerService::forSuite('backoffice');
+        $result = $mailer->sendRendicontazioneSollecitoSmarcatura(
+            ['test@example.com'],
+            'Gruppo Prova',
+            [
+                [
+                    'iuv' => Synthetic::iuv('0', 5151),
+                    'importo' => 126.50,
+                    'data_flusso' => date('Y-m-d', strtotime('-7 days')),
+                    'data_pagamento' => date('Y-m-d', strtotime('-8 days')),
+                    'causale' => 'Servizio di prova',
+                    'nominativo_debitore' => Synthetic::nome(5),
+                    'cf_debitore' => Synthetic::cf(5),
+                    'id_pendenza' => 456,
+                ],
+            ],
+            'http://x/rendicontazione/da-confermare',
+            7
+        );
+        $this->assertSame('OK', $result['esito']);
+    }
+
+    public function testSollecitoSmarcaturaErroreSenzaMessaggioEccezione(): void
+    {
+        $mailer = MailerService::forSuite('backoffice');
+        $result = $mailer->sendRendicontazioneSollecitoSmarcatura(
+            ['invalid-email-address-without-at-symbol'],
+            'Gruppo Prova',
+            [['iuv' => Synthetic::iuv('0', 1), 'importo' => 10]],
+            'http://x',
+            7
+        );
+        $this->assertSame('ERRORE', $result['esito']);
+        // solo il nome breve della classe, mai il testo dell'eccezione (che riecheggia l'indirizzo)
+        $this->assertNotEmpty($result['errore'] ?? '');
+        $this->assertStringNotContainsString('invalid-email', $result['errore']);
+        $this->assertStringNotContainsString(' ', $result['errore']);
+    }
+
     public function testRenderRendicontazioneAdmin(): void
     {
         $mailer = MailerService::forSuite('backoffice');
@@ -57,13 +106,13 @@ final class MailerServiceRendicontazioneTest extends TestCase
             ['admin@example.com'],
             [
                 [
-                    'iuv' => '00000000000000001',
+                    'iuv' => Synthetic::iuv('0', 4243),
                     'importo' => 2600.00,
                     'rendicontazione_handler' => 'AUTO_ESTERNO',
                     'rendicontazione_stato' => 'OK'
                 ],
                 [
-                    'iuv' => '00000000000000002',
+                    'iuv' => Synthetic::iuv('0', 4244),
                     'importo' => 2400.00,
                     'rendicontazione_handler' => 'GERI',
                     'rendicontazione_stato' => 'ERRORE'
@@ -105,7 +154,7 @@ final class MailerServiceRendicontazioneTest extends TestCase
             'test@example.com',
             'Mario Rossi',
             ['causale' => 'Riscaldamento scolastico', 'importo' => 120.50],
-            '00000000000000001',
+            Synthetic::iuv('0', 4243),
             'Tassa',
             '2026-07-26',
             'http://frontoffice/receipt/123',

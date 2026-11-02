@@ -920,6 +920,60 @@ HTML;
         }
     }
 
+    /**
+     * Promemoria agli operatori: pagamenti in IN_ATTESA_CONFERMA da almeno $giorniSoglia giorni.
+     * Stesso livello di dati personali del digest operatore (nominativo e CF del debitore).
+     *
+     * @param string[] $destinatari
+     * @param array<int,array<string,mixed>> $righe
+     * @return array{esito:string,errore?:string}
+     */
+    public function sendRendicontazioneSollecitoSmarcatura(
+        array  $destinatari,
+        string $gruppoNome,
+        array  $righe,
+        string $baseUrlVista,
+        int    $giorniSoglia,
+        string $appName = ''
+    ): array {
+        if (empty($destinatari) || empty($righe)) {
+            return ['esito' => 'SKIPPED'];
+        }
+        if ($appName === '') {
+            $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
+        }
+
+        try {
+            $logoPath = $this->resolveLogoPath();
+            $hasLogo  = ($logoPath !== '' && is_file($logoPath));
+            $logoSrc  = SettingsRepository::get('ui', 'logo_src', '');
+
+            $html = $this->renderRendicontazioneSollecitoTemplate($gruppoNome, $righe, $baseUrlVista, $giorniSoglia, $appName, $hasLogo, $logoSrc);
+            $text = $this->renderRendicontazioneSollecitoPlain($gruppoNome, $righe, $baseUrlVista, $giorniSoglia);
+
+            foreach ($destinatari as $to) {
+                $email = (new Email())
+                    ->from($this->from)
+                    ->to(new Address($to))
+                    ->subject("Promemoria: pagamenti da confermare da oltre {$giorniSoglia} giorni — {$gruppoNome} (PagoPA GIL)")
+                    ->html($html)
+                    ->text($text);
+                if ($hasLogo) {
+                    $email->embedFromPath($logoPath, 'logo');
+                }
+                $this->mailer->send($email);
+            }
+
+            return ['esito' => 'OK'];
+        } catch (\Throwable $e) {
+            // Solo classe/status: il messaggio del transport puo' contenere indirizzi e dettagli SMTP.
+            return [
+                'esito'  => 'ERRORE',
+                'errore' => ThrowableSummary::of($e),
+            ];
+        }
+    }
+
     private function getBackofficeBaseUrl(): string
     {
         return rtrim((string)SettingsRepository::get('backoffice', 'public_base_url', ''), '/');
@@ -1118,6 +1172,131 @@ HTML;
                 . ' stato=' . ($r['rendicontazione_stato'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.');
         }
         return implode("\n", $lines);
+    }
+
+    /** @param array<int,array<string,mixed>> $righe */
+    private function renderRendicontazioneSollecitoTemplate(
+        string $gruppoNome,
+        array  $righe,
+        string $baseUrlVista,
+        int    $giorniSoglia,
+        string $appName,
+        bool   $hasLogo = false,
+        string $logoSrc = ''
+    ): string {
+        $safeGruppo = htmlspecialchars($gruppoNome, ENT_QUOTES, 'UTF-8');
+        $backofficeBaseUrl = $this->getBackofficeBaseUrl();
+
+        if ($backofficeBaseUrl !== '' && !str_starts_with($baseUrlVista, 'http://') && !str_starts_with($baseUrlVista, 'https://')) {
+            $baseUrlVista = $backofficeBaseUrl . '/' . ltrim($baseUrlVista, '/');
+        }
+        $safeUrl = htmlspecialchars($baseUrlVista, ENT_QUOTES, 'UTF-8');
+        $count = count($righe);
+
+        $rowsOut = '';
+        foreach ($righe as $r) {
+            $iuv = htmlspecialchars((string)($r['iuv'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $importo = number_format((float)($r['importo'] ?? 0), 2, ',', '.');
+            $dataRaw = (string)($r['data_flusso'] ?? $r['data_pagamento'] ?? '');
+            $data = $dataRaw !== '' ? htmlspecialchars(date('d/m/Y', strtotime($dataRaw)), ENT_QUOTES, 'UTF-8') : '';
+            $causale = htmlspecialchars((string)($r['causale'] ?? $r['descrizione_entrata'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $nomDebitore = htmlspecialchars((string)($r['nominativo_debitore'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $cfDebitore = htmlspecialchars((string)($r['cf_debitore'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $giorni = $this->giorniDa($dataRaw);
+
+            $debitoreHtml = '';
+            if ($nomDebitore !== '' || $cfDebitore !== '') {
+                $debitoreHtml = "<div style=\"font-size:11px;color:#718096;margin-top:2px;\">Debitore: <strong style=\"color:#4a5568;\">{$nomDebitore}</strong> ({$cfDebitore})</div>";
+            }
+
+            $linkHtml = '';
+            if (!empty($r['id_pendenza']) && $backofficeBaseUrl !== '') {
+                $detailUrl = htmlspecialchars($backofficeBaseUrl . '/pendenze/dettaglio/' . rawurlencode((string)$r['id_pendenza']), ENT_QUOTES, 'UTF-8');
+                $linkHtml = " <a href=\"{$detailUrl}\" style=\"color:#0066cc;text-decoration:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 6px;background:#ebf8ff;border-radius:4px;display:inline-block;\">Vedi dettaglio</a>";
+            }
+
+            $attesaHtml = $giorni !== null
+                ? "<span style=\"background:#fffaf0;color:#9c4221;padding:2px 6px;border-radius:4px;font-weight:600;font-size:10px;margin-left:6px;display:inline-block;\">in attesa da {$giorni} giorni</span>"
+                : '';
+
+            $rowsOut .= "<tr>"
+                . "<td style=\"padding:12px 8px;border-bottom:1px solid #edf2f7;\">"
+                . "<div style=\"font-size:13px;\">IUV: <strong style=\"font-family:Consolas,Monaco,monospace;color:#1a202c;letter-spacing:0.3px;\">{$iuv}</strong>{$attesaHtml}{$linkHtml}</div>"
+                . "<div style=\"font-size:12px;color:#2d3748;margin-top:4px;line-height:1.4;\">{$causale}</div>"
+                . $debitoreHtml
+                . "</td>"
+                . "<td style=\"padding:12px 8px;text-align:right;border-bottom:1px solid #edf2f7;font-weight:600;color:#1a202c;white-space:nowrap;font-size:13px;vertical-align:middle;\">&euro; {$importo}</td>"
+                . "<td style=\"padding:12px 8px;text-align:center;border-bottom:1px solid #edf2f7;color:#4a5568;white-space:nowrap;font-size:12px;vertical-align:middle;\">{$data}</td>"
+                . "</tr>\n";
+        }
+
+        $body = "<div style=\"background-color:#fffaf0;border-left:4px solid #dd6b20;padding:16px;margin-bottom:24px;border-radius:4px;\">"
+            . "<p style=\"margin:0 0 8px 0;font-size:14px;font-weight:700;color:#9c4221;\">Promemoria: pagamenti in attesa di conferma</p>"
+            . "<p style=\"margin:0;font-size:13px;line-height:1.5;color:#4a5568;\">"
+            . "Risultano <strong>{$count} pagamenti PagoPA</strong> di competenza del gruppo <strong>{$safeGruppo}</strong> in attesa di conferma manuale da almeno <strong>{$giorniSoglia} giorni</strong>. "
+            . "La conferma permette di chiudere la regolarizzazione contabile dei relativi flussi su GovPay."
+            . "</p>"
+            . "</div>"
+            . '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-family:\'Helvetica Neue\',Arial,sans-serif;">'
+            . '<thead>'
+            . '<tr style="border-bottom:2px solid #e2e8f0;color:#718096;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">'
+            . '<th style="padding:10px 8px;text-align:left;font-weight:600;">Dettaglio / Debitore</th>'
+            . '<th style="padding:10px 8px;text-align:right;font-weight:600;width:100px;">Importo</th>'
+            . '<th style="padding:10px 8px;text-align:center;font-weight:600;width:90px;">Data</th>'
+            . '</tr>'
+            . '</thead>'
+            . '<tbody>' . $rowsOut . '</tbody>'
+            . '</table>'
+            . "<p style=\"margin-top:20px;text-align:center;\"><a href=\"{$safeUrl}\" style=\"display:inline-block;padding:12px 28px;background:#0066cc;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;\">Gestisci pendenze</a></p>";
+
+        return $this->renderEmailBase($body, $appName, "Promemoria conferma pagamenti — {$gruppoNome}", $hasLogo, $logoSrc);
+    }
+
+    /** @param array<int,array<string,mixed>> $righe */
+    private function renderRendicontazioneSollecitoPlain(string $gruppoNome, array $righe, string $baseUrlVista, int $giorniSoglia): string
+    {
+        $publicBaseUrl = $this->getBackofficeBaseUrl();
+        $lines = [
+            "Promemoria: pagamenti da confermare da oltre {$giorniSoglia} giorni — {$gruppoNome}",
+            '',
+            count($righe) . " pagamenti PagoPA del gruppo {$gruppoNome} sono in attesa di conferma manuale da almeno {$giorniSoglia} giorni.",
+            '',
+        ];
+
+        foreach ($righe as $r) {
+            $dataRaw = (string)($r['data_flusso'] ?? $r['data_pagamento'] ?? '');
+            $data = $dataRaw !== '' ? date('d/m/Y', strtotime($dataRaw)) : '';
+            $giorni = $this->giorniDa($dataRaw);
+            $causale = (string)($r['causale'] ?? $r['descrizione_entrata'] ?? '');
+            $nom = (string)($r['nominativo_debitore'] ?? '');
+            $cf = (string)($r['cf_debitore'] ?? '');
+            $line = '- IUV ' . ($r['iuv'] ?? '') . ' € ' . number_format((float)($r['importo'] ?? 0), 2, ',', '.') . ' (' . $data . ')'
+                . ($giorni !== null ? " — in attesa da {$giorni} giorni" : '');
+            if ($causale !== '') {
+                $line .= "\n  Causale: " . $causale;
+            }
+            if ($nom !== '' || $cf !== '') {
+                $line .= "\n  Debitore: " . $nom . ' (' . $cf . ')';
+            }
+            if (!empty($r['id_pendenza']) && $publicBaseUrl !== '') {
+                $line .= "\n  Dettaglio: " . $publicBaseUrl . '/pendenze/dettaglio/' . rawurlencode((string)$r['id_pendenza']);
+            }
+            $lines[] = $line;
+        }
+
+        $lines[] = '';
+        $lines[] = 'Gestisci pendenze: ' . $baseUrlVista;
+        return implode("\n", $lines);
+    }
+
+    /** Giorni interi tra una data Y-m-d e oggi (null se data vuota/non valida). */
+    private function giorniDa(string $data): ?int
+    {
+        $ts = $data !== '' ? strtotime($data) : false;
+        if ($ts === false) {
+            return null;
+        }
+        return max(0, (int)floor((strtotime(date('Y-m-d')) - $ts) / 86400));
     }
 
     // -------------------------------------------------------------------------

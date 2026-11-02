@@ -461,7 +461,7 @@ class ReportRagioneriaController
                 (string)($row['iuv'] ?? ''),
                 (string)($row['iur'] ?? ''),
                 (string)($row['indice'] ?? ''),
-                number_format((float)($row['importo'] ?? 0), 2, '.', ''),
+                number_format((float)($row['importo'] ?? 0), 2, ',', ''),
                 (string)($row['esito'] ?? ''),
                 (string)($row['stato_rend'] ?? ''),
                 (string)($row['data_pagamento'] ?? ''),
