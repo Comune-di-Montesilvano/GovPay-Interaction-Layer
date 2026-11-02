@@ -66,76 +66,52 @@ else
   fi
 fi
 
-# === SSL: genera certificati self-signed se non esistono o sono vuoti ===
-# Se SKIP_SELF_SIGNED è impostato o se SSL è off, non generare.
-# Nota: Apache fallisce anche se i file esistono ma sono vuoti (0 byte), quindi usiamo -s.
+# === SSL (SSL=on): certificati /ssl/server.{crt,key} se forniti e leggibili, altrimenti
+# self-signed in /tmp (tmpfs: il filesystem del container e' read-only e il processo e'
+# www-data, /ssl non e' scrivibile). Apache li legge da GIL_SSL_CERT/GIL_SSL_KEY.
 SSL_ON="${SSL:-on}"
-if [ "$SSL_ON" = "on" ] && [ -z "${SKIP_SELF_SIGNED:-}" ] && ( [ ! -s /ssl/server.crt ] || [ ! -s /ssl/server.key ] ); then
-  echo "⚙️  Certificati SSL mancanti o vuoti: genero certificati self-signed in /ssl ..."
-  mkdir -p /ssl
-  rm -f /ssl/server.key /ssl/server.crt || true
-  # Genera una chiave privata e un certificato self-signed valido 365 giorni
-  if [ -n "$OPENSSL_BIN" ]; then
-    if ! $OPENSSL_BIN req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout /ssl/server.key -out /ssl/server.crt \
-      -subj "/CN=localhost" >/dev/null 2>&1; then
-        echo "❌ Errore: generazione certificati fallita" >&2
-    fi
-  else
-    echo "⚠️  openssl assente: salto generazione certificati" >&2
+GIL_SSL_CERT=/ssl/server.crt
+GIL_SSL_KEY=/ssl/server.key
+if [ "$SSL_ON" = "on" ] && { [ ! -s "$GIL_SSL_CERT" ] || [ ! -r "$GIL_SSL_CERT" ] || [ ! -s "$GIL_SSL_KEY" ] || [ ! -r "$GIL_SSL_KEY" ]; }; then
+  if [ -e "$GIL_SSL_KEY" ] && [ ! -r "$GIL_SSL_KEY" ]; then
+    echo "⚠️  /ssl/server.key non leggibile da $(id -un) (uid $(id -u)): rendere leggibile la chiave montata (es. chown 33 o chmod 640 gruppo www-data)" >&2
   fi
-  chmod 600 /ssl/server.key || true
-  chmod 644 /ssl/server.crt || true
-  echo "✅ Certificati self-signed creati.";
-fi
-
-if [ "$APP_SUITE" = "frontoffice" ]; then
-  TARGET_PUBLIC="/var/www/html/public"
-  SOURCE_PUBLIC="/var/www/html/frontoffice/public"
-  if [ -d "$SOURCE_PUBLIC" ]; then
-    mkdir -p "$TARGET_PUBLIC"
-    shopt -s dotglob
-    for entry in "$TARGET_PUBLIC"/*; do
-      name="$(basename "$entry")"
-      case "$name" in
-        .|..|assets|img|.htaccess|debug)
-          continue
-          ;;
-      esac
-      rm -rf "$entry"
-    done
-    shopt -u dotglob
-    cp -R "$SOURCE_PUBLIC"/. "$TARGET_PUBLIC"/
-    rm -rf "$TARGET_PUBLIC"/debug || true
-    chown -R www-app:www-data "$TARGET_PUBLIC" || true
-    echo "✅ Frontoffice pubblicato in $TARGET_PUBLIC (debug disattivata)"
-  else
-    echo "⚠️  Sorgente frontoffice $SOURCE_PUBLIC non trovata" >&2
+  if [ -n "${SKIP_SELF_SIGNED:-}" ]; then
+    echo "❌ SSL=on, certificati /ssl assenti o non leggibili e SKIP_SELF_SIGNED impostato" >&2
+    exit 1
   fi
+  [ -n "$OPENSSL_BIN" ] || { echo "❌ SSL=on senza certificati e senza openssl" >&2; exit 1; }
+  SSL_TMP=/tmp/gil-ssl
+  mkdir -p "$SSL_TMP" && chmod 700 "$SSL_TMP"
+  echo "⚙️  Certificati SSL mancanti o non leggibili: genero self-signed in $SSL_TMP ..."
+  if ! "$OPENSSL_BIN" req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout "$SSL_TMP/server.key" -out "$SSL_TMP/server.crt" -subj "/CN=localhost" >/dev/null 2>&1; then
+    echo "❌ Errore: generazione certificati fallita" >&2
+    exit 1
+  fi
+  GIL_SSL_CERT="$SSL_TMP/server.crt"
+  GIL_SSL_KEY="$SSL_TMP/server.key"
+  echo "✅ Certificati self-signed creati."
 fi
+export GIL_SSL_CERT GIL_SSL_KEY
 
-# Fix ownership dei volumi di upload (best-effort: silenzioso se il FS è read-only)
+# Frontoffice: la pubblicazione di frontoffice/public in /var/www/html/public avviene a build
+# time (Dockerfile, stage runtime-frontoffice). Nessun chown/chmod qui: il processo e' www-data e
+# owner dei volumi lo sistema il servizio one-shot `volume-perms` del compose (chown -R prima
+# dell'avvio). Qui solo un avviso se una radice di volume non e' comunque scrivibile.
 if [ "$APP_SUITE" != "frontoffice" ]; then
-    mkdir -p /var/www/html/public/img
-    chown www-data:www-data /var/www/html/public/img 2>/dev/null || true
-    chmod 755 /var/www/html/public/img 2>/dev/null || true
-  mkdir -p /backups
-  chown www-data:www-data /backups 2>/dev/null || true
-  chmod 775 /backups 2>/dev/null || true
-    mkdir -p /var/www/certificate
-    chown www-data:www-data /var/www/certificate 2>/dev/null || true
-    chmod 755 /var/www/certificate 2>/dev/null || true
-  mkdir -p /var/www/cache
-  chown www-data:www-data /var/www/cache 2>/dev/null || true
-  chmod 775 /var/www/cache 2>/dev/null || true
-
+  for d in /var/www/cache /var/www/certificate /var/www/html/public/img /backups; do
+    if [ ! -w "$d" ]; then
+      echo "⚠️  $d non scrivibile da $(id -un) (servizio volume-perms non eseguito?)" >&2
+    fi
+  done
 fi
 
 echo "--- Setup completato. Eseguo controllo first-run DB ---"
 
 if [ "$APP_SUITE" != "frontoffice" ]; then
   # First-run marker
-  FIRST_RUN_MARKER="/var/www/html/.first_run_done"
+  FIRST_RUN_MARKER="/var/www/cache/.first_run_done"
   if [ -f "$FIRST_RUN_MARKER" ]; then
     echo "ℹ️  First-run DB già eseguito (marker presente)."
   else

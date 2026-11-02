@@ -1,5 +1,6 @@
-# Hardening runtime (passo 1): nessuna escalation di privilegi (setuid/setgid) e nessuna
-# capability Linux oltre a quelle strettamente necessarie.
+# Hardening runtime: nessuna escalation di privilegi (setuid/setgid), nessuna capability
+# (salvo il one-shot volume-perms e il db), filesystem dei container read-only con tmpfs per le
+# sole directory scritte a runtime. backoffice/frontoffice/worker girano come www-data.
 #
 # Segreti obbligatori: DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD, FRONTOFFICE_DB_PASSWORD,
 # APP_ENCRYPTION_KEY, MASTER_TOKEN, FRONTOFFICE_LINK_SIGNING_KEY. Se una manca o e' vuota
@@ -10,21 +11,22 @@ x-hardening: &hardening
   cap_drop:
     - ALL
 
-# backoffice/frontoffice: Apache master root, processi figli www-data; docker-setup.sh fa
-# chown/chmod su directory non di root (le directory condivise sono setgid).
-# KILL serve al master per segnalare i figli www-data (graceful reload, stop).
-# Il servizio `worker` non usa questo blocco: PHP CLI come www-data, nessuna capability.
-# NET_BIND_SERVICE: Apache fa bind su :80 da root. Docker >=20.10 abbassa
-# ip_unprivileged_port_start a 0 e lo nasconde, altri runtime/host no (prod: bind :80 negato).
-x-php-caps: &php-caps
-  cap_add:
-    - NET_BIND_SERVICE
-    - CHOWN
-    - SETUID
-    - SETGID
-    - DAC_OVERRIDE
-    - FOWNER
-    - KILL
+# backoffice/frontoffice: Apache (master compreso) gira come www-data, nessuna capability.
+# Porta interna resta 80 (mapping host e URL interni invariati): il sysctl, namespaced nel
+# container, abbassa la soglia delle porte privilegiate a 80. Docker >=20.10 la mette gia' a 0,
+# altri runtime/host no (prod: bind :80 negato senza, incidente 2026-10-28).
+# `user` esplicito anche se l'immagine ha gia' USER www-data.
+x-php-runtime: &php-runtime
+  user: "www-data"
+  read_only: true
+  sysctls:
+    net.ipv4.ip_unprivileged_port_start: 80
+
+# tmpfs nei servizi PHP (uid/gid 33 = www-data): /tmp = sessioni PHP, upload, temporanei di
+# backup/restore, certificato self-signed con SSL=on (un restore grande occupa RAM finche'
+# dura); run/lock di Apache (PID per il reload del watchdog frontoffice); storage/logs e
+# storage/tmp dell'app (log anche su stdout/Sentry, persi al riavvio; storage/tmp = stato del
+# circuit breaker GovPay, gia' per container).
 
 services:
   # Verifica delle firme cosign delle 3 immagini di ${APP_VERSION} prima di avviarle
@@ -65,8 +67,35 @@ services:
     networks:
       - govpay-network
 
+  # One-shot: chown -R www-data dei volumi del backoffice prima del suo avvio. Fino a 1.7.x
+  # entrypoint e demoni (docker exec) giravano come root e possono aver lasciato file root nei
+  # volumi, non piu' scrivibili da backoffice (www-data). Idempotente, a ogni avvio.
+  volume-perms:
+    <<: *hardening
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
+    user: "0"
+    read_only: true
+    restart: "no"
+    network_mode: none
+    entrypoint: ["chown", "-R", "www-data:www-data", "/var/www/cache", "/var/www/certificate", "/var/www/html/public/img", "/backups"]
+    volumes:
+      - cache:/var/www/cache
+      - gil_certs:/var/www/certificate
+      - gil_images:/var/www/html/public/img
+      - gil_backups:/backups
+
   backoffice:
-    <<: [*hardening, *php-caps]
+    <<: [*hardening, *php-runtime]
+    tmpfs:
+      - /tmp:uid=33,gid=33,mode=1777
+      - /var/run/apache2:uid=33,gid=33,mode=0755
+      - /var/lock/apache2:uid=33,gid=33,mode=0755
+      - /var/www/html/backoffice/storage/logs:uid=33,gid=33,mode=0775
+      - /var/www/html/backoffice/storage/tmp:uid=33,gid=33,mode=0775
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     container_name: gil-backoffice
     ports:
@@ -95,7 +124,8 @@ services:
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost/health"]
+      # SSL=on: Apache parla TLS sulla stessa porta 80 (certificato self-signed possibile, -k).
+      test: ["CMD-SHELL", "curl -sf http://localhost/health || curl -sfk https://localhost:80/health"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -105,13 +135,20 @@ services:
     depends_on:
       verify-images:
         condition: service_completed_successfully
+      volume-perms:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
     networks:
       - govpay-network
 
   frontoffice:
-    <<: [*hardening, *php-caps]
+    <<: [*hardening, *php-runtime]
+    tmpfs:
+      - /tmp:uid=33,gid=33,mode=1777
+      - /var/run/apache2:uid=33,gid=33,mode=0755
+      - /var/lock/apache2:uid=33,gid=33,mode=0755
+      - /var/www/html/frontoffice/storage/logs:uid=33,gid=33,mode=0775
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-frontoffice:${APP_VERSION:-latest}
     container_name: gil-frontoffice
     ports:
@@ -160,11 +197,17 @@ services:
   # container backoffice via .autostart (nessuna doppia esecuzione). Le immagini nuove non
   # avviano piu' i demoni nel backoffice: al primo avvio il worker importa una sola volta i
   # file daemon-<slug>.autostart dal volume cache (montato in sola lettura).
-  # Nessuna porta e nessuna capability: PHP CLI come www-data.
+  # Nessuna porta e nessuna capability: PHP CLI come www-data, filesystem read-only.
   worker:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
     user: "www-data"
+    read_only: true
+    # storage/tmp = circuit breaker GovPay condiviso dai processi figli del worker.
+    tmpfs:
+      - /tmp:uid=33,gid=33,mode=1777
+      - /var/www/html/backoffice/storage/logs:uid=33,gid=33,mode=0775
+      - /var/www/html/backoffice/storage/tmp:uid=33,gid=33,mode=0775
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -221,6 +264,11 @@ services:
       - SETGID
       - DAC_OVERRIDE
       - FOWNER
+    # Scrive solo nella datadir (volume), nel socket/PID di /run/mysqld e in /tmp.
+    read_only: true
+    tmpfs:
+      - /run/mysqld:mode=1777
+      - /tmp:mode=1777
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: gil-db
     restart: always
