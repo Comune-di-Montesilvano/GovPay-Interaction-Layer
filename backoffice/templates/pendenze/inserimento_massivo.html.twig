@@ -72,6 +72,7 @@
           </div>
 
           <form method="post" action="/pendenze/massivo/upload" enctype="multipart/form-data" id="massiveUploadForm">
+            <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
 
             {# Drop zone #}
             <div class="mb-4">
@@ -162,6 +163,7 @@
               </div>
 
               <form method="post" action="/pendenze/massivo/conferma" class="border-top pt-4">
+                <input type="hidden" name="csrf_token" value="{{ job_csrf_token() }}">
                 <input type="hidden" name="batch_id" value="{{ preview.batch_id }}">
                 <div class="mb-3" style="max-width:400px;">
                   <label for="massivoTipo" class="form-label fw-semibold small">Tipologia pendenza <span class="text-danger">*</span></label>
