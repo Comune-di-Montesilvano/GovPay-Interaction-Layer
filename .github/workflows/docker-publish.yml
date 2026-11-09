@@ -93,6 +93,7 @@ jobs:
             deb.debian.org:443
             archive.ubuntu.com:80
             security.ubuntu.com:80
+            archive.mariadb.org:80
             www.php.net:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -255,6 +256,7 @@ jobs:
             mirror.gcr.io:443
             registry.npmjs.org:443
             repo.packagist.org:443
+            packagist.org:443
             deb.debian.org:80
             deb.debian.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -346,6 +348,7 @@ jobs:
             mirror.gcr.io:443
             registry.npmjs.org:443
             repo.packagist.org:443
+            packagist.org:443
             deb.debian.org:80
             deb.debian.org:443
             check.trivy.dev:443

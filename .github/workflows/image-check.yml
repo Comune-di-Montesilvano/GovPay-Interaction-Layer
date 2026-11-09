@@ -73,6 +73,7 @@ jobs:
               mirror.gcr.io:443
               registry.npmjs.org:443
               repo.packagist.org:443
+              packagist.org:443
               deb.debian.org:80
               deb.debian.org:443
               check.trivy.dev:443
@@ -102,6 +103,7 @@ jobs:
               mirror.gcr.io:443
               registry.npmjs.org:443
               repo.packagist.org:443
+              packagist.org:443
               deb.debian.org:80
               deb.debian.org:443
               check.trivy.dev:443
@@ -132,6 +134,7 @@ jobs:
               archive.ubuntu.com:80
               security.ubuntu.com:80
               archive.mariadb.org:80
+              tuf-repo-cdn.sigstore.dev:443
             context: docker
             file: docker/db/Dockerfile
             target: ''

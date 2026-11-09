@@ -55,8 +55,10 @@ for img in $IMAGES; do
 
   # b. Aggiornamenti di sistema (Debian per backoffice/frontoffice, Ubuntu per mariadb).
   # apt-get update fallito (mirror bloccato/irraggiungibile) = errore, mai "0 aggiornamenti".
+  # --error-on=any: senza, un repo irraggiungibile (es. archive.mariadb.org bloccato da
+  # harden-runner) e' solo un warning, exit 0, aggiornamenti di quel repo mai visti.
   upgradable=$(docker run --rm --user 0 --entrypoint sh "$ref" -c \
-    'apt-get update -qq >/dev/null 2>&1 || exit 3; apt list --upgradable 2>/dev/null | grep -c "\[upgradable from" || true' \
+    'apt-get update -qq --error-on=any >/dev/null 2>&1 || exit 3; apt list --upgradable 2>/dev/null | grep -c "\[upgradable from" || true' \
     2>/dev/null) || upgradable="errore"
   if ! [[ "$upgradable" =~ ^[0-9]+$ ]]; then
     causes+=("${img}: controllo apt fallito")
