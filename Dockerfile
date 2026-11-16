@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/root/.composer,sharing=locked \
 ######################################################################
 # STAGE 3: Runtime (Apache + PHP) harden
 ######################################################################
-FROM php:8.5-apache-trixie@sha256:7cd25eb48f9763dfeabe8fda3939897aca2001802fadeafa1b602f26c735ef96 AS runtime-base
+FROM php:8.5-apache-trixie@sha256:08af36df144462d84c7f16190557eec06cb9f656882685610b712a15eec54d46 AS runtime-base
 
 # System deps + PHP extensions FIRST — stable layer, cache must not be busted
 # by per-commit ARGs. All volatile ARG/ENV go AFTER this RUN.
