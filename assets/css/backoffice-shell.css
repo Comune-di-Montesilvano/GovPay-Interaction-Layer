@@ -2135,3 +2135,40 @@ html { scroll-padding-top: calc(var(--bo-topbar-height, 56px) + var(--bo-page-he
   }
   #vociList .voce-item + .voce-item { margin-top: -.5rem; }
 }
+
+/* Coppie etichetta/valore compatte (dettaglio flusso, pannelli riga, modali). */
+.bo-dl {
+  display: grid;
+  grid-template-columns: fit-content(15rem) minmax(0, 1fr);
+  gap: .35rem 1.5rem;
+  margin: 0;
+  font-size: .875rem;
+}
+.bo-dl > dt { margin: 0; font-weight: 500; color: var(--bo-ink-3, #64748b); }
+.bo-dl > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* Pannello dettaglio dentro una tabella: parte della riga aperta, non una card staccata. */
+.bo-row-detail {
+  padding: .9rem 1.25rem 1rem 1.25rem;
+  background: var(--bo-shell-bg, #f4f6fa);
+  border-left: 3px solid var(--bs-primary, #0066cc);
+  border-bottom: 1px solid var(--bo-border, #e2e7ee);
+}
+.bo-row-detail-title {
+  margin: 0 0 .5rem;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--bo-ink-3, #64748b);
+}
+/* Riga con dettaglio aperto: stesso fondo del pannello. */
+tr.bo-pay-row:has(+ tr .collapse.show) > td { background: var(--bo-shell-bg, #f4f6fa); }
+tr.bo-pay-row:has(+ tr .collapse.show) > td:first-child { box-shadow: inset 3px 0 0 var(--bs-primary, #0066cc); }
+
+/* Toggle dettaglio riga: chevron che ruota, mai pieno. */
+.bo-row-toggle i { transition: transform .15s ease; }
+.bo-row-toggle[aria-expanded="true"] i { transform: rotate(180deg); }
+.bo-row-toggle[aria-expanded="true"] { background: transparent; color: var(--bs-primary, #0066cc); border-color: currentColor; }
+/* .row.g-3 (compat) mette 16px sotto ogni colonna: niente vuoto in fondo al pannello. */
+.bo-row-detail > .row.g-3 { margin-bottom: -1rem; }
