@@ -102,7 +102,7 @@
     {# ── Documenti ── #}
     <h2 class="bo-form-section"><i class="fas fa-file-lines" aria-hidden="true"></i>Documenti</h2>
     <p class="small text-muted mb-3">
-      Inserisci la descrizione di ogni documento. Puoi allegare il file per legarlo digitalmente alla marca; altrimenti il collegamento verrà generato automaticamente.
+      Inserisci la descrizione di ogni documento. Se alleghi il file, la marca viene associata al suo contenuto tramite impronta digitale. Senza allegato (ad esempio per un modulo compilato online) la marca viene emessa con un identificativo univoco basato sulla descrizione.
     </p>
 
     <div id="documenti-container">
@@ -254,7 +254,7 @@
       status.className = 'small text-success';
     } catch(e) {
       hashInput.value = '';
-      status.textContent = 'Errore nel calcolo impronta. Il collegamento verrà generato automaticamente.';
+      status.textContent = "Impossibile calcolare l'impronta del file: la marca verrà emessa con un identificativo univoco.";
       status.className = 'small text-warning';
     }
   }
