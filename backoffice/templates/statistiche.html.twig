@@ -206,7 +206,7 @@
   {# 5. Chart.js Implementation scripts #}
   {% if chart_payload_json %}
     <div id="chart-payload-data" data-payload="{{ chart_payload_json|e('html_attr') }}" style="display: none;"></div>
-    <script src="/assets/chartjs/chart.umd.min.js"></script>
+    <script src="{{ asset('/assets/chartjs/chart.umd.min.js') }}"></script>
     <script>
       (function(){
         const payload = JSON.parse(document.getElementById('chart-payload-data').dataset.payload);

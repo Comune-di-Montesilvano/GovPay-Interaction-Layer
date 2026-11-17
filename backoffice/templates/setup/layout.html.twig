@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Configurazione iniziale — GovPay Interaction Layer{% endblock %}</title>
-  <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
-  <link rel="stylesheet" href="/assets/css/no-bootstrap-compat.css">
-  <link rel="stylesheet" href="/assets/css/app.css">
-  <link rel="stylesheet" href="/assets/css/backoffice-shell.css">
+  <link rel="stylesheet" href="{{ asset('/assets/fontawesome/css/all.min.css') }}">
+  <link rel="stylesheet" href="{{ asset('/assets/css/no-bootstrap-compat.css') }}">
+  <link rel="stylesheet" href="{{ asset('/assets/css/app.css') }}">
+  <link rel="stylesheet" href="{{ asset('/assets/css/backoffice-shell.css') }}">
 </head>
 <body class="bo-setup-body">
 
@@ -34,7 +34,7 @@
 <main class="container py-4 bo-setup-main">
   {% block content %}{% endblock %}
 </main>
-<script src="/assets/js/app.js"></script>
+<script src="{{ asset('/assets/js/app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

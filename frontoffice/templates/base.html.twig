@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ app_entity.name }} – {{ 'Sportello pagamenti'|trans }}{% endblock %}</title>
     <link rel="icon" href="{{ app_favicon.href }}" type="{{ app_favicon.type }}">
-    <link rel="stylesheet" href="/assets/css/tokens.css">
-    <link rel="stylesheet" href="/assets/css/fo-components.css">
-    <link rel="stylesheet" href="/assets/css/frontoffice.css">
+    <link rel="stylesheet" href="{{ asset('/assets/css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ asset('/assets/css/fo-components.css') }}">
+    <link rel="stylesheet" href="{{ asset('/assets/css/frontoffice.css') }}">
     {% block head %}{% endblock %}
   </head>
   <body>
@@ -16,7 +16,7 @@
       {% block content %}{% endblock %}
     </main>
     {% include 'partials/footer.html.twig' %}
-    <script src="/assets/js/app.js"></script>
+    <script src="{{ asset('/assets/js/app.js') }}"></script>
     <script>
     window.GovPayUi = window.GovPayUi || {};
     window.GovPayUi.parseJsonSafely = function (response) {

@@ -5589,6 +5589,8 @@ $twig = new Environment($loader, [
     'cache' => false,
     'autoescape' => 'html',
 ]);
+// asset('/assets/x.css') -> URL con ?v=<build>: dopo un aggiornamento il browser ricarica CSS/JS.
+$twig->addFunction(new \Twig\TwigFunction('asset', [\App\Config\Config::class, 'assetUrl']));
 
 // ─── i18n (Multilingual Support) ──────────────────────────────────────────────
 $supportedLocales = ['it', 'en', 'es', 'fr', 'de'];
