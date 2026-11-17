@@ -7,10 +7,27 @@ class CacheService
 {
     private const CACHE_DIR = '/var/www/cache';
 
+    /** Solo test: directory alternativa (null = CACHE_DIR). */
+    private static ?string $cacheDirOverride = null;
+
+    public static function setCacheDirForTests(?string $dir): void
+    {
+        self::$cacheDirOverride = $dir;
+    }
+
+    private static function cacheDir(): string
+    {
+        return self::$cacheDirOverride ?? self::CACHE_DIR;
+    }
+
     /**
      * Recupera un valore dalla cache, oppure esegue il callback e lo salva se mancante o scaduto.
      */
-    public static function get(string $key, int $ttl, callable $callback): mixed
+    /**
+     * @param callable|null $shouldCache riceve il valore calcolato; false = non salvarlo
+     *                                   (es. risposta parziale durante l'avvio dello stack)
+     */
+    public static function get(string $key, int $ttl, callable $callback, ?callable $shouldCache = null): mixed
     {
         $filePath = self::getFilePath($key);
         if (file_exists($filePath)) {
@@ -27,7 +44,9 @@ class CacheService
         }
 
         $value = $callback();
-        self::set($key, $value);
+        if ($shouldCache === null || $shouldCache($value)) {
+            self::set($key, $value);
+        }
         return $value;
     }
 
@@ -64,7 +83,7 @@ class CacheService
      */
     public static function clearDomainCache(string $idDominio): void
     {
-        $dir = self::CACHE_DIR;
+        $dir = self::cacheDir();
         if (!is_dir($dir)) {
             return;
         }
@@ -88,6 +107,6 @@ class CacheService
     private static function getFilePath(string $key): string
     {
         $safeKey = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key);
-        return self::CACHE_DIR . '/cache_' . $safeKey . '.json';
+        return self::cacheDir() . '/cache_' . $safeKey . '.json';
     }
 }

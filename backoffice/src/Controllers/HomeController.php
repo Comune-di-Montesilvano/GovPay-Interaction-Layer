@@ -96,7 +96,8 @@ class HomeController
         $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
 
         $cacheKey = 'dashboard_stats_' . $idDominio;
-        $data = \App\Services\CacheService::get($cacheKey, 300, function() use ($idDominio) {
+        $failed = [];
+        $data = \App\Services\CacheService::get($cacheKey, 300, function() use ($idDominio, &$failed) {
             $pdo = Connection::getPDO();
             $bizRepo = new BizRepository($pdo);
             $tefaRepo = new TefaRepository($pdo);
@@ -112,24 +113,24 @@ class HomeController
                     $totals['count'] = (int)$row['c'];
                     $totals['amount'] = (float)($row['a'] ?? 0.0);
                 }
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('totals', $e); }
 
             // 2. Biz Events e TEFA Counts
             $bizCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
             $tefaCounts = ['PENDING' => 0, 'PROCESSED' => 0, 'ERROR' => 0, 'SKIPPED' => 0, 'total' => 0];
             try {
                 $bizCounts = $bizRepo->getCounts($idDominio);
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('biz_counts', $e); }
             try {
                 $tefaCounts = $tefaRepo->getCounts($idDominio);
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('tefa_counts', $e); }
 
             // 3. Code rimanenti da processare
             $bizQueueRemaining = 0;
             $tefaQueueRemaining = 0;
             try {
                 $bizQueueRemaining = $flussiRepo->countUnprocessedForBiz($idDominio);
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('biz_queue', $e); }
             $tefaQueueRemaining = (int)($tefaCounts['PENDING'] ?? 0);
 
             // 4. Ripartizione canali d'incasso (GovPay vs Esterno) per doughnut chart
@@ -150,7 +151,7 @@ class HomeController
                         $channelsData['external'] += (int)$row['c'];
                     }
                 }
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('channels', $e); }
 
             // 5. Andamento mensile ultimi 6 mesi (importi e transazioni) per combo chart
             $monthlyTrend = [];
@@ -208,7 +209,7 @@ class HomeController
                         ];
                     }
                 }
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('monthly_trend', $e); }
 
             // 6. Feed ultimi 5 flussi rendicontati
             $recentFlussi = [];
@@ -231,7 +232,7 @@ class HomeController
                 ');
                 $stmt->execute([':dom' => $idDominio, ':dom_sub' => $idDominio]);
                 $recentFlussi = $stmt->fetchAll() ?: [];
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('recent_flussi', $e); }
 
             // 7. Ripartizione per tipologia di pendenza (Top 5 per importo) per ultimi 12 mesi (default)
             $tipologieStats = [];
@@ -268,7 +269,7 @@ class HomeController
                 ');
                 $stmt->execute([':dom' => $idDominio, ':date_from' => $dateFrom]);
                 $tipologieStats = $stmt->fetchAll() ?: [];
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('tipologie', $e); }
 
             try {
                 $customMap = [];
@@ -284,7 +285,7 @@ class HomeController
                     }
                 }
                 unset($ts);
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('tipologie_descrizioni', $e); }
 
             return [
                 'totals' => $totals,
@@ -298,7 +299,7 @@ class HomeController
                 'tipologie_stats' => $tipologieStats,
                 'tipologie_total' => $tipologieTotal,
             ];
-        });
+        }, static function () use (&$failed): bool { return $failed === []; });
 
         $response->getBody()->write(json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         return $response->withHeader('Content-Type', 'application/json');
@@ -310,7 +311,8 @@ class HomeController
         $periodo = (string)($request->getQueryParams()['periodo'] ?? '12m');
 
         $cacheKey = 'dashboard_tipologie_' . $idDominio . '_' . $periodo;
-        $data = \App\Services\CacheService::get($cacheKey, 300, function() use ($idDominio, $periodo) {
+        $failed = [];
+        $data = \App\Services\CacheService::get($cacheKey, 300, function() use ($idDominio, $periodo, &$failed) {
             $pdo = Connection::getPDO();
 
             // Build date constraint based on selected period
@@ -382,7 +384,7 @@ class HomeController
                 ");
                 $stmt->execute($bindings);
                 $tipologieStats = $stmt->fetchAll() ?: [];
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('tipologie', $e); }
 
             // Sostituisce tipologia_desc con descrizione custom dove applicabile
             try {
@@ -399,18 +401,32 @@ class HomeController
                     }
                 }
                 unset($ts);
-            } catch (\Throwable $_) {}
+            } catch (\Throwable $e) { $failed[] = self::sectionFailed('tipologie_descrizioni', $e); }
 
             return [
                 'total'     => $totalAmount,
                 'tipologie' => $tipologieStats,
                 'periodo'   => $periodo,
             ];
-        });
+        }, static function () use (&$failed): bool { return $failed === []; });
 
         $payload = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $response->getBody()->write($payload);
         return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
+     * Sezione della dashboard non calcolabile (es. DB non ancora pronto all'avvio dello stack):
+     * log con nome sezione (-> Sentry) e risposta marcata parziale, quindi non messa in cache.
+     */
+    private static function sectionFailed(string $section, \Throwable $e): string
+    {
+        \App\Logger::getInstance()->warning('Dashboard: sezione non calcolata', [
+            'section' => $section,
+            'error' => $e->getMessage(),
+        ]);
+
+        return $section;
     }
 
     public function guida(Request $request, Response $response): Response
