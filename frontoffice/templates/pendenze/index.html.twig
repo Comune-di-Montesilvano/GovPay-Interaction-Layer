@@ -27,7 +27,7 @@
   <div class="container">
 
     {# ── Profile bar ── #}
-    <div class="profile-bar" style="margin-bottom:var(--sp-5);">
+    <div class="profile-bar compact">
       <div class="avatar">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </div>
@@ -43,7 +43,7 @@
     </div>
 
     {# ── Filters ── #}
-    <div class="card card-pad" style="margin-bottom:var(--sp-4);">
+    <div class="card" style="margin-bottom:var(--sp-4);padding:var(--sp-3) var(--sp-4);">
       <form style="display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:flex-end;" method="get" action="/pendenze">
         <div class="field" style="min-width:200px;flex:1;margin:0;">
           <label for="stato">{{ 'Stato'|trans }}</label>

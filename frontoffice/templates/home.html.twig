@@ -152,7 +152,7 @@
       </div>
       <a class="link-all" href="/pagamento-spontaneo">{{ 'Tutti i servizi →'|trans }}</a>
     </div>
-    <div class="svc-grid">
+    <div class="svc-grid svc-grid--featured">
       {% for svc in featured_services %}
         {% set svc_url = svc.type == 'external' ? svc.external_url : '/pagamento-spontaneo?tipologia=' ~ (svc.slug|default(svc.id))|url_encode %}
         {% set svc_target = svc.type == 'external' ? '_blank' : '_self' %}
@@ -166,7 +166,7 @@
             {% endif %}
           </div>
           <h3>{{ svc.label }}</h3>
-          <p>
+          <p{% if svc.descrizione_estesa %} title="{{ svc.descrizione_estesa }}"{% endif %}>
             {% if svc.descrizione_estesa %}{{ svc.descrizione_estesa }}
             {% elseif svc.type == 'external' %}{{ 'Accedi al servizio esterno.'|trans }}
             {% else %}{{ 'Genera un avviso pagoPA per questo servizio.'|trans }}{% endif %}

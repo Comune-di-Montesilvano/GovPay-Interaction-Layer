@@ -257,7 +257,7 @@
                 <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin:0;">{{ 'Documenti da bollare'|trans }}</h3>
                 <span id="bolloTotal" style="font-size:14px;font-weight:600;color:var(--fg-1);">€&nbsp;16,00</span>
               </div>
-              <p class="hint" style="margin:0 0 var(--sp-3);">{{ 'Inserisci la descrizione di ogni documento. Puoi allegare il file per legarlo digitalmente alla marca; altrimenti il collegamento verrà generato automaticamente.'|trans }}</p>
+              <p class="hint" style="margin:0 0 var(--sp-3);">{{ 'Inserisci la descrizione di ogni documento. Se alleghi il file, la marca viene associata al suo contenuto tramite impronta digitale. Senza allegato (ad esempio per un modulo compilato online) la marca viene emessa con un identificativo univoco basato sulla descrizione.'|trans }}</p>
 
               <div id="documentiList">
                 {# Primo documento (sempre presente) #}
@@ -314,7 +314,7 @@
           <div class="card card-pad">
             <h3>{{ 'Collegamento digitale alla marca'|trans }}</h3>
             <p style="margin:0;font-size:14px;color:var(--fg-2);line-height:1.55;">
-              {{ 'Se alleghi il file, la marca da bollo viene legata digitalmente al documento. Altrimenti il collegamento viene generato automaticamente dalla descrizione.'|trans }}
+              {{ 'Se alleghi il file, la marca da bollo viene associata al suo contenuto tramite impronta digitale. Senza allegato viene emessa con un identificativo univoco basato sulla descrizione.'|trans }}
             </p>
           </div>
           <div class="card card-pad" style="background:var(--ms-warning-bg);border-color:rgba(166,99,0,.2);">
