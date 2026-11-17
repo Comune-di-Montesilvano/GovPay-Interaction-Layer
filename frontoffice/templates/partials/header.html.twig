@@ -12,22 +12,20 @@
       <span><span class="gov-dot"></span>{{ 'Sito ufficiale della Pubblica Amministrazione'|trans }}</span>
     </div>
     <div class="right">
-      <div class="lang-switch lang-switch-desktop">
-        <a href="?lang=it" class="{{ current_locale == 'it' ? 'active' : '' }}">IT</a>
-        <a href="?lang=en" class="{{ current_locale == 'en' ? 'active' : '' }}">EN</a>
-        <a href="?lang=fr" class="{{ current_locale == 'fr' ? 'active' : '' }}">FR</a>
-        <a href="?lang=es" class="{{ current_locale == 'es' ? 'active' : '' }}">ES</a>
-        <a href="?lang=de" class="{{ current_locale == 'de' ? 'active' : '' }}">DE</a>
-      </div>
-      <div class="lang-switch-mobile" style="display:none;">
-        <select class="lang-select-input" onchange="location = this.value;" aria-label="{{ 'Seleziona lingua'|trans }}">
-          <option value="?lang=it" {{ current_locale == 'it' ? 'selected' : '' }}>IT</option>
-          <option value="?lang=en" {{ current_locale == 'en' ? 'selected' : '' }}>EN</option>
-          <option value="?lang=fr" {{ current_locale == 'fr' ? 'selected' : '' }}>FR</option>
-          <option value="?lang=es" {{ current_locale == 'es' ? 'selected' : '' }}>ES</option>
-          <option value="?lang=de" {{ current_locale == 'de' ? 'selected' : '' }}>DE</option>
-        </select>
-      </div>
+      {% set fo_langs = {'it': 'Italiano', 'en': 'English', 'fr': 'Français', 'es': 'Español', 'de': 'Deutsch'} %}
+      {% set fo_cur_lang = current_locale in fo_langs|keys ? current_locale : 'it' %}
+      <details class="lang-menu">
+        <summary aria-label="{{ 'Seleziona lingua'|trans }}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+          <span>{{ fo_langs[fo_cur_lang] }}</span>
+          <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <ul class="lang-menu-list">
+          {% for code, label in fo_langs %}
+            <li><a href="?lang={{ code }}" lang="{{ code }}" hreflang="{{ code }}"{% if code == fo_cur_lang %} class="active" aria-current="true"{% endif %}>{{ label }}</a></li>
+          {% endfor %}
+        </ul>
+      </details>
     </div>
   </div>
 </div>
@@ -149,12 +147,21 @@
   text-decoration: none; font-weight: 500;
 }
 .fo-user-dropdown a:hover { background: var(--bg-2); }
-.lang-switch a { padding: 2px 6px; border-radius: 2px; text-decoration: none; color: rgba(255,255,255,.85); }
-.lang-switch a.active { background: rgba(255,255,255,.18); font-weight: 700; color: #fff; }
-.lang-switch a:hover { color: #fff; }
 </style>
 <script>
 (function(){
+  document.addEventListener('click', function (e) {
+    document.querySelectorAll('details.lang-menu[open]').forEach(function (d) {
+      if (!d.contains(e.target)) { d.removeAttribute('open'); }
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('details.lang-menu[open]').forEach(function (d) {
+        d.removeAttribute('open'); d.querySelector('summary').focus();
+      });
+    }
+  });
   var btn = document.getElementById('fo-user-btn');
   var menu = document.getElementById('fo-user-dropdown');
   if (btn && menu) {
