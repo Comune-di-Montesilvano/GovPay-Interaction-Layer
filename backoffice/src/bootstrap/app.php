@@ -90,6 +90,8 @@ return (function (): array {
     $twig->getEnvironment()->addGlobal('app_version_label', $versionInfo['version_label']);
     $twig->getEnvironment()->addGlobal('app_ref_url', $versionInfo['ref_url']);
     $twig->getEnvironment()->addGlobal('app_repo_url', \App\Config\Config::getRepositoryUrl());
+    // asset('/assets/x.css') -> URL con ?v=<build>: dopo un aggiornamento il browser ricarica CSS/JS.
+    $twig->getEnvironment()->addFunction(new \Twig\TwigFunction('asset', [\App\Config\Config::class, 'assetUrl']));
 
 
     $pendenzaStates = [
