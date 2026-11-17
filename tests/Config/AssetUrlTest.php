@@ -62,6 +62,16 @@ final class AssetUrlTest extends TestCase
         self::assertMatchesRegularExpression('#^/assets/x\.css\?a=1&v=[0-9a-f]{10}$#', Config::assetUrl('/assets/x.css?a=1'));
     }
 
+    public function testWithoutBuildInfoTraversalAndMissingFilesAreUntouched(): void
+    {
+        putenv('GIT_COMMIT_SHA');
+        putenv('GIL_BUILD_DATE');
+        putenv('GIL_IMAGE_TAG');
+
+        self::assertSame('/../composer.json', Config::assetUrl('/../composer.json'));
+        self::assertSame('/assets/missing-file.css', Config::assetUrl('/assets/missing-file.css'));
+    }
+
     public function testExternalUrlsAreUntouched(): void
     {
         putenv('GIT_COMMIT_SHA=abc123');

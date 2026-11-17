@@ -291,23 +291,41 @@ class Config
      * aggiornamento il browser scarica CSS/JS nuovi senza svuotare la cache a mano.
      * Senza metadati di build (sviluppo locale) si usa la data di modifica del file.
      */
-    public static function assetUrl(string $path, ?string $documentRoot = null): string
+    public static function assetUrl(string $path): string
     {
         if ($path === '' || preg_match('#^(https?:)?//#i', $path) === 1) {
             return $path;
         }
 
-        $token = self::assetToken();
-        if ($token === null) {
-            $root = $documentRoot ?? (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
-            $file = rtrim($root, '/\\') . '/' . ltrim((string) parse_url($path, PHP_URL_PATH), '/');
-            $token = ($root !== '' && is_file($file)) ? (string) filemtime($file) : null;
-        }
+        $token = self::assetToken() ?? self::assetMtime($path);
         if ($token === null || $token === '') {
             return $path;
         }
 
         return $path . (str_contains($path, '?') ? '&' : '?') . 'v=' . $token;
+    }
+
+    /**
+     * Data di modifica dell'asset sotto la document root fissa (public/ accanto ad app/),
+     * mai fuori da essa: nessun input da $_SERVER, path con ".." rifiutati.
+     */
+    private static function assetMtime(string $path): ?string
+    {
+        $relative = ltrim((string) parse_url($path, PHP_URL_PATH), '/');
+        if ($relative === '' || str_contains($relative, '..')) {
+            return null;
+        }
+        $root = realpath(dirname(__DIR__, 2) . '/public');
+        if ($root === false) {
+            return null;
+        }
+        $file = realpath($root . DIRECTORY_SEPARATOR . $relative);
+        if ($file === false || !str_starts_with($file, $root . DIRECTORY_SEPARATOR) || !is_file($file)) {
+            return null;
+        }
+        $mtime = filemtime($file);
+
+        return $mtime === false ? null : (string) $mtime;
     }
 
     /** Token da metadati di build, null se non disponibili (sviluppo). */
