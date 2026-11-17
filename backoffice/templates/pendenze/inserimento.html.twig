@@ -3,17 +3,7 @@
 {% block title %}Pendenze - Inserimento{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
-    <div>
-      <h1 class="h4 mb-1"><i class="fas fa-plus-circle me-2 text-primary"></i>Inserimento Nuova Pendenza</h1>
-      <p class="text-muted mb-0">Inserisci manualmente una nuova posizione debitoria singola nel sistema</p>
-    </div>
-    <div class="d-flex gap-2">
-      <a href="/pendenze/ricerca" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-arrow-left me-1"></i>Torna alla Ricerca
-      </a>
-    </div>
-  </div>
+  {% embed 'partials/page-header.html.twig' with {icon: 'fa-plus-circle', title: 'Nuova pendenza', subtitle: 'Inserisci manualmente una posizione debitoria singola', back_url: '/pendenze/ricerca', back_label: 'Torna alla ricerca'} %}{% endembed %}
 
   {% if errors is defined and errors %}
     <div class="alert alert-danger" role="alert">
@@ -38,41 +28,32 @@
     {% endif %}
 
     {# ID A2A: deve essere preso esclusivamente dalla variabile d'ambiente (mostrato nel body per mantenere header in cima alla card) #}
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-        <div class="lh-1">
-          <h2 class="h6 mb-0">Inserimento Nuova pendenza</h2>
-          <small class="text-muted" style="font-size: 0.75rem;">Compila i campi obbligatori</small>
-        </div>
-        
-        {% if not is_edit_mode and pendenza_templates is defined and pendenza_templates|length > 0 %}
-        <div class="d-flex align-items-center gap-2 flex-grow-1 justify-content-md-end" style="max-width: 500px;">
-          <label for="templateSelector" class="form-label mb-0 small text-nowrap fw-bold text-primary">
-            <i class="fas fa-magic me-1"></i> Template:
-          </label>
-          <select id="templateSelector" class="form-select form-select-sm border-primary">
-            <option value="">-- Seleziona per autocompilare --</option>
-            {% for t in pendenza_templates %}
-              <option value="{{ t.id }}" 
-                      data-tipo="{{ t.id_tipo_pendenza }}" 
-                      data-causale="{{ t.causale|e('html_attr') }}"
-                      data-importo="{{ t.importo }}"
-                      data-giorni-validita="{{ t.giorni_validita|default('') }}"
-                      data-giorni-scadenza="{{ t.giorni_scadenza|default('') }}">
-                {{ t.titolo }} ({{ t.importo|number_format(2, ',', '.') }} €)
-              </option>
-            {% endfor %}
-          </select>
-        </div>
-        {% endif %}
+    {% if not is_edit_mode and pendenza_templates is defined and pendenza_templates|length > 0 %}
+    <div class="card-header">
+      <div class="d-flex align-items-center gap-2">
+        <label for="templateSelector" class="mb-0 text-nowrap"><i class="fas fa-magic me-1 text-primary" aria-hidden="true"></i>Parti da un modello</label>
+        <select id="templateSelector" class="form-select" style="max-width:420px">
+          <option value="">-- Seleziona per compilare in automatico --</option>
+          {% for t in pendenza_templates %}
+            <option value="{{ t.id }}"
+                    data-tipo="{{ t.id_tipo_pendenza }}"
+                    data-causale="{{ t.causale|e('html_attr') }}"
+                    data-importo="{{ t.importo }}"
+                    data-giorni-validita="{{ t.giorni_validita|default('') }}"
+                    data-giorni-scadenza="{{ t.giorni_scadenza|default('') }}">
+              {{ t.titolo }} ({{ t.importo|number_format(2, ',', '.') }} €)
+            </option>
+          {% endfor %}
+        </select>
       </div>
     </div>
+    {% endif %}
     <div class="card-body">
-      <div class="mb-3">
-        {% if not id_a2a %}
+      {% if not id_a2a %}
+        <div class="mb-3">
           <div class="alert alert-warning small mb-0">Variabile di ambiente <code>ID_A2A</code> non impostata: imposta <code>ID_A2A</code> in <code>.env</code> prima di creare pendenze.</div>
-        {% endif %}
-      </div>
+        </div>
+      {% endif %}
       {% include 'pendenze/_form_pendenza.html.twig' with {
         old: old,
         tipologie_pendenze: tipologie_pendenze,
@@ -81,7 +62,7 @@
         is_edit: false
       } %}
 
-      <div class="d-flex gap-2 mt-4">
+      <div class="bo-filter-actions">
         <button type="submit" formaction="/pendenze/preview" formmethod="post" class="btn btn-primary">Anteprima</button>
         <a class="btn btn-outline-secondary" href="/pendenze/ricerca">Annulla</a>
         <button type="button" class="btn btn-link ms-auto" data-bs-toggle="collapse" data-bs-target="#apiExtra" aria-expanded="false">Mostra campi avanzati</button>

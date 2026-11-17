@@ -10,7 +10,7 @@
 {% set can_change_tipologia = can_change_tipologia|default(true) %}
 
 {# ── Sezione 1: Dati Principali ────────────────────────────── #}
-<h6 class="text-primary border-bottom pb-2 mb-3"><i class="fas fa-file-invoice me-1"></i> Dati Principali</h6>
+<h2 class="bo-form-section"><i class="fas fa-file-invoice" aria-hidden="true"></i>Dati principali</h2>
 <div class="row pt-3">
   <div class="form-group col-md-6">
     <div class="select-wrapper">
@@ -92,7 +92,7 @@
 </div>
 
 {# ── Sezione 2: Soggetto Pagatore ──────────────────────────── #}
-<h6 class="text-primary border-bottom pb-2 mb-3 mt-4"><i class="fas fa-user-circle me-1"></i> Soggetto Pagatore</h6>
+<h2 class="bo-form-section"><i class="fas fa-user-circle" aria-hidden="true"></i>Soggetto pagatore</h2>
 <div class="row g-3 align-items-end pt-2">
   <div class="form-group col-12">
     <div class="form-check form-check-inline">
@@ -290,18 +290,16 @@
 </script>
 
 {# ── Sezione 3: Voci di pendenza ───────────────────────────── #}
-<div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3 mt-4">
-  <h6 class="text-primary mb-0"><i class="fas fa-list-ul me-1"></i> Voci di pendenza</h6>
-  <p class="text-muted small mb-2">
+<h2 class="bo-form-section"><i class="fas fa-list-ul" aria-hidden="true"></i>Voci di pendenza</h2>
+<p class="form-text mb-3" style="margin-top:-.5rem">
   {% if can_remove_voci %}
     Il sistema crea sempre una voce principale (ID 1) che resta obbligatoria; puoi aggiungere o eliminare tutte le altre.
   {% else %}
     Il sistema crea sempre una voce principale (ID 1) che resta obbligatoria; in modifica puoi aggiungere nuove voci ma non eliminarne di esistenti.
   {% endif %}
 </p>
-</div>
 
-<div id="vociList" class="row pt-3">
+<div id="vociList">
   {% set existingVoci = old.voci|default([]) %}
   {% if existingVoci is iterable and existingVoci|length > 0 %}
     {% for idx, voce in existingVoci %}
@@ -373,8 +371,8 @@
   or (old.divisione|default('') != '')
   or (old.cartellaPagamento|default('') != '') %}
 {% set advanced_open = (not is_edit_mode) and advanced_has_values %}
-<h6 class="text-primary border-bottom pb-2 mb-3 mt-4"><i class="fas fa-cogs me-1"></i> Campi avanzati</h6>
 <div class="collapse {{ advanced_open ? 'show' : '' }}" id="apiExtra">
+  <h2 class="bo-form-section"><i class="fas fa-cogs" aria-hidden="true"></i>Campi avanzati</h2>
   <div class="row g-3">
     <div class="form-group col-md-4">
       <label for="ibanAccredito" class="active">IBAN accredito (opzionale)</label>

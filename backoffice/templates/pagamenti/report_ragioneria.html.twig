@@ -3,7 +3,7 @@
 {% block title %}Report Ragioneria{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
     <div>
       <h1 class="h4 mb-1"><i class="fas fa-file-invoice-dollar me-2 text-primary"></i>Report Ragioneria</h1>
       <p class="text-muted mb-0">Incassi reali da flussi di rendicontazione pagoPA, per tipologia e data flusso</p>
@@ -35,15 +35,6 @@
   {# ── Filtri ──────────────────────────────────────────────────────────── #}
   <form method="get" action="/pagamenti/report-ragioneria" class="card shadow-sm mb-4" id="reportRagioneriaForm">
     <input type="hidden" name="q" value="1">
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-        <div class="d-flex align-items-center gap-2">
-          <h2 class="h6 mb-0">Filtri</h2>
-          <span class="text-muted small d-none d-md-inline">| Il periodo si riferisce alla <strong>data flusso</strong> (data emissione flusso bancario)</span>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm" id="reportRagioneriaSubmit">Aggiorna</button>
-      </div>
-    </div>
     <div class="card-body">
       <div id="reportRagioneriaLoading" class="alert alert-info d-none" role="status" aria-live="polite">
         <div class="d-flex align-items-center gap-2 mb-2">
@@ -55,71 +46,55 @@
         </div>
       </div>
       <div class="row g-3">
-        <div class="col-md-5">
-          <label for="dataDaVis" class="form-label">Intervallo data flusso</label>
-          <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="dataDaVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="Da" autocomplete="off">
-            <span class="text-muted small">-</span>
-            <input type="text" id="dataAVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="A" autocomplete="off">
-          </div>
-          <div class="bo-datepicker-quick-selects">
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
-          </div>
-          <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
-          <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="rr_cf" class="form-label small mb-1">Codice fiscale / P.IVA</label>
+          <input type="text" id="rr_cf" name="cf" class="form-control" value="{{ f.cf|default('') }}" placeholder="Cerca per CF...">
         </div>
-        <div class="col-md-7">
-          <label for="tassonomie" class="form-label">Tipologie (lascia vuoto = tutte)</label>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="rr_ana" class="form-label small mb-1">Anagrafica</label>
+          <input type="text" id="rr_ana" name="anagrafica" class="form-control" value="{{ f.anagrafica|default('') }}" placeholder="Nome o ragione sociale...">
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="rr_iuv" class="form-label small mb-1">IUV</label>
+          <input type="text" id="rr_iuv" name="iuv" class="form-control" value="{{ f.iuv|default('') }}" placeholder="IUV (parziale)...">
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="rr_orig" class="form-label small mb-1">Origine</label>
+          <select id="rr_orig" name="origine" class="form-select">
+            <option value="" {% if f.origine|default('') == '' %}selected{% endif %}>Tutte</option>
+            <option value="interne" {% if f.origine|default('') == 'interne' %}selected{% endif %}>Solo interne (GovPay)</option>
+            <option value="esterne" {% if f.origine|default('') == 'esterne' %}selected{% endif %}>Solo esterne</option>
+          </select>
+        </div>
+        <div class="col-12 col-lg-6">
+          {% include 'partials/date-range.html.twig' with {label: 'Intervallo data flusso', value_da: f.dataDa|default(''), value_a: f.dataA|default('')} only %}
+        </div>
+        <div class="col-12 col-lg-6">
+          <label for="tassonomie" class="form-label small mb-1">Tipologie <span class="text-muted fw-normal">(vuoto = tutte)</span></label>
           <select class="form-select" id="tassonomie" name="tassonomie[]" multiple aria-label="Seleziona tassonomie">
             {% for tipo in tipologie_censite|default([]) %}
               {% set tid = tipo.id_entrata|default('') %}
               <option value="{{ tid }}" {% if tid in (f.tassonomie|default([])) %}selected{% endif %}>{{ tipo.descrizione|default(tid) }}</option>
             {% endfor %}
           </select>
-          <div class="form-text">Ricerca e selezione multipla.</div>
         </div>
       </div>
 
-      <div class="row g-2 mt-2">
-        <div class="col-md-4">
-          <label for="rr_cf" class="form-label form-label-sm">Codice fiscale / P.IVA</label>
-          <input type="text" id="rr_cf" name="cf" class="form-control form-control-sm" value="{{ f.cf|default('') }}" placeholder="Cerca per CF...">
-        </div>
-        <div class="col-md-4">
-          <label for="rr_ana" class="form-label form-label-sm">Anagrafica</label>
-          <input type="text" id="rr_ana" name="anagrafica" class="form-control form-control-sm" value="{{ f.anagrafica|default('') }}" placeholder="Nome o ragione sociale...">
-        </div>
-        <div class="col-md-2">
-          <label for="rr_orig" class="form-label form-label-sm">Origine</label>
-          <select id="rr_orig" name="origine" class="form-select form-select-sm">
-            <option value="" {% if f.origine|default('') == '' %}selected{% endif %}>Tutte</option>
-            <option value="interne" {% if f.origine|default('') == 'interne' %}selected{% endif %}>Solo interne (GovPay)</option>
-            <option value="esterne" {% if f.origine|default('') == 'esterne' %}selected{% endif %}>Solo esterne</option>
-          </select>
-        </div>
-        <div class="col-md-2">
-          <label for="rr_iuv" class="form-label form-label-sm">IUV</label>
-          <input type="text" id="rr_iuv" name="iuv" class="form-control form-control-sm" value="{{ f.iuv|default('') }}" placeholder="IUV (parziale)...">
-        </div>
+      <div class="bo-filter-actions">
+        <button type="submit" class="btn btn-primary" id="reportRagioneriaSubmit" title="Il periodo si riferisce alla data flusso (data emissione flusso bancario)">
+          <i class="fas fa-sync me-1" aria-hidden="true"></i> Aggiorna
+        </button>
+        <button class="btn btn-link px-1" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersRagioneria" aria-expanded="false" aria-controls="advancedFiltersRagioneria">
+          <i class="fas fa-sliders-h me-1" aria-hidden="true"></i> Filtri avanzati
+        </button>
+        <span class="small text-muted ms-auto">Periodo = data flusso (emissione flusso bancario)</span>
       </div>
 
-      <div class="row g-3 mt-2">
-        <div class="col-12">
-          <button class="btn btn-link px-0" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersRagioneria" aria-expanded="false" aria-controls="advancedFiltersRagioneria">
-            Filtri avanzati
-          </button>
-        </div>
-      </div>
-
-      <div class="collapse mt-2" id="advancedFiltersRagioneria">
+      <div class="collapse mt-3" id="advancedFiltersRagioneria">
         <fieldset class="row g-3">
           <legend class="visually-hidden">Filtri avanzati report ragioneria</legend>
-          <div class="col-md-3">
-            <label for="idDominio" class="form-label">ID Dominio</label>
+          <div class="col-12 col-sm-6 col-xl-3">
+            <label for="idDominio" class="form-label small mb-1">ID Dominio</label>
             <input type="text" class="form-control" id="idDominio" name="idDominio" value="{{ f.idDominio|default('') }}" placeholder="(opzionale)">
           </div>
         </fieldset>
@@ -131,7 +106,7 @@
     {# ── Stato Elaborazione & Scansione Pendenze Esterne (Biz) ────────────────────────── #}
     {% set biz = biz_counts|default({'PENDING': 0, 'PROCESSED': 0, 'ERROR': 0, 'SKIPPED': 0, 'total': 0}) %}
     <div class="card shadow-sm mb-4 border-danger-subtle">
-      <div class="card-header bg-danger bg-opacity-10 border-bottom py-2">
+      <div class="card-header">
         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <div class="d-flex align-items-center gap-2">
             <h2 class="h6 mb-0 text-danger-emphasis"><i class="fas fa-tasks me-1"></i> Stato pendenze esterne (Biz)</h2>
@@ -263,7 +238,7 @@
     {% set gpd = govpay_debitore|default({'total': 0, 'scansionate': 0, 'da_scansionare': 0}) %}
     {% if gpd.total > 0 %}
     <div class="card shadow-sm mb-4 border-primary-subtle">
-      <div class="card-header bg-primary bg-opacity-10 border-bottom py-2">
+      <div class="card-header">
         <h2 class="h6 mb-0 text-primary-emphasis"><i class="fas fa-user-check me-1"></i> Stato debitore pendenze interne (GovPay)</h2>
       </div>
       <div class="card-body py-3">
@@ -346,8 +321,8 @@
 
     {# ── Riepilogo per tipologia ───────────────────────────────────────── #}
     {% if by_tipologia is defined and by_tipologia %}
-      <h3 class="h6 mb-2">Riepilogo per tipologia</h3>
       <div class="card shadow-sm mb-4">
+        <div class="card-header"><h3 class="h6 mb-0">Riepilogo per tipologia</h3></div>
         <div class="table-responsive">
           <table id="tableTipologia" class="table table-sm align-middle mb-0">
             <thead class="table-light">
@@ -374,8 +349,8 @@
     {% endif %}
 
     {# ── Dettaglio righe ──────────────────────────────────────────────── #}
-    <h3 class="h6 mb-2">Dettaglio rendicontazioni</h3>
     <div class="card shadow-sm mb-4">
+      <div class="card-header"><h3 class="h6 mb-0">Dettaglio rendicontazioni</h3></div>
       <div class="table-responsive">
         <table class="table table-striped align-middle mb-0 small">
           <thead>
@@ -394,8 +369,8 @@
           <tbody>
             {% for row in rows %}
               <tr>
-                <td>{{ row.data_flusso|default('')|slice(0, 10) }}</td>
-                <td>{{ row.data_regolamento|default('')|slice(0, 10) }}</td>
+                <td class="text-nowrap">{{ row.data_flusso ? row.data_flusso|date('d/m/Y') : '' }}</td>
+                <td class="text-nowrap">{{ row.data_regolamento ? row.data_regolamento|date('d/m/Y') : '' }}</td>
                 <td>{{ row.tassonomia_label|default(row.tassonomia|default('N/D')) }}</td>
                 <td class="text-nowrap">{{ row.iuv|default('') }}</td>
                 <td>{{ row.iur|default('') }}</td>
@@ -461,7 +436,7 @@
   {# ── Debug ────────────────────────────────────────────────────────────── #}
   {% if app_debug and meta %}
     <div class="card shadow-sm mb-4 border-warning">
-      <div class="card-header bg-warning bg-opacity-10 py-2">
+      <div class="card-header">
         <span class="badge bg-warning text-dark me-2">Debug</span>Metadati chiamata
       </div>
       <div class="card-body small">
@@ -476,7 +451,7 @@
 
   {% if app_debug %}
     <div class="card shadow-sm mb-4 border-warning">
-      <div class="card-header bg-warning bg-opacity-10 py-2 d-flex align-items-center gap-2">
+      <div class="card-header d-flex align-items-center gap-2">
         <span class="badge bg-warning text-dark">Debug</span>
         <span>Raw payload API</span>
         <button class="btn btn-sm btn-outline-secondary ms-auto" type="button"

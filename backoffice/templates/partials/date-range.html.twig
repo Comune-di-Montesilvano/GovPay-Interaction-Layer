@@ -1,0 +1,32 @@
+{#
+  Intervallo date compatto: Da – A + select "Periodo…" (niente pulsanti rapidi a parte).
+  Parametri (tutti opzionali):
+    label        etichetta (default "Intervallo date"); false = nessuna etichetta
+    vis_da/vis_a id input visibili (default dataDaVis/dataAVis)
+    hid_da/hid_a id input hidden (default dataDa/dataA)
+    name_da/name_a name inviati (default dataDa/dataA)
+    value_da/value_a valori ISO (YYYY-MM-DD)
+  Il picker va inizializzato dalla pagina con window.initBackofficeDatePicker(...).
+#}
+{% set _vda = vis_da|default('dataDaVis') %}
+{% set _va = vis_a|default('dataAVis') %}
+{% if label is not defined or label is not same as(false) %}
+  <label for="{{ _vda }}" class="form-label small mb-1">{{ label|default('Intervallo date') }}</label>
+{% endif %}
+<div class="d-flex gap-1 align-items-center bo-date-range">
+  <input type="text" id="{{ _vda }}" class="form-control bo-cursor-pointer" placeholder="Da" autocomplete="off">
+  <span class="text-muted small">–</span>
+  <input type="text" id="{{ _va }}" class="form-control bo-cursor-pointer" placeholder="A" autocomplete="off">
+  {# Select nativo (niente dropdown Bootstrap nel backoffice); senza name: non viene inviato. #}
+  <select class="form-select" aria-label="Periodo rapido"
+          onchange="if(this.value && typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange(this.value); this.selectedIndex=0;">
+    <option value="">Periodo…</option>
+    <option value="thisMonth">Mese corrente</option>
+    <option value="lastMonth">Mese precedente</option>
+    <option value="thisYear">Anno corrente</option>
+    <option value="lastYear">Anno precedente</option>
+    <option value="clear">Azzera date</option>
+  </select>
+</div>
+<input type="hidden" id="{{ hid_da|default('dataDa') }}" name="{{ name_da|default('dataDa') }}" value="{{ value_da|default('') }}">
+<input type="hidden" id="{{ hid_a|default('dataA') }}" name="{{ name_a|default('dataA') }}" value="{{ value_a|default('') }}">

@@ -7,9 +7,9 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
       {# ─── Dati ente ────────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-building me-1"></i>Dati ente
-      </h6>
+      <h2 class="bo-form-section">
+        <i class="fas fa-building"></i>Dati ente
+      </h2>
       <div class="row g-3 mb-4">
         <div class="col-md-4">
           <label class="form-label">Codice IPA</label>
@@ -66,9 +66,9 @@
     {# ─── Immagini ─────────────────────────────────────────────────────────── #}
     {% if is_superadmin %}
     <hr>
-    <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-      <i class="fas fa-image me-1"></i>Logo e Favicon
-    </h6>
+    <h2 class="bo-form-section">
+      <i class="fas fa-image"></i>Logo e Favicon
+    </h2>
     <div class="row g-4">
       {# Logo / stemma #}
       <div class="col-md-6">

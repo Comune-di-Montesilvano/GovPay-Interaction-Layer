@@ -13,9 +13,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h4 mb-0"><i class="fas fa-building-columns me-2 text-primary"></i>Report TEFA</h1>
-</div>
+{% embed 'partials/page-header.html.twig' with {icon: 'fa-building-columns', title: 'Report TEFA', subtitle: 'Classificazione TEFA dei pagamenti esterni e riparto per Comune'} %}{% endembed %}
 
 {% set is_admin = current_user.role in ['admin', 'superadmin'] %}
 
@@ -234,36 +232,15 @@
   <div class="card-body">
     <form method="GET" action="/pagamenti/report-tefa" class="mb-3">
       <input type="hidden" name="q" value="1">
-      <div class="row g-2 align-items-center">
-        <!-- Date fields column -->
-        <div class="col-12 col-md-auto">
-          <label class="form-label small fw-semibold mb-1">Intervallo date</label>
-          <div class="d-flex gap-1 align-items-center" style="max-width: 290px;">
-            <input type="text" id="rDaVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="Da" autocomplete="off" style="width: 130px;">
-            <span class="text-muted small">–</span>
-            <input type="text" id="rAVis"  class="form-control form-control-sm bo-cursor-pointer" placeholder="A"  autocomplete="off" style="width: 130px;">
-          </div>
-          <input type="hidden" id="rDa" name="dataDa" value="{{ filters.dataDa }}">
-          <input type="hidden" id="rA"  name="dataA"  value="{{ filters.dataA }}">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-lg-6">
+          {% include 'partials/date-range.html.twig' with {vis_da: 'rDaVis', vis_a: 'rAVis', hid_da: 'rDa', hid_a: 'rA', value_da: filters.dataDa|default(''), value_a: filters.dataA|default('')} only %}
         </div>
-        
-        <!-- Quick selectors column -->
-        <div class="col-12 col-md flex-grow-1 align-self-end mt-2 mt-md-0">
-          <div class="bo-datepicker-quick-selects m-0" style="display: flex; gap: 4px; flex-wrap: wrap;">
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
-          </div>
-        </div>
-        
-        <!-- Action buttons column -->
-        <div class="col-12 col-md-auto align-self-end d-flex gap-2 mt-2 mt-md-0">
-          <button type="submit" class="btn btn-primary btn-sm px-3"><i class="fas fa-search me-1"></i>Cerca</button>
+        <div class="col-12 col-lg-auto d-flex gap-2">
+          <button type="submit" class="btn btn-primary"><i class="fas fa-search me-1" aria-hidden="true"></i> Cerca</button>
           {% if query_made and report_rows|length > 0 %}
           <a href="/pagamenti/report-tefa?q=1&dataDa={{ filters.dataDa }}&dataA={{ filters.dataA }}&export=csv"
-             class="btn btn-sm btn-outline-secondary px-3"><i class="fas fa-file-csv me-1"></i>CSV</a>
+             class="btn btn-outline-secondary"><i class="fas fa-file-csv me-1" aria-hidden="true"></i> CSV</a>
           {% endif %}
         </div>
       </div>

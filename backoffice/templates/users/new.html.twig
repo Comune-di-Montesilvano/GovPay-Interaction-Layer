@@ -1,7 +1,8 @@
 {% extends 'base.html.twig' %}
+{% block title %}Nuovo utente - GovPay{% endblock %}
 {% block content %}
 <div class="bo-form-shell bo-form-shell-md">
-  <h1 class="h4 mb-3">Nuovo utente</h1>
+  {% embed 'partials/page-header.html.twig' with {icon: 'fa-user-plus', title: 'Nuovo utente', back_url: '/impostazioni?tab=utenti', back_label: 'Torna agli utenti'} %}{% endembed %}
   {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
   <form method="post" action="/users/new" autocomplete="off">
     {# Hidden dummy fields to discourage browser autofill #}

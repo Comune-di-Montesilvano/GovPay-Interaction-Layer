@@ -566,7 +566,7 @@
           stats.recent_flussi.forEach(flusso => {
             const isGovpayBadge = flusso.is_govpay == 1 
               ? '<span class="badge bg-primary">Flussi Interni</span>' 
-              : '<span class="badge" style="background-color: var(--ms-purple-600); color: #fff;">Flussi Esterni</span>';
+              : '<span class="badge" style="background:#f5f3ff;color:#5b21b6;border:1px solid #ddd6fe;">Flussi Esterni</span>';
             const idFlusso = flusso.id_flusso || '';
             const escapedIdFlusso = encodeURIComponent(idFlusso);
             const slicedIdFlusso = idFlusso.length > 30 ? idFlusso.slice(0, 30) + '...' : idFlusso;

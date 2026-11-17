@@ -3,7 +3,7 @@
 {% block title %}Report Incassi per Tassonomia{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
     <div>
       <h1 class="h4 mb-1"><i class="fas fa-folder-open me-2 text-primary"></i>Report Incassi per Tassonomia</h1>
       <p class="text-muted mb-0">Pagamenti riscossi nel periodo selezionato, aggregati per tassonomia pagoPA</p>
@@ -26,59 +26,36 @@
   {% set f = filters ?? {} %}
   <form method="get" action="/pagamenti/incassi-tassonomia" class="card shadow-sm mb-4" id="incassiTassonomiaForm">
     <input type="hidden" name="q" value="1">
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-        <div class="d-flex align-items-center gap-2">
-          <h2 class="h6 mb-0">Filtri</h2>
-          <span class="text-muted small d-none d-md-inline">| Filtra per finestra di incasso e tassonomia</span>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm" id="incassiTassonomiaSubmit">Aggiorna</button>
-      </div>
-    </div>
     <div class="card-body">
       <div class="row g-3">
-        <div class="col-md-5">
-          <label for="dataDaVis" class="form-label">Intervallo date incasso</label>
-          <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="dataDaVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="Da" autocomplete="off">
-            <span class="text-muted small">-</span>
-            <input type="text" id="dataAVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="A" autocomplete="off">
-          </div>
-          <div class="bo-datepicker-quick-selects">
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
-          </div>
-          <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
-          <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        <div class="col-12 col-lg-6">
+          {% include 'partials/date-range.html.twig' with {label: 'Intervallo date incasso', value_da: f.dataDa|default(''), value_a: f.dataA|default('')} only %}
         </div>
-        <div class="col-md-7">
-          <label for="tassonomie" class="form-label">Tipologie (tipologie censite)</label>
+        <div class="col-12 col-lg-6">
+          <label for="tassonomie" class="form-label small mb-1">Tipologie <span class="text-muted fw-normal">(vuoto = tutte)</span></label>
           <select class="form-select" id="tassonomie" name="tassonomie[]" multiple aria-label="Seleziona tassonomie">
             {% for tipo in tipologie_censite|default([]) %}
               {% set tid = tipo.id_entrata|default('') %}
               <option value="{{ tid }}" {% if tid in (f.tassonomie|default([])) %}selected{% endif %}>{{ tipo.descrizione|default(tid) }}</option>
             {% endfor %}
           </select>
-          <div class="form-text">Ricerca e selezione multipla.</div>
         </div>
       </div>
 
-      <div class="row g-3 mt-2">
-        <div class="col-12">
-          <button class="btn btn-link px-0" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersIncassi" aria-expanded="false" aria-controls="advancedFiltersIncassi">
-            Filtri avanzati
-          </button>
-        </div>
+      <div class="bo-filter-actions">
+        <button type="submit" class="btn btn-primary" id="incassiTassonomiaSubmit" title="Pagamenti riscossi nel periodo, per tassonomia">
+          <i class="fas fa-sync me-1" aria-hidden="true"></i> Aggiorna
+        </button>
+        <button class="btn btn-link px-1" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersIncassi" aria-expanded="false" aria-controls="advancedFiltersIncassi">
+          <i class="fas fa-sliders-h me-1" aria-hidden="true"></i> Filtri avanzati
+        </button>
       </div>
 
-      <div class="collapse mt-2" id="advancedFiltersIncassi">
+      <div class="collapse mt-3" id="advancedFiltersIncassi">
         <fieldset class="row g-3">
           <legend class="visually-hidden">Filtri avanzati report incassi</legend>
-          <div class="col-md-3">
-            <label for="idDominio" class="form-label">ID Dominio</label>
+          <div class="col-12 col-sm-6 col-xl-3">
+            <label for="idDominio" class="form-label small mb-1">ID Dominio</label>
             <input type="text" class="form-control" id="idDominio" name="idDominio" value="{{ f.idDominio|default('') }}" placeholder="(opzionale)">
           </div>
         </fieldset>

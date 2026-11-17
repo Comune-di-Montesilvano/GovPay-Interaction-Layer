@@ -1,7 +1,16 @@
 {% extends 'base.html.twig' %}
+{% block title %}Smarcatura pagamenti - GovPay{% endblock %}
 {% block content %}
-<div class="container-fluid py-4">
-  <h1 class="h4 mb-3"><i class="fas fa-scale-balanced me-2"></i>Rendicontazione — Da confermare</h1>
+<div>
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+    <div>
+      <h1 class="h4 mb-1"><i class="fas fa-scale-balanced me-2 text-primary"></i>Smarcatura pagamenti</h1>
+      <p class="text-muted mb-0">Pagamenti GovPay da confermare a mano prima di segnarli come gestiti</p>
+    </div>
+    {% if current_user is defined and current_user and current_user.role == 'superadmin' %}
+      <a href="/rendicontazione/errori" class="btn btn-outline-secondary btn-sm"><i class="fas fa-triangle-exclamation me-1" aria-hidden="true"></i>Errori smarcatura</a>
+    {% endif %}
+  </div>
 
   {% for f in flash %}
     <div class="alert alert-{{ f.type == 'error' ? 'danger' : f.type }}">{{ f.text }}</div>

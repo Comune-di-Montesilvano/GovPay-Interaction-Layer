@@ -3,17 +3,7 @@
 {% block title %}Pendenze - Modifica{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
-    <div>
-      <h1 class="h4 mb-1"><i class="fas fa-edit me-2 text-primary"></i>Modifica Pendenza</h1>
-      <p class="text-muted mb-0">Aggiorna i dettagli della posizione debitoria <strong>{{ idPendenza }}</strong></p>
-    </div>
-    <div class="d-flex gap-2">
-      <a href="{{ return_url }}" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-arrow-left me-1"></i>Torna indietro
-      </a>
-    </div>
-  </div>
+  {% embed 'partials/page-header.html.twig' with {icon: 'fa-edit', title: 'Modifica pendenza ' ~ idPendenza, back_url: return_url, back_label: 'Torna indietro'} %}{% endembed %}
 
   {% if errors is defined and errors %}
     <div class="alert alert-danger" role="alert">
@@ -36,12 +26,6 @@
     {% if id_dominio is defined and id_dominio %}
       <input type="hidden" name="idDominio" value="{{ id_dominio }}">
     {% endif %}
-    <div class="card-header bg-light border-bottom py-3">
-      <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-1">
-        <h2 class="h5 mb-0">Modifica pendenza <span class="text-muted">{{ idPendenza }}</span></h2>
-        <p class="mb-0 text-muted small">Aggiorna i campi della pendenza</p>
-      </div>
-    </div>
     <div class="card-body">
       <div class="mb-3">
         {% if not id_a2a %}
@@ -49,7 +33,7 @@
         {% endif %}
       </div>
       {% include 'pendenze/_form_pendenza.html.twig' with { old: old, tipologie_pendenze: tipologie_pendenze, default_anno: default_anno, is_edit: true, can_change_tipologia: can_change_tipologia|default(false) } %}
-      <div class="d-flex gap-2 mt-4">
+      <div class="bo-filter-actions">
         <button type="submit" class="btn btn-primary">Aggiorna pendenza</button>
         <a class="btn btn-outline-secondary" href="{{ return_url }}">Annulla</a>
         <button type="button" class="btn btn-link ms-auto" data-bs-toggle="collapse" data-bs-target="#apiExtra" aria-expanded="false">Mostra campi avanzati</button>

@@ -123,6 +123,48 @@ body.bo-shell {
   padding: 10px 8px;
   overflow: auto;
   flex: 1 1 auto;
+  /* Barra di scorrimento nascosta: con i gruppi a fisarmonica il menu di norma ci sta;
+     su schermi molto bassi scorre comunque (rotella/touch). */
+  scrollbar-width: none;
+}
+
+.bo-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* Gruppi a fisarmonica (Pendenze, Ragioneria): <button> con reset locale. */
+.bo-nav-group-toggle {
+  width: 100%;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bo-nav-item .bo-nav-chevron {
+  width: auto;
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+
+.bo-nav-group.is-open .bo-nav-chevron {
+  transform: rotate(90deg);
+}
+
+.bo-nav-group-items {
+  display: none;
+}
+
+.bo-nav-group.is-open .bo-nav-group-items {
+  display: block;
+}
+
+body.bo-sidebar-collapsed .bo-nav-item .bo-nav-chevron {
+  display: none;
 }
 
 .bo-nav-section-title {
@@ -181,6 +223,76 @@ body.bo-shell {
   background: var(--bo-sidebar-active);
   border-left-color: var(--bo-sidebar-accent);
   color: #fff;
+}
+
+/* Comprimi/espandi menu (desktop): icona a destra di "Operativo". Reset esplicito: <button> fuori da .btn. */
+.bo-nav-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bo-sidebar-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--bo-radius-sm);
+  background: transparent;
+  color: var(--bo-sidebar-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bo-sidebar-collapse:hover,
+.bo-sidebar-collapse:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bo-sidebar-collapse i {
+  transition: transform 0.2s ease;
+}
+
+/* Compresso: la riga resta (senza testo) e l'icona diventa la prima voce, alta come le altre. */
+body.bo-sidebar-collapsed .bo-nav-section-title.bo-nav-section-head {
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  margin-bottom: 3px;
+}
+
+body.bo-sidebar-collapsed .bo-nav-section-head span {
+  display: none;
+}
+
+body.bo-sidebar-collapsed .bo-sidebar-collapse {
+  width: 100%;
+  height: 34px;
+  margin: 0;
+  font-size: 14px;
+}
+
+body.bo-sidebar-collapsed .bo-sidebar-collapse i {
+  transform: rotate(180deg);
+}
+
+/* Hamburger in topbar solo su mobile; su desktop si usa .bo-sidebar-collapse. */
+@media (min-width: 992px) {
+  .bo-topbar-menu-btn {
+    display: none !important;
+  }
+}
+
+@media (max-width: 991px) {
+  .bo-sidebar-collapse {
+    display: none;
+  }
 }
 
 .bo-sidebar-meta {
@@ -1249,7 +1361,8 @@ body.bo-sidebar-collapsed .bo-sidebar-meta span:not(.bo-sidebar-status-dot) {
 }
 
 body.bo-sidebar-collapsed .bo-nav-item {
-  justify-content: center;
+  /* !important: batte .justify-content-between (!important in no-bootstrap-compat.css) su "Rendicontazione GovPay". */
+  justify-content: center !important;
   padding-left: 0;
   padding-right: 0;
 }
@@ -1372,9 +1485,18 @@ body.bo-sidebar-collapsed .bo-topbar {
   justify-content: space-between !important;
 }
 
-/* Titles: left-aligned, inline, compact margin */
+/* Titles: left-aligned, inline, compact margin. Testo nudo nell'header = stesso stile dei titoli. */
+.card-header {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--bo-ink-1);
+}
+
 .card-header h2,
 .card-header h3,
+.card-header h4,
+.card-header h5,
+.card-header .h5,
 .card-header .h6 {
   margin: 0 !important;
   padding: 0 !important;
@@ -1912,3 +2034,77 @@ pre#daemon-log-output {
   margin: 0 !important;
 }
 
+
+/* Intervallo date compatto (partials/date-range.html.twig). no-bootstrap-compat.css forza
+   width:100% !important su input/select: qui larghezze esplicite con specificita' maggiore. */
+.bo-date-range > input { flex: 1 1 0; width: auto !important; min-width: 0; }
+.bo-date-range > select { flex: 0 0 auto; width: auto !important; }
+
+/* Riga azioni dei filtri (Cerca / Azzera / Filtri avanzati … Ordina per). */
+.bo-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--bo-border); }
+.bo-filter-actions .bo-filter-sort { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
+.bo-filter-actions .bo-filter-sort select { width: auto !important; max-width: 280px; }
+
+/* Campi in riga (date + pulsante) senza stirarsi a tutta larghezza (compat forza width:100% !important). */
+.bo-inline-fields > input { flex: 0 1 180px; width: auto !important; min-width: 0; }
+
+/* Badge di stato uniformi: nei contenuti i .badge.bg-* (pieni) prendono lo stesso stile pastello
+   dei .text-bg-* (bordo + testo scuro). Sidebar/topbar escluse (contatori a contrasto pieno). */
+.bo-content-inner .badge.bg-primary   { background: #eff6ff !important; color: #1e40af !important; border: 1px solid #bfdbfe !important; }
+.bo-content-inner .badge.bg-secondary { background: #f3f4f6 !important; color: #4b5563 !important; border: 1px solid #d1d5db !important; }
+.bo-content-inner .badge.bg-success   { background: #ecfdf5 !important; color: #065f46 !important; border: 1px solid #a7f3d0 !important; }
+.bo-content-inner .badge.bg-info      { background: #ecfeff !important; color: #155e75 !important; border: 1px solid #a5f3fc !important; }
+.bo-content-inner .badge.bg-warning   { background: #fffbeb !important; color: #92400e !important; border: 1px solid #fde68a !important; }
+.bo-content-inner .badge.bg-danger    { background: #fef2f2 !important; color: #991b1b !important; border: 1px solid #fecaca !important; }
+.bo-content-inner .badge.bg-dark      { background: #e5e7eb !important; color: #1f2937 !important; border: 1px solid #9ca3af !important; }
+
+/* Titolo di sezione nei moduli (Dati principali, Soggetto pagatore, ...). */
+.bo-form-section {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--bo-ink-1);
+  margin: 1.75rem 0 .75rem;
+  padding-bottom: .5rem;
+  border-bottom: 1px solid var(--bo-border);
+}
+.bo-form-section:first-child { margin-top: 0; }
+.bo-form-section i { color: var(--bo-accent); width: 1rem; text-align: center; }
+
+/* list-group (niente Bootstrap): elenco senza pallini, righe separate. */
+.list-group { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.list-group-item { display: block; padding: .65rem .9rem; border-bottom: 1px solid var(--bo-border); background: #fff; color: inherit; text-decoration: none; }
+.list-group-item:last-child { border-bottom: 0; }
+a.list-group-item:hover, .list-group-item-action:hover { background: #f8fbff; }
+.list-group-item.active { background: #eff6ff; color: #1e40af; }
+.list-group:not(.list-group-flush) { border: 1px solid var(--bo-border); border-radius: .45rem; overflow: hidden; }
+/* Titolo di sezione affiancato a un'azione (riga flex): niente margini/bordo propri. */
+.d-flex > .bo-form-section { margin: 0; padding-bottom: 0; border-bottom: 0; }
+
+/* Intestazione di pagina (titolo + pulsanti) fissa sotto la topbar durante lo scroll, su tutte le pagine.
+   Margini negativi = padding di .bo-content (20px; 14px sotto 992px) per coprire tutta la larghezza;
+   box-shadow estende lo sfondo oltre .bo-content-inner (max 1440px) senza allargare l'area scorrevole. */
+.bo-page-head {
+  position: sticky;
+  top: var(--bo-topbar-height, 56px);
+  z-index: 1020;
+  margin-left: -20px;
+  margin-right: -20px;
+  padding: 8px 20px;
+  background: var(--bo-shell-bg, #f4f6fa);
+  box-shadow: 0 0 0 100vmax var(--bo-shell-bg, #f4f6fa);
+  clip-path: inset(0 -100vmax);
+}
+/* Staccata (classe messa da app.js): linea di 1px a tutta larghezza sotto lo sfondo. */
+.bo-page-head.is-stuck {
+  box-shadow: 0 0 0 100vmax var(--bo-shell-bg, #f4f6fa), 0 1px 0 100vmax var(--bo-border, #e2e7ee);
+  clip-path: inset(0 -100vmax -1px);
+}
+@media (max-width: 991px) {
+  .bo-page-head { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
+}
+
+/* Ancore e scrollIntoView({block:'start'}) atterrano sotto topbar + intestazione fissa. */
+html { scroll-padding-top: calc(var(--bo-topbar-height, 56px) + var(--bo-page-head-height, 0px) + .75rem); }
