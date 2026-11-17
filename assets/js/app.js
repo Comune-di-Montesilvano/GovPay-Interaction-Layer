@@ -171,10 +171,20 @@
   const applySidebarState = function(isCollapsed) {
     if (!body.classList.contains('bo-shell-auth')) return;
     body.classList.toggle('bo-sidebar-collapsed', isCollapsed);
-    const toggle = document.getElementById('boSidebarToggle');
-    if (toggle) {
-      toggle.setAttribute('aria-expanded', String(!isCollapsed));
+    const collapseBtn = document.getElementById('boSidebarCollapse');
+    if (collapseBtn) {
+      collapseBtn.setAttribute('aria-expanded', String(!isCollapsed));
+      collapseBtn.title = isCollapsed ? 'Espandi menu' : 'Comprimi menu';
     }
+    // Menu compresso: solo icone, il nome compare come tooltip al passaggio del mouse.
+    document.querySelectorAll('.bo-sidebar .bo-nav-item').forEach(function(item) {
+      const label = item.querySelector('span:not(.badge)');
+      if (isCollapsed && label) {
+        item.setAttribute('title', label.textContent.trim());
+      } else {
+        item.removeAttribute('title');
+      }
+    });
   };
 
   const closeSidebarMobile = function() {
@@ -192,12 +202,15 @@
       // Ignore localStorage availability errors.
     }
 
+    // Hamburger in topbar: solo mobile (< 992px, nascosto da CSS sopra), apre/chiude il menu a scomparsa.
     toggle.addEventListener('click', function(){
-      if (window.matchMedia('(max-width: 991px)').matches) {
-        body.classList.toggle('bo-sidebar-open');
-        return;
-      }
+      body.classList.toggle('bo-sidebar-open');
+      toggle.setAttribute('aria-expanded', String(body.classList.contains('bo-sidebar-open')));
+    });
 
+    // Comprimi/espandi in fondo alla sidebar: solo desktop.
+    const collapseBtn = document.getElementById('boSidebarCollapse');
+    if (collapseBtn) collapseBtn.addEventListener('click', function(){
       const nextCollapsed = !body.classList.contains('bo-sidebar-collapsed');
       applySidebarState(nextCollapsed);
       try {
@@ -213,6 +226,36 @@
       }
     });
   }
+
+  // Gruppi a fisarmonica nella sidebar: il gruppo della pagina corrente e' aperto dal server,
+  // gli altri ricordano l'ultima scelta (localStorage, solo comodita' per utente).
+  const NAV_GROUPS_KEY = 'bo-nav-open-groups';
+  let openGroups = {};
+  try { openGroups = JSON.parse(localStorage.getItem(NAV_GROUPS_KEY) || '{}') || {}; } catch (e) { openGroups = {}; }
+  document.querySelectorAll('.bo-nav-group').forEach(function(group) {
+    const key = group.getAttribute('data-bo-nav-group');
+    const btn = group.querySelector('.bo-nav-group-toggle');
+    if (!btn) return;
+    const setOpen = function(open) {
+      group.classList.toggle('is-open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    };
+    if (group.getAttribute('data-bo-nav-active') !== '1' && openGroups[key] === true) {
+      setOpen(true);
+    }
+    btn.addEventListener('click', function() {
+      // Menu compresso: le sottovoci non sono visibili, si va alla prima.
+      if (body.classList.contains('bo-sidebar-collapsed')) {
+        const first = group.querySelector('.bo-nav-group-items a[href]');
+        if (first) window.location.href = first.getAttribute('href');
+        return;
+      }
+      const open = !group.classList.contains('is-open');
+      setOpen(open);
+      openGroups[key] = open;
+      try { localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(openGroups)); } catch (e) { /* storage non disponibile */ }
+    });
+  });
 
   document.querySelectorAll('[data-bo-sidebar-close]').forEach(function(el) {
     el.addEventListener('click', closeSidebarMobile);
@@ -297,6 +340,30 @@
     });
   })();
   };
+
+  // Intestazione di pagina fissa (.bo-page-head): classe is-stuck quando si stacca sotto la topbar.
+  var initStickyHead = function () {
+    var head = document.querySelector('.bo-page-head');
+    if (!head) return;
+    // Altezza della barra esposta in CSS: altri elementi sticky / ancore si posizionano sotto di essa.
+    var setHeight = function () {
+      document.documentElement.style.setProperty('--bo-page-head-height', head.offsetHeight + 'px');
+    };
+    setHeight();
+    if ('ResizeObserver' in window) { new ResizeObserver(setHeight).observe(head); }
+    if (!('IntersectionObserver' in window)) return;
+    var sentinel = document.createElement('div');
+    sentinel.style.height = '1px';
+    head.parentNode.insertBefore(sentinel, head);
+    var top = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bo-topbar-height'), 10) || 56;
+    new IntersectionObserver(function (e) { head.classList.toggle('is-stuck', !e[0].isIntersecting); },
+      { rootMargin: '-' + (top + 1) + 'px 0px 0px 0px' }).observe(sentinel);
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initStickyHead);
+  } else {
+    initStickyHead();
+  }
 
   // Reusable Premium DatePicker Helper with dropdowns, typing support, and quick ranges
   window.initBackofficeDatePicker = function(elDa, elA, hidDa, hidA) {

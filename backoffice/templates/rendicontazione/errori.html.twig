@@ -1,12 +1,13 @@
 {% extends 'base.html.twig' %}
+{% block title %}Errori smarcatura - GovPay{% endblock %}
 {% block content %}
-<div class="container-fluid py-4">
-  <h1 class="h4 mb-1"><i class="fas fa-triangle-exclamation me-2"></i>Rendicontazione — Righe in errore</h1>
-  <p class="text-muted small mb-3">
-    Righe GovPay in stato ERRORE (bridge GERI/DILAZIONE o fetch pendenza falliti). Il ciclo automatico le
-    riprova solo se <code>data_pagamento</code> rientra in <code>rendicontazione.max_giorni_retry</code> —
-    qui puoi forzare il ritentativo di una singola riga anche se fuori finestra.
-  </p>
+<div>
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+    <div>
+      <h1 class="h4 mb-1"><i class="fas fa-triangle-exclamation me-2 text-primary"></i>Errori smarcatura</h1>
+      <p class="text-muted mb-0">Righe GovPay in stato ERRORE (ponte GERI/DILAZIONE o lettura pendenza fallita). Il giro automatico le riprova solo entro <code>rendicontazione.max_giorni_retry</code> giorni dal pagamento; qui puoi forzare il ritentativo di una singola riga anche fuori finestra.</p>
+    </div>
+  </div>
 
   {% for f in flash %}
     <div class="alert alert-{{ f.type == 'error' ? 'danger' : f.type }}">{{ f.text }}</div>

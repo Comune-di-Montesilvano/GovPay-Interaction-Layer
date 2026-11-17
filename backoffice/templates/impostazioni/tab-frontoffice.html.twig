@@ -7,9 +7,9 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
       {# ─── URL ──────────────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-link me-1"></i>URL pubblico
-      </h6>
+      <h2 class="bo-form-section">
+        <i class="fas fa-link"></i>URL pubblico
+      </h2>
       <div class="row g-3 mb-4">
         <div class="col-md-8">
           <label class="form-label">URL pubblico frontoffice</label>
@@ -20,9 +20,9 @@
       </div>
 
       {# ─── Auth proxy ───────────────────────────────────────────────────── #}
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-user-lock me-1"></i>Autenticazione utenti
-      </h6>
+      <h2 class="bo-form-section">
+        <i class="fas fa-user-lock"></i>Autenticazione utenti
+      </h2>
       <div class="row g-3 mb-4">
         <div class="col-md-5">
           <label class="form-label">Tipo auth proxy</label>
@@ -35,9 +35,9 @@
 
       {# ─── Configurazione OIDC Proxy Esterno ────────────────────────────── #}
       <div id="external-oidc-config" class="mb-4" style="display: {{ frontoffice.auth_proxy_type|default('') == 'external' ? 'block' : 'none' }}; border: 1px solid var(--border-1); border-radius: var(--r-md); padding: 1.25rem; background: var(--bg-2-subtle, #f8f9fa);">
-        <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-          <i class="fas fa-cog me-1"></i>Configurazione OIDC Proxy Esterno
-        </h6>
+        <h2 class="bo-form-section">
+          <i class="fas fa-cog"></i>Configurazione OIDC Proxy Esterno
+        </h2>
         <div class="row g-3 mb-3">
           <div class="col-md-6">
             <label class="form-label">OIDC Issuer (Base URL) <span class="text-danger">*</span></label>
@@ -104,9 +104,9 @@
 
       {# ─── Supporto ─────────────────────────────────────────────────────── #}
       <hr class="my-4">
-      <h6 class="text-muted text-uppercase small fw-semibold mb-3">
-        <i class="fas fa-headset me-1"></i>Info supporto
-      </h6>
+      <h2 class="bo-form-section">
+        <i class="fas fa-headset"></i>Info supporto
+      </h2>
       <div class="row g-3 mb-4">
         <div class="col-md-5">
           <label class="form-label">E-mail supporto</label>
@@ -133,9 +133,9 @@
 
       {# ─── Servizi in evidenza ─────────────────────────────────────────── #}
       <hr class="my-4">
-      <h6 class="text-muted text-uppercase small fw-semibold mb-1">
-        <i class="fas fa-star me-1"></i>Servizi in evidenza (homepage)
-      </h6>
+      <h2 class="bo-form-section">
+        <i class="fas fa-star"></i>Servizi in evidenza (homepage)
+      </h2>
       <p class="text-muted small mb-3">
         Seleziona e ordina fino a <strong>8 servizi</strong> da mostrare nella sezione «Servizi più richiesti» della homepage.
         {% if not is_superadmin %}<span class="text-warning"><i class="fas fa-lock ms-1"></i> Sola lettura</span>{% endif %}

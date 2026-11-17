@@ -66,6 +66,24 @@ class RateLimiter
     }
 
     /**
+     * Azzera il contatore di una chiave (es. dopo un login riuscito: i tentativi
+     * buoni non devono consumare il limite pensato per i tentativi falliti).
+     */
+    public static function reset(string $key): void
+    {
+        try {
+            Connection::getPDO()
+                ->prepare('DELETE FROM rate_limit_buckets WHERE bucket_key = :k')
+                ->execute([':k' => $key]);
+        } catch (\Throwable $e) {
+            Logger::getInstance()->warning('RateLimiter: reset non riuscito', [
+                'error' => $e->getMessage(),
+                'key' => $key
+            ]);
+        }
+    }
+
+    /**
      * Helper to get client IP taking TRUSTED_PROXIES into account.
      */
     public static function getClientIp(): string

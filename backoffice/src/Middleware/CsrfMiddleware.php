@@ -48,6 +48,9 @@ final class CsrfMiddleware implements MiddlewareInterface
         if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
             // Sessione ancora aperta (ReleaseSessionLockMiddleware gira dopo): crea il token cosi' le pagine lo leggono senza riaprirla.
             JobControlCsrf::token();
+            // Idem per i token per-controller: i controller li generano a sessione gia' chiusa
+            // (solo in memoria, mai salvati) -> primo salvataggio sempre "Token non valido".
+            self::ensureLegacyTokens();
             return $handler->handle($request);
         }
         if (self::isExcluded($request->getUri()->getPath())) {
@@ -57,6 +60,18 @@ final class CsrfMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
         return self::deny($request);
+    }
+
+    private static function ensureLegacyTokens(): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return;
+        }
+        foreach (self::LEGACY_SESSION_KEYS as $key) {
+            if (empty($_SESSION[$key]) || !is_string($_SESSION[$key])) {
+                $_SESSION[$key] = bin2hex(random_bytes(32));
+            }
+        }
     }
 
     public static function isExcluded(string $path): bool

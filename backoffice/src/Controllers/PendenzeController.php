@@ -2302,15 +2302,9 @@ class PendenzeController
             if ($combinedTs === '' && is_array($selectedRt)) {
                 $combinedTs = $this->extractStringByPath($selectedRt, ['paymentDateTime']);
             }
-            if ($combinedTs === '') {
-                $combinedTs = $this->extractStringByPath($rr, ['rpt', 'dueDate']);
-            }
-            if ($combinedTs === '') {
-                $combinedTs = $this->extractStringByPath($rr, ['pendenza', 'dataUltimoAggiornamento']);
-            }
-            if ($combinedTs === '') {
-                $combinedTs = $this->extractStringByPath($rr, ['pendenza', 'dataCaricamento']);
-            }
+            // Nessun ripiego su rpt.dueDate / pendenza.dataUltimoAggiornamento / dataCaricamento:
+            // sono date della pendenza, non del tentativo. Il modello nuovo (paGetPayment) non
+            // espone un timestamp del tentativo nel JSON rpp: meglio "—" che una data falsa.
 
             $importoRaw = '';
             if (isset($rr['rpt']['datiVersamento']['importoTotaleDaVersare'])) {

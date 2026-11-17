@@ -2,7 +2,7 @@
 
 {% block title %}Pendenze - Ricerca{% endblock %}
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
     <div>
       <h1 class="h4 mb-1"><i class="fas fa-search me-2 text-primary"></i>Ricerca Pendenze</h1>
       <p class="text-muted mb-0">Ricerca e consulta le posizioni debitorie (pendenze) registrate nel sistema pagoPA</p>
@@ -30,39 +30,23 @@
   {% set ord = f.ordinamento|default('+dataCaricamento') %}
   <form method="get" action="/pendenze/ricerca" class="card shadow-sm mb-4">
     <input type="hidden" name="q" value="1" />
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center gap-2">
-        <h2 class="h6 mb-0">Ricerca pendenze</h2>
-        <small class="text-muted">| Compila uno o più campi</small>
-      </div>
-    </div>
     <div class="card-body">
-      <div class="row">
-        <div class="form-group col-md-4">
-          <label for="idDebitore">ID debitore (CF/PI)</label>
+      {# Griglia compatta: 4 colonne su xl (CF, ID pendenza, IUV, Stato), poi Tipologia + Date a meta' #}
+      <div class="row g-3">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="idDebitore" class="form-label small mb-1">ID debitore (CF/PI)</label>
           <input type="text" class="form-control" id="idDebitore" name="idDebitore" value="{{ f.idDebitore|default('') }}" placeholder="CF/PI">
         </div>
-        <div class="form-group col-md-4">
-          <label for="idPendenza">ID pendenza</label>
-          <input type="text" class="form-control" id="idPendenza" name="idPendenza" value="{{ f.idPendenza|default('') }}" placeholder="Es. 2024-001234 (ID interno)">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="idPendenza" class="form-label small mb-1">ID pendenza</label>
+          <input type="text" class="form-control" id="idPendenza" name="idPendenza" value="{{ f.idPendenza|default('') }}" placeholder="Es. 2024-001234">
         </div>
-        <div class="form-group col-md-4">
-          <label for="iuv">IUV</label>
-          <input type="text" class="form-control" id="iuv" name="iuv" value="{{ f.iuv|default('') }}" placeholder="Es. 012345678901234 (IUV pagoPA, 15 cifre)">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="iuv" class="form-label small mb-1">IUV / numero avviso</label>
+          <input type="text" class="form-control" id="iuv" name="iuv" value="{{ f.iuv|default('') }}" placeholder="17 o 18 cifre">
         </div>
-      </div>
-      <div class="row">
-        <div class="form-group col-md-4">
-          <label for="tipologiaPendenza">Tipologia pendenza</label>
-          <select id="tipologiaPendenza" name="tipologiaPendenza">
-            <option value="">-- tutte --</option>
-            {% for t in tipologie_pendenze %}
-              <option value="{{ t.id_entrata }}" {% if f.tipologiaPendenza is defined and f.tipologiaPendenza == t.id_entrata %}selected{% endif %}>{{ t.descrizione }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-group col-md-4">
-          <label for="stato">Stato</label>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="stato" class="form-label small mb-1">Stato</label>
           {% set allowed = allowed_states|default([]) %}
           {% set state_map = pendenza_states|default({}) %}
           {% set order = state_map|keys %}
@@ -81,40 +65,32 @@
             {% endfor %}
           </select>
         </div>
-        <div class="form-group col-md-4">
-          <label for="dataDaVis">Intervallo date</label>
-          <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="dataDaVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="Da" autocomplete="off">
-            <span class="text-muted small">–</span>
-            <input type="text" id="dataAVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="A" autocomplete="off">
-          </div>
-          <div class="bo-datepicker-quick-selects">
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
-          </div>
-          <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
-          <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        <div class="col-12 col-lg-6">
+          <label for="tipologiaPendenza" class="form-label small mb-1">Tipologia pendenza</label>
+          <select id="tipologiaPendenza" name="tipologiaPendenza">
+            <option value="">-- tutte --</option>
+            {% for t in tipologie_pendenze %}
+              <option value="{{ t.id_entrata }}" {% if f.tipologiaPendenza is defined and f.tipologiaPendenza == t.id_entrata %}selected{% endif %}>{{ t.descrizione }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-6">
+          {% include 'partials/date-range.html.twig' with {value_da: f.dataDa|default(''), value_a: f.dataA|default('')} only %}
         </div>
       </div>
 
-      <div class="row g-3 mt-1">
-        <div class="col-12 col-lg-auto d-flex flex-wrap align-items-center gap-2">
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-search me-1"></i> Cerca
-          </button>
-          <a class="btn btn-outline-secondary" href="/pendenze/ricerca?reset=1">
-            <i class="fas fa-eraser me-1"></i> Azzera
-          </a>
-          <button class="btn btn-link px-0" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
-            <i class="fas fa-sliders-h me-1"></i> Filtri avanzati
-          </button>
-        </div>
-        <div class="col-12 col-lg d-flex justify-content-lg-end align-items-center">
-          <div class="d-flex align-items-center gap-2 w-100 w-lg-auto">
-            <label for="ordinamento" class="small mb-0 text-muted">Ordina per</label>
+      <div class="bo-filter-actions">
+        <button type="submit" class="btn btn-primary" title="Compila uno o più campi">
+          <i class="fas fa-search me-1"></i> Cerca
+        </button>
+        <a class="btn btn-outline-secondary" href="/pendenze/ricerca?reset=1">
+          <i class="fas fa-eraser me-1"></i> Azzera
+        </a>
+        <button class="btn btn-link px-1" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+          <i class="fas fa-sliders-h me-1"></i> Filtri avanzati
+        </button>
+        <div class="bo-filter-sort">
+          <label for="ordinamento" class="small mb-0 text-muted text-nowrap">Ordina per</label>
             <select class="form-select" id="ordinamento" name="ordinamento" data-default-value="+dataCaricamento">
               <option value="+dataCaricamento" {% if ord == '+dataCaricamento' %}selected{% endif %}>Data caricamento (più vecchie prima)</option>
               <option value="-dataCaricamento" {% if ord == '-dataCaricamento' %}selected{% endif %}>Data caricamento (più recenti prima)</option>
@@ -125,7 +101,6 @@
               <option value="+stato" {% if ord == '+stato' %}selected{% endif %}>Stato (A → Z)</option>
               <option value="-stato" {% if ord == '-stato' %}selected{% endif %}>Stato (Z → A)</option>
             </select>
-          </div>
         </div>
       </div>
 

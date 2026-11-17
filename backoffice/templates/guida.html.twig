@@ -1,187 +1,50 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Guida rapida - GovPay IL{% endblock %}
+{% block title %}Guida - Sportello pagamenti{% endblock %}
 
 {% block content %}
-  <div class="row mb-4">
-    <div class="col-12 col-lg-8">
-      <h2 class="mb-2">Guida rapida</h2>
-      <p class="lead">Questa guida ti aiuta a capire a cosa serve l'applicativo e come svolgere le operazioni principali, in base ai tuoi permessi.</p>
-      {% if current_user %}
-        {%- set first = current_user.first_name|default('') -%}
-        {%- set last = current_user.last_name|default('') -%}
-        {%- set show_name = (first != '') or (last != '') -%}
-        {%- if last != '' -%}
-          {%- set display_name = (first ~ ' ' ~ last|upper)|trim -%}
-        {%- else -%}
-          {%- set display_name = first|trim -%}
-        {%- endif -%}
-        <p>Sei autenticato come <strong>{% if show_name %}{{ display_name }}{% else %}{{ current_user.email }}{% endif %}</strong> con ruolo <span class="badge bg-primary">{{ current_user.role }}</span>.</p>
-      {% else %}
-        <p class="text-warning">Non sei autenticato. Accedi per vedere le funzionalità a te consentite.</p>
-      {% endif %}
+  {# Contenuto da backoffice/guida/guida.md (App\Services\GuidaRenderer): HTML grezzo già scartato in rendering. #}
+  <style>
+    .guida-toc { position: sticky; top: calc(var(--bo-topbar-height, 56px) + var(--bo-page-head-height, 0px) + 1rem); max-height: calc(100vh - var(--bo-topbar-height, 56px) - var(--bo-page-head-height, 0px) - 2rem); overflow-y: auto; font-size: .875rem; }
+    .guida-toc a { display: block; padding: .15rem 0; color: var(--fg-2, #475569); text-decoration: none; }
+    .guida-toc a:hover { color: var(--bs-primary); }
+    .guida-toc .lvl-2 { font-weight: 600; margin-top: .5rem; }
+    .guida-toc .lvl-3 { padding-left: .75rem; }
+    .guida-body { max-width: 52rem; line-height: 1.6; }
+    .guida-body h1 { font-size: 1.6rem; margin-bottom: .25rem; }
+    .guida-body h2 { font-size: 1.3rem; margin-top: 2rem; padding-top: .5rem; border-top: 1px solid var(--border-1, #e2e8f0); }
+    .guida-body h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+    .guida-body > h1:first-child { display: none; } /* titolo gia' nell'intestazione di pagina */
+    .guida-body table { width: 100%; margin-bottom: 1rem; border-collapse: collapse; font-size: .9rem; }
+    .guida-body th, .guida-body td { border: 1px solid var(--border-1, #e2e8f0); padding: .35rem .6rem; vertical-align: top; }
+    .guida-body code { word-break: break-word; }
+  </style>
+
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+    <div>
+      <h1 class="h4 mb-1"><i class="fas fa-circle-question me-2 text-primary" aria-hidden="true"></i>Guida operativa</h1>
+      <p class="text-muted mb-0">Come usare lo sportello pagamenti: operazioni frequenti, ruoli e problemi comuni</p>
     </div>
   </div>
 
-  <div class="row g-4">
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h3 class="h5"><i class="fas fa-search me-2"></i> Operazioni comuni (tutti gli utenti)</h3>
-          <ul class="mb-0">
-            <li><strong>Pendenze → Ricerca:</strong> filtra per intervallo date, stato, importi, testo libero. I risultati sono ordinabili e paginati.</li>
-            <li><strong>Premium Datepicker:</strong> tutti i filtri temporali usano un calendario sbloccato che consente la digitazione manuale da tastiera e pulsanti rapidi contabili di ragioneria (<em>Mese/Anno Corrente/Precedente</em>) uniformi ed affiancati.</li>
-            <li><strong>Marca da Bollo (@e.bollo):</strong> creazione e pagamento on-line facilitato di marche da bollo telematiche associate alle posizioni debitorie, dematerializzando i procedimenti amministrativi.</li>
-            <li><strong>Rateizzazione Lineare:</strong> pianificazione automatica delle rate. Date e importi progressivi si ricalcolano live alla modifica di qualsiasi campo, senza cliccare alcun tasto manuale.</li>
-            <li><strong>Dettaglio pendenza:</strong> clicca una riga per visualizzare i dettagli; troverai i riferimenti di pagamento (IUV/CCP) e gli esiti.</li>
-            <li><strong>Download documenti:</strong> dal dettaglio puoi scaricare l'Avviso di pagamento e, quando disponibile, la Ricevuta Telematica (RT).</li>
-            <li><strong>Inserimento pendenza:</strong> crea una nuova pendenza dal menu Pendenze → Inserimento.</li>
-            <li><strong>Inserimento massivo:</strong> carica più pendenze contemporaneamente (file/CSV) da Pendenze → Inserimento massivo.</li>
-            <li><strong>Profilo:</strong> vedi le informazioni del tuo account e, se previsto, aggiorna le credenziali.</li>
-          </ul>
-          <div class="mt-3">
-            <a href="/pendenze/ricerca" class="btn btn-outline-primary btn-sm">Vai alla ricerca</a>
-            <a href="/pendenze/inserimento" class="btn btn-outline-secondary btn-sm ms-2">Nuova pendenza</a>
+  {% if guida_html %}
+    <div class="row g-4">
+      <nav class="col-12 col-lg-3 d-none d-lg-block" aria-label="Indice della guida">
+        <div class="guida-toc">
+          {% for s in guida_sections %}
+            <a class="lvl-{{ s.level }}" href="#{{ s.id }}">{{ s.title }}</a>
+          {% endfor %}
+        </div>
+      </nav>
+      <article class="col-12 col-lg-9">
+        <div class="card shadow-sm">
+          <div class="card-body guida-body">
+            {{ guida_html|raw }}
           </div>
         </div>
-      </div>
+      </article>
     </div>
-
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h3 class="h5"><i class="fas fa-chart-line me-2"></i> Report pagamenti</h3>
-          <ul class="mb-0">
-            <li><strong>Dashboard Real-Time:</strong> monitora i volumi complessivi, l'andamento mensile (Chart.js), il canale di incasso e la ripartizione per singola tipologia (Top 6 automatica ed espandibile a tutte le entrate interattivamente).</li>
-            <li><strong>Report Ragioneria:</strong> analizza gli incassi reali dai flussi di rendicontazione per intervallo data flusso e tipologia.</li>
-            <li><strong>Esecuzione guidata:</strong> al primo accesso non parte nessuna ricerca; dopo <em>Aggiorna</em> vedi lo stato di avanzamento dell'elaborazione.</li>
-            <li><strong>Filtri avanzati:</strong> selezione multipla tipologie con ricerca, intervallo date e parametri GovPay.</li>
-            <li><strong>Dettaglio righe:</strong> dal risultato puoi aprire rapidamente la pendenza collegata (dettaglio o ricerca IUV).</li>
-            <li><strong>Report Incassi:</strong> vista per tassonomia con filtri allineati al report ragioneria e tabella dettaglio con link pendenza.</li>
-            <li><strong>Export:</strong> entrambi i report supportano export CSV dei risultati.</li>
-          </ul>
-          <div class="mt-3">
-            <a href="/" class="btn btn-outline-primary btn-sm">Apri Dashboard</a>
-            <a href="/pagamenti/report-ragioneria" class="btn btn-outline-secondary btn-sm ms-2">Apri Report Ragioneria</a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {% if current_user and current_user.role in ['admin','superadmin'] %}
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h3 class="h5"><i class="fas fa-users-cog me-2"></i> Gestione utenti (admin)</h3>
-          <ul class="mb-0">
-            <li><strong>Elenco e ricerca:</strong> la tab "Utenti" all'interno di Configurazione mostra tutti gli account con filtro rapido e contatore risultati.</li>
-            <li><strong>Creazione/Modifica:</strong> puoi aggiungere o aggiornare un utente (email, nome, cognome, ruolo, password).</li>
-            <li><strong>Disabilitazione:</strong> al posto della cancellazione ora puoi disabilitare un account (e riabilitarlo in seguito). Gli utenti disabilitati non possono accedere.</li>
-            <li><strong>Vincoli di sicurezza:</strong> non puoi agire sul tuo account o sull'ultimo superadmin attivo; le azioni vengono registrate nei log applicativi.</li>
-          </ul>
-          <div class="mt-3">
-            <a href="/impostazioni?tab=utenti" class="btn btn-outline-primary btn-sm">Apri tab Utenti</a>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    {% if current_user and current_user.role in ['admin','superadmin'] %}
-    <div class="col-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h3 class="h5"><i class="fas fa-tools me-2"></i> Amministrazione e configurazione (superadmin)</h3>
-          <p class="mb-2">La pagina Configurazione raccoglie informazioni dal Backoffice GovPay e dalle API per verifiche e setup. Gli admin la consultano in sola lettura (eccetto la tab Utenti), mentre i superadmin possono intervenire sulle impostazioni.</p>
-          <ul class="mb-0">
-            <li><strong>GIL Services Hub (Home):</strong> visualizzazione dello stato dei servizi di background e pulsanti AJAX diretti per avviare o arrestare i demoni contabili (`ragioneria`, `biz`, `tefa`, `pendenze-massive`) direttamente dalla Home page.</li>
-            <li><strong>Dati principali:</strong> mostra i dettagli del Dominio beneficiario (ragione sociale, stazione, GLN, CBill, conti di accredito, eventuale logo, ecc.).</li>
-            <li><strong>Tipologie di pendenze:</strong> elenco delle Entrate configurate per il dominio (con ricerca client-side).</li>
-            <li><strong>Gestionali e info:</strong> panoramica sugli applicativi integrati e sulle versioni / build dell'istanza GovPay.</li>
-            <li><strong>Tab Utenti:</strong> la gestione account è integrata nella pagina, così non serve più una vista separata.</li>
-            <li><strong>Debug (solo in ambiente di test):</strong> puoi espandere i dati grezzi (JSON) per diagnosi e controllo configurazioni.</li>
-          </ul>
-          <div class="mt-3">
-            <a href="/impostazioni?tab=templates" class="btn btn-outline-primary btn-sm">Apri Impostazioni</a>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <div class="col-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h3 class="h5"><i class="fas fa-shield-alt me-2"></i> Ruoli e permessi</h3>
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>Funzionalità</th>
-                  <th class="text-center">user</th>
-                  <th class="text-center">admin</th>
-                  <th class="text-center">superadmin</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Pendenze: ricerca e dettaglio</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                </tr>
-                <tr>
-                  <td>Pendenze: inserimento / massivo</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                </tr>
-                <tr>
-                  <td>Download Avviso / RT</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                </tr>
-                <tr>
-                  <td>Report pagamenti (Ragioneria/Incassi)</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                </tr>
-                <tr>
-                  <td>Gestione utenti</td>
-                  <td class="text-center">—</td>
-                  <td class="text-center">✔</td>
-                  <td class="text-center">✔</td>
-                </tr>
-                <tr>
-                  <td>Configurazione (Backoffice/Info)</td>
-                  <td class="text-center">—</td>
-                  <td class="text-center">✔<br><span class="text-muted small">lettura + tab Utenti</span></td>
-                  <td class="text-center">✔<br><span class="text-muted small">controllo completo</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="text-muted small mb-0">Le autorizzazioni possono essere ulteriormente limitate dalla configurazione dell'istanza GovPay e dall'ambiente.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row mt-4">
-    <div class="col-12 col-lg-8">
-      <div class="alert alert-info" role="alert">
-        <div>
-          <div class="fw-semibold">Suggerimenti</div>
-          <ul class="mb-0">
-            <li>Usa la barra di navigazione per accedere rapidamente alle aree di tuo interesse.</li>
-            <li>Quando scarichi un documento, verifica che il browser non lo blocchi in pop-up.</li>
-            <li>Se compaiono errori, riprova più tardi o contatta un amministratore.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-
+  {% else %}
+    <div class="alert alert-warning" role="alert">Guida non disponibile. Contatta un amministratore.</div>
+  {% endif %}
 {% endblock %}

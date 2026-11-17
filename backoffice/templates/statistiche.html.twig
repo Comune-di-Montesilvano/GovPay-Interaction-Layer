@@ -4,7 +4,7 @@
 
 {% block content %}
   {# 1. Title Section #}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
     <div>
       <h1 class="h4 mb-1"><i class="fas fa-chart-pie me-2 text-primary"></i>Statistiche dei Pagamenti</h1>
       <p class="text-muted mb-0">Analisi delle entrate complessive dell'Ente basata sul database locale arricchito (FDR, Biz Events, TEFA, Mappings)</p>
@@ -23,49 +23,29 @@
   {# 3. Filters Form #}
   {% set f = filters ?? {} %}
   <form method="get" action="/statistiche" class="card shadow-sm mb-4">
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-        <div class="d-flex align-items-center gap-2">
-          <i class="fas fa-filter text-primary" aria-hidden="true"></i>
-          <h2 class="h6 mb-0 fw-bold">Filtri di Analisi</h2>
-          <span class="text-muted small d-none d-md-inline">| Seleziona periodo temporale e tipo di aggregazione</span>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm px-3 shadow-sm">
-          <i class="fas fa-sync me-1" aria-hidden="true"></i> Aggiorna Dati
-        </button>
-      </div>
-    </div>
     <div class="card-body">
       <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold text-muted small">Intervallo date</label>
-          <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="statsDaVis" class="form-control bo-cursor-pointer" placeholder="Da" autocomplete="off">
-            <span class="text-muted small">–</span>
-            <input type="text" id="statsAVis" class="form-control bo-cursor-pointer" placeholder="A" autocomplete="off">
-          </div>
-          <div class="bo-datepicker-quick-selects mt-2">
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear text-danger" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
-          </div>
-          <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
-          <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        <div class="col-12 col-lg-6">
+          {% include 'partials/date-range.html.twig' with {vis_da: 'statsDaVis', vis_a: 'statsAVis', value_da: f.dataDa|default(''), value_a: f.dataA|default('')} only %}
         </div>
-        <div class="col-md-3">
-          <label for="raggruppamento" class="form-label fw-semibold text-muted small">Raggruppa per</label>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <label for="raggruppamento" class="form-label small mb-1">Raggruppa per</label>
           <select id="raggruppamento" name="raggruppamento" class="form-select">
             {% for value,label in group_options %}
               <option value="{{ value }}" {% if f.raggruppamento|default('TIPO_PENDENZA') == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-3">
-          <label for="idDominio" class="form-label fw-semibold text-muted small">ID Dominio (Ente)</label>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <label for="idDominio" class="form-label small mb-1">ID Dominio (Ente)</label>
           <input type="text" class="form-control" id="idDominio" name="idDominio" value="{{ f.idDominio|default('') }}" placeholder="(opzionale)">
         </div>
+      </div>
+
+      <div class="bo-filter-actions">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-sync me-1" aria-hidden="true"></i> Aggiorna
+        </button>
       </div>
     </div>
   </form>

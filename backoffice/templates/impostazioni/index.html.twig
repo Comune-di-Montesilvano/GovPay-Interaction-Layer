@@ -4,7 +4,7 @@
 
 {% block head %}{% endblock %}
 {% block content %}
-<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+<div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
   <div>
     <h1 class="h4 mb-1"><i class="fas fa-sliders-h me-2 text-primary"></i>Impostazioni di Sistema</h1>
     <p class="text-muted mb-0">Configura i parametri generali dell'Ente, le connessioni alle API esterne, il backend e le notifiche e-mail (SMTP)</p>
@@ -18,19 +18,12 @@
 {% endif %}
 
 {% set debug_app_active = app.debug|default('false') == 'true' %}
-{% set debug_iam_active = iam_proxy.debug|default('false') == 'true' %}
-{% if debug_app_active or debug_iam_active %}
+{% if debug_app_active %}
   <div class="alert alert-warning d-flex align-items-center justify-content-between py-2 mb-3" role="alert">
     <div>
       <i class="fas fa-bug me-2"></i>
       <strong>Modalità debug attiva.</strong>
-      {% if debug_app_active and debug_iam_active %}
-        Sono abilitati Debug applicativo e Debug Auth Proxy.
-      {% elseif debug_app_active %}
-        È abilitato il Debug applicativo.
-      {% else %}
-        È abilitato il Debug Auth Proxy.
-      {% endif %}
+      È abilitato il Debug applicativo.
     </div>
     <a class="btn btn-sm btn-outline-dark" href="/impostazioni?tab=debug">Vai al tab Debug</a>
   </div>
@@ -386,9 +379,7 @@
       { tab: 'api-esterne', section: 'API Esterne', label: 'API Key' },
       { tab: 'api-esterne', section: 'API Esterne', label: 'URL endpoint tassonomie' },
       // DEBUG
-      { tab: 'debug', section: 'Debug', label: 'Debug applicativo (GovPay/backoffice verbose)' },
-      { tab: 'debug', section: 'Debug', label: 'Debug Auth Proxy (IAM Proxy)' },
-      // BACKUP
+      { tab: 'debug', section: 'Debug', label: 'Debug applicativo (GovPay/backoffice verbose)' },      // BACKUP
       { tab: 'backup', section: 'Backup', label: 'Dati di sistema (volumi)' },
       { tab: 'backup', section: 'Backup', label: 'Certificati GovPay' },
       { tab: 'backup', section: 'Backup', label: 'Immagini branding (logo e favicon)' },

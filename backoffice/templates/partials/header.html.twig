@@ -28,62 +28,90 @@
     </a>
 
     <nav class="bo-nav" aria-label="Menu backoffice">
-      <div class="bo-nav-section-title">Operativo</div>
+      {# Riga "Operativo" + comprimi/espandi (solo desktop). Da compresso resta solo l'icona, prima della lista. #}
+      <div class="bo-nav-section-title bo-nav-section-head">
+        <span>Operativo</span>
+        <button type="button" class="bo-sidebar-collapse" id="boSidebarCollapse" aria-controls="boSidebar" aria-expanded="true" title="Comprimi menu" aria-label="Comprimi o espandi menu">
+          <i class="fas fa-angles-left" aria-hidden="true"></i>
+        </button>
+      </div>
 
       <a class="bo-nav-item {{ cp == '/' ? 'is-active' : '' }}" href="/">
         <i class="fas fa-chart-line" aria-hidden="true"></i>
         <span>Dashboard</span>
       </a>
+      <a class="bo-nav-item {{ (cp starts with '/rendicontazione' and not (cp starts with '/rendicontazione/errori')) ? 'is-active' : '' }} d-flex align-items-center justify-content-between" href="/rendicontazione/da-confermare">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-scale-balanced" aria-hidden="true"></i>
+          <span>Smarcatura pagamenti</span>
+        </div>
+        {% if da_confermare_count is defined and da_confermare_count > 0 %}
+          <span class="badge bg-danger rounded-pill text-white" style="font-size: 0.72rem; padding: 0.25em 0.6em;">{{ da_confermare_count }}</span>
+        {% endif %}
+      </a>
 
-      <a class="bo-nav-item" href="/pendenze/ricerca">
-        <i class="fas fa-file-invoice-dollar" aria-hidden="true"></i>
-        <span>Pendenze</span>
-      </a>
-      <a class="bo-nav-subitem {{ cp starts with '/pendenze/ricerca' ? 'is-active' : '' }}" href="/pendenze/ricerca">
-        <i class="fas fa-search" aria-hidden="true"></i>
-        <span>Ricerca pendenze</span>
-      </a>
-      <a class="bo-nav-subitem {{ cp == '/pendenze/inserimento' ? 'is-active' : '' }}" href="/pendenze/inserimento">
-        <i class="fas fa-plus-circle" aria-hidden="true"></i>
-        <span>Nuova Pendenza</span>
-      </a>
-      {% if bollot_attivo is defined and bollot_attivo %}
-        <a class="bo-nav-subitem {{ cp == '/pendenze/nuova-bollo' ? 'is-active' : '' }}" href="/pendenze/nuova-bollo">
-          <i class="fas fa-stamp" aria-hidden="true"></i>
-          <span>Nuova marca da bollo</span>
+      <div class="bo-nav-group{{ cp starts with '/pendenze' ? ' is-open' : '' }}" data-bo-nav-group="pendenze" data-bo-nav-active="{{ cp starts with '/pendenze' ? '1' : '0' }}">
+        <button type="button" class="bo-nav-item bo-nav-group-toggle" aria-expanded="{{ cp starts with '/pendenze' ? 'true' : 'false' }}" aria-controls="bo-nav-group-pendenze">
+          <i class="fas fa-file-invoice-dollar" aria-hidden="true"></i>
+          <span>Pendenze</span>
+          <i class="fas fa-chevron-right bo-nav-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="bo-nav-group-items" id="bo-nav-group-pendenze">
+
+        <a class="bo-nav-subitem {{ cp starts with '/pendenze/ricerca' ? 'is-active' : '' }}" href="/pendenze/ricerca">
+          <i class="fas fa-search" aria-hidden="true"></i>
+          <span>Ricerca pendenze</span>
         </a>
-      {% endif %}
-      <a class="bo-nav-subitem {{ cp == '/pendenze/massivo/inserimento' ? 'is-active' : '' }}" href="/pendenze/massivo/inserimento">
-        <i class="fas fa-file-upload" aria-hidden="true"></i>
-        <span>Pendenze Massive</span>
-      </a>
-      <a class="bo-nav-subitem {{ cp == '/pendenze/massivo/storico' ? 'is-active' : '' }}" href="/pendenze/massivo/storico">
-        <i class="fas fa-history" aria-hidden="true"></i>
-        <span>Storico Massivo</span>
-      </a>
-      
-      <a class="bo-nav-item" href="/pagamenti/ricerca-flussi">
-        <i class="fas fa-landmark" aria-hidden="true"></i>
-        <span>Ragioneria</span>
-      </a>
-      <a class="bo-nav-subitem {{ cp starts with '/pagamenti/ricerca-flussi' ? 'is-active' : '' }}" href="/pagamenti/ricerca-flussi">
-        <i class="fas fa-search" aria-hidden="true"></i>
-        <span>Ricerca flussi</span>
-      </a>
-      <a class="bo-nav-subitem {{ cp starts with '/pagamenti/incassi-tassonomia' ? 'is-active' : '' }}" href="/pagamenti/incassi-tassonomia">
-        <i class="fas fa-receipt" aria-hidden="true"></i>
-        <span>Report incassi</span>
-      </a>
-      <a class="bo-nav-subitem {{ cp starts with '/pagamenti/report-ragioneria' ? 'is-active' : '' }}" href="/pagamenti/report-ragioneria">
-        <i class="fas fa-book" aria-hidden="true"></i>
-        <span>Report ragioneria</span>
-      </a>
-      {% if tefa_enabled is defined and tefa_enabled %}
-        <a class="bo-nav-subitem {{ cp starts with '/pagamenti/report-tefa' ? 'is-active' : '' }}" href="/pagamenti/report-tefa">
-          <i class="fas fa-university" aria-hidden="true"></i>
-          <span>Report TEFA</span>
+        <a class="bo-nav-subitem {{ cp == '/pendenze/inserimento' ? 'is-active' : '' }}" href="/pendenze/inserimento">
+          <i class="fas fa-plus-circle" aria-hidden="true"></i>
+          <span>Nuova Pendenza</span>
         </a>
-      {% endif %}
+        {% if bollot_attivo is defined and bollot_attivo %}
+          <a class="bo-nav-subitem {{ cp == '/pendenze/nuova-bollo' ? 'is-active' : '' }}" href="/pendenze/nuova-bollo">
+            <i class="fas fa-stamp" aria-hidden="true"></i>
+            <span>Nuova marca da bollo</span>
+          </a>
+        {% endif %}
+        <a class="bo-nav-subitem {{ cp == '/pendenze/massivo/inserimento' ? 'is-active' : '' }}" href="/pendenze/massivo/inserimento">
+          <i class="fas fa-file-upload" aria-hidden="true"></i>
+          <span>Pendenze Massive</span>
+        </a>
+        <a class="bo-nav-subitem {{ cp == '/pendenze/massivo/storico' ? 'is-active' : '' }}" href="/pendenze/massivo/storico">
+          <i class="fas fa-history" aria-hidden="true"></i>
+          <span>Storico Massivo</span>
+        </a>
+        </div>
+      </div>
+
+      <div class="bo-nav-group{{ cp starts with '/pagamenti' ? ' is-open' : '' }}" data-bo-nav-group="ragioneria" data-bo-nav-active="{{ cp starts with '/pagamenti' ? '1' : '0' }}">
+        <button type="button" class="bo-nav-item bo-nav-group-toggle" aria-expanded="{{ cp starts with '/pagamenti' ? 'true' : 'false' }}" aria-controls="bo-nav-group-ragioneria">
+          <i class="fas fa-landmark" aria-hidden="true"></i>
+          <span>Ragioneria</span>
+          <i class="fas fa-chevron-right bo-nav-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="bo-nav-group-items" id="bo-nav-group-ragioneria">
+
+        <a class="bo-nav-subitem {{ cp starts with '/pagamenti/ricerca-flussi' ? 'is-active' : '' }}" href="/pagamenti/ricerca-flussi">
+          <i class="fas fa-search" aria-hidden="true"></i>
+          <span>Ricerca flussi</span>
+        </a>
+        <a class="bo-nav-subitem {{ cp starts with '/pagamenti/incassi-tassonomia' ? 'is-active' : '' }}" href="/pagamenti/incassi-tassonomia">
+          <i class="fas fa-receipt" aria-hidden="true"></i>
+          <span>Report incassi</span>
+        </a>
+        <a class="bo-nav-subitem {{ cp starts with '/pagamenti/report-ragioneria' ? 'is-active' : '' }}" href="/pagamenti/report-ragioneria">
+          <i class="fas fa-book" aria-hidden="true"></i>
+          <span>Report ragioneria</span>
+        </a>
+        {% if tefa_enabled is defined and tefa_enabled %}
+          <a class="bo-nav-subitem {{ cp starts with '/pagamenti/report-tefa' ? 'is-active' : '' }}" href="/pagamenti/report-tefa">
+            <i class="fas fa-university" aria-hidden="true"></i>
+            <span>Report TEFA</span>
+          </a>
+        {% endif %}
+        </div>
+      </div>
+
       <a class="bo-nav-item {{ cp starts with '/statistiche' ? 'is-active' : '' }}" href="/statistiche">
         <i class="fas fa-chart-pie" aria-hidden="true"></i>
         <span>Statistiche</span>
@@ -98,19 +126,10 @@
         <i class="fas fa-route" aria-hidden="true"></i>
         <span>Mapping pendenze est.</span>
       </a>
-      <a class="bo-nav-item {{ cp starts with '/rendicontazione' ? 'is-active' : '' }} d-flex align-items-center justify-content-between" href="/rendicontazione/da-confermare">
-        <div class="d-flex align-items-center gap-2">
-          <i class="fas fa-scale-balanced" aria-hidden="true"></i>
-          <span>Rendicontazione GovPay</span>
-        </div>
-        {% if da_confermare_count is defined and da_confermare_count > 0 %}
-          <span class="badge bg-danger rounded-pill text-white" style="font-size: 0.72rem; padding: 0.25em 0.6em;">{{ da_confermare_count }}</span>
-        {% endif %}
-      </a>
       {% if is_auth and current_user.role == 'superadmin' %}
-        <a class="bo-nav-item {{ cp == '/rendicontazione/errori' ? 'is-active' : '' }}" href="/rendicontazione/errori">
+        <a class="bo-nav-item {{ cp starts with '/rendicontazione/errori' ? 'is-active' : '' }}" href="/rendicontazione/errori">
           <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
-          <span>Rendicontazione — Errori</span>
+          <span>Errori smarcatura</span>
         </a>
       {% endif %}
 
@@ -148,7 +167,7 @@
   </aside>
 
   <header class="bo-topbar" role="banner">
-    <button type="button" class="bo-topbar-icon-btn" id="boSidebarToggle" aria-controls="boSidebar" aria-label="Apri o chiudi menu laterale" aria-expanded="false">
+    <button type="button" class="bo-topbar-icon-btn bo-topbar-menu-btn" id="boSidebarToggle" aria-controls="boSidebar" aria-label="Apri menu laterale" aria-expanded="false">
       <i class="fas fa-bars" aria-hidden="true"></i>
     </button>
 

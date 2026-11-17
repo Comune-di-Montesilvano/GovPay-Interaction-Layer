@@ -3,23 +3,20 @@
 {% block title %}Pagamenti - Dettaglio Flusso{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-    <div>
-      <h1 class="h3 mb-1">Dettaglio flusso di rendicontazione</h1>
-      <p class="text-muted mb-0 small">Visualizza i dati di un flusso acquisito da pagoPA</p>
+  <div class="bo-page-head d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div class="d-flex align-items-center gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{{ return_url|default('/pagamenti/ricerca-flussi') }}" title="Torna ai risultati" aria-label="Torna ai risultati"><i class="fas fa-arrow-left" aria-hidden="true"></i></a>
+      <div>
+        <h1 class="h4 mb-0"><i class="fas fa-file-lines me-2 text-primary" aria-hidden="true"></i>Dettaglio flusso <span class="text-muted">{{ id_flusso }}</span></h1>
+      </div>
     </div>
-    <div class="d-flex gap-2">
-      {% if current_user.role in ['admin', 'superadmin'] and not is_regolarizzato %}
-        <form action="/pagamenti/ricerca-flussi/dettaglio/{{ id_flusso }}/regolarizza" method="POST" onsubmit="return confirm('Confermi la regolarizzazione manuale del flusso su GovPay?');">
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-file-invoice-dollar me-1"></i> Regolarizza Flusso
-          </button>
-        </form>
-      {% endif %}
-      <a class="btn btn-outline-secondary" href="{{ return_url|default('/pagamenti/ricerca-flussi') }}">
-        <i class="fas fa-arrow-left me-1"></i> Torna ai risultati
-      </a>
-    </div>
+    {% if current_user.role in ['admin', 'superadmin'] and not is_regolarizzato %}
+      <form action="/pagamenti/ricerca-flussi/dettaglio/{{ id_flusso }}/regolarizza" method="POST" class="m-0" onsubmit="return confirm('Confermi la regolarizzazione manuale del flusso su GovPay?');">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="fas fa-file-invoice-dollar me-1" aria-hidden="true"></i> Regolarizza flusso
+        </button>
+      </form>
+    {% endif %}
   </div>
 
   {% if errors is defined and errors %}
@@ -57,23 +54,23 @@
         <div class="row g-4">
           <div class="col-12 col-lg-6">
             <h2 class="h5 mb-3">Informazioni generali</h2>
-            <dl class="row small mb-0">
-              <dt class="col-sm-5 text-muted">ID flusso</dt>
-              <dd class="col-sm-7 text-break">{{ idFlusso ?: '—' }}</dd>
-              <dt class="col-sm-5 text-muted">Data flusso</dt>
-              <dd class="col-sm-7">{% if dataFlusso %}{{ dataFlusso|date('d/m/Y H:i:s') }}{% else %}—{% endif %}</dd>
-              <dt class="col-sm-5 text-muted">Data regolamento</dt>
-              <dd class="col-sm-7">{% if dataRegolamento %}{{ dataRegolamento|date('d/m/Y H:i:s') }}{% else %}—{% endif %}</dd>
-              <dt class="col-sm-5 text-muted">Stato</dt>
-              <dd class="col-sm-7">
+            <dl class="bo-dl">
+              <dt>ID flusso</dt>
+              <dd class="text-break">{{ idFlusso ?: '—' }}</dd>
+              <dt>Data flusso</dt>
+              <dd>{% if dataFlusso %}{{ dataFlusso|date('d/m/Y H:i:s') }}{% else %}—{% endif %}</dd>
+              <dt>Data regolamento</dt>
+              <dd>{% if dataRegolamento %}{{ dataRegolamento|date('d/m/Y H:i:s') }}{% else %}—{% endif %}</dd>
+              <dt>Stato</dt>
+              <dd>
                 {% if stato %}
                   <span class="badge bg-primary text-white px-3 py-2">{{ stato }}</span>
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}
               </dd>
-              <dt class="col-sm-5 text-muted">Regolarizzazione</dt>
-              <dd class="col-sm-7">
+              <dt>Regolarizzazione</dt>
+              <dd>
                 {% if is_regolarizzato %}
                   <span class="badge bg-success text-white px-3 py-2"><i class="fas fa-check-circle me-1"></i> Regolarizzato</span>
                 {% elseif not is_rendicontato %}
@@ -86,21 +83,21 @@
           </div>
           <div class="col-12 col-lg-6">
             <h2 class="h5 mb-3">Soggetti coinvolti</h2>
-            <dl class="row small mb-0">
-              <dt class="col-sm-5 text-muted">Dominio</dt>
-              <dd class="col-sm-7">
+            <dl class="bo-dl">
+              <dt>Dominio</dt>
+              <dd>
                 {% if idDominio %}<strong>{{ idDominio }}</strong>{% else %}<span class="text-muted">—</span>{% endif %}
                 {% if dominioNome %}<div class="text-muted">{{ dominioNome }}</div>{% endif %}
               </dd>
-              <dt class="col-sm-5 text-muted">PSP</dt>
-              <dd class="col-sm-7">
+              <dt>PSP</dt>
+              <dd>
                 {% if idPsp %}<strong>{{ idPsp }}</strong>{% else %}<span class="text-muted">—</span>{% endif %}
                 {% if pspNome %}<div class="text-muted">{{ pspNome }}</div>{% endif %}
               </dd>
-              <dt class="col-sm-5 text-muted">TRN</dt>
-              <dd class="col-sm-7">{{ trn ?: '—' }}</dd>
-              <dt class="col-sm-5 text-muted">BIC riversamento</dt>
-              <dd class="col-sm-7">{{ bic ?: '—' }}</dd>
+              <dt>TRN</dt>
+              <dd>{{ trn ?: '—' }}</dd>
+              <dt>BIC riversamento</dt>
+              <dd>{{ bic ?: '—' }}</dd>
             </dl>
           </div>
         </div>
@@ -214,18 +211,9 @@
                 {% set hasDetail = risc is not null %}
                 {% set isOrphan = p.is_orphan|default(false) %}
                 {% set hasDaemonData = isOrphan and ((p._rendicontazione is defined and p._rendicontazione is not null) or (p._tefa is defined and p._tefa is not null) or (p._biz is defined and p._biz is not null)) %}
-                <tr class="{% if isOrphan %}table-secondary{% elseif loop.index is even %}table-light{% endif %}">
+                <tr class="bo-pay-row">
                   <td class="text-center small text-muted">
                     {{ idx }}
-                    {% if isOrphan %}
-                      <div>
-                        {% if p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.mapping_stato == 'PROCESSED' and p._rendicontazione.fornitore %}
-                          <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:.6rem" title="Fornitore identificato via prefisso IUV (L1)">{{ p._rendicontazione.fornitore }}</span>
-                        {% else %}
-                          <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size:.6rem" title="Pagamento non presente in GovPay — dati da rendicontazione">Esterna</span>
-                        {% endif %}
-                      </div>
-                    {% endif %}
                   </td>
                   <td class="align-middle">
                     {% set pendenzaId = voce.pendenza.idPendenza|default(voce.pendenza.id_pendenza|default('')) %}
@@ -247,6 +235,15 @@
                     {% endif %}
                     {% if iuv %}
                       <div class="small text-muted text-break">{{ iuv }}</div>
+                    {% endif %}
+                    {% if isOrphan %}
+                      <div class="mt-1">
+                        {% if p._rendicontazione is defined and p._rendicontazione is not null and p._rendicontazione.mapping_stato == 'PROCESSED' and p._rendicontazione.fornitore %}
+                          <span class="badge bg-info-subtle text-info border border-info-subtle" title="Fornitore identificato via prefisso IUV (L1)">{{ p._rendicontazione.fornitore }}</span>
+                        {% else %}
+                          <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" title="Pagamento non presente in GovPay — dati da rendicontazione">Esterna</span>
+                        {% endif %}
+                      </div>
                     {% endif %}
                     {% if not iuv and not voceId and not pendenzaId %}
                       <span class="text-muted">—</span>
@@ -285,14 +282,14 @@
                   </td>
                   <td class="text-center">
                     {% if hasDetail %}
-                      <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapseId }}" aria-expanded="false" aria-controls="{{ collapseId }}" title="Mostra dettaglio">
-                        <i class="fas fa-arrow-down"></i>
+                      <button class="btn btn-sm btn-outline-secondary bo-row-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapseId }}" aria-expanded="false" aria-controls="{{ collapseId }}" title="Mostra dettaglio">
+                        <i class="fas fa-chevron-down" aria-hidden="true"></i>
                       </button>
                     {% elseif isOrphan %}
                       <div class="d-flex gap-1 justify-content-center">
                         {% if hasDaemonData %}
-                          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapseId }}" aria-expanded="false" aria-controls="{{ collapseId }}" title="Dati rendicontazione">
-                            <i class="fas fa-arrow-down"></i>
+                          <button class="btn btn-sm btn-outline-secondary bo-row-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapseId }}" aria-expanded="false" aria-controls="{{ collapseId }}" title="Dati rendicontazione">
+                            <i class="fas fa-chevron-down" aria-hidden="true"></i>
                           </button>
                         {% endif %}
                         <button class="btn btn-sm btn-outline-info js-load-receipt"
@@ -319,29 +316,28 @@
                   <tr class="detail-row">
                     <td colspan="8" class="p-0 border-0">
                       <div class="collapse" id="{{ collapseId }}">
-                        <article class="it-card it-card-height-full rounded shadow-sm border">
-                        <div class="card-body small">
+                        <div class="bo-row-detail">
                           <div class="row g-3">
                             <div class="col-12 col-md-6">
-                              <h6 class="text-secondary text-uppercase mb-2">Soggetto</h6>
-                              <dl class="row mb-0">
-                                <dt class="col-sm-5 text-muted">Identificativo</dt>
-                                <dd class="col-sm-7">{{ cf ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">Denominazione</dt>
-                                <dd class="col-sm-7">{{ den ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">Email</dt>
-                                <dd class="col-sm-7">{{ sogg.email|default('—') }}</dd>
+                              <h3 class="bo-row-detail-title">Soggetto</h3>
+                              <dl class="bo-dl">
+                                <dt>Identificativo</dt>
+                                <dd>{{ cf ?: '—' }}</dd>
+                                <dt>Denominazione</dt>
+                                <dd>{{ den ?: '—' }}</dd>
+                                <dt>Email</dt>
+                                <dd>{{ sogg.email|default('—') }}</dd>
                               </dl>
                             </div>
                             <div class="col-12 col-md-6">
-                              <h6 class="text-secondary text-uppercase mb-2">Pagamento</h6>
-                              <dl class="row mb-0">
-                                <dt class="col-sm-5 text-muted">Data pagamento</dt>
-                                <dd class="col-sm-7">{% if dataPag %}{{ dataPag|date('d/m/Y H:i') }}{% else %}—{% endif %}</dd>
-                                <dt class="col-sm-5 text-muted">Rata</dt>
-                                <dd class="col-sm-7">{{ rata ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">Voce pendenza</dt>
-                                <dd class="col-sm-7">
+                              <h3 class="bo-row-detail-title">Pagamento</h3>
+                              <dl class="bo-dl">
+                                <dt>Data pagamento</dt>
+                                <dd>{% if dataPag %}{{ dataPag|date('d/m/Y H:i') }}{% else %}—{% endif %}</dd>
+                                <dt>Rata</dt>
+                                <dd>{{ rata ?: '—' }}</dd>
+                                <dt>Voce pendenza</dt>
+                                <dd>
                                   {% if pendenzaId %}
                                     <a href="/pendenze/dettaglio/{{ pendenzaId|url_encode }}?return={{ flow_return_url|url_encode }}&origin=flusso" class="link-primary">{{ pendenzaId }}</a>
                                   {% elseif voceId and not isIndexId %}
@@ -357,7 +353,6 @@
                           </div>
 
                         </div>
-                        </article>
                       </div>
                     </td>
                   </tr>
@@ -369,56 +364,56 @@
                   <tr class="detail-row">
                     <td colspan="8" class="p-0 border-0">
                       <div class="collapse" id="{{ collapseId }}">
-                        <div class="card-body small bg-light border-top">
+                        <div class="bo-row-detail">
                           <div class="row g-3">
                             {% if rend %}
                             <div class="col-12 col-md-6 col-lg-4">
-                              <h6 class="text-secondary text-uppercase mb-2">Rendicontazione</h6>
-                              <dl class="row mb-0">
-                                <dt class="col-sm-5 text-muted">Descrizione</dt>
-                                <dd class="col-sm-7">{{ rend.descrizione_entrata ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">Cod. entrata</dt>
-                                <dd class="col-sm-7">{{ rend.cod_entrata ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">Data pagamento</dt>
-                                <dd class="col-sm-7">{% if rend.data_pagamento %}{{ rend.data_pagamento|date('d/m/Y') }}{% else %}—{% endif %}</dd>
-                                <dt class="col-sm-5 text-muted">Stato rend.</dt>
-                                <dd class="col-sm-7">{{ rend.stato_rend ?: '—' }}</dd>
+                              <h3 class="bo-row-detail-title">Rendicontazione</h3>
+                              <dl class="bo-dl">
+                                <dt>Descrizione</dt>
+                                <dd>{{ rend.descrizione_entrata ?: '—' }}</dd>
+                                <dt>Cod. entrata</dt>
+                                <dd>{{ rend.cod_entrata ?: '—' }}</dd>
+                                <dt>Data pagamento</dt>
+                                <dd>{% if rend.data_pagamento %}{{ rend.data_pagamento|date('d/m/Y') }}{% else %}—{% endif %}</dd>
+                                <dt>Stato rend.</dt>
+                                <dd>{{ rend.stato_rend ?: '—' }}</dd>
                                 {% if rend.id_pendenza %}
-                                  <dt class="col-sm-5 text-muted">ID Pendenza</dt>
-                                  <dd class="col-sm-7">{{ rend.id_pendenza }}</dd>
+                                  <dt>ID Pendenza</dt>
+                                  <dd>{{ rend.id_pendenza }}</dd>
                                 {% endif %}
                               </dl>
                             </div>
                             {% endif %}
                             {% if biz %}
                             <div class="col-12 col-md-6 col-lg-4">
-                              <h6 class="text-secondary text-uppercase mb-2">Ricevuta Biz</h6>
+                              <h3 class="bo-row-detail-title">Ricevuta Biz</h3>
                               {% set bizStatoClass = {'PROCESSED': 'bg-success', 'PENDING': 'bg-warning text-dark', 'ERROR': 'bg-danger', 'SKIPPED': 'bg-secondary'} %}
-                              <dl class="row mb-0">
-                                <dt class="col-sm-5 text-muted">Stato</dt>
-                                <dd class="col-sm-7"><span class="badge {{ bizStatoClass[biz.stato]|default('bg-secondary') }}">{{ biz.stato }}</span></dd>
+                              <dl class="bo-dl">
+                                <dt>Stato</dt>
+                                <dd><span class="badge {{ bizStatoClass[biz.stato]|default('bg-secondary') }}">{{ biz.stato }}</span></dd>
                                 {% if biz.stato == 'PROCESSED' %}
                                   {% if biz.descrizione %}
-                                    <dt class="col-sm-5 text-muted">Descrizione</dt>
-                                    <dd class="col-sm-7">{{ biz.descrizione }}</dd>
+                                    <dt>Descrizione</dt>
+                                    <dd>{{ biz.descrizione }}</dd>
                                   {% endif %}
                                   {% if biz.cf_debitore or biz.nominativo_debitore %}
-                                    <dt class="col-sm-5 text-muted">Debitore</dt>
-                                    <dd class="col-sm-7">
+                                    <dt>Debitore</dt>
+                                    <dd>
                                       {% if biz.cf_debitore %}<strong>{{ biz.cf_debitore }}</strong>{% endif %}
                                       {% if biz.nominativo_debitore %}<div class="text-muted">{{ biz.nominativo_debitore }}</div>{% endif %}
                                     </dd>
                                   {% endif %}
                                   {% if biz.cf_pagante or biz.nominativo_pagante %}
-                                    <dt class="col-sm-5 text-muted">Pagante</dt>
-                                    <dd class="col-sm-7">
+                                    <dt>Pagante</dt>
+                                    <dd>
                                       {% if biz.cf_pagante %}<strong>{{ biz.cf_pagante }}</strong>{% endif %}
                                       {% if biz.nominativo_pagante %}<div class="text-muted">{{ biz.nominativo_pagante }}</div>{% endif %}
                                     </dd>
                                   {% endif %}
                                   {% if biz.trasferimenti is iterable and biz.trasferimenti|length > 0 %}
-                                    <dt class="col-sm-5 text-muted">Trasferimenti</dt>
-                                    <dd class="col-sm-7">
+                                    <dt>Trasferimenti</dt>
+                                    <dd>
                                       {% for tr in biz.trasferimenti %}
                                         <div class="text-nowrap">
                                           <span class="text-muted">{{ tr.fiscal_code_pa }}</span>
@@ -429,32 +424,32 @@
                                   {% endif %}
                                 {% endif %}
                                 {% if biz.error_msg %}
-                                  <dt class="col-sm-5 text-muted">Motivo</dt>
-                                  <dd class="col-sm-7 text-danger">{{ biz.error_msg }}</dd>
+                                  <dt>Motivo</dt>
+                                  <dd class="text-danger">{{ biz.error_msg }}</dd>
                                 {% endif %}
                               </dl>
                             </div>
                             {% endif %}
                             {% if tefa %}
                             <div class="col-12 col-md-6 col-lg-4">
-                              <h6 class="text-secondary text-uppercase mb-2">TEFA</h6>
+                              <h3 class="bo-row-detail-title">TEFA</h3>
                               {% set tefaStatoClass = {'PROCESSED': 'bg-success', 'PENDING': 'bg-warning text-dark', 'ERROR': 'bg-danger', 'SKIPPED': 'bg-secondary'} %}
-                              <dl class="row mb-0">
-                                <dt class="col-sm-5 text-muted">Stato</dt>
-                                <dd class="col-sm-7"><span class="badge {{ tefaStatoClass[tefa.stato]|default('bg-secondary') }}">{{ tefa.stato }}</span></dd>
-                                <dt class="col-sm-5 text-muted">Importo TEFA</dt>
-                                <dd class="col-sm-7">{% if tefa.importo_tefa is not null %}{{ tefa.importo_tefa|number_format(2, ',', '.') }} €{% else %}—{% endif %}</dd>
-                                <dt class="col-sm-5 text-muted">Importo comune</dt>
-                                <dd class="col-sm-7">{% if tefa.importo_comune is not null %}{{ tefa.importo_comune|number_format(2, ',', '.') }} €{% else %}—{% endif %}</dd>
-                                <dt class="col-sm-5 text-muted">Comune</dt>
-                                <dd class="col-sm-7">{{ tefa.denominazione_comune ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">CF Comune</dt>
-                                <dd class="col-sm-7">{{ tefa.cf_comune ?: '—' }}</dd>
-                                <dt class="col-sm-5 text-muted">Sorgente</dt>
-                                <dd class="col-sm-7">{{ tefa.sorgente ?: '—' }}</dd>
+                              <dl class="bo-dl">
+                                <dt>Stato</dt>
+                                <dd><span class="badge {{ tefaStatoClass[tefa.stato]|default('bg-secondary') }}">{{ tefa.stato }}</span></dd>
+                                <dt>Importo TEFA</dt>
+                                <dd>{% if tefa.importo_tefa is not null %}{{ tefa.importo_tefa|number_format(2, ',', '.') }} €{% else %}—{% endif %}</dd>
+                                <dt>Importo comune</dt>
+                                <dd>{% if tefa.importo_comune is not null %}{{ tefa.importo_comune|number_format(2, ',', '.') }} €{% else %}—{% endif %}</dd>
+                                <dt>Comune</dt>
+                                <dd>{{ tefa.denominazione_comune ?: '—' }}</dd>
+                                <dt>CF Comune</dt>
+                                <dd>{{ tefa.cf_comune ?: '—' }}</dd>
+                                <dt>Sorgente</dt>
+                                <dd>{{ tefa.sorgente ?: '—' }}</dd>
                                 {% if tefa.error_msg %}
-                                  <dt class="col-sm-5 text-muted">Motivo</dt>
-                                  <dd class="col-sm-7 text-danger">{{ tefa.error_msg }}</dd>
+                                  <dt>Motivo</dt>
+                                  <dd class="text-danger">{{ tefa.error_msg }}</dd>
                                 {% endif %}
                               </dl>
                             </div>
@@ -472,12 +467,6 @@
           </tbody>
         </table>
       </div>
-    </div>
-
-    <div class="d-flex justify-content-end mt-4">
-      <a class="btn btn-outline-secondary" href="{{ return_url|default('/pagamenti/ricerca-flussi') }}">
-        <i class="fas fa-arrow-left me-1"></i> Torna ai risultati
-      </a>
     </div>
 
     {% if app_debug and flusso %}
@@ -667,30 +656,30 @@ document.addEventListener('DOMContentLoaded', function() {
     var amount = totalAmt ? totalAmt.toLocaleString('it-IT', {minimumFractionDigits: 2}) + ' €' : '—';
     var html = '<div class="row g-3">'
       + '<div class="col-12 col-md-6">'
-      + '<h6 class="text-secondary text-uppercase mb-2">Debitore</h6>'
-      + '<dl class="row mb-0 small">'
+      + '<h3 class="bo-row-detail-title">Debitore</h3>'
+      + '<dl class="bo-dl">'
       + dlRow('Nome', d.debtor_name)
       + dlRow('Codice fiscale', d.debtor_fiscal_code)
       + dlRow('Tipo', d.debtor_type === 'F' ? 'Persona fisica' : (d.debtor_type === 'G' ? 'Persona giuridica' : d.debtor_type))
       + '</dl></div>'
       + '<div class="col-12 col-md-6">'
-      + '<h6 class="text-secondary text-uppercase mb-2">Pagatore</h6>'
-      + '<dl class="row mb-0 small">'
+      + '<h3 class="bo-row-detail-title">Pagatore</h3>'
+      + '<dl class="bo-dl">'
       + dlRow('Nome', d.payer_name)
       + dlRow('Codice fiscale', d.payer_fiscal_code)
       + '</dl></div>'
       + '</div><hr>'
       + '<div class="row g-3">'
       + '<div class="col-12 col-md-6">'
-      + '<h6 class="text-secondary text-uppercase mb-2">Intermediario (PSP)</h6>'
-      + '<dl class="row mb-0 small">'
+      + '<h3 class="bo-row-detail-title">Intermediario (PSP)</h3>'
+      + '<dl class="bo-dl">'
       + dlRow('PSP', d.psp_name || d.psp_id)
       + dlRow('Canale', d.channel)
       + dlRow('Metodo', d.payment_method)
       + '</dl></div>'
       + '<div class="col-12 col-md-6">'
-      + '<h6 class="text-secondary text-uppercase mb-2">Dettagli pagamento</h6>'
-      + '<dl class="row mb-0 small">'
+      + '<h3 class="bo-row-detail-title">Dettagli pagamento</h3>'
+      + '<dl class="bo-dl">'
       + dlRow('Descrizione', d.description)
       + dlRow('Importo totale', amount)
       + dlRow('Data', d.payment_date ? new Date(d.payment_date).toLocaleString('it-IT') : '')
@@ -702,7 +691,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Transfers section
     if (d.transfers && d.transfers.length > 0) {
-      html += '<hr><h6 class="text-secondary text-uppercase mb-2">Trasferimenti (' + d.transfers.length + ')</h6>';
+      html += '<hr><h3 class="bo-row-detail-title">Trasferimenti (' + d.transfers.length + ')</h3>';
       html += '<div class="table-responsive"><table class="table table-sm table-bordered small mb-0">';
       html += '<thead class="table-light"><tr><th>#</th><th>Descrizione</th><th class="text-end">Importo</th><th>Beneficiario</th><th>IBAN</th></tr></thead><tbody>';
       for (var i = 0; i < d.transfers.length; i++) {
@@ -724,7 +713,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function dlRow(label, value) {
-    return '<dt class="col-sm-5 text-muted">' + escapeHtml(label) + '</dt><dd class="col-sm-7 text-break">' + (value ? escapeHtml(String(value)) : '—') + '</dd>';
+    return '<dt>' + escapeHtml(label) + '</dt><dd class="text-break">' + (value ? escapeHtml(String(value)) : '—') + '</dd>';
   }
 
   function escapeHtml(str) {

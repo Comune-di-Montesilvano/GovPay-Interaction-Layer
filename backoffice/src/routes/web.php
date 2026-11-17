@@ -1179,6 +1179,10 @@ return function (App $app, Twig $twig): void {
             if (session_status() === PHP_SESSION_ACTIVE) {
                 session_regenerate_id(true);
             }
+            // Login riuscito: azzera i contatori, il limite vale solo per tentativi falliti
+            // (altrimenti 5 accessi corretti in 15 min bloccano l'account).
+            \App\Security\RateLimiter::reset($emailKey);
+            \App\Security\RateLimiter::reset($ipKey);
             $repo->updateLastLoginAt((int)$user['id']);
             $user = $repo->findById((int)$user['id']) ?? $user;
             $sessionToken = bin2hex(random_bytes(32));
@@ -1210,6 +1214,11 @@ return function (App $app, Twig $twig): void {
     });
 
     $app->get('/logout', function($request, $response) {
+        // ReleaseSessionLockMiddleware chiude la sessione sulle GET: riaprirla, altrimenti
+        // unset/flash/regenerate sotto non vengono salvati.
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
         // Mantieni la sessione per mostrare il flash dopo il redirect
         $_SESSION['flash'][] = ['type' => 'info', 'text' => 'Sei stato disconnesso'];
         if (isset($_SESSION['user']['id'])) {

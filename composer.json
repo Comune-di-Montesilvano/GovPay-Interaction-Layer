@@ -13,6 +13,7 @@
         "govpay/ragioneria-client": "dev-main",
         "guzzlehttp/guzzle": "^7.12",
         "guzzlehttp/psr7": "^2.12",
+        "league/commonmark": "^2.7",
         "nyholm/psr7": "^1.5",
         "pagopa/biz-events-client": "dev-main",
         "pagopa/checkout-ec-client": "dev-main",

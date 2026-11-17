@@ -3,7 +3,7 @@
 {% block title %}Pagamenti - Ricerca Flussi{% endblock %}
 
 {% block content %}
-  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
+  <div class="bo-page-head d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-4">
     <div>
       <h1 class="h4 mb-1"><i class="fas fa-exchange-alt me-2 text-primary"></i>Ricerca Flussi di Rendicontazione</h1>
       <p class="text-muted mb-0">Visualizza e analizza i flussi pagoPA di rendicontazione e quietanze acquisiti dal sistema</p>
@@ -23,84 +23,54 @@
   {% set highlight = highlight_id|default('') %}
   <form method="get" action="/pagamenti/ricerca-flussi" class="card shadow-sm mb-4">
     <input type="hidden" name="q" value="1" />
-    <div class="card-header bg-light border-bottom py-2">
-      <div class="d-flex align-items-center gap-2">
-        <h2 class="h6 mb-0">Ricerca flussi di rendicontazione</h2>
-        <small class="text-muted">| Compila uno o più campi</small>
-      </div>
-    </div>
     <div class="card-body">
-      <div class="row">
-        <div class="form-group col-md-4">
-          <label for="idFlusso">ID flusso</label>
+      <div class="row g-3">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="idFlusso" class="form-label small mb-1">ID flusso</label>
           <input type="text" class="form-control" id="idFlusso" name="idFlusso" value="{{ f.idFlusso|default('') }}" placeholder="ID flusso">
         </div>
-        <div class="form-group col-md-4">
-          <label for="iuv">IUV</label>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="iuv" class="form-label small mb-1">IUV</label>
           <input type="text" class="form-control" id="iuv" name="iuv" value="{{ f.iuv|default('') }}" placeholder="IUV">
         </div>
-        <div class="form-group col-md-4">
-          <div class="select-wrapper">
-            <label for="statoFlusso">Stato flusso</label>
-            <select id="statoFlusso" name="statoFlusso">
-              <option value="">-- tutti --</option>
-              <option value="ACQUISITO" {% if f.statoFlusso is defined and f.statoFlusso == 'ACQUISITO' %}selected{% endif %}>ACQUISITO</option>
-              <option value="ELABORATO" {% if f.statoFlusso is defined and f.statoFlusso == 'ELABORATO' %}selected{% endif %}>ELABORATO</option>
-              <option value="SCARTATO" {% if f.statoFlusso is defined and f.statoFlusso == 'SCARTATO' %}selected{% endif %}>SCARTATO</option>
-            </select>
-          </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="statoFlusso" class="form-label small mb-1">Stato flusso</label>
+          <select id="statoFlusso" name="statoFlusso">
+            <option value="">-- tutti --</option>
+            <option value="ACQUISITO" {% if f.statoFlusso is defined and f.statoFlusso == 'ACQUISITO' %}selected{% endif %}>ACQUISITO</option>
+            <option value="ELABORATO" {% if f.statoFlusso is defined and f.statoFlusso == 'ELABORATO' %}selected{% endif %}>ELABORATO</option>
+            <option value="SCARTATO" {% if f.statoFlusso is defined and f.statoFlusso == 'SCARTATO' %}selected{% endif %}>SCARTATO</option>
+          </select>
         </div>
-      </div>
-      <div class="row">
-        <div class="form-group col-md-4">
-          <label for="dataDaVis">Intervallo date</label>
-          <div class="d-flex gap-1 align-items-center">
-            <input type="text" id="dataDaVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="Da" autocomplete="off">
-            <span class="text-muted small">–</span>
-            <input type="text" id="dataAVis" class="form-control form-control-sm bo-cursor-pointer" placeholder="A" autocomplete="off">
-          </div>
-          <div class="bo-datepicker-quick-selects">
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisMonth')">Mese Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastMonth')">Mese Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('thisYear')">Anno Corrente</button>
-            <button type="button" class="bo-datepicker-quick-btn" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('lastYear')">Anno Precedente</button>
-            <button type="button" class="bo-datepicker-quick-btn btn-clear" onclick="if(typeof window.setBackofficeQuickRange!=='undefined') window.setBackofficeQuickRange('clear')">Azzera</button>
-          </div>
-          <input type="hidden" id="dataDa" name="dataDa" value="{{ f.dataDa|default('') }}">
-          <input type="hidden" id="dataA" name="dataA" value="{{ f.dataA|default('') }}">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <label for="incassato" class="form-label small mb-1">Solo incassati</label>
+          <select id="incassato" name="incassato">
+            <option value="">-- tutti --</option>
+            <option value="true" {% if f.incassato is defined and f.incassato == 'true' %}selected{% endif %}>Sì</option>
+            <option value="false" {% if f.incassato is defined and f.incassato == 'false' %}selected{% endif %}>No</option>
+          </select>
         </div>
-        <div class="form-group col-md-4">
-          <div class="select-wrapper">
-            <label for="incassato">Solo incassati</label>
-            <select id="incassato" name="incassato">
-              <option value="">-- tutti --</option>
-              <option value="true" {% if f.incassato is defined and f.incassato == 'true' %}selected{% endif %}>Sì</option>
-              <option value="false" {% if f.incassato is defined and f.incassato == 'false' %}selected{% endif %}>No</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group col-md-4 d-flex flex-column">
-          <div class="select-wrapper">
-            <label for="ordinamento" class="small mb-0 text-muted">Ordina per</label>
-            <select id="ordinamento" name="ordinamento" data-default-value="-data">
-              <option value="-data" {% if ord == '-data' %}selected{% endif %}>Data flusso (più recenti prima)</option>
-              <option value="+data" {% if ord == '+data' %}selected{% endif %}>Data flusso (più vecchie prima)</option>
-            </select>
-          </div>
+        <div class="col-12 col-lg-6">
+          {% include 'partials/date-range.html.twig' with {value_da: f.dataDa|default(''), value_a: f.dataA|default('')} only %}
         </div>
       </div>
 
-      <div class="row g-3 mt-1">
-        <div class="col-12 col-lg-auto d-flex flex-wrap align-items-center gap-2">
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-search me-1"></i> Cerca
-          </button>
-          <a class="btn btn-outline-secondary" href="/pagamenti/ricerca-flussi?reset=1">
-            <i class="fas fa-eraser me-1"></i> Azzera
-          </a>
-          <button class="btn btn-link px-0" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersFlussi" aria-expanded="false" aria-controls="advancedFiltersFlussi">
-            <i class="fas fa-sliders-h me-1"></i> Filtri avanzati
-          </button>
+      <div class="bo-filter-actions">
+        <button type="submit" class="btn btn-primary" title="Compila uno o più campi">
+          <i class="fas fa-search me-1"></i> Cerca
+        </button>
+        <a class="btn btn-outline-secondary" href="/pagamenti/ricerca-flussi?reset=1">
+          <i class="fas fa-eraser me-1"></i> Azzera
+        </a>
+        <button class="btn btn-link px-1" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFiltersFlussi" aria-expanded="false" aria-controls="advancedFiltersFlussi">
+          <i class="fas fa-sliders-h me-1"></i> Filtri avanzati
+        </button>
+        <div class="bo-filter-sort">
+          <label for="ordinamento" class="small mb-0 text-muted text-nowrap">Ordina per</label>
+          <select class="form-select" id="ordinamento" name="ordinamento" data-default-value="-data">
+            <option value="-data" {% if ord == '-data' %}selected{% endif %}>Data flusso (più recenti prima)</option>
+            <option value="+data" {% if ord == '+data' %}selected{% endif %}>Data flusso (più vecchie prima)</option>
+          </select>
         </div>
       </div>
 

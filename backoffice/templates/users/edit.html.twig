@@ -1,7 +1,8 @@
 {% extends 'base.html.twig' %}
+{% block title %}Modifica utente - GovPay{% endblock %}
 {% block content %}
 <div class="bo-form-shell bo-form-shell-lg">
-  <h1 class="h4 mb-3">Modifica utente</h1>
+  {% embed 'partials/page-header.html.twig' with {icon: 'fa-user-pen', title: 'Modifica utente', back_url: '/impostazioni?tab=utenti', back_label: 'Torna agli utenti'} %}{% endembed %}
   {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
   {% if edit_user.is_disabled %}
     <div class="alert alert-warning py-2 small">

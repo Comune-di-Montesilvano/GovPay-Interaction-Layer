@@ -14,48 +14,10 @@
       (pendenza.tipoPendenza is defined and pendenza.tipoPendenza.idTipoPendenza is defined and pendenza.tipoPendenza.idTipoPendenza == 'BOLLOT')
       or (pendenza.voci is defined and pendenza.voci|length > 0 and pendenza.voci[0].tipoBollo is defined and pendenza.voci[0].tipoBollo is not null and pendenza.voci[0].tipoBollo != '')
   ) %}
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h2 class="h4 mb-0">Dettaglio pendenza <span class="text-muted">{{ idPendenza }}</span></h2>
-    <div class="d-flex gap-2">
-      {% if pendenza and pendenza.stato == 'NON_ESEGUITA' %}
-        {% if not is_bollo %}
-          <a class="btn btn-warning" href="/pendenze/modifica/{{ idPendenza }}?return={{ target_return|url_encode }}">Modifica</a>
-        {% endif %}
-        <form method="post" action="/pendenze/annulla/{{ idPendenza }}" style="display:inline;">
-          <button type="submit" class="btn btn-danger" onclick="return confirm('Sei sicuro di voler annullare questa pendenza?')">Annulla</button>
-        </form>
-      {% elseif pendenza and pendenza.stato == 'ANNULLATA' %}
-        <form method="post" action="/pendenze/riattiva/{{ idPendenza }}" style="display:inline;">
-          <button type="submit" class="btn btn-success" onclick="return confirm('Sei sicuro di voler riattivare questa pendenza?')">Riattiva</button>
-        </form>
-      {% endif %}
-      {% if is_bollo and pendenza.numeroAvviso is defined and pendenza.numeroAvviso and id_dominio %}
-        {% set _burl = '/avviso-bollo?iuv=' ~ pendenza.numeroAvviso|url_encode
-            ~ '&ente=' ~ id_dominio|url_encode
-            ~ '&importo=' ~ (pendenza.importo * 100)|round
-            ~ '&causale=' ~ pendenza.causale|default('')|url_encode
-            ~ '&cf=' ~ (pendenza.soggettoPagatore is defined and pendenza.soggettoPagatore.identificativo is defined ? pendenza.soggettoPagatore.identificativo : '')|url_encode
-            ~ '&scadenza=' ~ pendenza.dataScadenza|default('')|url_encode %}
-        {% for v in (pendenza.voci is defined ? pendenza.voci : []) %}
-          {% set _burl = _burl ~ '&desc[]=' ~ v.descrizione|default('')|url_encode %}
-        {% endfor %}
-        <a class="btn btn-outline-info btn-sm" href="{{ _burl }}" target="_blank" rel="noopener">
-          <i class="fas fa-print me-1" aria-hidden="true"></i> Bollettino
-        </a>
-      {% endif %}
-      {% if came_from_insert %}
-        <a class="btn btn-primary" href="/pendenze/inserimento">Inserisci nuova pendenza</a>
-      {% else %}
-        <a class="btn btn-outline-secondary" href="{{ target_return }}">&laquo; {{ from_smarcatura ? 'Torna alle smarcature' : (from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca') }}</a>
-      {% endif %}
-    </div>
-
-    {# voci spostate dinamicamente per ordine visuale (vedi sotto) #}
-  </div>
-
-  {% if error %}
-    <div class="alert alert-danger">{{ error }}</div>
-  {% endif %}
+  {% set back_label = from_smarcatura ? 'Torna alle smarcature' : (from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca') %}
+  <style>
+    .bo-dett-sep { width: 1px; align-self: stretch; background: var(--bo-border-strong, #c6d2e1); margin: 0 .25rem; }
+  </style>
 
   {% if pendenza %}
     {% set r = pendenza %}
@@ -64,18 +26,6 @@
     {% set is_bollo = (r.tipoPendenza is defined and r.tipoPendenza.idTipoPendenza is defined and r.tipoPendenza.idTipoPendenza == 'BOLLOT')
         or (r.voci is defined and r.voci|length > 0 and r.voci[0].tipoBollo is defined and r.voci[0].tipoBollo is not null and r.voci[0].tipoBollo != '') %}
 
-    {% if is_bollo %}
-      {% set _voci_list = r.voci is defined ? r.voci : [] %}
-      <div class="alert alert-info d-flex align-items-start gap-2 mt-3 mb-2">
-        <i class="fas fa-stamp fa-lg flex-shrink-0 mt-1" aria-hidden="true"></i>
-        <div>
-          <strong>Marca da Bollo Telematica</strong> — {{ _voci_list|length }} voce/i da € 16,00 ciascuna.
-          {% set _prov = (_voci_list|length > 0 and _voci_list[0].provinciaResidenza is defined) ? _voci_list[0].provinciaResidenza : '' %}
-          {% if _prov %}Provincia di residenza: <strong>{{ _prov }}</strong>.{% endif %}
-          Avviso PDF e rateizzazione non applicabili.
-        </div>
-      </div>
-    {% endif %}
 
     {# Raccogli il piano di rateizzazione e normalizza a lista 'rate_info' #}
     {# Normalizziamo la sorgente dei dati delle rate: preferiamo documento.rata, altrimenti proprieta.rate #}
@@ -222,11 +172,7 @@
       {% set selected_rate = null %}
       {% set maxIndex = 0 %}
     {% endif %}
-
-    <div class="card mb-3">
-      <div class="card-body">
-        {# Prepara dominio e identificativi per i bottoni in alto #}
-        {% set idDom = id_dominio|default(pendenza.idDominio|default('')) %}
+    {% set idDom = id_dominio|default(pendenza.idDominio|default('')) %}
         {# Link ricevuta in alto: cerca il primo RPP con esito OK, poi trova riscossione corrispondente per iur #}
         {% set topRppPath = '' %}
         {% if r.rpp is defined and r.rpp is iterable and r.voci is defined and r.voci is iterable %}
@@ -281,39 +227,25 @@
             {% endif %}
           {% endfor %}
         {% endif %}
+            {# Bottone Rate: solo se abbiamo rate con numeriAvviso #}
+            {% set numeri = [] %}
+            {% if displayed_rates is defined %}
+              {% for dr in displayed_rates %}
+                {% if dr.numeroAvviso is defined and dr.numeroAvviso %}
+                  {% set numeri = numeri|merge([dr.numeroAvviso]) %}
+                {% endif %}
+              {% endfor %}
+            {% endif %}
 
-        <div class="d-flex flex-wrap align-items-center gap-3">
-          <div>
-            <div class="text-muted small">Stato</div>
-            {% include 'partials/state_badge.html.twig' with { state: r.stato|default(''), pill: false } %}
-          </div>
-          <div>
-            <div class="text-muted small">Importo</div>
-            <div class="h5 mb-0">{{ r.importo is defined ? (r.importo|number_format(2, ',', '.')) ~ ' €' : '—' }}</div>
-          </div>
-          <div>
-            <div class="text-muted small">Data avviso</div>
-            {% set da = r.dataCaricamento|default('') %}
-            <div class="mb-0">{{ da ? (da|date('d/m/Y')) : '—' }}</div>
-          </div>
-          <div>
-            <div class="text-muted small">Scadenza</div>
-            {% set ds = r.dataScadenza|default('') %}
-            <div class="mb-0">{{ ds ? (ds|date('d/m/Y')) : '—' }}</div>
-          </div>
-          <div>
-            <div class="text-muted small">Validità</div>
-            {% set dv = r.dataValidita|default('') %}
-            <div class="mb-0">{{ dv ? (dv|date('d/m/Y')) : '—' }}</div>
-          </div>
-          <div>
-            <div class="text-muted small">Pagamento</div>
-            {% set dp = r.dataPagamento|default('') %}
-            <div class="mb-0">{{ dp ? (dp|date('d/m/Y')) : '—' }}</div>
-          </div>
-          {# Bottoni in alto, accanto alla zona pagamento #}
-          {% if idDom and (r.numeroAvviso or topRppPath or bolloXmlTesto or (displayed_rates|length > 0)) %}
-          <div class="d-flex align-items-center gap-2 ms-auto">
+  {# Intestazione: link di ritorno, titolo, un solo gruppo azioni (documenti | azioni sulla pendenza). #}
+  <div class="bo-page-head mb-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ target_return }}" title="{{ back_label }}" aria-label="{{ back_label }}"><i class="fas fa-arrow-left" aria-hidden="true"></i></a>
+        <h1 class="h4 mb-0"><i class="fas fa-file-invoice-dollar me-2 text-primary" aria-hidden="true"></i>Dettaglio pendenza <span class="text-muted">{{ idPendenza }}</span></h1>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        {% if idDom %}
             {% if idDom and r.numeroAvviso and not is_bollo %}
               <a class="btn btn-primary btn-sm" href="/avvisi/{{ idDom|url_encode }}/{{ r.numeroAvviso|url_encode }}" target="_blank" rel="noopener" title="Scarica avviso (PDF)">
                 <i class="fas fa-file-pdf me-1"></i> Avviso
@@ -361,8 +293,8 @@
               {% endfor %}
             {% endif %}
             {% if numeri|length > 0 and not is_bollo %}
-              <button id="stampa-rate-btn" class="btn btn-success btn-sm" title="Scarica l'avviso multirata (PDF)">
-                <i class="fas fa-clipboard-list me-1"></i> Rate
+              <button id="stampa-rate-btn" class="btn btn-outline-primary btn-sm" title="Scarica l'avviso multirata (PDF)">
+                <i class="fas fa-clipboard-list me-1"></i> Avviso multirata
               </button>
               <script>
                 (function(){
@@ -407,8 +339,89 @@
                 })();
               </script>
             {% endif %}
-          </div>
+        {% endif %}
+      {% if is_bollo and pendenza.numeroAvviso is defined and pendenza.numeroAvviso and id_dominio %}
+        {% set _burl = '/avviso-bollo?iuv=' ~ pendenza.numeroAvviso|url_encode
+            ~ '&ente=' ~ id_dominio|url_encode
+            ~ '&importo=' ~ (pendenza.importo * 100)|round
+            ~ '&causale=' ~ pendenza.causale|default('')|url_encode
+            ~ '&cf=' ~ (pendenza.soggettoPagatore is defined and pendenza.soggettoPagatore.identificativo is defined ? pendenza.soggettoPagatore.identificativo : '')|url_encode
+            ~ '&scadenza=' ~ pendenza.dataScadenza|default('')|url_encode %}
+        {% for v in (pendenza.voci is defined ? pendenza.voci : []) %}
+          {% set _burl = _burl ~ '&desc[]=' ~ v.descrizione|default('')|url_encode %}
+        {% endfor %}
+        <a class="btn btn-outline-info btn-sm" href="{{ _burl }}" target="_blank" rel="noopener">
+          <i class="fas fa-print me-1" aria-hidden="true"></i> Bollettino
+        </a>
+      {% endif %}
+        {% if pendenza and pendenza.stato == 'NON_ESEGUITA' %}
+          <span class="bo-dett-sep" aria-hidden="true"></span>
+          {% if not is_bollo %}
+            <a class="btn btn-outline-secondary btn-sm" href="/pendenze/modifica/{{ idPendenza }}?return={{ target_return|url_encode }}"><i class="fas fa-pen me-1" aria-hidden="true"></i>Modifica</a>
           {% endif %}
+          <form method="post" action="/pendenze/annulla/{{ idPendenza }}" class="d-inline m-0">
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Sei sicuro di voler annullare questa pendenza?')"><i class="fas fa-ban me-1" aria-hidden="true"></i>Annulla</button>
+          </form>
+        {% elseif pendenza and pendenza.stato == 'ANNULLATA' %}
+          <span class="bo-dett-sep" aria-hidden="true"></span>
+          <form method="post" action="/pendenze/riattiva/{{ idPendenza }}" class="d-inline m-0">
+            <button type="submit" class="btn btn-outline-success btn-sm" onclick="return confirm('Sei sicuro di voler riattivare questa pendenza?')"><i class="fas fa-undo me-1" aria-hidden="true"></i>Riattiva</button>
+          </form>
+        {% endif %}
+        {% if came_from_insert %}
+          <a class="btn btn-primary btn-sm" href="/pendenze/inserimento"><i class="fas fa-plus me-1" aria-hidden="true"></i>Inserisci nuova pendenza</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+    {% if is_bollo %}
+      {% set _voci_list = r.voci is defined ? r.voci : [] %}
+      <div class="alert alert-info d-flex align-items-start gap-2 mt-3 mb-2">
+        <i class="fas fa-stamp fa-lg flex-shrink-0 mt-1" aria-hidden="true"></i>
+        <div>
+          <strong>Marca da Bollo Telematica</strong> — {{ _voci_list|length }} voce/i da € 16,00 ciascuna.
+          {% set _prov = (_voci_list|length > 0 and _voci_list[0].provinciaResidenza is defined) ? _voci_list[0].provinciaResidenza : '' %}
+          {% if _prov %}Provincia di residenza: <strong>{{ _prov }}</strong>.{% endif %}
+          Avviso PDF e rateizzazione non applicabili.
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <div>
+            <div class="text-muted small">Stato</div>
+            {% include 'partials/state_badge.html.twig' with { state: r.stato|default(''), pill: false } %}
+          </div>
+          <div>
+            <div class="text-muted small">Importo</div>
+            <div class="h5 mb-0">{{ r.importo is defined ? (r.importo|number_format(2, ',', '.')) ~ ' €' : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-muted small">Data avviso</div>
+            {% set da = r.dataCaricamento|default('') %}
+            <div class="mb-0">{{ da ? (da|date('d/m/Y')) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-muted small">Scadenza</div>
+            {% set ds = r.dataScadenza|default('') %}
+            <div class="mb-0">{{ ds ? (ds|date('d/m/Y')) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-muted small">Validità</div>
+            {% set dv = r.dataValidita|default('') %}
+            <div class="mb-0">{{ dv ? (dv|date('d/m/Y')) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-muted small">Pagamento</div>
+            {% set dp = r.dataPagamento|default('') %}
+            <div class="mb-0">{{ dp ? (dp|date('d/m/Y')) : '—' }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -786,67 +799,98 @@
     {% set attempt_list = payment_attempts|default([]) %}
     {% set rppCount = attempt_list|length %}
     <div class="card mt-3">
-      <div class="card-header d-flex justify-content-start align-items-center">
-        <button class="btn btn-sm btn-outline-secondary me-2 mr-2" type="button"
-          {% if rppCount == 0 %}disabled aria-disabled="true"{% else %}data-bs-toggle="collapse" data-bs-target="#rtCollapse" aria-expanded="false" aria-controls="rtCollapse"{% endif %}>
-          Mostra tentativi di pagamento <span class="badge bg-secondary">{{ rppCount }}</span>
+      {% set hasHistory = (r.datiAllegati is defined and (r.datiAllegati.sorgente is defined or r.datiAllegati.operatore is defined or (r.datiAllegati.storico is defined and r.datiAllegati.storico is iterable))) %}
+      {% set hasNotifiche = (r.datiAllegati is defined and r.datiAllegati.notifiche is defined and r.datiAllegati.notifiche is iterable and r.datiAllegati.notifiche|length > 0) %}
+      {% set defaultTab = rppCount > 0 ? 'rtCollapse' : (hasHistory ? 'historyCollapse' : (hasNotifiche ? 'notificheCollapse' : '')) %}
+      {# Tab (niente JS Bootstrap nel backoffice): un pannello .collapse alla volta, gestito dallo script sotto. #}
+      <style>
+        .dett-tabs { gap: .25rem; padding: 0 .75rem; border-bottom: 1px solid var(--bo-border, #e2e7ee); }
+        .dett-tabs .nav-link { background: transparent; font: inherit; font-size: .9rem; cursor: pointer; padding: .6rem .75rem; margin-bottom: -1px; }
+        .dett-tabs .nav-link:disabled { opacity: .45; cursor: not-allowed; border-bottom-color: transparent; }
+        .dett-tabs .nav-link .badge { padding: .05rem .4rem !important; line-height: 1.3; }
+      </style>
+      <div class="nav nav-tabs dett-tabs" role="tablist" data-dett-tabs data-default="{{ defaultTab }}">
+        <button type="button" class="nav-link" role="tab" data-target="rtCollapse" aria-controls="rtCollapse" aria-selected="false" {% if rppCount == 0 %}disabled{% endif %}>
+          Tentativi di pagamento <span class="badge bg-secondary">{{ rppCount }}</span>
         </button>
-        {% set hasHistory = (r.datiAllegati is defined and (r.datiAllegati.sorgente is defined or r.datiAllegati.operatore is defined or (r.datiAllegati.storico is defined and r.datiAllegati.storico is iterable))) %}
-        <button class="btn btn-sm btn-outline-secondary me-2 mr-2" type="button" 
-          {% if not hasHistory %}disabled aria-disabled="true"{% else %}data-bs-toggle="collapse" data-bs-target="#historyCollapse" aria-expanded="false" aria-controls="historyCollapse"{% endif %}>
+        <button type="button" class="nav-link" role="tab" data-target="historyCollapse" aria-controls="historyCollapse" aria-selected="false" {% if not hasHistory %}disabled{% endif %}>
           Sorgente e storico
         </button>
-        {% set hasNotifiche = (r.datiAllegati is defined and r.datiAllegati.notifiche is defined and r.datiAllegati.notifiche is iterable and r.datiAllegati.notifiche|length > 0) %}
-        <button class="btn btn-sm btn-outline-secondary" type="button" 
-          {% if not hasNotifiche %}disabled aria-disabled="true"{% else %}data-bs-toggle="collapse" data-bs-target="#notificheCollapse" aria-expanded="false" aria-controls="notificheCollapse"{% endif %}>
+        <button type="button" class="nav-link" role="tab" data-target="notificheCollapse" aria-controls="notificheCollapse" aria-selected="false" {% if not hasNotifiche %}disabled{% endif %}>
           Notifiche <span class="badge bg-secondary">{{ hasNotifiche ? r.datiAllegati.notifiche|length : 0 }}</span>
         </button>
       </div>
+      <script>
+        document.addEventListener('DOMContentLoaded', function () {
+          var bar = document.querySelector('[data-dett-tabs]');
+          if (!bar) return;
+          var tabs = bar.querySelectorAll('.nav-link');
+          var show = function (id) {
+            tabs.forEach(function (t) {
+              var on = t.getAttribute('data-target') === id;
+              t.classList.toggle('active', on);
+              t.setAttribute('aria-selected', String(on));
+              var panel = document.getElementById(t.getAttribute('data-target'));
+              if (panel) panel.classList.toggle('show', on);
+            });
+          };
+          tabs.forEach(function (t) {
+            t.addEventListener('click', function () { if (!t.disabled) show(t.getAttribute('data-target')); });
+          });
+          if (bar.getAttribute('data-default')) show(bar.getAttribute('data-default'));
+        });
+      </script>
       <div class="collapse" id="historyCollapse">
+        {# Dati affiancati (etichetta sopra, valore sotto) come il riepilogo in alto: niente titolo, la tab lo dice gia'. #}
+        <style>
+          .dett-kv { display: flex; flex-wrap: wrap; gap: .75rem 2rem; }
+          .dett-kv .k { font-size: .78rem; color: var(--text-muted, #64748b); }
+          .dett-storico { list-style: none; margin: .25rem 0 0; padding: 0; font-size: .875rem; }
+          .dett-storico li { padding: .15rem 0; }
+        </style>
         <div class="card-body border-bottom">
-            <h5 class="card-title h6">Sorgente</h5>
-            {% if r.datiAllegati is defined and r.datiAllegati.sorgente is defined %}
-                <div><span class="text-muted">Origine:</span> {{ r.datiAllegati.sorgente }}</div>
+          {% set dall = r.datiAllegati is defined ? r.datiAllegati : {} %}
+          <div class="dett-kv">
+            {% if dall.sorgente is defined %}
+              <div><div class="k">Origine</div><div>{{ dall.sorgente }}</div></div>
             {% endif %}
-            {% if r.datiAllegati is defined and r.datiAllegati.batchId is defined %}
-                <div><span class="text-muted">Batch ID:</span> {{ r.datiAllegati.batchId }}</div>
+            {% if dall.batchId is defined %}
+              <div><div class="k">Batch ID</div><div class="font-monospace">{{ dall.batchId }}</div></div>
             {% endif %}
-            {% if r.datiAllegati is defined and r.datiAllegati.operatore is defined %}
-                <div><span class="text-muted">Operatore:</span> {{ r.datiAllegati.operatore }}</div>
+            {% if dall.operatore is defined %}
+              <div><div class="k">Operatore</div><div>{{ dall.operatore }}</div></div>
             {% endif %}
-            {% if r.datiAllegati is defined and r.datiAllegati.utente_autenticato is defined and r.datiAllegati.utente_autenticato %}
-                <div class="mt-2 pt-2 border-top" style="border-top-style: dashed !important; border-top-color: var(--border-color) !important;">
-                    <strong class="text-secondary"><i class="fas fa-user-check me-1"></i> Utente Autenticato Frontoffice:</strong>
-                    <div class="ms-3 ps-1 mt-1">
-                        <div><span class="text-muted">Nome e Cognome:</span> {{ r.datiAllegati.utente_nome|default('—') }} {{ r.datiAllegati.utente_cognome|default('—') }}</div>
-                        <div><span class="text-muted">Codice Fiscale:</span> <span class="font-monospace small">{{ r.datiAllegati.utente_cf|default('—') }}</span></div>
-                        {% if r.datiAllegati.utente_email is defined and r.datiAllegati.utente_email %}
-                            <div><span class="text-muted">Email:</span> {{ r.datiAllegati.utente_email }}</div>
-                        {% endif %}
-                        {% if r.datiAllegati.utente_provider is defined and r.datiAllegati.utente_provider %}
-                            <div><span class="text-muted">Provider di accesso:</span> {{ r.datiAllegati.utente_provider }}</div>
-                        {% endif %}
-                    </div>
-                </div>
+            {% if dall.utente_autenticato is defined and dall.utente_autenticato %}
+              <div><div class="k"><i class="fas fa-user-check me-1" aria-hidden="true"></i>Cittadino (frontoffice)</div><div>{{ dall.utente_nome|default('—') }} {{ dall.utente_cognome|default('') }}</div></div>
+              <div><div class="k">Codice fiscale</div><div class="font-monospace">{{ dall.utente_cf|default('—') }}</div></div>
+              {% if dall.utente_email is defined and dall.utente_email %}
+                <div><div class="k">Email</div><div>{{ dall.utente_email }}</div></div>
+              {% endif %}
+              {% if dall.utente_provider is defined and dall.utente_provider %}
+                <div><div class="k">Accesso</div><div>{{ dall.utente_provider }}</div></div>
+              {% endif %}
+            {% elseif dall.sorgente is defined and dall.sorgente == 'Spontaneo' %}
+              {# Frontoffice senza login (autenticazione "none" o utente non loggato): nessun dato del cittadino. #}
+              <div><div class="k"><i class="fas fa-user-slash me-1" aria-hidden="true"></i>Cittadino (frontoffice)</div><div class="text-muted">Non autenticato</div></div>
             {% endif %}
-            {% if r.datiAllegati is defined and r.datiAllegati.storico is defined and r.datiAllegati.storico is iterable %}
-                <div class="mt-2">
-                <strong>Storico Modifiche:</strong>
-                <ul class="list-unstyled pl-2 border-left ml-2 mb-0">
-                {% for h in r.datiAllegati.storico|reverse %}
-                    <li><small class="text-muted">{{ h.data|date('d/m/Y H:i') }}</small> - {{ h.operatore|default('') }} ({{ h.operazione|default('Modifica') }})</li>
+          </div>
+          {% if dall.storico is defined and dall.storico is iterable and dall.storico|length > 0 %}
+            <div class="mt-3">
+              <div class="k" style="font-size:.78rem;color:var(--text-muted,#64748b)">Storico modifiche</div>
+              <ul class="dett-storico">
+                {% for h in dall.storico|reverse %}
+                  <li><span class="text-muted">{{ h.data|date('d/m/Y H:i') }}</span> · {{ h.operatore|default('') }} · {{ h.operazione|default('Modifica') }}</li>
                 {% endfor %}
-                </ul>
-                </div>
-            {% endif %}
+              </ul>
+            </div>
+          {% endif %}
         </div>
       </div>
       {% if hasNotifiche %}
       <div class="collapse" id="notificheCollapse">
-        <div class="card-body border-bottom">
-            <h5 class="card-title h6">Notifiche Inviate</h5>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover">
+        <div class="card-body">
+            <div class="table-responsive small">
+                <table class="table table-sm table-hover align-middle mb-0">
                     <thead>
                         <tr>
                             <th>Data/Ora</th>
@@ -937,8 +981,8 @@
                       <td>{{ attempt.institution ?: '—' }}</td>
                       <td class="text-center">
                         {% if attempt.receipt_path %}
-                          <a class="btn btn-success btn-sm px-2 py-0" href="/pendenze{{ attempt.receipt_path }}/rt" title="Scarica ricevuta" aria-label="Scarica ricevuta">
-                            <i class="fas fa-file-pdf"></i>
+                          <a class="btn btn-outline-success btn-sm" href="/pendenze{{ attempt.receipt_path }}/rt" target="_blank" rel="noopener" title="Scarica ricevuta" aria-label="Scarica ricevuta">
+                            <i class="fas fa-file-pdf me-1" aria-hidden="true"></i>PDF
                           </a>
                         {% else %}
                           —
@@ -971,18 +1015,56 @@
       {# Removed related_pendenze view: all rates are shown in the Rateizzazione section above. #}
     {% endif %}
   {% else %}
+  {# Intestazione: link di ritorno, titolo, un solo gruppo azioni (documenti | azioni sulla pendenza). #}
+  <div class="bo-page-head mb-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div class="d-flex align-items-center gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ target_return }}" title="{{ back_label }}" aria-label="{{ back_label }}"><i class="fas fa-arrow-left" aria-hidden="true"></i></a>
+        <h1 class="h4 mb-0"><i class="fas fa-file-invoice-dollar me-2 text-primary" aria-hidden="true"></i>Dettaglio pendenza <span class="text-muted">{{ idPendenza }}</span></h1>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if is_bollo and pendenza.numeroAvviso is defined and pendenza.numeroAvviso and id_dominio %}
+        {% set _burl = '/avviso-bollo?iuv=' ~ pendenza.numeroAvviso|url_encode
+            ~ '&ente=' ~ id_dominio|url_encode
+            ~ '&importo=' ~ (pendenza.importo * 100)|round
+            ~ '&causale=' ~ pendenza.causale|default('')|url_encode
+            ~ '&cf=' ~ (pendenza.soggettoPagatore is defined and pendenza.soggettoPagatore.identificativo is defined ? pendenza.soggettoPagatore.identificativo : '')|url_encode
+            ~ '&scadenza=' ~ pendenza.dataScadenza|default('')|url_encode %}
+        {% for v in (pendenza.voci is defined ? pendenza.voci : []) %}
+          {% set _burl = _burl ~ '&desc[]=' ~ v.descrizione|default('')|url_encode %}
+        {% endfor %}
+        <a class="btn btn-outline-info btn-sm" href="{{ _burl }}" target="_blank" rel="noopener">
+          <i class="fas fa-print me-1" aria-hidden="true"></i> Bollettino
+        </a>
+      {% endif %}
+        {% if pendenza and pendenza.stato == 'NON_ESEGUITA' %}
+          <span class="bo-dett-sep" aria-hidden="true"></span>
+          {% if not is_bollo %}
+            <a class="btn btn-outline-secondary btn-sm" href="/pendenze/modifica/{{ idPendenza }}?return={{ target_return|url_encode }}"><i class="fas fa-pen me-1" aria-hidden="true"></i>Modifica</a>
+          {% endif %}
+          <form method="post" action="/pendenze/annulla/{{ idPendenza }}" class="d-inline m-0">
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Sei sicuro di voler annullare questa pendenza?')"><i class="fas fa-ban me-1" aria-hidden="true"></i>Annulla</button>
+          </form>
+        {% elseif pendenza and pendenza.stato == 'ANNULLATA' %}
+          <span class="bo-dett-sep" aria-hidden="true"></span>
+          <form method="post" action="/pendenze/riattiva/{{ idPendenza }}" class="d-inline m-0">
+            <button type="submit" class="btn btn-outline-success btn-sm" onclick="return confirm('Sei sicuro di voler riattivare questa pendenza?')"><i class="fas fa-undo me-1" aria-hidden="true"></i>Riattiva</button>
+          </form>
+        {% endif %}
+        {% if came_from_insert %}
+          <a class="btn btn-primary btn-sm" href="/pendenze/inserimento"><i class="fas fa-plus me-1" aria-hidden="true"></i>Inserisci nuova pendenza</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
     {% if not error %}
       <div class="alert alert-warning">Nessun dato pendenza disponibile.</div>
     {% endif %}
   {% endif %}
 
-  <div class="mt-3">
-    {% if came_from_insert %}
-      <a class="btn btn-primary" href="/pendenze/inserimento">Inserisci nuova pendenza</a>
-    {% else %}
-      <a class="btn btn-outline-secondary" href="{{ target_return }}">&laquo; {{ from_smarcatura ? 'Torna alle smarcature' : (from_flow ? 'Torna al dettaglio flusso' : 'Torna alla ricerca') }}</a>
-    {% endif %}
-  </div>
 
 <script>
 // (Funzioni JS rimosse: ora usiamo form POST per annulla/riattiva)
