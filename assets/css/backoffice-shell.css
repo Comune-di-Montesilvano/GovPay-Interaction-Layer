@@ -2108,3 +2108,30 @@ a.list-group-item:hover, .list-group-item-action:hover { background: #f8fbff; }
 
 /* Ancore e scrollIntoView({block:'start'}) atterrano sotto topbar + intestazione fissa. */
 html { scroll-padding-top: calc(var(--bo-topbar-height, 56px) + var(--bo-page-head-height, 0px) + .75rem); }
+
+/* Input group: simbolo (€) alla stessa altezza degli input (prima 16px/24px -> gruppo 40px vs 36px). */
+.input-group > .input-group-text { font-size: .9rem; line-height: 1.2; }
+.input-group > .form-control:not(:first-child) { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
+
+/* Riga voce pendenza: bottone aggiungi/rimuovi quadrato, alto quanto gli input; ID allineato al testo input. */
+.voce-item .bo-voce-btn { width: 2.25rem; height: 2.25rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.voce-item .form-control-plaintext { line-height: 1.2; font-weight: 600; }
+
+/* Toggle con testo diverso aperto/chiuso: <span class="bo-when-closed">…</span><span class="bo-when-open">…</span> */
+[aria-expanded="true"] > .bo-when-closed,
+[aria-expanded="false"] > .bo-when-open,
+:not([aria-expanded]) > .bo-when-open { display: none; }
+
+/* .form-text.small: stessa misura delle altre note (.small da sola la ingrandirebbe). */
+.bo-content-inner .form-text.small { font-size: 0.78rem !important; }
+
+/* Sezione dentro un pannello a scomparsa (es. Campi avanzati): distanza dalla sezione precedente. */
+.collapse > .bo-form-section:first-child { margin-top: 1.75rem; }
+
+/* Voci pendenza: etichette solo sulla prima riga da tablet in su (restano per screen reader). */
+@media (min-width: 768px) {
+  #vociList .voce-item + .voce-item label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  #vociList .voce-item + .voce-item { margin-top: -.5rem; }
+}

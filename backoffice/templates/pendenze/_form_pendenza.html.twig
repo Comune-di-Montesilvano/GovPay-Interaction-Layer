@@ -304,12 +304,12 @@
   {% if existingVoci is iterable and existingVoci|length > 0 %}
     {% for idx, voce in existingVoci %}
       <div class="row g-3 align-items-end voce-item" data-index="{{ idx }}">
-        <div class="form-group col-md-3">
+        <div class="form-group col-md-1">
           <label class="active">ID voce</label>
           <div class="form-control-plaintext">{{ voce.idVocePendenza|default('') }}</div>
           <input type="hidden" name="voci[{{ idx }}][idVocePendenza]" value="{{ voce.idVocePendenza|default('') }}">
         </div>
-        <div class="form-group col-md-5">
+        <div class="form-group col-md-7">
           <label for="voce_desc_{{ idx }}" class="active">Descrizione voce</label>
           <input id="voce_desc_{{ idx }}" name="voci[{{ idx }}][descrizione]" type="text" class="form-control" placeholder="Descrizione voce" value="{{ voce.descrizione|default('') }}" required>
         </div>
@@ -321,10 +321,9 @@
           </div>
         </div>
         <div class="col-md-1">
-          <label class="d-none d-md-block">&nbsp;</label>
           {% if can_remove_voci and idx|default(0) > 0 %}
-            <button type="button" class="btn btn-outline-danger btn-sm remove-voce w-100" title="Rimuovi voce">
-              <span aria-hidden="true">✖</span>
+            <button type="button" class="btn btn-outline-danger remove-voce bo-voce-btn" title="Rimuovi voce">
+              <i class="fas fa-trash-can" aria-hidden="true"></i>
               <span class="visually-hidden">Rimuovi voce</span>
             </button>
           {% endif %}
@@ -333,16 +332,16 @@
     {% endfor %}
   {% else %}
     <div class="row g-3 align-items-end voce-item" data-index="0">
-      <div class="form-group col-md-3">
+      <div class="form-group col-md-1">
           <label class="active">ID voce</label>
           <div class="form-control-plaintext">1</div>
           <input type="hidden" name="voci[0][idVocePendenza]" value="1">
         </div>
-      <div class="form-group col-md-5">
+      <div class="form-group col-md-7">
         <label for="voce_desc_0" class="active">Descrizione voce</label>
         <input id="voce_desc_0" name="voci[0][descrizione]" type="text" class="form-control" placeholder="Descrizione voce" value="{{ old.causale|default('') }}" required>
       </div>
-      <div class="form-group col-md-2">
+      <div class="form-group col-md-3">
         <label for="voce_imp_0" class="input-symbol-label active">Importo voce</label>
         <div class="input-group input-number">
           <span class="input-group-text fw-semibold">€</span>
@@ -350,9 +349,8 @@
         </div> 
       </div>
       <div class="form-group col-md-1">
-        <label class="d-none d-md-block">&nbsp;</label>
-        <button type="button" id="addVoceBtn" class="btn btn-outline-primary btn-sm w-100" title="Aggiungi voce">
-          <span aria-hidden="true">✚</span>
+        <button type="button" id="addVoceBtn" class="btn btn-outline-primary bo-voce-btn" title="Aggiungi voce">
+          <i class="fas fa-plus" aria-hidden="true"></i>
           <span class="visually-hidden">Aggiungi voce</span>
         </button>
       </div>
@@ -454,16 +452,16 @@
     row.className = 'row g-3 align-items-end voce-item';
     row.setAttribute('data-index', voceIndex);
     row.innerHTML = `
-      <div class="form-group col-md-3">
+      <div class="form-group col-md-1">
         <label class="active">ID voce</label>
         <div class="form-control-plaintext">${voceIndex + 1}</div>
         <input type="hidden" name="voci[${voceIndex}][idVocePendenza]" value="${voceIndex + 1}">
       </div>
-      <div class="form-group col-md-5">
+      <div class="form-group col-md-7">
         <label for="voce_desc_${voceIndex}" class="active">Descrizione voce</label>
         <input id="voce_desc_${voceIndex}" name="voci[${voceIndex}][descrizione]" type="text" class="form-control" placeholder="Descrizione voce" required>
       </div>
-      <div class="form-group col-md-2">
+      <div class="form-group col-md-3">
         <label for="voce_imp_${voceIndex}" class="input-symbol-label active">Importo voce</label>
         <div class="input-group input-number">
           <span class="input-group-text fw-semibold">€</span>
@@ -471,9 +469,8 @@
         </div>
       </div>
       <div class="form-group col-md-1">
-        <label class="d-none d-md-block">&nbsp;</label>
         {% if can_remove_voci %}
-        <button type="button" class="btn btn-outline-danger btn-sm remove-voce w-100">✖</button>
+        <button type="button" class="btn btn-outline-danger remove-voce bo-voce-btn" title="Rimuovi voce" aria-label="Rimuovi voce"><i class="fas fa-trash-can" aria-hidden="true"></i></button>
         {% endif %}
       </div>`;
     container.appendChild(row);
