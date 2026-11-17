@@ -63,6 +63,21 @@ final class CsrfMiddlewareTest extends TestCase
         self::assertNotSame('', $_SESSION[JobControlCsrf::SESSION_KEY] ?? '');
     }
 
+    /**
+     * I controller (Impostazioni, Backup, Mapping, Rendicontazione) leggono il proprio token dopo
+     * che ReleaseSessionLockMiddleware ha chiuso la sessione: se non esiste gia', quello generato
+     * da loro non viene salvato e il primo POST fallisce ("Token non valido").
+     */
+    public function testGetCreatesPerControllerTokensWithoutOverwritingExisting(): void
+    {
+        $_SESSION['impostazioni_csrf'] = 'esistente';
+        $this->dispatch((new ServerRequestFactory())->createServerRequest('GET', 'http://gil.test/impostazioni'));
+        self::assertSame('esistente', $_SESSION['impostazioni_csrf']);
+        foreach (['backup_csrf', 'mapping_csrf', 'rendicontazione_csrf'] as $key) {
+            self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', (string)($_SESSION[$key] ?? ''), $key);
+        }
+    }
+
     public function testFormPostWithoutOrWrongTokenRedirectsWithFlashAndDoesNotRunHandler(): void
     {
         $token = JobControlCsrf::token();
