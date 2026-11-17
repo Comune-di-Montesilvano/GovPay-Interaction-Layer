@@ -419,7 +419,17 @@ class HomeController
             $this->twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
         }
 
-        return $this->twig->render($response, 'guida.html.twig');
+        $guida = null;
+        try {
+            $guida = \App\Services\GuidaRenderer::renderFile();
+        } catch (\Throwable $e) {
+            \App\Logger::getInstance()->error('Rendering guida fallito', ['error' => $e->getMessage()]);
+        }
+
+        return $this->twig->render($response, 'guida.html.twig', [
+            'guida_html'     => $guida['html'] ?? null,
+            'guida_sections' => $guida['sections'] ?? [],
+        ]);
     }
 
 }
