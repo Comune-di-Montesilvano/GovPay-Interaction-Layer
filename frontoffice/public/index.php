@@ -1869,11 +1869,11 @@ if (!function_exists('frontoffice_amount_to_cents')) {
 if (!function_exists('frontoffice_client_ip')) {
     function frontoffice_client_ip(): string
     {
-        $trustedProxiesSetting = frontoffice_env_value('TRUSTED_PROXIES', '');
-        $trustedProxies = array_filter(array_map('trim', explode(',', $trustedProxiesSetting)));
-        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+        $trustedProxiesSetting = (string)frontoffice_env_value('TRUSTED_PROXIES', '');
+        $remoteAddr = (string)($_SERVER['REMOTE_ADDR'] ?? '');
 
-        if (!empty($trustedProxies) && in_array($remoteAddr, $trustedProxies, true)) {
+        // IP esatti, CIDR o "*": stessa regola del backoffice (App\Security\TrustedProxies)
+        if (\App\Security\TrustedProxies::isTrusted($remoteAddr, $trustedProxiesSetting)) {
             $forwarded = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
             if ($forwarded !== '') {
                 $first = trim((string)(explode(',', $forwarded)[0] ?? ''));
