@@ -464,5 +464,8 @@
     "Sede legale": "Registered office",
     "Riprova come impresa": "Try again as a business",
     "Accesso come impresa non riuscito": "Business login failed",
-    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "The identity provider did not return a valid VAT number. Use an SPID identity for professional use on behalf of the legal entity, or log in as a citizen."
+    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "The identity provider did not return a valid VAT number. Use an SPID identity for professional use on behalf of the legal entity, or log in as a citizen.",
+    "Scegli come accedere": "Choose how to log in",
+    "Con la tua identità SPID o CIE personale": "With your personal SPID or CIE identity",
+    "SPID per persone giuridiche: operi a nome dell’impresa con la sua Partita IVA": "SPID for legal entities: act on behalf of the business with its VAT number"
 }

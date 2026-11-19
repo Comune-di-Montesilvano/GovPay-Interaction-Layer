@@ -79,10 +79,35 @@
           </a>
           {% if login_legal_entity_enabled|default(false) %}
             <details class="fo-login-menu">
-              <summary class="btn btn-primary" style="color:#ffffff !important;">{{ 'Accedi'|trans }}</summary>
-              <div class="fo-user-dropdown">
-                <a href="/login">{{ 'Accedi come cittadino'|trans }}</a>
-                <a href="/login?subject=pg">{{ 'Accedi come impresa'|trans }}</a>
+              <summary class="btn btn-primary" style="color:#ffffff !important;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                <span>{{ 'Accedi'|trans }}</span>
+                <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+              </summary>
+              <div class="fo-login-panel">
+                <div class="fo-login-panel-head">{{ 'Scegli come accedere'|trans }}</div>
+                <a class="fo-login-option" href="/login">
+                  <span class="fo-login-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  </span>
+                  <span class="fo-login-text">
+                    <span class="fo-login-title">{{ 'Accedi come cittadino'|trans }}</span>
+                    <span class="fo-login-sub">{{ 'Con la tua identità SPID o CIE personale'|trans }}</span>
+                  </span>
+                  <svg class="fo-login-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </a>
+                <a class="fo-login-option" href="/login?subject=pg">
+                  <span class="fo-login-icon fo-login-icon--pg">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>
+                  </span>
+                  <span class="fo-login-text">
+                    <span class="fo-login-title">{{ 'Accedi come impresa'|trans }}</span>
+                    <span class="fo-login-sub">{{ 'SPID per persone giuridiche: operi a nome dell’impresa con la sua Partita IVA'|trans }}</span>
+                  </span>
+                  <svg class="fo-login-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </a>
               </div>
             </details>
           {% else %}
@@ -162,7 +187,38 @@
 .fo-login-menu { position: relative; }
 .fo-login-menu > summary { list-style: none; cursor: pointer; }
 .fo-login-menu > summary::-webkit-details-marker { display: none; }
-.fo-login-menu[open] > .fo-user-dropdown { display: block; min-width: 220px; }
+.fo-login-menu > summary { display: inline-flex; align-items: center; gap: 8px; }
+.fo-login-menu > summary .caret { transition: transform .15s ease; opacity: .85; }
+.fo-login-menu[open] > summary .caret { transform: rotate(180deg); }
+.fo-login-panel {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
+  width: min(340px, calc(100vw - 32px)); padding: 8px;
+  background: var(--bg-0, #fff); border: 1px solid var(--border-1); border-radius: var(--r-md, 8px);
+  box-shadow: var(--shadow-3);
+}
+.fo-login-panel-head {
+  padding: 8px 10px 6px; font-size: var(--fs-12, .75rem); font-weight: var(--fw-semibold, 600);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3);
+}
+.fo-login-option {
+  display: flex; align-items: center; gap: 12px; padding: 12px 10px;
+  border-radius: var(--r-sm, 6px); color: var(--fg-1); text-decoration: none;
+  transition: background-color .12s ease;
+}
+.fo-login-option + .fo-login-option { margin-top: 2px; }
+.fo-login-option:hover, .fo-login-option:focus-visible { background: var(--bi-primary-a8, rgba(0,102,204,.08)); outline: none; }
+.fo-login-option:focus-visible { box-shadow: 0 0 0 2px var(--border-focus, #06c) inset; }
+.fo-login-icon {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--bi-primary-a8, rgba(0,102,204,.08)); color: var(--brand-primary, #06c);
+}
+.fo-login-icon--pg { background: var(--ms-purple-050, #F5F0FB); color: var(--brand-secondary, #4A2A6E); }
+.fo-login-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fo-login-title { font-size: var(--fs-16, 1rem); font-weight: var(--fw-semibold, 600); line-height: var(--lh-snug, 1.3); }
+.fo-login-sub { font-size: var(--fs-13, .8125rem); color: var(--fg-3); line-height: var(--lh-snug, 1.3); }
+.fo-login-arrow { flex-shrink: 0; color: var(--fg-3); transition: transform .12s ease, color .12s ease; }
+.fo-login-option:hover .fo-login-arrow { transform: translateX(2px); color: var(--brand-primary, #06c); }
 </style>
 <script>
 (function(){

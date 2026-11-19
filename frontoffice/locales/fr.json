@@ -462,5 +462,8 @@
     "Sede legale": "Siège social",
     "Riprova come impresa": "Réessayer en tant qu'entreprise",
     "Accesso come impresa non riuscito": "Échec de la connexion en tant qu'entreprise",
-    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "Le fournisseur d'identité n'a pas renvoyé de numéro de TVA valide. Utilisez une identité SPID à usage professionnel de la personne morale, ou connectez-vous en tant que citoyen."
+    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "Le fournisseur d'identité n'a pas renvoyé de numéro de TVA valide. Utilisez une identité SPID à usage professionnel de la personne morale, ou connectez-vous en tant que citoyen.",
+    "Scegli come accedere": "Choisissez comment vous connecter",
+    "Con la tua identità SPID o CIE personale": "Avec votre identité SPID ou CIE personnelle",
+    "SPID per persone giuridiche: operi a nome dell’impresa con la sua Partita IVA": "SPID pour personnes morales : agissez au nom de l’entreprise avec son numéro de TVA"
 }

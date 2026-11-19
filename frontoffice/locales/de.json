@@ -462,5 +462,8 @@
     "Sede legale": "Geschäftssitz",
     "Riprova come impresa": "Erneut als Unternehmen versuchen",
     "Accesso come impresa non riuscito": "Anmeldung als Unternehmen fehlgeschlagen",
-    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "Der Identitätsanbieter hat keine gültige USt-IdNr. zurückgegeben. Verwenden Sie eine SPID-Identität zur beruflichen Nutzung für die juristische Person oder melden Sie sich als Bürger an."
+    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "Der Identitätsanbieter hat keine gültige USt-IdNr. zurückgegeben. Verwenden Sie eine SPID-Identität zur beruflichen Nutzung für die juristische Person oder melden Sie sich als Bürger an.",
+    "Scegli come accedere": "Anmeldeart wählen",
+    "Con la tua identità SPID o CIE personale": "Mit Ihrer persönlichen SPID- oder CIE-Identität",
+    "SPID per persone giuridiche: operi a nome dell’impresa con la sua Partita IVA": "SPID für juristische Personen: im Namen des Unternehmens mit dessen USt-IdNr. handeln"
 }
