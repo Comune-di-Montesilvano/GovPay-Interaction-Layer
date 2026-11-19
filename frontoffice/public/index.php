@@ -3769,7 +3769,8 @@ $routes = [
                 $fiscalCompact = strtoupper(preg_replace('/\s+/', '', trim($fiscalNumber)));
                 $fiscalDigits = preg_replace('/\D+/', '', $fiscalCompact);
 
-                $isLegalEntity = ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
+                $isLegalEntity = ($loggedUser['subject_type'] ?? '') === 'G'
+                    || ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
                 $defaultTipo = $isLegalEntity ? 'G' : 'F';
                 $defaultIdent = $isLegalEntity ? $fiscalDigits : $fiscalCompact;
 
@@ -3780,6 +3781,10 @@ $routes = [
                 $defaultAnagrafica = $defaultTipo === 'F'
                     ? $defaultCognome
                     : trim(($defaultCognome !== '' ? $defaultCognome : $defaultNome));
+                $companyName = trim((string)($loggedUser['company_name'] ?? ''));
+                if ($defaultTipo === 'G' && $companyName !== '') {
+                    $defaultAnagrafica = $companyName;
+                }
                 if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
                     $defaultAnagrafica = $defaultEmail;
                 }
@@ -3832,7 +3837,8 @@ $routes = [
             $fiscalNumber  = frontoffice_get_logged_user_fiscal_number();
             $fiscalCompact = strtoupper(preg_replace('/\s+/', '', trim((string) $fiscalNumber)));
             $fiscalDigits  = preg_replace('/\D+/', '', $fiscalCompact);
-            $isLegalEntity = ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
+            $isLegalEntity = ($loggedUser['subject_type'] ?? '') === 'G'
+                || ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
             $defaultTipo   = $isLegalEntity ? 'G' : 'F';
             $defaultIdent  = $isLegalEntity ? $fiscalDigits : $fiscalCompact;
             $defaultNome   = trim((string)($loggedUser['first_name'] ?? ''));
@@ -3841,6 +3847,10 @@ $routes = [
             $defaultAnagrafica = $defaultTipo === 'F'
                 ? $defaultCognome
                 : trim($defaultCognome ?: $defaultNome);
+            $companyName = trim((string)($loggedUser['company_name'] ?? ''));
+            if ($defaultTipo === 'G' && $companyName !== '') {
+                $defaultAnagrafica = $companyName;
+            }
             if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
                 $defaultAnagrafica = $defaultEmail;
             }
@@ -5617,6 +5627,7 @@ $baseContext = [
     'current_user' => frontoffice_get_logged_user(),
     'spid_enabled'  => frontoffice_spid_enabled(),
     'login_enabled' => frontoffice_spid_enabled(), // alias OIDC-neutro per i template
+    'login_legal_entity_enabled' => frontoffice_legal_entity_login_enabled(),
     'spid_mode'     => frontoffice_spid_mode(),
     'support_email' => $supportEmail,
     'support_phone' => $env('APP_SUPPORT_PHONE', '800.000.000'),

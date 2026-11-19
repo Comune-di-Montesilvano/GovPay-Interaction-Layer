@@ -52,7 +52,9 @@
       {% if current_user %}
         {% set first = current_user.first_name|default('') %}
         {% set last  = current_user.last_name|default('') %}
-        {% set display_name = first ~ (last != '' ? ' ' ~ last|upper : '') %}
+        {% set display_name = current_user.subject_type|default('F') == 'G' and current_user.company_name|default('') != ''
+          ? current_user.company_name
+          : first ~ (last != '' ? ' ' ~ last|upper : '') %}
         {% set initials = (first|slice(0,1)) ~ (last|slice(0,1)) %}
         <div class="fo-user-menu" id="fo-user-menu">
           <button class="btn btn-outline" id="fo-user-btn" aria-haspopup="true" aria-expanded="false">
@@ -75,9 +77,19 @@
             </svg>
             {{ 'Guida'|trans }}
           </a>
-          <a class="btn btn-primary" href="/login" style="color:#ffffff !important;">
-            {{ 'Accedi'|trans }}
-          </a>
+          {% if login_legal_entity_enabled|default(false) %}
+            <details class="fo-login-menu">
+              <summary class="btn btn-primary" style="color:#ffffff !important;">{{ 'Accedi'|trans }}</summary>
+              <div class="fo-user-dropdown">
+                <a href="/login">{{ 'Accedi come cittadino'|trans }}</a>
+                <a href="/login?subject=pg">{{ 'Accedi come impresa'|trans }}</a>
+              </div>
+            </details>
+          {% else %}
+            <a class="btn btn-primary" href="/login" style="color:#ffffff !important;">
+              {{ 'Accedi'|trans }}
+            </a>
+          {% endif %}
         {% endif %}
       {% endif %}
     </div>
@@ -147,17 +159,21 @@
   text-decoration: none; font-weight: 500;
 }
 .fo-user-dropdown a:hover { background: var(--bg-2); }
+.fo-login-menu { position: relative; }
+.fo-login-menu > summary { list-style: none; cursor: pointer; }
+.fo-login-menu > summary::-webkit-details-marker { display: none; }
+.fo-login-menu[open] > .fo-user-dropdown { display: block; min-width: 220px; }
 </style>
 <script>
 (function(){
   document.addEventListener('click', function (e) {
-    document.querySelectorAll('details.lang-menu[open]').forEach(function (d) {
+    document.querySelectorAll('details.lang-menu[open], details.fo-login-menu[open]').forEach(function (d) {
       if (!d.contains(e.target)) { d.removeAttribute('open'); }
     });
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
-      document.querySelectorAll('details.lang-menu[open]').forEach(function (d) {
+      document.querySelectorAll('details.lang-menu[open], details.fo-login-menu[open]').forEach(function (d) {
         d.removeAttribute('open'); d.querySelector('summary').focus();
       });
     }

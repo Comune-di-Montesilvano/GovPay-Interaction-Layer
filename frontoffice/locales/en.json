@@ -456,5 +456,13 @@
     "Consulta lo stato, scarica l'avviso e (quando disponibile) la ricevuta di pagamento.": "Check the status, download the notice and (when available) the payment receipt.",
     "Ricevuta digitale immediata": "Instant digital receipt",
     "L'importo per questo servizio è prefissato e non può essere modificato.": "The amount for this service is preset and cannot be modified.",
-    "Attenzione: Il collegamento con il sistema di pagamento pagoPA è temporaneamente interrotto. Alcune operazioni di pagamento o download delle ricevute potrebbero non essere disponibili.": "Warning: The connection with the pagoPA payment system is temporarily interrupted. Some payment operations or receipt downloads might not be available."
+    "Attenzione: Il collegamento con il sistema di pagamento pagoPA è temporaneamente interrotto. Alcune operazioni di pagamento o download delle ricevute potrebbero non essere disponibili.": "Warning: The connection with the pagoPA payment system is temporarily interrupted. Some payment operations or receipt downloads might not be available.",
+    "Accedi come cittadino": "Log in as a citizen",
+    "Accedi come impresa": "Log in as a business",
+    "Impresa": "Business",
+    "Operatore": "Operator",
+    "Sede legale": "Registered office",
+    "Riprova come impresa": "Try again as a business",
+    "Accesso come impresa non riuscito": "Business login failed",
+    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "The identity provider did not return a valid VAT number. Use an SPID identity for professional use on behalf of the legal entity, or log in as a citizen."
 }

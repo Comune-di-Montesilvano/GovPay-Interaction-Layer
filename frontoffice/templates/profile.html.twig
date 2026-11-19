@@ -18,9 +18,34 @@
   <div class="container">
     <div style="max-width:640px;">
 
+      {% set is_impresa = profile.subject_type|default('F') == 'G' %}
+      {% if is_impresa %}
+        <div class="avviso-card" style="margin-bottom:var(--sp-4);">
+          <div class="avviso-header">
+            <div class="from"><strong>{{ 'Impresa'|trans }}</strong></div>
+          </div>
+          <div class="avviso-body">
+            <div class="avviso-row">
+              <span class="k">{{ 'Ragione sociale'|trans }}</span>
+              <span class="v">{{ profile.company_name|default('') }}</span>
+            </div>
+            <div class="avviso-row">
+              <span class="k">{{ 'Partita IVA'|trans }}</span>
+              <span class="v mono">{{ profile.fiscal_number|default('') }}</span>
+            </div>
+            {% if profile.registered_office|default('') %}
+              <div class="avviso-row">
+                <span class="k">{{ 'Sede legale'|trans }}</span>
+                <span class="v">{{ profile.registered_office }}</span>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
       <div class="avviso-card" style="margin-bottom:var(--sp-4);">
         <div class="avviso-header">
-          <div class="from">{{ 'Dati personali'|trans }} <strong>{{ 'Area personale'|trans }}</strong></div>
+          <div class="from">{{ is_impresa ? 'Operatore'|trans : 'Dati personali'|trans }} <strong>{{ 'Area personale'|trans }}</strong></div>
         </div>
         <div class="avviso-body">
           {% if profile.first_name|default('') or profile.last_name|default('') %}
@@ -41,7 +66,7 @@
           {% endif %}
           <div class="avviso-row">
             <span class="k">{{ 'Codice fiscale'|trans }}</span>
-            <span class="v mono">{{ profile.fiscal_number|default('') }}</span>
+            <span class="v mono">{{ is_impresa ? profile.operator_fiscal_number|default('') : profile.fiscal_number|default('') }}</span>
           </div>
           {% if profile.provider_name|default(profile.provider_id|default('')) %}
             <div class="avviso-row">
