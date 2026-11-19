@@ -6,7 +6,7 @@ namespace App\Services;
 use DateTimeImmutable;
 
 /**
- * Espansione di una riga CSV pendenze massive con RATA = N > 1 in N payload GovPay
+ * Espansione di una riga CSV pendenze massive con NUMERO_RATE = N > 1 in N payload GovPay
  * collegati dallo stesso documento (stesso formato della rateizzazione backoffice:
  * documento.identificativo condiviso, causale "(Rata i di N)", descrizione "(Rate N)").
  *
