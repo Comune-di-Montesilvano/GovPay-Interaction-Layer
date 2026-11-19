@@ -237,11 +237,17 @@ Nel pannello di amministrazione del tuo proxy OIDC registra il client con:
 | Parametro | Valore |
 |---|---|
 | **Redirect URI** | `{FRONTOFFICE_PUBLIC_BASE_URL}/oidc/callback` |
-| **Allowed Scopes** | `openid profile email` |
+| **Allowed Scopes** | `openid profile email` (+ `legal_entity` se abiliti l'accesso persona giuridica) |
 | **Grant Type** | `authorization_code` |
 | **PKCE** | Richiesto (`S256`) |
 
 L'URL esatto della Redirect URI è visibile nella card informativa del tab Frontoffice in Impostazioni.
+
+### Accesso persona giuridica (imprese)
+
+Con **Abilita accesso persona giuridica** attivo (Impostazioni → Frontoffice, blocco OIDC esterno) il pulsante *Accedi* offre anche *Accedi come impresa*: `/login?subject=pg` chiede al proxy lo scope `legal_entity` (SPID per uso professionale della persona giuridica, solo SPID — niente CIE/eIDAS). L'utente opera **a nome dell'impresa**: pendenze cercate e spontanei intestati alla partita IVA (`iva_code`) con la ragione sociale (`company_name`); il codice fiscale ricevuto è quello dell'operatore ed è mostrato solo nel profilo. Se il proxy non restituisce una partita IVA valida l'accesso viene rifiutato (mai ricaduta sulla persona fisica).
+
+Prerequisiti su pa-sso-proxy: persona giuridica attiva sull'ente (il metadata SPID cambia e va ri-validato da AgID) e scope `legal_entity` tra gli *Allowed Scopes* del client.
 
 ---
 
