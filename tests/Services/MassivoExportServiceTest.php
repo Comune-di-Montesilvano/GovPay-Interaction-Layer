@@ -62,13 +62,13 @@ final class MassivoExportServiceTest extends TestCase
         $this->assertSame('MARIO ROSSI', $unica[$h['ANAGRAFICA']]);
         $this->assertSame('44,00', $unica[$h['IMPORTO']]);
         $this->assertSame('31/12/2026', $unica[$h['DATA_SCADENZA']]);
-        $this->assertSame('', $unica[$h['RATA']]);
+        $this->assertSame('', $unica[$h['NUMERO_RATE']]);
         $this->assertSame('300000000000000001', $unica[$h['NUMERO_AVVISO']]);
         $this->assertSame('', $unica[$h['RATA_1_NUMERO_AVVISO']]);
 
         $this->assertSame('TARI 2026', $rateizzata[$h['CAUSALE']]);
         $this->assertSame('100,00', $rateizzata[$h['IMPORTO']]);
-        $this->assertSame('2', $rateizzata[$h['RATA']]);
+        $this->assertSame('2', $rateizzata[$h['NUMERO_RATE']]);
         $this->assertSame('100,00', $rateizzata[$h['VOCE_1_IMPORTO']]);
         $this->assertSame('', $rateizzata[$h['NUMERO_AVVISO']]);
         $this->assertSame('50,00', $rateizzata[$h['RATA_1_IMPORTO']]);

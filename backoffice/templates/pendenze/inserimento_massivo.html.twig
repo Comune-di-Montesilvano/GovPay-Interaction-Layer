@@ -54,11 +54,22 @@
               <i class="fas fa-table-columns me-1 text-primary"></i>Intestazioni richieste:
             </p>
             <div class="p-2 rounded border bg-light" style="overflow-x:auto;white-space:nowrap;">
-              <code class="small text-secondary">TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;RATA;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE</code>
+              <code class="small text-secondary">TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;NUMERO_RATE;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE</code>
             </div>
             <p class="small text-muted mt-1 mb-0">
-              <strong>RATA</strong>: numero di rate (vuota o 1 = pendenza unica). Con N &gt; 1 l'importo viene diviso in N rate
-              mensili collegate da un unico documento; la prima scade a DATA_SCADENZA (o tra un mese se vuota).
+              Il template contiene quattro righe di esempio da sostituire: pendenza unica, pendenza con due voci,
+              3 rate mensili calcolate, 3 rate con date per rata.
+            </p>
+            <p class="small text-muted mt-1 mb-0">
+              <strong>Voci</strong>: dettaglio di IMPORTO in al massimo due righe (es. 50,00 = 40,00 canone + 10,00 diritti).
+              VOCE_1_IMPORTO + VOCE_2_IMPORTO deve essere uguale a IMPORTO. Colonne vuote = una sola voce pari a IMPORTO
+              con la CAUSALE; con la sola voce 2 la voce 1 prende la differenza. Se indichi VOCE_2_IMPORTO serve anche VOCE_2_CAUSALE.
+              Entrambe le voci usano la contabilità (IBAN, codice) della tipologia scelta alla conferma.
+            </p>
+            <p class="small text-muted mt-1 mb-0">
+              <strong>NUMERO_RATE</strong>: in quante rate dividere la pendenza (vuota o 1 = pendenza unica, massimo 24).
+              IMPORTO e voci sono i <em>totali</em>: vengono divisi tra le rate (voci in proporzione), collegate da un unico documento.
+              Senza date per rata le rate sono mensili: la prima scade a DATA_SCADENZA (o tra un mese se vuota).
             </p>
             <p class="small text-muted mt-1 mb-0">
               <strong>Date per rata</strong> (facoltative, in coda): <code>RATA_1_DATA_VALIDITA;RATA_1_DATA_SCADENZA;RATA_2_DATA_VALIDITA;…</code>

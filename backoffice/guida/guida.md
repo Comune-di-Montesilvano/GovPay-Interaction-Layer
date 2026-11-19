@@ -103,7 +103,7 @@ A pagamento avvenuto il dettaglio offre il download del file XML della marca, da
 ### Caricare pendenze massive da file CSV
 
 1. Apri **Pendenze → Pendenze Massive** e premi **Scarica template CSV**.
-2. Compila il file mantenendo le intestazioni: `TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;RATA;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE`.
+2. Compila il file mantenendo le intestazioni: `TIPO;CODICE_FISCALE_PIVA;COGNOME_ANAGRAFICA;NOME;CAUSALE;ANNO_RIFERIMENTO;IMPORTO;EMAIL;DATA_VALIDITA;DATA_SCADENZA;NUMERO_RATE;VOCE_1_IMPORTO;VOCE_1_CAUSALE;VOCE_2_IMPORTO;VOCE_2_CAUSALE`.
 3. Trascina il file nel riquadro e premi **Carica & Anteprima**.
 4. Controlla il numero di righe valide e le prime righe di esempio. Le righe con errori non vengono importate: scaricale con **Scarica CSV errori**, correggile e caricale in un secondo file.
 5. Scegli la **Tipologia pendenza** e premi **Conferma e Invia in elaborazione**.
@@ -113,7 +113,9 @@ Le pendenze vengono create in background, una riga alla volta: puoi chiudere la 
 Regole del file:
 
 - **Importi**: sono accettati sia `1.234,56` sia `1234.56`. Un solo separatore seguito da esattamente tre cifre (`1.234`) vale come migliaia.
-- **Rate**: la colonna `RATA` indica il numero di rate (vuota o 1 = pendenza unica). Con più rate l'importo viene diviso in rate mensili; la prima scade a `DATA_SCADENZA` (o tra un mese, se vuota).
+- **Righe di esempio**: il template contiene quattro righe da sostituire con i tuoi dati: pendenza unica, pendenza con due voci, 3 rate mensili calcolate, 3 rate con date per rata.
+- **Voci**: `VOCE_1_*` e `VOCE_2_*` dividono `IMPORTO` in al massimo due righe di dettaglio (es. 50,00 = 40,00 canone + 10,00 diritti di segreteria). La somma delle voci deve essere uguale a `IMPORTO`. Se lasci vuote le colonne delle voci, la pendenza ha una sola voce pari a `IMPORTO` con la `CAUSALE`; se compili solo la voce 2, la voce 1 prende la differenza. Con `VOCE_2_IMPORTO` va indicata anche `VOCE_2_CAUSALE`. Le due voci usano la stessa contabilità (IBAN e codice) della tipologia scelta alla conferma.
+- **Rate**: la colonna `NUMERO_RATE` indica in quante rate dividere la pendenza (vuota o 1 = pendenza unica, massimo 24). `IMPORTO` e voci sono i totali: vengono divisi tra le rate (le voci in proporzione). Senza date per rata le rate sono mensili; la prima scade a `DATA_SCADENZA` (o tra un mese, se vuota).
 - **Date per rata**: con le colonne `RATA_1_DATA_VALIDITA;RATA_1_DATA_SCADENZA;RATA_2_DATA_VALIDITA;…` indichi le date di ogni rata. Se le usi, la scadenza va indicata per tutte le rate.
 
 ### Seguire un caricamento massivo
