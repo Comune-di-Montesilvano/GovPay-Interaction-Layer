@@ -84,6 +84,7 @@ class ImpostazioniController
             'EXTERNAL_OIDC_CLIENT_ID'           => $plain($fo['external_oidc_client_id'] ?? ''),
             'EXTERNAL_OIDC_CLIENT_SECRET'       => $plain($fo['external_oidc_client_secret'] ?? ''),
             'EXTERNAL_OIDC_LOGOUT_URL'          => $plain($fo['external_oidc_logout_url'] ?? ''),
+            'EXTERNAL_OIDC_LEGAL_ENTITY_ENABLED' => ($plain($fo['external_oidc_legal_entity_enabled'] ?? '0') === '1') ? '1' : '0',
 
             // Entity
             'ID_DOMINIO'                        => $plain($entity['id_dominio'] ?? ''),
@@ -456,6 +457,7 @@ class ImpostazioniController
             'external_oidc_issuer' => $body['external_oidc_issuer'] ?? '',
             'external_oidc_client_id' => $body['external_oidc_client_id'] ?? '',
             'external_oidc_logout_url' => $body['external_oidc_logout_url'] ?? '',
+            'external_oidc_legal_entity_enabled' => !empty($body['external_oidc_legal_entity_enabled']) ? '1' : '0',
         ];
         
         if (isset($body['external_oidc_client_secret']) && $body['external_oidc_client_secret'] !== '') {

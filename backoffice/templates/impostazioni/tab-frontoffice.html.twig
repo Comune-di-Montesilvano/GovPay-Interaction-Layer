@@ -74,6 +74,15 @@
               {{ not is_superadmin ? 'readonly' : '' }}>
             <div class="form-text">URL di logout sul proxy OIDC (es. <code>https://sso.comune.example.it/logout</code>)</div>
           </div>
+          <div class="col-md-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch" name="external_oidc_legal_entity_enabled" id="oidc-legal-entity" value="1"
+                {{ frontoffice.external_oidc_legal_entity_enabled|default('0') == '1' ? 'checked' : '' }}
+                {{ not is_superadmin ? 'disabled' : '' }}>
+              <label class="form-check-label" for="oidc-legal-entity">Abilita accesso persona giuridica (SPID uso professionale)</label>
+            </div>
+            <div class="form-text">Aggiunge al frontoffice la scelta "Accedi come impresa": l'utente opera a nome della partita IVA. Richiede lo scope <code>legal_entity</code> abilitato per questo client in pa-sso-proxy e la persona giuridica attiva sull'ente (metadata SPID ri-validato da AgID).</div>
+          </div>
         </div>
 
         {# Info Card per parametri da passare a sso-proxy #}
@@ -92,7 +101,7 @@
                 </div>
               </div>
               <div class="col-md-6">
-                <div class="small"><strong>Allowed Scopes:</strong> <code class="bg-white px-1 py-0.5 rounded border text-monospace">openid profile email</code></div>
+                <div class="small"><strong>Allowed Scopes:</strong> <code class="bg-white px-1 py-0.5 rounded border text-monospace" id="oidc-allowed-scopes">openid profile email{{ frontoffice.external_oidc_legal_entity_enabled|default('0') == '1' ? ' legal_entity' : '' }}</code></div>
               </div>
               <div class="col-md-6">
                 <div class="small"><strong>Response Type:</strong> <code class="bg-white px-1 py-0.5 rounded border text-monospace">code</code> (Auth Code Flow + PKCE)</div>
@@ -338,6 +347,14 @@
       } else {
         extOidcConfigDiv.style.display = 'none';
       }
+    });
+  }
+
+  var legalEntityToggle = document.getElementById('oidc-legal-entity');
+  var allowedScopesDisplay = document.getElementById('oidc-allowed-scopes');
+  if (legalEntityToggle && allowedScopesDisplay) {
+    legalEntityToggle.addEventListener('change', function() {
+      allowedScopesDisplay.textContent = 'openid profile email' + (legalEntityToggle.checked ? ' legal_entity' : '');
     });
   }
 

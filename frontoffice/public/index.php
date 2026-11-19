@@ -635,15 +635,7 @@ if (!function_exists('frontoffice_pick_email_value')) {
 if (!function_exists('frontoffice_normalize_fiscal_number')) {
     function frontoffice_normalize_fiscal_number(string $raw): string
     {
-        $value = strtoupper(trim($raw));
-        $value = preg_replace('/\s+/', '', $value);
-
-        // CIE/SPID spesso inviano il formato qualificato TINIT-<CF>.
-        if (strpos($value, 'TINIT-') === 0) {
-            $value = substr($value, 6);
-        }
-
-        return $value;
+        return \App\Security\OidcUserMapper::normalizeFiscalNumber($raw);
     }
 }
 
@@ -693,6 +685,16 @@ if (!function_exists('frontoffice_spid_enabled')) {
     function frontoffice_spid_enabled(): bool
     {
         return frontoffice_spid_mode() !== 'none';
+    }
+}
+
+if (!function_exists('frontoffice_legal_entity_login_enabled')) {
+    /** Accesso persona giuridica (SPID uso professionale) abilitato da Impostazioni → Frontoffice. */
+    function frontoffice_legal_entity_login_enabled(): bool
+    {
+        return frontoffice_spid_enabled()
+            && frontoffice_auth_proxy_type() === 'external-oidc'
+            && frontoffice_env_value('EXTERNAL_OIDC_LEGAL_ENTITY_ENABLED', '0') === '1';
     }
 }
 
@@ -1361,13 +1363,7 @@ if (!function_exists('frontoffice_build_dati_allegati')) {
     {
         $datiAllegati = ['sorgente' => 'Spontaneo'];
         if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['frontoffice_user']) && is_array($_SESSION['frontoffice_user'])) {
-            $foUser = $_SESSION['frontoffice_user'];
-            $datiAllegati['utente_autenticato'] = true;
-            $datiAllegati['utente_nome'] = $foUser['first_name'] ?? '';
-            $datiAllegati['utente_cognome'] = $foUser['last_name'] ?? '';
-            $datiAllegati['utente_cf'] = $foUser['fiscal_number'] ?? '';
-            $datiAllegati['utente_email'] = $foUser['email'] ?? '';
-            $datiAllegati['utente_provider'] = $foUser['provider_name'] ?? ($foUser['provider_id'] ?? '');
+            $datiAllegati += \App\Security\OidcUserMapper::auditFields($_SESSION['frontoffice_user']);
         }
         return $datiAllegati;
     }
@@ -3376,6 +3372,11 @@ $routes = [
 
         $_SESSION['oidc_state'] = $state;
         $_SESSION['oidc_code_verifier'] = $codeVerifier;
+
+        // subject=pg → login persona giuridica (scope legal_entity di pa-sso-proxy). Con opzione
+        // disattivata ricade sulla persona fisica, come fa il proxy.
+        $subject = (($_GET['subject'] ?? '') === 'pg' && frontoffice_legal_entity_login_enabled()) ? 'pg' : 'pf';
+        $_SESSION['oidc_subject'] = $subject;
         
         $challengeHash = hash('sha256', $codeVerifier, true);
         $codeChallenge = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($challengeHash));
@@ -3391,7 +3392,7 @@ $routes = [
         $authUrl = $issuer . '/OIDC/authorization?' . http_build_query([
             'client_id'             => $clientId,
             'response_type'         => 'code',
-            'scope'                 => 'openid profile email',
+            'scope'                 => 'openid profile email' . ($subject === 'pg' ? ' legal_entity' : ''),
             'redirect_uri'          => $redirectUri,
             'state'                 => $state,
             'code_challenge'        => $codeChallenge,
@@ -3515,7 +3516,7 @@ $routes = [
         }
 
         $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], $parts[1])), true);
-        Logger::getInstance()->info('OIDC ID Token Decoded Payload: ' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        Logger::getInstance()->info('OIDC id_token ricevuto', ['claims' => is_array($payload) ? \App\Security\OidcUserMapper::claimNames($payload) : []]);
         if (!is_array($payload)) {
             http_response_code(503);
             return [
@@ -3548,12 +3549,15 @@ $routes = [
                 $userinfoStatus = $response->getStatusCode();
                 $userinfoRes = (string)$response->getBody();
 
-                Logger::getInstance()->info('OIDC UserInfo HTTP status: ' . $userinfoStatus);
                 if ($userinfoRes !== '' && $userinfoStatus >= 200 && $userinfoStatus < 300) {
-                    Logger::getInstance()->info('OIDC UserInfo response: ' . $userinfoRes);
                     $userinfo = json_decode($userinfoRes, true) ?: [];
+                    // Mai il corpo: contiene CF, nome, P.IVA. Solo status + nomi claim.
+                    Logger::getInstance()->info('OIDC UserInfo ricevuto', [
+                        'status' => $userinfoStatus,
+                        'claims' => is_array($userinfo) ? \App\Security\OidcUserMapper::claimNames($userinfo) : [],
+                    ]);
                 } else {
-                    Logger::getInstance()->warning('OIDC UserInfo failed', ['status' => $userinfoStatus, 'response' => $userinfoRes]);
+                    Logger::getInstance()->warning('OIDC UserInfo failed', ['status' => $userinfoStatus]);
                 }
             } catch (\Throwable $e) {
                 Logger::getInstance()->error('OIDC UserInfo request failed', [
@@ -3565,51 +3569,23 @@ $routes = [
 
         $claims = array_merge(is_array($payload) ? $payload : [], is_array($userinfo) ? $userinfo : []);
 
-        $flatVal = static function ($val): string {
-            if (is_array($val)) {
-                $val = reset($val);
-            }
-            return is_scalar($val) ? trim((string)$val) : '';
-        };
+        $subject = (string)($_SESSION['oidc_subject'] ?? 'pf');
+        unset($_SESSION['oidc_subject']);
 
-        $pickAttr = static function (array $attrs, array $keys) use ($flatVal): string {
-            foreach ($keys as $k) {
-                if (isset($attrs[$k]) && $attrs[$k] !== '') {
-                    $res = $flatVal($attrs[$k]);
-                    if ($res !== '') {
-                        return $res;
-                    }
-                }
-            }
-            return '';
-        };
-
-        $firstName = $pickAttr($claims, ['given_name', 'first_name', 'name', 'givenName']);
-        $lastName = $pickAttr($claims, ['family_name', 'last_name', 'sn', 'surname', 'familyName']);
-        $email = $pickAttr($claims, ['email', 'mail', 'emailAddress']);
-        $fiscalNumber = $pickAttr($claims, [
-            'fiscal_number',
-            'https://attributes.eid.gov.it/fiscal_number',
-            'https://attributes.spid.gov.it/fiscalNumber',
-            'fiscalNumber',
-            'fiscalCode',
-            'codiceFiscale'
-        ]);
-
-        $spidCode = $flatVal($claims['spid_code'] ?? $claims['spidCode'] ?? '');
-        $providerName = $flatVal($claims['provider_name'] ?? $claims['amr'][0] ?? $claims['amr'] ?? 'OIDC');
-        $responseId = $flatVal($claims['jti'] ?? '');
-
-        $user = [
-            'first_name'    => $firstName,
-            'last_name'     => $lastName,
-            'email'         => $email,
-            'fiscal_number' => frontoffice_normalize_fiscal_number($fiscalNumber),
-            'spid_code'     => $spidCode,
-            'provider_id'   => 'EXTERNAL_OIDC_PROXY',
-            'provider_name' => $providerName,
-            'response_id'   => $responseId,
-        ];
+        $user = \App\Security\OidcUserMapper::map($claims, $subject === 'pg');
+        if ($user === null) {
+            // Login impresa senza P.IVA valida (IdP non ha rilasciato iva_code): nessuna
+            // sessione, mai ricadere sulla persona fisica (pendenze intestate al CF operatore).
+            Logger::getInstance()->warning('OIDC login impresa senza P.IVA valida', [
+                'claims' => \App\Security\OidcUserMapper::claimNames($claims),
+            ]);
+            unset($_SESSION['spid_return_to'], $_SESSION['frontoffice_user']);
+            http_response_code(403);
+            return [
+                'template' => 'errors/accesso-negato.html.twig',
+                'context'  => ['legal_entity_missing' => true],
+            ];
+        }
 
         $_SESSION['frontoffice_user'] = $user;
 
@@ -3787,7 +3763,8 @@ $routes = [
                 $fiscalCompact = strtoupper(preg_replace('/\s+/', '', trim($fiscalNumber)));
                 $fiscalDigits = preg_replace('/\D+/', '', $fiscalCompact);
 
-                $isLegalEntity = ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
+                $isLegalEntity = ($loggedUser['subject_type'] ?? '') === 'G'
+                    || ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
                 $defaultTipo = $isLegalEntity ? 'G' : 'F';
                 $defaultIdent = $isLegalEntity ? $fiscalDigits : $fiscalCompact;
 
@@ -3798,7 +3775,12 @@ $routes = [
                 $defaultAnagrafica = $defaultTipo === 'F'
                     ? $defaultCognome
                     : trim(($defaultCognome !== '' ? $defaultCognome : $defaultNome));
-                if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
+                $companyName = trim((string)($loggedUser['company_name'] ?? ''));
+                if (($loggedUser['subject_type'] ?? '') === 'G') {
+                    // Login impresa: mai il cognome dell'operatore come ragione sociale; vuoto = da compilare.
+                    $defaultAnagrafica = $companyName;
+                }
+                if ($defaultTipo === 'G' && $defaultAnagrafica === '' && ($loggedUser['subject_type'] ?? '') !== 'G') {
                     $defaultAnagrafica = $defaultEmail;
                 }
 
@@ -3850,7 +3832,8 @@ $routes = [
             $fiscalNumber  = frontoffice_get_logged_user_fiscal_number();
             $fiscalCompact = strtoupper(preg_replace('/\s+/', '', trim((string) $fiscalNumber)));
             $fiscalDigits  = preg_replace('/\D+/', '', $fiscalCompact);
-            $isLegalEntity = ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
+            $isLegalEntity = ($loggedUser['subject_type'] ?? '') === 'G'
+                || ($fiscalDigits !== '' && strlen($fiscalDigits) === 11);
             $defaultTipo   = $isLegalEntity ? 'G' : 'F';
             $defaultIdent  = $isLegalEntity ? $fiscalDigits : $fiscalCompact;
             $defaultNome   = trim((string)($loggedUser['first_name'] ?? ''));
@@ -3859,7 +3842,12 @@ $routes = [
             $defaultAnagrafica = $defaultTipo === 'F'
                 ? $defaultCognome
                 : trim($defaultCognome ?: $defaultNome);
-            if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
+            $companyName = trim((string)($loggedUser['company_name'] ?? ''));
+            if (($loggedUser['subject_type'] ?? '') === 'G') {
+                // Login impresa: mai il cognome dell'operatore come ragione sociale; vuoto = da compilare.
+                $defaultAnagrafica = $companyName;
+            }
+            if ($defaultTipo === 'G' && $defaultAnagrafica === '' && ($loggedUser['subject_type'] ?? '') !== 'G') {
                 $defaultAnagrafica = $defaultEmail;
             }
             $baseContext['form_data']['soggettoPagatore'] = [
@@ -5635,6 +5623,7 @@ $baseContext = [
     'current_user' => frontoffice_get_logged_user(),
     'spid_enabled'  => frontoffice_spid_enabled(),
     'login_enabled' => frontoffice_spid_enabled(), // alias OIDC-neutro per i template
+    'login_legal_entity_enabled' => frontoffice_legal_entity_login_enabled(),
     'spid_mode'     => frontoffice_spid_mode(),
     'support_email' => $supportEmail,
     'support_phone' => $env('APP_SUPPORT_PHONE', '800.000.000'),
