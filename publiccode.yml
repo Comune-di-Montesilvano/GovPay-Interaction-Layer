@@ -1,7 +1,7 @@
 publiccodeYmlVersion: "0"
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
-softwareVersion: 1.10.1
+softwareVersion: 1.11.0
 releaseDate: 2026-11-19
 platforms:
   - web
@@ -36,7 +36,7 @@ description:
       - Motore di Rendicontazione avanzato con smarcamento automatico/manuale e regole per gestionali terzi
       - Ricevute pagoPA on-demand e tracciamento eventi via pagoPA Biz Events
       - Frontoffice cittadini e sportello per pagamenti spontanei e da avviso IUV
-      - Autenticazione OIDC con supporto SPID/CIE (integrabile tramite Login Proxy / SATOSA)
+      - Autenticazione OIDC con supporto SPID/CIE e SPID persona giuridica per le imprese (integrabile tramite Login Proxy / SATOSA)
       - Integrazione avanzata con App IO per avvisi di pagamento e notifiche di avvenuta regolarizzazione
       - Marca da Bollo Telematica (@e.bollo SANP 3.12.0) con acquisto integrato backoffice e frontoffice
       - Scanner TEFA per la gestione e ripartizione del tributo ambientale
