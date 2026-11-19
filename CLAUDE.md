@@ -177,6 +177,7 @@ Tag immagini (verificati su GHCR): tag git `vX.Y.Z` → `:X.Y.Z` (senza `v`, es.
 - **Template**: Twig 3 con estensioni custom; i18n via file JSON in `locales/`
 - **Twig 3**: `{% for item in list if condition %}` rimosso — usare `list|filter(p => condition)` al posto
 - **SSL**: `SSL=on` attiva HTTPS diretto su Apache; `SSL=off` per deploy dietro reverse proxy (es. Portainer + Traefik). Usa `SSL_HEADER` per X-Forwarded-Proto in modalità proxy.
+- **Traefik (opzionale)**: `docker-compose.traefik.yml` (Portainer *Additional paths*) espone backoffice/frontoffice via label del provider docker sulla rete esterna `TRAEFIK_NETWORK` e chiude le porte host (`ports: !reset []`). Hostname e middleware solo da variabili (`TRAEFIK_HOST_*`, `TRAEFIK_BACKOFFICE_MIDDLEWARES`), nessun valore di un ente nel repo. Con l'override `TRUSTED_PROXIES` = subnet di quella rete: le richieste arrivano dall'IP del container Traefik, non dal gateway della porta pubblicata.
 - **Autenticazione operatori**: sessione PHP + token GovPay; `sslheader` come metodo auth alternativo
 - **Debug**: variabile `APP_DEBUG` nel `.env`; toggle disponibile nell'UI backoffice
 - **cURL PHP 8.5**: `curl_close()` deprecated — scrive notice su stdout e rompe `header()`. Usare `unset($ch)` invece.

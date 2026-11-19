@@ -1,0 +1,65 @@
+# OPZIONALE: esposizione tramite un Traefik v3 gia' in esecuzione sullo stesso host
+# (provider docker), al posto delle porte BACKOFFICE_HTTP_PORT/FRONTOFFICE_HTTP_PORT.
+#
+# Uso: docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+# Portainer (stack Git): Compose path docker-compose.yml, Additional paths
+# docker-compose.traefik.yml.
+#
+# Variabili dello stack:
+#   TRAEFIK_HOST_BACKOFFICE  (obbligatoria) hostname del backoffice, es. pagopa-bo.ente.it
+#   TRAEFIK_HOST_FRONTOFFICE (obbligatoria) hostname del portale cittadini, es. pagopa.ente.it
+#   TRAEFIK_BACKOFFICE_MIDDLEWARES middleware gia' definiti in Traefik da applicare al
+#                            backoffice, separati da virgola (es. un ipallowlist per
+#                            la sola rete interna: lan-only@docker). Default: nessuno
+#   TRAEFIK_NETWORK          rete docker esterna condivisa con Traefik (default: proxy)
+#   TRAEFIK_ENTRYPOINT       entrypoint HTTPS di Traefik (default: websecure)
+#   TRAEFIK_ROUTER_PREFIX    prefisso di router e service, unico per istanza
+#                            se piu' stack GIL girano sullo stesso Traefik (default: gil)
+#
+# Requisiti dello stack:
+#   SSL=off              Traefik termina TLS e parla HTTP con Apache sulla porta 80.
+#   TRUSTED_PROXIES      subnet della rete TRAEFIK_NETWORK (es. 172.19.0.0/16): le
+#                        richieste arrivano dall'IP del container Traefik su quella rete,
+#                        non piu' dal gateway Docker della porta pubblicata.
+#
+# TLS: tls=true usa il certificato di default di Traefik (o il resolver configurato
+# sull'entrypoint).
+
+x-traefik-backoffice: &traefik-backoffice
+  - traefik.enable=true
+  - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-backoffice.rule=Host(`${TRAEFIK_HOST_BACKOFFICE:?TRAEFIK_HOST_BACKOFFICE obbligatoria}`)
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-backoffice.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-backoffice.tls=true
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-backoffice.middlewares=${TRAEFIK_BACKOFFICE_MIDDLEWARES:-}
+  - traefik.http.services.${TRAEFIK_ROUTER_PREFIX:-gil}-backoffice.loadbalancer.server.port=80
+
+x-traefik-frontoffice: &traefik-frontoffice
+  - traefik.enable=true
+  - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-frontoffice.rule=Host(`${TRAEFIK_HOST_FRONTOFFICE:?TRAEFIK_HOST_FRONTOFFICE obbligatoria}`)
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-frontoffice.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-gil}-frontoffice.tls=true
+  - traefik.http.services.${TRAEFIK_ROUTER_PREFIX:-gil}-frontoffice.loadbalancer.server.port=80
+
+services:
+
+  backoffice:
+    # Nessuna porta sull'host: si entra solo da Traefik.
+    ports: !reset []
+    networks:
+      - govpay-network
+      - traefik
+    labels: *traefik-backoffice
+
+  frontoffice:
+    ports: !reset []
+    networks:
+      - govpay-network
+      - traefik
+    labels: *traefik-frontoffice
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
