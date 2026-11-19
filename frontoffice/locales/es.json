@@ -462,5 +462,8 @@
     "Sede legale": "Domicilio social",
     "Riprova come impresa": "Reintentar como empresa",
     "Accesso come impresa non riuscito": "Acceso como empresa fallido",
-    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "El proveedor de identidad no ha devuelto un número de IVA válido. Utilice una identidad SPID de uso profesional de la persona jurídica, o acceda como ciudadano."
+    "Il gestore dell'identità non ha restituito una partita IVA valida. Usa un'identità SPID per uso professionale della persona giuridica, oppure accedi come cittadino.": "El proveedor de identidad no ha devuelto un número de IVA válido. Utilice una identidad SPID de uso profesional de la persona jurídica, o acceda como ciudadano.",
+    "Scegli come accedere": "Elige cómo acceder",
+    "Con la tua identità SPID o CIE personale": "Con tu identidad SPID o CIE personal",
+    "SPID per persone giuridiche: operi a nome dell’impresa con la sua Partita IVA": "SPID para personas jurídicas: actúas en nombre de la empresa con su NIF-IVA"
 }
