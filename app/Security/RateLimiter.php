@@ -95,10 +95,8 @@ class RateLimiter
             return $remoteAddr;
         }
 
-        $trustedProxies = array_map('trim', explode(',', $trustedProxiesStr));
-        
-        // If REMOTE_ADDR is in TRUSTED_PROXIES, check forwarding headers
-        if (in_array($remoteAddr, $trustedProxies, true) || in_array('*', $trustedProxies, true)) {
+        // If REMOTE_ADDR is a trusted proxy (exact IP, CIDR or "*"), check forwarding headers
+        if (TrustedProxies::isTrusted($remoteAddr, (string)$trustedProxiesStr)) {
             $headers = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_CLIENT_IP'];
             foreach ($headers as $header) {
                 if (!empty($_SERVER[$header])) {
