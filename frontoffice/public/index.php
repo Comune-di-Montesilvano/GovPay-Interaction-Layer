@@ -6,7 +6,6 @@ declare(strict_types=1);
 // Stesso motivo per cui backoffice/src/bootstrap/app.php lo fa in testa.
 ini_set('display_errors', '0');
 
-use App\Database\EntrateRepository;
 use App\Logger;
 use App\Services\ValidationService;
 use GuzzleHttp\Client;
@@ -1015,46 +1014,6 @@ if (!function_exists('frontoffice_generate_pendenza_id')) {
         }
         $candidate = 'GIL-' . substr($rand, 0, 16);
         return substr(preg_replace('/[^A-Za-z0-9\-_]/', '-', $candidate), 0, 35);
-    }
-}
-
-if (!function_exists('frontoffice_build_voci')) {
-    function frontoffice_build_voci(string $idDominio, string $idTipo, string $descrizione, float $importo): array
-    {
-        $iban = $codCont = $tipoBollo = $tipoCont = '';
-        try {
-            if ($idDominio !== '' && $idTipo !== '') {
-                $repo = new EntrateRepository();
-                $details = $repo->findDetails($idDominio, $idTipo);
-                if ($details) {
-                    $iban = (string)($details['iban_accredito'] ?? '');
-                    $codCont = (string)($details['codice_contabilita'] ?? '');
-                    $rawTipoBollo = (string)($details['tipo_bollo'] ?? '');
-                    $tipoBollo = in_array($rawTipoBollo, ['01'], true) ? $rawTipoBollo : '';
-                    $tipoCont = (string)($details['tipo_contabilita'] ?? '');
-                }
-            }
-        } catch (\Throwable $e) {
-            Logger::getInstance()->warning('Impossibile recuperare i dettagli di contabilita', ['error' => $e->getMessage()]);
-        }
-
-        $voice = [
-            'idVocePendenza' => '1',
-            'descrizione' => $descrizione,
-            'importo' => $importo,
-        ];
-
-        if ($tipoBollo !== '') {
-            $voice['tipoBollo'] = $tipoBollo;
-        } elseif ($iban !== '' && $tipoCont !== '' && $codCont !== '') {
-            $voice['ibanAccredito'] = $iban;
-            $voice['tipoContabilita'] = $tipoCont;
-            $voice['codiceContabilita'] = $codCont;
-        } else {
-            $voice['codEntrata'] = substr(preg_replace('/[^A-Za-z0-9\-_.]/', '', $idTipo), 0, 35);
-        }
-
-        return [$voice];
     }
 }
 
