@@ -2,7 +2,7 @@
 # (salvo il db), filesystem dei container read-only con tmpfs per le
 # sole directory scritte a runtime. backoffice/frontoffice/worker girano come www-data.
 #
-# Segreti obbligatori: DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD, FRONTOFFICE_DB_PASSWORD,
+# Segreti obbligatori: DB_ROOT_PASSWORD, BACKOFFICE_DB_PASSWORD,
 # APP_ENCRYPTION_KEY, MASTER_TOKEN, FRONTOFFICE_LINK_SIGNING_KEY. Se una manca o e' vuota
 # lo stack non parte (`${VAR:?...}`) e l'errore nomina la variabile: vedi .env.example.
 x-hardening: &hardening
@@ -93,7 +93,6 @@ services:
       - DB_NAME=${DB_NAME:-govpay}
       - DB_USER=${BACKOFFICE_DB_USER:-govpay}
       - "DB_PASSWORD=${BACKOFFICE_DB_PASSWORD:?BACKOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
-      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
       - "APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY obbligatoria: vedi .env.example}"
       - "FRONTOFFICE_LINK_SIGNING_KEY=${FRONTOFFICE_LINK_SIGNING_KEY:?FRONTOFFICE_LINK_SIGNING_KEY obbligatoria: vedi .env.example}"
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
@@ -147,20 +146,12 @@ services:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
       - FRONTOFFICE_WATCHDOG_INTERVAL=${FRONTOFFICE_WATCHDOG_INTERVAL:-300}
-      # DB — solo per lettura config (settings table). Non contiene credenziali GovPay.
-      - DB_HOST=db
-      - DB_PORT=3306
-      - DB_NAME=${DB_NAME:-govpay}
-      - DB_USER=${FRONTOFFICE_DB_USER:-govpay_cittadini}
-      - "DB_PASSWORD=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
-      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
+      # Nessuna credenziale DB: config e rate limit arrivano dalle API /api/frontoffice/*.
     entrypoint: [ "/usr/local/bin/docker-setup.sh" ]
     restart: unless-stopped
     depends_on:
       verify-images:
         condition: service_completed_successfully
-      db:
-        condition: service_healthy
       backoffice:
         condition: service_healthy
     networks:
@@ -199,7 +190,7 @@ services:
       - cache:/var/www/cache:ro
       - gil_certs:/var/www/certificate:ro
     # Allineato all'environment del backoffice (APP_SUITE a parte), senza i segreti che i lavori
-    # non leggono: MASTER_TOKEN (solo API interne frontoffice) e DB_PASSWORD_CITTADINI.
+    # non leggono: MASTER_TOKEN (solo API interne frontoffice).
     environment:
       - APP_SUITE=worker
       - SSL=${SSL:-off}
@@ -247,6 +238,11 @@ services:
     tmpfs:
       - /run/mysqld:mode=1777
       - /tmp:mode=1777
+      # Vuoto apposta: le immagini db <= 1.9.x contengono 020-grant-cittadini.sh, che senza le
+      # variabili *_CITTADINI (rimosse) fa `exit 0` dentro l'entrypoint (lo esegue con source)
+      # e su datadir vuota il db non parte mai. Rimuovibile quando nessuna istanza usa piu'
+      # un'immagine db <= 1.9.x. Senza effetto sulle immagini nuove (nessuno script di init).
+      - /docker-entrypoint-initdb.d:mode=1777
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: gil-db
     restart: always
@@ -255,8 +251,6 @@ services:
       - MARIADB_USER=${BACKOFFICE_DB_USER:-govpay}
       - "MARIADB_PASSWORD=${BACKOFFICE_DB_PASSWORD:?BACKOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
       - MARIADB_DATABASE=${DB_NAME:-govpay}
-      - DB_USER_CITTADINI=${FRONTOFFICE_DB_USER:-govpay_cittadini}
-      - "DB_PASSWORD_CITTADINI=${FRONTOFFICE_DB_PASSWORD:?FRONTOFFICE_DB_PASSWORD obbligatoria: vedi .env.example}"
       # Opzionale. Vuoto = disattivo; 1 = mariadb-upgrade all'avvio (non serve all'healthcheck).
       - MARIADB_AUTO_UPGRADE=${MARIADB_AUTO_UPGRADE:-}
     volumes:

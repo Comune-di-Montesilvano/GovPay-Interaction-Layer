@@ -144,7 +144,7 @@ Le variabili obbligatorie prima del primo avvio:
 
 | Variabile | Scopo |
 |---|---|
-| `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD`, `FRONTOFFICE_DB_PASSWORD` | Credenziali database |
+| `DB_ROOT_PASSWORD`, `BACKOFFICE_DB_PASSWORD` | Credenziali database |
 | `APP_ENCRYPTION_KEY` | Chiave cifratura segreti in DB — esattamente 32 caratteri (`openssl rand -hex 16`) |
 | `MASTER_TOKEN` | Token Bearer per comunicazione interna backoffice ↔ frontoffice (`openssl rand -hex 24`) |
 | `FRONTOFFICE_LINK_SIGNING_KEY` | Chiave firma link pubblici frontoffice (`openssl rand -hex 32`) |

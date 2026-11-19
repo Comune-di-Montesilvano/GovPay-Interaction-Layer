@@ -7,4 +7,3 @@ services:
     volumes:
       - type: tmpfs
         target: /var/lib/mysql
-      - ./docker/db-init:/docker-entrypoint-initdb.d:ro

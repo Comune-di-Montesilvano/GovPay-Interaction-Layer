@@ -1,5 +1,5 @@
 # Build context: docker/db/ (docker build -f docker/db/Dockerfile docker/)
-# Bakes in DB init scripts so no bind-mount is needed in production.
+# Nessuno script di init: schema e migrazioni li applica il backoffice all'avvio.
 FROM mariadb:12.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9
 
 # Patch di sicurezza Ubuntu sopra la base fissata per digest. APT_REFRESH (data del giorno da
@@ -8,5 +8,3 @@ FROM mariadb:12.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe66260
 # l'upgrade non cambia versione di MariaDB, quella arriva solo col digest (dependabot).
 ARG APT_REFRESH=local
 RUN echo "apt refresh: ${APT_REFRESH}"     && apt-get update     && apt-get upgrade -y --no-install-recommends     && rm -rf /var/lib/apt/lists/*
-
-COPY db-init/ /docker-entrypoint-initdb.d/

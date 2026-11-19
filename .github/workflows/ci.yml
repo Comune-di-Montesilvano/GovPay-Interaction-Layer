@@ -52,7 +52,6 @@ jobs:
           DB_PASSWORD=apppass
           BACKOFFICE_DB_USER=appuser
           BACKOFFICE_DB_PASSWORD=apppass
-          FRONTOFFICE_DB_PASSWORD=citpass
           APP_ENCRYPTION_KEY=ci_encryption_key_32_characters_
           MASTER_TOKEN=ci_master_token
           FRONTOFFICE_LINK_SIGNING_KEY=ci_link_signing_key
@@ -92,7 +91,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/docker-cache
-          key: docker-db-${{ hashFiles('docker/db/Dockerfile', 'docker/db-init/**') }}
+          key: docker-db-${{ hashFiles('docker/db/Dockerfile') }}
           restore-keys: docker-db-
 
       - name: Load or pull DB image
