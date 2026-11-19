@@ -71,13 +71,35 @@ final class OidcUserMapper
     public static function normalizeIvaCode(mixed $raw): ?string
     {
         $value = (string)preg_replace('/\s+/', '', strtoupper(self::flat($raw)));
-        foreach (['VATIT-', 'IT'] as $prefix) {
-            if (str_starts_with($value, $prefix)) {
-                $value = substr($value, strlen($prefix));
-                break;
-            }
-        }
+        $value = (string)preg_replace('/^(VATIT-?|IT-?)/', '', $value);
         return preg_match('/^\d{11}$/', $value) === 1 ? $value : null;
+    }
+
+    /**
+     * Campi utente per `datiAllegati` della pendenza (audit di chi l'ha creata). Per un login
+     * impresa `utente_cf` è la P.IVA: CF e ragione sociale dell'operatore vanno a parte.
+     *
+     * @param array<string, mixed> $user utente di sessione prodotto da map()
+     * @return array<string, mixed>
+     */
+    public static function auditFields(array $user): array
+    {
+        $str = static fn(string $k): string => is_scalar($user[$k] ?? null) ? (string)$user[$k] : '';
+        $tipo = $str('subject_type') === 'G' ? 'G' : 'F';
+        $fields = [
+            'utente_autenticato' => true,
+            'utente_nome'        => $str('first_name'),
+            'utente_cognome'     => $str('last_name'),
+            'utente_cf'          => $str('fiscal_number'),
+            'utente_email'       => $str('email'),
+            'utente_provider'    => $str('provider_name') !== '' ? $str('provider_name') : $str('provider_id'),
+            'utente_tipo'        => $tipo,
+        ];
+        if ($tipo === 'G') {
+            $fields['utente_ragione_sociale'] = $str('company_name');
+            $fields['utente_operatore_cf']    = $str('operator_fiscal_number');
+        }
+        return $fields;
     }
 
     /**

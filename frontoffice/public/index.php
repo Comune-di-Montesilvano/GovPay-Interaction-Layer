@@ -1363,13 +1363,7 @@ if (!function_exists('frontoffice_build_dati_allegati')) {
     {
         $datiAllegati = ['sorgente' => 'Spontaneo'];
         if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['frontoffice_user']) && is_array($_SESSION['frontoffice_user'])) {
-            $foUser = $_SESSION['frontoffice_user'];
-            $datiAllegati['utente_autenticato'] = true;
-            $datiAllegati['utente_nome'] = $foUser['first_name'] ?? '';
-            $datiAllegati['utente_cognome'] = $foUser['last_name'] ?? '';
-            $datiAllegati['utente_cf'] = $foUser['fiscal_number'] ?? '';
-            $datiAllegati['utente_email'] = $foUser['email'] ?? '';
-            $datiAllegati['utente_provider'] = $foUser['provider_name'] ?? ($foUser['provider_id'] ?? '');
+            $datiAllegati += \App\Security\OidcUserMapper::auditFields($_SESSION['frontoffice_user']);
         }
         return $datiAllegati;
     }
@@ -3782,10 +3776,11 @@ $routes = [
                     ? $defaultCognome
                     : trim(($defaultCognome !== '' ? $defaultCognome : $defaultNome));
                 $companyName = trim((string)($loggedUser['company_name'] ?? ''));
-                if ($defaultTipo === 'G' && $companyName !== '') {
+                if (($loggedUser['subject_type'] ?? '') === 'G') {
+                    // Login impresa: mai il cognome dell'operatore come ragione sociale; vuoto = da compilare.
                     $defaultAnagrafica = $companyName;
                 }
-                if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
+                if ($defaultTipo === 'G' && $defaultAnagrafica === '' && ($loggedUser['subject_type'] ?? '') !== 'G') {
                     $defaultAnagrafica = $defaultEmail;
                 }
 
@@ -3848,10 +3843,11 @@ $routes = [
                 ? $defaultCognome
                 : trim($defaultCognome ?: $defaultNome);
             $companyName = trim((string)($loggedUser['company_name'] ?? ''));
-            if ($defaultTipo === 'G' && $companyName !== '') {
+            if (($loggedUser['subject_type'] ?? '') === 'G') {
+                // Login impresa: mai il cognome dell'operatore come ragione sociale; vuoto = da compilare.
                 $defaultAnagrafica = $companyName;
             }
-            if ($defaultTipo === 'G' && $defaultAnagrafica === '') {
+            if ($defaultTipo === 'G' && $defaultAnagrafica === '' && ($loggedUser['subject_type'] ?? '') !== 'G') {
                 $defaultAnagrafica = $defaultEmail;
             }
             $baseContext['form_data']['soggettoPagatore'] = [

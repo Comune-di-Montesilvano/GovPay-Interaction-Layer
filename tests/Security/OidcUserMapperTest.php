@@ -95,6 +95,8 @@ final class OidcUserMapperTest extends TestCase
             'prefisso IT'    => ['IT' . self::PIVA, self::PIVA],
             'spazi'          => [' 123 456 789 03 ', self::PIVA],
             'lista'          => [[self::PIVA], self::PIVA],
+            'prefisso IT-'   => ['IT-' . self::PIVA, self::PIVA],
+            'VATIT senza -'  => ['VATIT' . self::PIVA, self::PIVA],
             'vuota'          => ['', null],
             '10 cifre'       => ['1234567890', null],
             'lettere'        => ['ABCDEFGHIJK', null],
@@ -112,6 +114,44 @@ final class OidcUserMapperTest extends TestCase
     public function testNormalizeFiscalNumber(): void
     {
         self::assertSame(self::CF, OidcUserMapper::normalizeFiscalNumber(' tinit-rssmra80a01h501u '));
+    }
+
+    public function testAuditFieldsPersonaFisica(): void
+    {
+        $fields = OidcUserMapper::auditFields([
+            'first_name' => 'Mario', 'last_name' => 'Rossi', 'fiscal_number' => self::CF,
+            'email' => 'mario.rossi@example.org', 'provider_name' => 'SPID', 'subject_type' => 'F',
+        ]);
+        self::assertSame([
+            'utente_autenticato' => true,
+            'utente_nome'        => 'Mario',
+            'utente_cognome'     => 'Rossi',
+            'utente_cf'          => self::CF,
+            'utente_email'       => 'mario.rossi@example.org',
+            'utente_provider'    => 'SPID',
+            'utente_tipo'        => 'F',
+        ], $fields);
+    }
+
+    public function testAuditFieldsPersonaGiuridicaConservaOperatore(): void
+    {
+        $fields = OidcUserMapper::auditFields([
+            'first_name' => 'Mario', 'last_name' => 'Rossi', 'fiscal_number' => self::PIVA,
+            'subject_type' => 'G', 'company_name' => 'ACME SRL', 'operator_fiscal_number' => self::CF,
+            'provider_id' => 'EXTERNAL_OIDC_PROXY',
+        ]);
+        self::assertSame(self::PIVA, $fields['utente_cf']);
+        self::assertSame('G', $fields['utente_tipo']);
+        self::assertSame('ACME SRL', $fields['utente_ragione_sociale']);
+        self::assertSame(self::CF, $fields['utente_operatore_cf']);
+        self::assertSame('EXTERNAL_OIDC_PROXY', $fields['utente_provider']);
+    }
+
+    public function testAuditFieldsSessioneVecchiaSenzaTipo(): void
+    {
+        $fields = OidcUserMapper::auditFields(['fiscal_number' => self::CF]);
+        self::assertSame('F', $fields['utente_tipo']);
+        self::assertArrayNotHasKey('utente_operatore_cf', $fields);
     }
 
     public function testClaimNames(): void
