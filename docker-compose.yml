@@ -238,6 +238,11 @@ services:
     tmpfs:
       - /run/mysqld:mode=1777
       - /tmp:mode=1777
+      # Vuoto apposta: le immagini db <= 1.9.x contengono 020-grant-cittadini.sh, che senza le
+      # variabili *_CITTADINI (rimosse) fa `exit 0` dentro l'entrypoint (lo esegue con source)
+      # e su datadir vuota il db non parte mai. Rimuovibile quando nessuna istanza usa piu'
+      # un'immagine db <= 1.9.x. Senza effetto sulle immagini nuove (nessuno script di init).
+      - /docker-entrypoint-initdb.d:mode=1777
     image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:${APP_VERSION:-latest}
     container_name: gil-db
     restart: always
