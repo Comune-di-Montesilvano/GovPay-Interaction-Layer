@@ -635,15 +635,7 @@ if (!function_exists('frontoffice_pick_email_value')) {
 if (!function_exists('frontoffice_normalize_fiscal_number')) {
     function frontoffice_normalize_fiscal_number(string $raw): string
     {
-        $value = strtoupper(trim($raw));
-        $value = preg_replace('/\s+/', '', $value);
-
-        // CIE/SPID spesso inviano il formato qualificato TINIT-<CF>.
-        if (strpos($value, 'TINIT-') === 0) {
-            $value = substr($value, 6);
-        }
-
-        return $value;
+        return \App\Security\OidcUserMapper::normalizeFiscalNumber($raw);
     }
 }
 
