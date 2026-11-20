@@ -1,6 +1,6 @@
 # Build context: docker/db/ (docker build -f docker/db/Dockerfile docker/)
 # Nessuno script di init: schema e migrazioni li applica il backoffice all'avvio.
-FROM mariadb:12.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9
+FROM mariadb:12.3@sha256:4ebbcf100a3ba320766dfa0e1af008df12261301db6ef72798c7650f70794aed
 
 # Patch di sicurezza Ubuntu sopra la base fissata per digest. APT_REFRESH (data del giorno da
 # docker-publish) invalida il layer a ogni build, altrimenti la cache congela l'upgrade.
