@@ -166,40 +166,40 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-backoffice:latest
           format: json
           output: trivy-latest/backoffice.json
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 0
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
       - name: Trivy latest · frontoffice
         if: github.event_name == 'schedule' || inputs.dry_run
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-frontoffice:latest
           format: json
           output: trivy-latest/frontoffice.json
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 0
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
       - name: Trivy latest · db
         if: github.event_name == 'schedule' || inputs.dry_run
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-db:latest
           format: json
           output: trivy-latest/db.json
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 0
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
       - name: Rebuild-check
         id: check
         if: github.event_name == 'schedule' || inputs.dry_run
@@ -429,7 +429,7 @@ jobs:
       - name: Trivy scan · ${{ matrix.app }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-${{ matrix.image_suffix }}.sarif
@@ -437,20 +437,20 @@ jobs:
           exit-code: 1
           limit-severities-for-sarif: true
           ignore-unfixed: true
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
 
       # Da qui in poi solo se Trivy (step prima) e' passato.
       # SBOM CycloneDX dell'immagine (stesso Trivy della scansione), attestato sotto.
       - name: SBOM (Trivy) · ${{ matrix.app }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
           format: cyclonedx
           output: sbom-${{ matrix.image_suffix }}.cdx.json
           skip-setup-trivy: true
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
 
       # Attestazioni firmate (Sigstore) e registrate su GitHub e su GHCR, legate al digest:
       # provenance SLSA (repo, commit, workflow e run che hanno prodotto l'immagine) e SBOM.
@@ -650,7 +650,7 @@ jobs:
       - name: Trivy scan · ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
@@ -658,20 +658,20 @@ jobs:
           exit-code: 1
           limit-severities-for-sarif: true
           ignore-unfixed: true
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
 
       # Da qui in poi solo se Trivy (step prima) e' passato.
       # SBOM CycloneDX dell'immagine (stesso Trivy della scansione), attestato sotto.
       - name: SBOM (Trivy) · ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}@${{ steps.build.outputs.digest }}
           format: cyclonedx
           output: sbom-${{ matrix.image }}.cdx.json
           skip-setup-trivy: true
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
 
       # Attestazioni firmate (Sigstore) e registrate su GitHub e su GHCR, legate al digest:
       # provenance SLSA (repo, commit, workflow e run che hanno prodotto l'immagine) e SBOM.

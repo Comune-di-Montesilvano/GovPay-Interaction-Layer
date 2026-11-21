@@ -1,0 +1,207 @@
+# Eccezioni Trivy: ognuna motivata (`statement`), limitata al percorso dove vale (`paths`) e con
+# la condizione di rimozione. Usato da ci.yml (trivy-fs), image-check.yml e docker-publish.yml
+# (input `trivyignores:` / `--ignorefile`). Un'eccezione senza `paths` vale ovunque: non usarla.
+#
+# Revisione: a ogni bump dell'immagine base (PR dependabot ecosistema docker) togliere le voci
+# che lo scan non trova piu' (no-op, ma rumore che nasconde le eccezioni vere).
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - "docker/db/Dockerfile"
+    statement: >-
+      "Image user should not be root": l'entrypoint ufficiale mariadb parte root, fa
+      `chown mysql:` sul datadir (volume appena montato) e scende a `mysql` via gosu (log:
+      "Switching to dedicated user 'mysql'"); uno USER esplicito impedirebbe il chown al
+      primo avvio. Il Dockerfile PHP ha USER www-data e non ne ha bisogno. Rimuovere se
+      l'immagine db passa a un entrypoint non-root.
+
+vulnerabilities:
+  - id: CVE-2025-61726
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2025-61729
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2025-68121
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-111943
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-25679
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-27145
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-32280
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-32281
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-32283
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-33811
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-33814
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-33818
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-39820
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-39821
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-39822
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-39836
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-42499
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-42504
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-56853
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-56858
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-56859
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-56860
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-56862
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-78667
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-78669
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-97031
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.
+  - id: CVE-2026-97054
+    paths:
+      - "usr/local/bin/gosu"
+    statement: >-
+      Go stdlib v1.24.6 dentro gosu, vendored da docker-library/mariadb (immagine db);
+      gosu gira solo all avvio per scendere a mysql, nessuna rete. Nessun tag mariadb con
+      gosu ricompilato. Rimuovere quando l immagine base mariadb aggiorna gosu.

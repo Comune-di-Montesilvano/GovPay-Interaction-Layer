@@ -14,10 +14,17 @@ R=repos/Comune-di-Montesilvano/GovPay-Interaction-Layer
 Ogni eccezione ha un commento con il motivo e una data di rivalutazione, e una issue aperta per
 la correzione vera. La riga si rimuove quando arriva la patch upstream.
 
-- **Trivy (`trivy-fs`)**: aggiungere il CVE a `.trivyignore` (root del repo), es.
-  ```
-  # <pacchetto>: <perché è accettabile ora> — rivalutare entro 2026-11-15
-  CVE-2026-12345
+- **Trivy (`trivy-fs`, immagini)**: aggiungere il CVE a `.trivyignore.yaml` (root del repo),
+  limitato al percorso dove vale e con scadenza (`expired_at`: dopo la data l'eccezione smette
+  di valere da sola), es.
+  ```yaml
+  vulnerabilities:
+    - id: CVE-2026-12345
+      paths:
+        - "composer.lock"
+      expired_at: 2026-11-15
+      statement: >-
+        <pacchetto>: <perché è accettabile ora>. Rimuovere quando <condizione>.
   ```
 - **`composer audit` (`build-test`)**: aggiungere l'advisory a `config.audit.ignore` in
   `composer.json`, con il motivo come valore:
