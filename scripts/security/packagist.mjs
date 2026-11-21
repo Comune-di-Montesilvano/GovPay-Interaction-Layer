@@ -42,8 +42,9 @@ export function normalizeRepoUrl(url) {
     .replace(/\/+$/, '');
 }
 
-/** Nomi composer validi (vendor/pkg), unica forma accettata nell'URL. */
-export const isPackageName = (n) => typeof n === 'string' && /^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$/.test(n);
+/** Nomi composer validi (vendor/pkg), unica forma accettata nell'URL. Separatore obbligatorio tra
+ * i blocchi alfanumerici: regex non ambigua, tempo lineare (niente backtracking esponenziale). */
+export const isPackageName = (n) => typeof n === 'string' && /^[a-z0-9]+(?:[_.-][a-z0-9]+)*\/[a-z0-9]+(?:(?:[_.]|-{1,2})[a-z0-9]+)*$/.test(n);
 
 export async function fetchP2(name, { fetchImpl = fetch } = {}) {
   if (!isPackageName(name)) throw new Error(`nome pacchetto non valido: ${name}`);

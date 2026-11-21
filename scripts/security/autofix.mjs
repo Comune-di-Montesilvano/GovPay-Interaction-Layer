@@ -200,7 +200,8 @@ export function branchFor(fix) {
   return `security-autofix/${`${fix.pkg}-${v}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`;
 }
 
-const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+// Backslash raddoppiato prima di escapare |: un "\|" nell'input non chiude la cella.
+const cell = (s) => String(s ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 
 export function prBody(fix) {
   const what = fix.kind === 'image'

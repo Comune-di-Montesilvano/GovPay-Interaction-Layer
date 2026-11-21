@@ -65,6 +65,12 @@ test('repository normalizzati: https/.git/ssh/maiuscole equivalenti', () => {
   assert.equal(isPackageName('guzzlehttp/psr7'), true);
   assert.equal(isPackageName('../etc/passwd'), false);
   assert.equal(isPackageName('a/b?x=1'), false);
+  for (const ok of ['symfony/polyfill-php80', 'a.b/c--d', 'x_y/z.w']) assert.equal(isPackageName(ok), true, ok);
+  for (const ko of ['a-/b', 'a/-b', 'a..b/c', 'a/b---c', '/b', 'a/']) assert.equal(isPackageName(ko), false, ko);
+  // Regex lineare: input patologico (ReDoS con la versione precedente) respinto subito.
+  const t0 = process.hrtime.bigint();
+  assert.equal(isPackageName(`0/${'0'.repeat(50000)}!`), false);
+  assert.ok(process.hrtime.bigint() - t0 < 200_000_000n, 'regex lineare');
 });
 
 // --- piano composer ---
@@ -220,6 +226,9 @@ test('marcatori PR e issue: andata e ritorno', () => {
 test('issue: celle con | e a capo non rompono la tabella', () => {
   const t = renderIssue('unfixable', [{ pkg: 'a/b', ids: ['X'], reason: 'uno | due\ntre' }]);
   assert.match(t, /\| uno \\\| due tre \|/);
+  // "x\|y" in ingresso: backslash raddoppiato, poi | escapato → x\\\|y (nessun separatore nuovo).
+  const b = renderIssue('unfixable', [{ pkg: 'a/b', ids: ['X'], reason: 'x\\|y' }]);
+  assert.ok(b.includes('| x\\\\\\|y |'), b);
 });
 
 test('PR fallite: almeno un check in errore', () => {
