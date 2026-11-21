@@ -62,23 +62,6 @@ jobs:
             scripts/security
           sparse-checkout-cone-mode: false
 
-      # Valori fittizi: compose interpola tutto il file anche con `up db`, e i segreti
-      # `${VAR:?}` di docker-compose.yml mancanti fermerebbero l'avvio.
-      - name: Crea file .env per il CI
-        run: |
-          cat > .env <<'EOF'
-          DB_ROOT_PASSWORD=rootsecret
-          DB_NAME=appdb
-          DB_USER=appuser
-          DB_PASSWORD=apppass
-          BACKOFFICE_DB_USER=appuser
-          BACKOFFICE_DB_PASSWORD=apppass
-          APP_ENCRYPTION_KEY=ci_encryption_key_32_characters_
-          MASTER_TOKEN=ci_master_token
-          FRONTOFFICE_LINK_SIGNING_KEY=ci_link_signing_key
-          EOF
-
-
       # Script di sicurezza/CI (scripts/security, scripts/ci): test node:test e bash su copie
       # fisse in scripts/security/test/fixtures, mai sui file vivi del repo. Node del runner, nessuna dipendenza.
       - name: Test script di sicurezza
@@ -91,33 +74,17 @@ jobs:
         run: |
           set -euo pipefail
           docker=$(sed -nE 's/^FROM composer:([0-9]+\.[0-9]+\.[0-9]+)@sha256:[0-9a-f]{64} AS vendor_builder.*/\1/p' Dockerfile)
-          ci=$(sed -nE 's/^ +tools: composer:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .github/workflows/ci.yml)
-          [ -n "$docker" ] && [ -n "$ci" ] || { echo "::error::versione composer non trovata (Dockerfile '$docker', ci.yml '$ci')"; exit 1; }
-          [ "$docker" = "$ci" ] || { echo "::error file=.github/workflows/ci.yml::tools: composer:$ci diverso dal Dockerfile (composer:$docker): allineare a mano"; exit 1; }
+          ci=$(sed -nE 's/^ +tools: composer:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .github/actions/php-deps/action.yml)
+          [ -n "$docker" ] && [ -n "$ci" ] || { echo "::error::versione composer non trovata (Dockerfile '$docker', php-deps '$ci')"; exit 1; }
+          [ "$docker" = "$ci" ] || { echo "::error file=.github/actions/php-deps/action.yml::tools: composer:$ci diverso dal Dockerfile (composer:$docker): allineare a mano"; exit 1; }
           echo "composer $ci"
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      - uses: ./.github/actions/php-deps
         with:
-          php-version: '8.5'
-          extensions: mbstring, pdo_mysql, intl, zip
           coverage: xdebug
-          # Stessa versione del FROM composer nel Dockerfile (dependabot aggiorna solo quello;
-          # lo step "Composer CI allineato al Dockerfile" fallisce se divergono).
-          tools: composer:2.11.1
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: vendor
-          key: composer-${{ hashFiles('composer.lock') }}
-          restore-keys: composer-
 
       - name: Composer validate (composer.json valido e coerente)
         run: composer validate --no-check-publish --no-check-all
-
-      - name: Install dependencies
-        run: composer install --prefer-dist --no-progress
 
       # Assoluto su schedule/dispatch: stato reale di main, nuovi advisory su dipendenze invariate.
       - name: Composer audit (known vulnerable deps)
@@ -145,41 +112,7 @@ jobs:
       - name: PHPStan (static analysis, baseline su debito esistente)
         run: vendor/bin/phpstan analyse --memory-limit=1G
 
-      - name: Cache DB image
-        id: db-image-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: /tmp/docker-cache
-          key: docker-db-${{ hashFiles('docker/db/Dockerfile') }}
-          restore-keys: docker-db-
-
-      - name: Load or pull DB image
-        env:
-          DB_IMAGE: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:latest
-        run: |
-          if [ -f /tmp/docker-cache/db.tar ]; then
-            docker load -i /tmp/docker-cache/db.tar
-          else
-            docker pull "$DB_IMAGE"
-            mkdir -p /tmp/docker-cache
-            docker save "$DB_IMAGE" -o /tmp/docker-cache/db.tar
-          fi
-
-      - name: Avvia servizi con Docker Compose
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db
-
-      - name: Attendi db healthy
-        run: |
-          for i in $(seq 1 60); do
-            if docker compose -f docker-compose.yml -f docker-compose.ci.yml ps db | grep -q "(healthy)"; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs db
-          echo "db non healthy entro 120s" >&2
-          exit 1
+      - uses: ./.github/actions/test-db
 
       - name: Run tests
         env:
@@ -189,7 +122,8 @@ jobs:
           DB_USER: appuser
           DB_PASSWORD: apppass
         # Copertura informativa, senza soglie: testo nel log, HTML + Clover come artifact.
-        run: vendor/bin/phpunit --coverage-text --coverage-html coverage/html --coverage-clover coverage/clover.xml
+        # Gruppo integration escluso: gira nel job integration-tests (stessa coda, in parallelo).
+        run: vendor/bin/phpunit --exclude-group integration --coverage-text --coverage-html coverage/html --coverage-clover coverage/clover.xml
 
       # Solo in coda (come ComunicaPA): il commit che verra' unito. Sulle PR basta il log.
       - name: Upload report di copertura
@@ -204,6 +138,44 @@ jobs:
       - name: Ferma i container
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+
+  # Test di integrazione (gruppo PHPUnit `integration`, tests/Integration): backoffice Slim
+  # in-process su MariaDB usa-e-getta con GovPay/pagoPA finto (tests/Fakes/GovPay, avviato dal
+  # test con php -S). Come build-test solo in coda, giornaliero e dispatch; sulla PR il
+  # segnaposto integration-tests-placeholder. Nessun `needs`: lo schema `!cancelled()` di
+  # ComunicaPA (job saltato per dipendenza fallita = verde) qui non serve.
+  integration-tests:
+    if: github.event_name != 'push' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/php-deps
+      - uses: ./.github/actions/test-db
+      - name: Test di integrazione
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3307"
+          DB_NAME: appdb
+          DB_USER: appuser
+          DB_PASSWORD: apppass
+        run: vendor/bin/phpunit --group integration
+      - name: Ferma i container
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+
+  integration-tests-placeholder:
+    name: integration-tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "integration-tests reale in merge queue (ci.yml, job integration-tests)"
 
   # Segnaposto sulla PR del required check build-test (reale solo in coda, vedi sopra): stesso
   # schema del job placeholder di image-check.yml. Niente harden-runner: un job con soli step

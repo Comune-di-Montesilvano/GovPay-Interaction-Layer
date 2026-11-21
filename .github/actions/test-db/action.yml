@@ -1,0 +1,55 @@
+name: MariaDB usa-e-getta per i test
+description: Avvia solo il servizio db del compose (docker-compose.ci.yml, 127.0.0.1:3307, datadir tmpfs) e attende healthy. Fermarlo con `docker compose -f docker-compose.yml -f docker-compose.ci.yml down` in uno step if always().
+runs:
+  using: composite
+  steps:
+    # Valori fittizi: compose interpola tutto il file anche con `up db`, e i segreti
+    # `${VAR:?}` di docker-compose.yml mancanti fermerebbero l'avvio.
+    - name: Crea file .env per il CI
+      shell: bash
+      run: |
+        cat > .env <<'ENV'
+        DB_ROOT_PASSWORD=rootsecret
+        DB_NAME=appdb
+        DB_USER=appuser
+        DB_PASSWORD=apppass
+        BACKOFFICE_DB_USER=appuser
+        BACKOFFICE_DB_PASSWORD=apppass
+        APP_ENCRYPTION_KEY=ci_encryption_key_32_characters_
+        MASTER_TOKEN=ci_master_token
+        FRONTOFFICE_LINK_SIGNING_KEY=ci_link_signing_key
+        ENV
+
+    - name: Cache DB image
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: /tmp/docker-cache
+        key: docker-db-${{ hashFiles('docker/db/Dockerfile') }}
+        restore-keys: docker-db-
+
+    - name: Load or pull DB image
+      shell: bash
+      env:
+        DB_IMAGE: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-db:latest
+      run: |
+        if [ -f /tmp/docker-cache/db.tar ]; then
+          docker load -i /tmp/docker-cache/db.tar
+        else
+          docker pull "$DB_IMAGE"
+          mkdir -p /tmp/docker-cache
+          docker save "$DB_IMAGE" -o /tmp/docker-cache/db.tar
+        fi
+
+    - name: Avvia db e attendi healthy
+      shell: bash
+      run: |
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db
+        for _ in $(seq 1 60); do
+          if docker compose -f docker-compose.yml -f docker-compose.ci.yml ps db | grep -q "(healthy)"; then
+            exit 0
+          fi
+          sleep 2
+        done
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml logs db
+        echo "db non healthy entro 120s" >&2
+        exit 1

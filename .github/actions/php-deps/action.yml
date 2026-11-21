@@ -1,0 +1,30 @@
+name: PHP e dipendenze composer
+description: PHP 8.5 con le estensioni dei test, composer allineato al Dockerfile, vendor/ in cache e installato (build-test, integration-tests).
+inputs:
+  coverage:
+    description: Driver di copertura per setup-php (xdebug o none)
+    required: false
+    default: none
+runs:
+  using: composite
+  steps:
+    - name: Set up PHP
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      with:
+        php-version: '8.5'
+        extensions: mbstring, pdo_mysql, intl, zip
+        coverage: ${{ inputs.coverage }}
+        # Stessa versione del FROM composer nel Dockerfile (dependabot aggiorna solo quello;
+        # lo step "Composer CI allineato al Dockerfile" di build-test fallisce se divergono).
+        tools: composer:2.11.1
+
+    - name: Cache Composer dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: vendor
+        key: composer-${{ hashFiles('composer.lock') }}
+        restore-keys: composer-
+
+    - name: Install dependencies
+      shell: bash
+      run: composer install --prefer-dist --no-progress
