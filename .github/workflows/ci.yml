@@ -82,14 +82,26 @@ jobs:
         run: |
           node --test scripts/security/test/*.test.mjs
 
+      # Dependabot aggiorna solo il FROM composer del Dockerfile: senza questo controllo la
+      # versione di setup-php resta indietro in silenzio (successo: 2.10.3 contro 2.11.1).
+      - name: Composer CI allineato al Dockerfile
+        run: |
+          set -euo pipefail
+          docker=$(sed -nE 's/^FROM composer:([0-9]+\.[0-9]+\.[0-9]+)@sha256:[0-9a-f]{64} AS vendor_builder.*/\1/p' Dockerfile)
+          ci=$(sed -nE 's/^ +tools: composer:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .github/workflows/ci.yml)
+          [ -n "$docker" ] && [ -n "$ci" ] || { echo "::error::versione composer non trovata (Dockerfile '$docker', ci.yml '$ci')"; exit 1; }
+          [ "$docker" = "$ci" ] || { echo "::error file=.github/workflows/ci.yml::tools: composer:$ci diverso dal Dockerfile (composer:$docker): allineare a mano"; exit 1; }
+          echo "composer $ci"
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.5'
           extensions: mbstring, pdo_mysql, intl, zip
           coverage: xdebug
-          # Stessa versione del FROM composer nel Dockerfile (dependabot aggiorna solo quello).
-          tools: composer:2.10.3
+          # Stessa versione del FROM composer nel Dockerfile (dependabot aggiorna solo quello;
+          # lo step "Composer CI allineato al Dockerfile" fallisce se divergono).
+          tools: composer:2.11.1
 
       - name: Cache Composer dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
