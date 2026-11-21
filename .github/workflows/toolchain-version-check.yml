@@ -3,10 +3,17 @@ name: Toolchain version check
 # trivy-action, che di default usa un binario vecchio), immagine semgrep (`container:` di
 # semgrep.yml, versione+digest) e immagine cosign (servizio `verify-images` di
 # docker-compose.yml, variante -dev con shell, e scripts/verify-images.sh, versione+digest).
-# Apre una issue quando esce una versione piu' nuova, dopo un cooldown come dependabot (una
-# release compromessa e ritirata nel frattempo non arriva mai a una PR). Il job fallisce se i
-# punti dello stesso tool divergono. Nessun fail su CI: un gate bloccherebbe ogni PR il giorno
-# di una release.
+# Quando esce una versione piu' nuova, dopo un cooldown come dependabot (una release
+# compromessa e ritirata nel frattempo non arriva mai a una PR), apre una PR di aggiornamento
+# (come ComunicaPA trivy-version-check.yml). La PR NON ha auto-merge: il cambio di uno scanner
+# o del verificatore di firme resta una decisione umana (release notes, check verdi).
+# Commit verificato via GraphQL col token della GitHub App (scripts/security/gh-commit.mjs, solo
+# i file del tool): con il GITHUB_TOKEN la PR resterebbe senza check. Nei check della PR gli
+# scanner girano gia' con la versione nuova. Il job fallisce se i punti dello stesso tool
+# divergono. Nessun fail su CI: un gate bloccherebbe ogni PR il giorno di una release.
+#
+# GitHub App GIL bot: servono Contents, Pull requests e Workflows in scrittura (la PR di Trivy
+# tocca .github/workflows/*).
 on:
   schedule:
     - cron: "0 6 * * 1"
@@ -22,6 +29,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      # Chiude la vecchia issue "Aggiornare <tool> a ..." (versione precedente del workflow).
       issues: write
     strategy:
       fail-fast: false
@@ -37,14 +45,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
       - name: Confronta versione pinnata con ultima release
+        id: cmp
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TOOL: ${{ matrix.tool }}
           COOLDOWN_DAYS: "7"
         run: |
           set -euo pipefail
-          digest=""
+          digest="" digest_dev=""
           if [ "$TOOL" = trivy ]; then
             pinned=$(grep -hoE '^\s+version: v[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/*.yml | awk '{print $2}' | sort -u)
             # Chiamata anonima: l'org aquasecurity ha una IP allow list che rifiuta il GITHUB_TOKEN
@@ -52,35 +61,23 @@ jobs:
             release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
               https://api.github.com/repos/aquasecurity/trivy/releases/latest \
               | jq -r '[.tag_name, .published_at] | @tsv')
-            where='input `version:` di tutti gli step `aquasecurity/trivy-action` (`grep -rn "version: v" .github/workflows`)'
             notes="https://github.com/aquasecurity/trivy/releases/tag/"
+            ver_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
           elif [ "$TOOL" = cosign ]; then
             # Due punti, stessa versione: compose (tag vX.Y.Z-dev, busybox per lo script del
             # toggle VERIFY_IMAGES) e scripts/verify-images.sh (tag vX.Y.Z). Uno per file.
-            files=(docker-compose.yml scripts/verify-images.sh)
             pin_re='ghcr\.io/sigstore/cosign/cosign:v[0-9]+\.[0-9]+\.[0-9]+(-dev)?@sha256:[0-9a-f]{64}'
-            for f in "${files[@]}"; do
+            for f in docker-compose.yml scripts/verify-images.sh; do
               n=$(grep -coE "$pin_re" "$f" || true)
               [ "$n" -eq 1 ] || { echo "::error::$f: attesa 1 immagine cosign pinnata per digest, trovate $n"; exit 1; }
             done
-            pinned=$(grep -hoE "$pin_re" "${files[@]}" | sed -E 's/.*:(v[0-9]+\.[0-9]+\.[0-9]+)(-dev)?@.*/\1/' | sort -u)
+            grep -qE 'cosign:v[0-9.]+-dev@' docker-compose.yml || { echo "::error::docker-compose.yml: attesa variante -dev"; exit 1; }
+            pinned=$(grep -hoE "$pin_re" docker-compose.yml scripts/verify-images.sh | sed -E 's/.*:(v[0-9]+\.[0-9]+\.[0-9]+)(-dev)?@.*/\1/' | sort -u)
             release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
               https://api.github.com/repos/sigstore/cosign/releases/latest \
               | jq -r '[.tag_name, .published_at] | @tsv')
-            # Digest degli indici multi-arch dell'ultima release (pull anonimo GHCR), per l'issue.
-            latest_tag=$(cut -f1 <<<"$release")
-            if [ -n "$latest_tag" ]; then
-              tok=$(curl -fsSL --retry 3 'https://ghcr.io/token?scope=repository:sigstore/cosign/cosign:pull' | jq -r .token)
-              for t in "$latest_tag" "$latest_tag-dev"; do
-                d=$(curl -fsSI --retry 3 -H "Authorization: Bearer $tok" \
-                  -H 'Accept: application/vnd.oci.image.index.v1+json' \
-                  "https://ghcr.io/v2/sigstore/cosign/cosign/manifests/$t" \
-                  | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}' || true)
-                digest="${digest:+$digest, }$t → ${d:-non trovato}"
-              done
-            fi
-            where='`image:` del servizio `verify-images` in `docker-compose.yml` (tag **-dev**, con shell) e `COSIGN=` in `scripts/verify-images.sh` (tag senza -dev), ciascuno con il **proprio** digest `sha256:` dell indice multi-arch'
             notes="https://github.com/sigstore/cosign/releases/tag/"
+            ver_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
           else
             pinned=$(grep -hoE 'semgrep/semgrep:[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/*.yml | cut -d: -f2 | sort -u)
             # Ultima stabile X.Y.Z su Docker Hub (esclusi canary/nonroot/develop), con data e digest.
@@ -89,8 +86,8 @@ jobs:
                        | sort_by(.name | split(".") | map(tonumber)) | last
                        | [.name, .last_updated, .digest] | @tsv')
             digest=$(cut -f3 <<<"$release")
-            where='`container: image:` di `.github/workflows/semgrep.yml` (versione **e** digest `sha256:` dell indice multi-arch)'
             notes="https://github.com/semgrep/semgrep/releases/tag/v"
+            ver_re='^[0-9]+\.[0-9]+\.[0-9]+$'
           fi
           if [ "$(printf '%s\n' "$pinned" | wc -l)" -ne 1 ] || [ -z "$pinned" ]; then
             echo "::error::Versioni $TOOL pinnate incoerenti o assenti: $(echo $pinned)"
@@ -100,6 +97,11 @@ jobs:
           published=$(cut -f2 <<<"$release")
           if [ -z "$latest" ] || [ -z "$published" ]; then
             echo "::error::Ultima release $TOOL non trovata (API cambiata o risposta vuota)"
+            exit 1
+          fi
+          # Dato esterno: finisce in sed, nei file del repo e nel nome del branch.
+          if ! [[ "$latest" =~ $ver_re ]]; then
+            echo "::error::Versione $TOOL inattesa: $latest"
             exit 1
           fi
           age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
@@ -115,19 +117,107 @@ jobs:
             exit 0
           fi
 
-          existing=$(gh issue list --state open --search "in:title \"Aggiornare $TOOL a $latest\"" --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            echo "Issue gia' aperta: #$existing"
-            exit 0
+          if [ "$TOOL" = cosign ]; then
+            # Digest degli indici multi-arch della release (pull anonimo GHCR), uno per variante.
+            tok=$(curl -fsSL --retry 3 'https://ghcr.io/token?scope=repository:sigstore/cosign/cosign:pull' | jq -r .token)
+            index_digest() {
+              curl -fsSI --retry 3 -H "Authorization: Bearer $tok" \
+                -H 'Accept: application/vnd.oci.image.index.v1+json' \
+                "https://ghcr.io/v2/sigstore/cosign/cosign/manifests/$1" \
+                | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+            }
+            digest=$(index_digest "$latest")
+            digest_dev=$(index_digest "$latest-dev")
           fi
-          gh issue create --title "Aggiornare $TOOL a $latest (pinnato $pinned)" --body "$(cat <<EOF
-          Disponibile **$TOOL $latest** (pubblicato $published). Pinnato: **$pinned**.
-          ${digest:+Digest indice: \`$digest\`}
+          for d in ${digest:+"$digest"} ${digest_dev:+"$digest_dev"}; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Digest $TOOL inatteso: $d"; exit 1; }
+          done
+          if [ "$TOOL" != trivy ] && [ -z "$digest" ]; then
+            echo "::error::Digest $TOOL $latest non trovato"; exit 1
+          fi
+          if [ "$TOOL" = cosign ] && [ -z "$digest_dev" ]; then
+            echo "::error::Digest cosign $latest-dev non trovato"; exit 1
+          fi
+          {
+            echo "pinned=$pinned"; echo "latest=$latest"; echo "published=$published"
+            echo "digest=$digest"; echo "digest_dev=$digest_dev"; echo "notes=$notes$latest"
+          } >> "$GITHUB_OUTPUT"
 
-          Da aggiornare in $where.
+      - name: Token GitHub App
+        id: app
+        if: steps.cmp.outputs.latest != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.GIL_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.GIL_BOT_PRIVATE_KEY }}
+          # Commit sul branch toolchain/* (Trivy tocca .github/workflows) e apertura PR.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
 
-          Release notes: $notes$latest
+      - name: PR di aggiornamento
+        if: steps.cmp.outputs.latest != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TOOL: ${{ matrix.tool }}
+          PINNED: ${{ steps.cmp.outputs.pinned }}
+          LATEST: ${{ steps.cmp.outputs.latest }}
+          PUBLISHED: ${{ steps.cmp.outputs.published }}
+          DIGEST: ${{ steps.cmp.outputs.digest }}
+          DIGEST_DEV: ${{ steps.cmp.outputs.digest_dev }}
+          NOTES: ${{ steps.cmp.outputs.notes }}
+        run: |
+          set -euo pipefail
+          branch="toolchain/$TOOL-$LATEST"
+          existing=$(gh pr list -R "$REPO" --state open --head "$branch" --json number --jq '.[0].number // empty')
+          [ -n "$existing" ] && { echo "PR gia' aperta: #$existing"; exit 0; }
 
-          _Issue aperta da \`toolchain-version-check.yml\`._
+          pinned_re=${PINNED//./\\.}
+          case "$TOOL" in
+            trivy)
+              files=$(grep -lE "^\s+version: $pinned_re\$" .github/workflows/*.yml)
+              # Solo le righe `version:` (la versione pinnata e' gia' verificata unica e coerente).
+              sed -i -E "s/^(\s+version: )$pinned_re\$/\1$LATEST/" $files
+              left=$(grep -cE "^\s+version: $pinned_re\$" $files || true)
+              where='input `version:` degli step `aquasecurity/trivy-action`'
+              ;;
+            semgrep)
+              files=$(grep -lE "semgrep/semgrep:$pinned_re@sha256:" .github/workflows/*.yml)
+              sed -i -E "s#semgrep/semgrep:$pinned_re@sha256:[0-9a-f]{64}#semgrep/semgrep:$LATEST@$DIGEST#" $files
+              left=$(grep -cE "semgrep/semgrep:$pinned_re" $files || true)
+              where='`container: image:` di `semgrep.yml` (versione e digest dell indice multi-arch)'
+              ;;
+            cosign)
+              files="docker-compose.yml scripts/verify-images.sh"
+              sed -i -E "s#cosign/cosign:$pinned_re-dev@sha256:[0-9a-f]{64}#cosign/cosign:$LATEST-dev@$DIGEST_DEV#" docker-compose.yml
+              sed -i -E "s#cosign/cosign:$pinned_re@sha256:[0-9a-f]{64}#cosign/cosign:$LATEST@$DIGEST#" scripts/verify-images.sh
+              left=$(grep -cE "cosign/cosign:$pinned_re" $files || true)
+              where='`verify-images` in `docker-compose.yml` (tag -dev) e `COSIGN=` in `scripts/verify-images.sh`, ognuno col proprio digest'
+              ;;
+          esac
+          left=$(printf '%s\n' "$left" | awk -F: '{s+=$NF} END {print s+0}')
+          [ "$left" -eq 0 ] || { echo "::error::Sostituzione incompleta ($left occorrenze rimaste)"; exit 1; }
+          git diff --stat
+          allow=()
+          for f in $files; do allow+=(--allow "$f"); done
+
+          node scripts/security/gh-commit.mjs --repo "$REPO" --branch "$branch" --base "$(git rev-parse HEAD)" \
+            --message "ci: $TOOL $LATEST" "${allow[@]}"
+          url=$(gh pr create -R "$REPO" --base main --head "$branch" --title "ci: $TOOL $LATEST" --body "$(cat <<EOF
+          Aggiorna **$TOOL** da **$PINNED** a **$LATEST** (pubblicato $PUBLISHED) in $where.
+          ${DIGEST:+Digest: \`$DIGEST\`}${DIGEST_DEV:+ · -dev: \`$DIGEST_DEV\`}
+
+          Release notes: $NOTES
+
+          Nessun auto-merge: leggere le release notes e mergiare a mano se i check sono verdi.
+
+          _PR aperta da \`toolchain-version-check.yml\`._
           EOF
-          )"
+          )")
+          echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
+
+          # Issue della versione precedente del workflow: sostituita dalla PR.
+          GH_TOKEN="$ISSUES_TOKEN" gh issue list -R "$REPO" --state open --search "in:title \"Aggiornare $TOOL a\"" --json number --jq '.[].number' \
+            | while read -r n; do GH_TOKEN="$ISSUES_TOKEN" gh issue close -R "$REPO" "$n" --comment "Sostituita da $url"; done

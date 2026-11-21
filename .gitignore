@@ -79,3 +79,6 @@ plans/
 
 # Stato runtime del Circuit Breaker GovPay (file + lock, creati anche dai test)
 /backoffice/storage/tmp/
+
+# Report di copertura PHPUnit (ci.yml)
+/coverage/

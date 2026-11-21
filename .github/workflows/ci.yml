@@ -58,6 +58,12 @@ jobs:
           EOF
 
 
+      # Script di sicurezza/CI (scripts/security, scripts/ci): test node:test e bash su copie
+      # fisse in scripts/security/test/fixtures, mai sui file vivi del repo. Node del runner, nessuna dipendenza.
+      - name: Test script di sicurezza
+        run: |
+          node --test scripts/security/test/*.test.mjs
+
       - name: Set up PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
@@ -129,7 +135,18 @@ jobs:
           DB_NAME: appdb
           DB_USER: appuser
           DB_PASSWORD: apppass
-        run: vendor/bin/phpunit --coverage-text
+        # Copertura informativa, senza soglie: testo nel log, HTML + Clover come artifact.
+        run: vendor/bin/phpunit --coverage-text --coverage-html coverage/html --coverage-clover coverage/clover.xml
+
+      # Solo in coda (come ComunicaPA): il commit che verra' unito. Sulle PR basta il log.
+      - name: Upload report di copertura
+        if: ${{ !cancelled() && github.event_name == 'merge_group' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Ferma i container
         if: always()
@@ -177,7 +194,7 @@ jobs:
       - name: Trivy filesystem scan (vuln + secrets + misconfig)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
@@ -189,7 +206,7 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
           limit-severities-for-sarif: true
-          trivyignores: ${{ github.workspace }}/.trivyignore
+          trivyignores: ${{ github.workspace }}/.trivyignore.yaml
 
       - name: Upload Trivy results to GH Security tab
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
