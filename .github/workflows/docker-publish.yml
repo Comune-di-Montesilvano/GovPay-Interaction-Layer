@@ -19,8 +19,9 @@ on:
     tags: ['v*.*.*']
   # Controllo giornaliero (04:30 UTC, dopo il giro dependabot delle 01:00 Europe/Rome):
   # `latest` (+ `latest-YYYYMMDD`) si ricostruisce SOLO se rebuild-check trova una causa reale
-  # (commit su main, pacchetti di sistema aggiornabili, vulnerabilità HIGH/CRITICAL con fix
-  # nell'immagine pubblicata — scripts/ci/rebuild-check.sh). Nessuna causa = nessun build e
+  # (commit su main, pacchetti di sistema aggiornabili, latest non verificabile —
+  # scripts/ci/rebuild-check.sh; le HIGH/CRITICAL con fix sono solo nel riepilogo: un rebuild
+  # senza commit non le corregge oltre a quanto fa apt). Nessuna causa = nessun build e
   # nessun riavvio inutile delle istanze. I tag vX.Y.Z li crea solo il maintainer.
   schedule:
     - cron: "30 4 * * *"

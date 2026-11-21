@@ -223,7 +223,7 @@ jobs:
 
       # In merge queue il gate e' differenziale rispetto alla `latest` pubblicata (stesso run,
       # stesso DB, come ComunicaPA): una CVE gia' in produzione non blocca le PR, la corregge
-      # il rebuild giornaliero (causa "Trivy HIGH/CRITICAL con fix su latest") o l'autofix.
+      # il rebuild giornaliero (pacchetti di sistema aggiornabili) o l'autofix (composer, base).
       # Una CVE introdotta dalla PR (Dockerfile, immagine base, dipendenze) blocca.
       - name: Trivy differenziale · ${{ matrix.image }} (nuove rispetto a latest)
         if: github.event_name == 'merge_group'
