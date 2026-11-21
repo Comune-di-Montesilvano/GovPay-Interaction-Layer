@@ -27,8 +27,11 @@ permissions:
 
 jobs:
   build-test:
-    # Non su push a main: gia' passato su PR e in merge queue (il merge e' il commit testato).
-    if: github.event_name != 'push'
+    # Solo in merge queue, giornaliero e dispatch: PR leggere (sulla PR gira il segnaposto
+    # build-test-placeholder con lo stesso nome). Non su push a main: gia' passato in coda (il
+    # merge e' il commit testato). Unit, gruppo db, PHPStan e composer audit si scoprono quindi
+    # in coda: verificare in locale prima del push (vendor/bin/phpunit, PHPStan).
+    if: github.event_name != 'push' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -201,6 +204,17 @@ jobs:
       - name: Ferma i container
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+
+  # Segnaposto sulla PR del required check build-test (reale solo in coda, vedi sopra): stesso
+  # schema del job placeholder di image-check.yml. Niente harden-runner: un job con soli step
+  # banali e harden-runner puo' restare appeso fino al timeout.
+  build-test-placeholder:
+    name: build-test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "build-test reale in merge queue (ci.yml, job build-test)"
 
   # Dipendenze aggiunte o aggiornate dalla PR con advisory high/critical, devDependencies e
   # Actions comprese (composer audit e Trivy vedono solo produzione e immagini). Solo sulle PR:
