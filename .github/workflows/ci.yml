@@ -31,6 +31,9 @@ jobs:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DIFF: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -40,6 +43,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      # Base della PR/coda in .base: composer.lock della base e gate differenziale della base.
+      # Rimossa subito dopo l'audit (PHPStan/PHPUnit non devono vederla).
+      - name: Checkout base
+        if: env.DIFF == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: .base
+          persist-credentials: false
+          sparse-checkout: |
+            composer.json
+            composer.lock
+            scripts/security
+          sparse-checkout-cone-mode: false
 
       # Valori fittizi: compose interpola tutto il file anche con `up db`, e i segreti
       # `${VAR:?}` di docker-compose.yml mancanti fermerebbero l'avvio.
@@ -86,8 +104,28 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress
 
+      # Assoluto su schedule/dispatch: stato reale di main, nuovi advisory su dipendenze invariate.
       - name: Composer audit (known vulnerable deps)
+        if: env.DIFF != 'true'
         run: composer audit --no-dev
+
+      # Su PR e merge queue il gate e' DIFFERENZIALE (come ComunicaPA): fallisce solo per
+      # advisory/abbandonati assenti dalla base (stesso run, stesso DB packagist). Un advisory
+      # pubblicato dopo il merge non blocca le PR non correlate ne' quelle che lo correggono:
+      # lo stato assoluto di main lo controlla il giro giornaliero. Exit di composer audit
+      # ignorato (≠0 con qualsiasi advisory): decide diff-gate, exit 2 su JSON non valido.
+      - name: Composer audit differenziale (nuovi rispetto alla base)
+        if: env.DIFF == 'true'
+        run: |
+          composer audit --no-dev --locked --format=json > "$RUNNER_TEMP/head.json" || true
+          composer audit --no-dev --locked --format=json -d .base > "$RUNNER_TEMP/base.json" || true
+          # Gate dalla base quando esiste: una PR non puo' indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format composer --head "$RUNNER_TEMP/head.json" --base "$RUNNER_TEMP/base.json"
+
+      - name: Rimuovi checkout base
+        if: always() && env.DIFF == 'true'
+        run: rm -rf .base
 
       - name: PHPStan (static analysis, baseline su debito esistente)
         run: vendor/bin/phpstan analyse --memory-limit=1G
@@ -181,6 +219,12 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    env:
+      DIFF: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      # Stessa cache dell'action (default di trivy-action): gli step `trivy` successivi
+      # riusano il DB scaricato con --skip-db-update.
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -191,22 +235,51 @@ jobs:
         with:
           persist-credentials: false
 
+      # Fuori dalla cartella scansionata (Trivy salta .base, vedi skip-dirs).
+      - name: Checkout base
+        if: env.DIFF == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: .base
+          persist-credentials: false
+
+      # SARIF sempre caricato. Bloccante (vuln compresi) su push/schedule; su PR e merge queue
+      # decidono i due step successivi (come ComunicaPA).
       - name: Trivy filesystem scan (vuln + secrets + misconfig)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.76.2
           scan-type: fs
           scan-ref: .
+          skip-dirs: .base,.cache
           scanners: vuln,secret,misconfig
           format: sarif
           output: trivy-fs-results.sarif
           severity: CRITICAL,HIGH
-          # Bloccante (coerente con docker-publish.yml): un secret/misconfig/vuln
-          # CRITICAL-HIGH nel sorgente non deve passare silenziosamente.
-          exit-code: 1
+          exit-code: ${{ env.DIFF == 'true' && '0' || '1' }}
           ignore-unfixed: true
           limit-severities-for-sarif: true
           trivyignores: ${{ github.workspace }}/.trivyignore.yaml
+
+      # Segreti e misconfig nascono da modifiche al repo, non da advisory esterni: assoluti.
+      - name: Trivy secret + misconfig (assoluto)
+        if: env.DIFF == 'true'
+        run: |
+          trivy fs --quiet --skip-db-update --skip-dirs .base,.cache --scanners secret,misconfig \
+            --severity CRITICAL,HIGH --ignorefile .trivyignore.yaml --exit-code 1 .
+
+      # Stesso binario e stesso DB (gia' scaricato dallo step SARIF) per testa e base.
+      - name: Trivy vuln differenziale (nuove rispetto alla base)
+        if: env.DIFF == 'true'
+        run: |
+          opts=(fs --quiet --skip-db-update --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile "$GITHUB_WORKSPACE/.trivyignore.yaml" --format json)
+          trivy "${opts[@]}" --skip-dirs .base,.cache --output "$RUNNER_TEMP/head.json" .
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" .base
+          # Gate dalla base quando esiste: una PR non puo' indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format trivy --head "$RUNNER_TEMP/head.json" --base "$RUNNER_TEMP/base.json"
 
       - name: Upload Trivy results to GH Security tab
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
