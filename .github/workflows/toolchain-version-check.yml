@@ -2,7 +2,10 @@ name: Toolchain version check
 # Tool fissati a mano che dependabot non aggiorna: binario Trivy (input `version:` di
 # trivy-action, che di default usa un binario vecchio), immagine semgrep (`container:` di
 # semgrep.yml, versione+digest) e immagine cosign (servizio `verify-images` di
-# docker-compose.yml, variante -dev con shell, e scripts/verify-images.sh, versione+digest).
+# docker-compose.yml, variante -dev con shell, e scripts/verify-images.sh, versione+digest) e
+# Playwright e2e (@playwright/test in e2e/package.json + lock e immagine runner
+# mcr.microsoft.com/playwright in e2e/docker-compose.e2e.yml: stessa versione, browser inclusi;
+# dependabot li ignora entrambi per non spezzarli).
 # Quando esce una versione piu' nuova, dopo un cooldown come dependabot (una release
 # compromessa e ritirata nel frattempo non arriva mai a una PR), apre una PR di aggiornamento
 # (come ComunicaPA trivy-version-check.yml). La PR NON ha auto-merge: il cambio di uno scanner
@@ -34,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tool: [trivy, semgrep, cosign]
+        tool: [trivy, semgrep, cosign, playwright]
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -79,6 +82,16 @@ jobs:
             release=$(GH_TOKEN="$READ_TOKEN" gh api repos/sigstore/cosign/releases/latest \
               --jq '[.tag_name, .published_at] | @tsv')
             notes="https://github.com/sigstore/cosign/releases/tag/"
+            ver_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          elif [ "$TOOL" = playwright ]; then
+            # Due punti, stessa versione: pacchetto npm (esatto) e tag immagine vX.Y.Z-noble.
+            pkg=$(jq -r '.devDependencies["@playwright/test"] // empty' e2e/package.json)
+            img=$(grep -oE 'mcr\.microsoft\.com/playwright:v[0-9]+\.[0-9]+\.[0-9]+-noble@sha256:[0-9a-f]{64}' e2e/docker-compose.e2e.yml \
+              | sed -E 's/.*:(v[0-9.]+)-noble@.*/\1/' | sort -u)
+            pinned=$(printf 'v%s\n%s\n' "$pkg" "$img" | sort -u)
+            release=$(GH_TOKEN="$READ_TOKEN" gh api repos/microsoft/playwright/releases/latest \
+              --jq '[.tag_name, .published_at] | @tsv')
+            notes="https://github.com/microsoft/playwright/releases/tag/"
             ver_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
           else
             pinned=$(grep -hoE 'semgrep/semgrep:[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/*.yml | cut -d: -f2 | sort -u)
@@ -130,6 +143,13 @@ jobs:
             }
             digest=$(index_digest "$latest")
             digest_dev=$(index_digest "$latest-dev")
+          fi
+          if [ "$TOOL" = playwright ]; then
+            # Indice multi-arch del tag -noble su MCR (anonimo).
+            digest=$(curl -fsSI --retry 3 -H 'Accept: application/vnd.oci.image.index.v1+json' \
+              -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+              "https://mcr.microsoft.com/v2/playwright/manifests/$latest-noble" \
+              | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')
           fi
           for d in ${digest:+"$digest"} ${digest_dev:+"$digest_dev"}; do
             [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Digest $TOOL inatteso: $d"; exit 1; }
@@ -197,6 +217,14 @@ jobs:
               sed -i -E "s#cosign/cosign:$pinned_re@sha256:[0-9a-f]{64}#cosign/cosign:$LATEST@$DIGEST#" scripts/verify-images.sh
               left=$(grep -cE "cosign/cosign:$pinned_re" $files || true)
               where='`verify-images` in `docker-compose.yml` (tag -dev) e `COSIGN=` in `scripts/verify-images.sh`, ognuno col proprio digest'
+              ;;
+            playwright)
+              files="e2e/package.json e2e/package-lock.json e2e/docker-compose.e2e.yml"
+              sed -i -E "s#mcr\.microsoft\.com/playwright:$pinned_re-noble@sha256:[0-9a-f]{64}#mcr.microsoft.com/playwright:$LATEST-noble@$DIGEST#" e2e/docker-compose.e2e.yml
+              # Solo package.json + lock (niente node_modules, niente script di install).
+              (cd e2e && npm install --package-lock-only --ignore-scripts --save-exact --no-audit --no-fund "@playwright/test@${LATEST#v}")
+              left=$(grep -cE "playwright:$pinned_re-noble|\"@playwright/test\": \"${PINNED#v}\"" $files || true)
+              where='`@playwright/test` in `e2e/package.json` + lock e immagine `playwright` in `e2e/docker-compose.e2e.yml` (versione e digest dell indice multi-arch)'
               ;;
           esac
           left=$(printf '%s\n' "$left" | awk -F: '{s+=$NF} END {print s+0}')

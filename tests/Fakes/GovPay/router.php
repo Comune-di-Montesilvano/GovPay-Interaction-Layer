@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Un solo server per tutte le basi URL dei settings, distinte dal primo segmento del path:
  *   /backoffice (govpay.backoffice_url), /pendenze (govpay.pendenze_url),
  *   /pagamenti (govpay.pagamenti_url), /checkout (pagopa.checkout_ec_base_url).
- * Endpoint con stato: PUT/GET pendenza, lista per debitore, byAvviso, avviso PDF, RT PDF (solo
+ * Endpoint: GET /info; con stato: PUT/GET pendenza, lista per debitore, byAvviso, avviso PDF, RT PDF (solo
  * dopo /__fake/paid), POST /carts (302 verso la pagina /__checkout/<id> del finto, mai pagoPA).
  * Controllo: /__fake/health, reset, requests, unmatched, paid, fail-next.
  * Route non gestite: con PRISM_URL inoltro a Prism, altrimenti 404; sempre registrate in
@@ -75,6 +75,18 @@ if (str_starts_with($path, '/__fake/')) {
                 foreach ($s['pendenze'] as $k => $p) {
                     if (($p['idDominio'] ?? '') === ($body['idDominio'] ?? '') && ($p['iuvAvviso'] ?? '') === ($body['iuv'] ?? '')) {
                         $s['pendenze'][$k]['stato'] = 'ESEGUITA';
+                        // Come GovPay dopo l'RT: ogni voce porta la riscossione con il path rpp
+                        // (letto da PendenzeController::buildReceiptPathLookup per la ricevuta).
+                        $rpp = '/rpp/' . rawurlencode($p['idDominio']) . '/' . rawurlencode($p['iuvAvviso']) . '/CCP-FAKE';
+                        foreach (($p['voci'] ?? []) as $i => $voce) {
+                            $s['pendenze'][$k]['voci'][$i]['riscossioni'] = [[
+                                'iur' => 'IUR-FAKE-' . $p['iuvAvviso'] . '-' . $i,
+                                'rpp' => $rpp,
+                                'importo' => $voce['importo'] ?? null,
+                                'stato' => 'RISCOSSA',
+                                'tipo' => 'ENTRATA',
+                            ]];
+                        }
                     }
                 }
                 return [$s, null];
@@ -145,6 +157,12 @@ if (is_array($fail)) {
 }
 
 $seg = '[^/]+';
+
+// GET /info: stato/versione (controllo "GovPay raggiungibile" della dashboard).
+if ($method === 'GET' && $rest === '/info') {
+    fake_json(200, ['appName' => 'GovPay (finto)', 'versione' => '0.0.0-fake', 'build' => 'e2e']);
+    return true;
+}
 
 // PUT /pendenze/{idA2A}/{idPendenza}: crea/aggiorna, assegna numero avviso sintetico.
 if ($method === 'PUT' && preg_match("#^/pendenze/($seg)/($seg)$#", $rest, $m)) {
