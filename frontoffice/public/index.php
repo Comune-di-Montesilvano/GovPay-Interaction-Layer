@@ -5144,6 +5144,8 @@ if ($method === 'POST' && $normalizedPath === '/carrello/aggiungi') {
     $err = frontoffice_cart_add($idPendenza, $detail);
     if ($err !== null) {
         http_response_code(422);
+        // Risposta application/json; $err e' solo una stringa fissa di frontoffice_cart_add().
+        // nosemgrep: php.lang.security.injection.echoed-request.echoed-request
         echo json_encode(['error' => $err], JSON_UNESCAPED_UNICODE);
         return;
     }
@@ -5378,5 +5380,7 @@ if (!empty($route['raw_output'])) {
     if (!empty($route['template']) && is_string($route['template']) && str_starts_with($route['template'], 'errors/')) {
         http_response_code(200);
     }
+    // Twig con autoescape html (Environment sopra): nessun dato richiesta stampato grezzo.
+    // nosemgrep: php.lang.security.injection.echoed-request.echoed-request
     echo $twig->render($route['template'], $context);
 }
