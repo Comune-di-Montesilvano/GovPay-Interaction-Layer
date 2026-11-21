@@ -32,10 +32,17 @@ const CLEAN = { SchemaVersion: 2, Results: [{ Target: 'x', Vulnerabilities: [
   { VulnerabilityID: 'CVE-1', Severity: 'MEDIUM', FixedVersion: '1.1' },
   { VulnerabilityID: 'CVE-2', Severity: 'HIGH', FixedVersion: '' },
 ] }] };
-const VULN = { SchemaVersion: 2, Results: [{ Target: 'x', Vulnerabilities: [
-  { VulnerabilityID: 'CVE-3', Severity: 'CRITICAL', FixedVersion: '2.0' },
-  { VulnerabilityID: 'CVE-4', Severity: 'HIGH', FixedVersion: '2.1' },
-] }] };
+const VULN = { SchemaVersion: 2, Results: [
+  { Target: 'debian 13', Class: 'os-pkgs', Vulnerabilities: [
+    { VulnerabilityID: 'CVE-3', Severity: 'CRITICAL', FixedVersion: '2.0' },
+    { VulnerabilityID: 'CVE-5', Severity: 'MEDIUM', FixedVersion: '2.0' },
+  ] },
+  { Target: 'composer.lock', Class: 'lang-pkgs', Vulnerabilities: [
+    { VulnerabilityID: 'CVE-4', Severity: 'HIGH', FixedVersion: '2.1' },
+    { VulnerabilityID: 'CVE-6', Severity: 'HIGH', FixedVersion: '3.0' },
+    { VulnerabilityID: 'CVE-7', Severity: 'HIGH', FixedVersion: '' },
+  ] },
+] };
 
 function run({ reports = {}, env = {}, commitsAfter = 0, images = 'backoffice db' } = {}) {
   const repo = gitRepo(1 + commitsAfter);
@@ -86,10 +93,21 @@ test('b. apt-get update fallito o output non numerico → causa, mai "0 aggiorna
   assert.match(run({ env: { STUB_APT_db: 'W: repo irraggiungibile' } }).output, /db: controllo apt fallito/);
 });
 
-test('c. Trivy: solo HIGH/CRITICAL con fix contano', () => {
+// Un rebuild senza commit non corregge le CVE fuori dalla portata di apt (composer, binari della
+// base): contarle come causa ripubblicava latest identico ogni giorno.
+test('c. HIGH/CRITICAL con fix: solo nel riepilogo (os / lang), mai causa', () => {
   const r = run({ reports: { backoffice: VULN } });
-  assert.match(r.output, /backoffice: 2 vulnerabilita' HIGH\/CRITICAL con fix/);
-  assert.doesNotMatch(r.output, /db: .*vulnerabilita'/);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.output, /^skip=true$/m);
+  assert.match(r.output, /^reason=$/m);
+  assert.match(r.summary, /\| backoffice \|[^\n]*\| 1 \/ 2 \|/);
+  assert.match(r.summary, /\| db \|[^\n]*\| 0 \/ 0 \|/);
+});
+
+test('c. CVE con fix insieme a una causa reale: rebuild per la causa, CVE non elencate', () => {
+  const r = run({ reports: { backoffice: VULN }, env: { STUB_APT_backoffice: '4' } });
+  assert.match(r.output, /^skip=false$/m);
+  assert.match(r.output, /^reason=backoffice: 4 pacchetti di sistema aggiornabili$/m);
 });
 
 test('c. report Trivy assente o illeggibile → causa', () => {

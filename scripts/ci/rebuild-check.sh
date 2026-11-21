@@ -4,8 +4,13 @@
 #   a. commit su main dopo la label org.opencontainers.image.revision (merge di PR, compresi
 #      dependabot: composer, npm, actions, digest delle immagini base fissate nei Dockerfile);
 #   b. aggiornamenti di sistema disponibili (apt list --upgradable dentro l'immagine);
-#   c. vulnerabilita' HIGH/CRITICAL con fix nel report Trivy dell'immagine (JSON prodotto
-#      dagli step trivy-action prima di questo script, in $TRIVY_DIR/<img>.json).
+#   c. report Trivy dell'immagine (JSON prodotto dagli step trivy-action prima di questo
+#      script, in $TRIVY_DIR/<img>.json) presente e leggibile.
+# Le HIGH/CRITICAL con fix del report sono SOLO informative (riepilogo, separate os/lang), mai
+# causa: un rebuild senza commit (stesso codice, stesso digest base) corregge solo cio' che
+# raggiunge `apt-get upgrade`, gia' contato in (b). Composer/npm e binari della base (gosu, php)
+# richiedono un commit (security-autofix, dependabot) -> causa (a). Contarle come causa
+# ripubblicava `latest` ogni giorno identico finche' la correzione non arrivava a monte.
 # Immagine assente, senza label o senza report Trivy = causa (meglio un rebuild in piu' che un
 # latest non verificato). Nessuna causa su nessuna immagine -> skip=true.
 #
@@ -27,7 +32,7 @@ causes=()
 {
   echo "### Rebuild-check di \`latest\` (main @ \`${HEAD_SHA::7}\`)"
   echo
-  echo "| Immagine | Revisione latest | Commit nuovi | Pacchetti aggiornabili | HIGH/CRITICAL con fix | PHP |"
+  echo "| Immagine | Revisione latest | Commit nuovi | Pacchetti aggiornabili | HIGH/CRITICAL con fix (os / lang, informativo) | PHP |"
   echo "|---|---|---|---|---|---|"
 } >> "$SUMMARY"
 
@@ -67,18 +72,18 @@ for img in $IMAGES; do
     causes+=("${img}: ${upgradable} pacchetti di sistema aggiornabili")
   fi
 
-  # c. Vulnerabilita' con fix disponibile nel report Trivy.
+  # c. Report Trivy: deve esserci ed essere leggibile; i conteggi sono solo informativi.
   report="${TRIVY_DIR}/${img}.json"
   if [ ! -s "$report" ]; then
     causes+=("${img}: report Trivy assente")
     vulns="n/d"
   else
-    vulns=$(jq '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "")] | length' "$report" 2>/dev/null) || vulns=""
-    if ! [[ "$vulns" =~ ^[0-9]+$ ]]; then
+    vulns=$(jq -r '[.Results[]? | (if .Class == "os-pkgs" then "os" else "lang" end) as $c | .Vulnerabilities[]?
+        | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "") | $c]
+        | "\(map(select(. == "os")) | length) / \(map(select(. == "lang")) | length)"' "$report" 2>/dev/null) || vulns=""
+    if ! [[ "$vulns" =~ ^[0-9]+\ /\ [0-9]+$ ]]; then
       causes+=("${img}: report Trivy illeggibile")
       vulns="n/d"
-    elif [ "$vulns" -gt 0 ]; then
-      causes+=("${img}: ${vulns} vulnerabilita' HIGH/CRITICAL con fix")
     fi
   fi
 
