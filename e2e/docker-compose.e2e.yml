@@ -4,6 +4,7 @@
 #   fake-govpay  GovPay/pagoPA con stato (tests/Fakes/GovPay), route non gestite → prism
 #   prism        mock dalle spec OpenAPI vendorizzate di GovPay Backoffice
 #   mailpit      SMTP finto + API REST per leggere le mail
+#   oidc         IdP OIDC finto, path pa-sso-proxy /OIDC/* (tests/Fakes/Oidc)
 #   playwright   runner (profilo `runner`, avviato con `run --rm`)
 # Nessuna porta pubblicata: tutto passa dalla rete govpay-network. Worker mai avviato.
 # Path relativi alla directory del PRIMO file -f (root del repo), non a e2e/.
@@ -16,6 +17,10 @@ services:
   frontoffice:
     ports: !reset []
     container_name: gil-e2e-frontoffice
+    # Config letta dal backoffice a ogni richiesta: i cambi da Impostazioni (es. login OIDC nel
+    # flusso 04) valgono subito, senza aspettare la cache di 300 s.
+    environment:
+      - FRONTOFFICE_CONFIG_CACHE_TTL=0
   db:
     container_name: gil-e2e-db
 
@@ -32,6 +37,19 @@ services:
       - FAKE_GOVPAY_STATE=/tmp/fake-govpay.json
     volumes:
       - ./tests/Fakes/GovPay:/fakes:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - govpay-network
+
+  oidc:
+    image: php:8.5-cli-trixie@sha256:f324fcb4dc009ac0470a7d614cd122499dcee3ca47a9bab620fc14c0eb759ba2
+    command: ["php", "-S", "0.0.0.0:8080", "/oidc/router.php"]
+    working_dir: /oidc
+    user: "33:33"
+    read_only: true
+    volumes:
+      - ./tests/Fakes/Oidc:/oidc:ro
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     networks:

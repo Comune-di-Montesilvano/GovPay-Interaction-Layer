@@ -3,6 +3,7 @@ export const BACKOFFICE = 'http://backoffice';
 export const FRONTOFFICE = 'http://frontoffice';
 export const FAKE = 'http://fake-govpay:8080';
 export const MAILPIT = 'http://mailpit:8025';
+export const OIDC = 'http://oidc:8080';
 
 export const ADMIN_EMAIL = 'operatore@example.test';
 export const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '';

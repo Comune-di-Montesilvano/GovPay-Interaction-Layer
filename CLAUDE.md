@@ -128,6 +128,7 @@ openssl rand -hex 32   # FRONTOFFICE_LINK_SIGNING_KEY
 
 SENTRY_DSN                   # opzionale — vuoto = error tracking disattivo
 SENTRY_ENVIRONMENT           # opzionale — tag ambiente/istanza per GlitchTip, default "production"
+FRONTOFFICE_CONFIG_CACHE_TTL # opzionale, default 300 — secondi di cache della config che il frontoffice legge dal backoffice (0 = nessuna cache, usato dall'e2e); config incompleta (ID_DOMINIO vuoto) mai in cache
 VERIFY_IMAGES                # opzionale, default false — true = servizio verify-images (cosign) blocca l'avvio se le 3 immagini di APP_VERSION non sono firmate
 ```
 
@@ -320,7 +321,7 @@ File SQL in `migrations/` (numerati `003_...sql` → `030_...sql`). Nessun runne
 
 ## Test end-to-end (Playwright)
 
-`e2e/` (TypeScript, `@playwright/test` pinnato = tag immagine `mcr.microsoft.com/playwright` nel `e2e/docker-compose.e2e.yml`, `run.sh` controlla che coincidano). Stack: `docker-compose.yml` + override immagini + `e2e/docker-compose.e2e.yml` (progetto `gil-e2e`, GovPay/pagoPA finti `tests/Fakes/GovPay` + Prism, Mailpit, mai il worker). Flussi in ordine sullo stesso DB: `01-setup` (wizard) → `02-operatore` (tipologia sintetica `TEST_SERVIZIO` seminata da `run.sh`) → `03-cittadino` → `05-mail`; ogni file chiude con `unmatched()` vuoto (endpoint GovPay nuovo → aggiungerlo al finto). Locale: `E2E_IMAGES_FILE=<override con image:> bash e2e/run.sh` (`E2E_KEEP=1` lascia lo stack attivo, `E2E_GREP` filtra); immagini locali con `docker build --target runtime-backoffice|runtime-frontoffice`. Le modifiche al codice NON entrano senza rebuild dell'immagine.
+`e2e/` (TypeScript, `@playwright/test` pinnato = tag immagine `mcr.microsoft.com/playwright` nel `e2e/docker-compose.e2e.yml`, `run.sh` controlla che coincidano). Stack: `docker-compose.yml` + override immagini + `e2e/docker-compose.e2e.yml` (progetto `gil-e2e`, GovPay/pagoPA finti `tests/Fakes/GovPay` + Prism, IdP OIDC finto `tests/Fakes/Oidc` con i path pa-sso-proxy `/OIDC/*` e PKCE verificato — mock-oauth2-server non va: espone `/authorize` —, Mailpit, mai il worker). Flussi in ordine sullo stesso DB: `01-setup` (wizard) → `02-operatore` (tipologia sintetica `TEST_SERVIZIO` seminata da `run.sh`) → `03-cittadino` (accesso libero) → `04-oidc` (l'operatore attiva OIDC da Impostazioni, il cittadino entra e vede le sue pendenze) → `05-mail`; ogni file chiude con `unmatched()` vuoto (endpoint GovPay nuovo → aggiungerlo al finto). Locale: `E2E_IMAGES_FILE=<override con image:> bash e2e/run.sh` (`E2E_KEEP=1` lascia lo stack attivo, `E2E_GREP` filtra); immagini locali con `docker build --target runtime-backoffice|runtime-frontoffice`. Le modifiche al codice NON entrano senza rebuild dell'immagine.
 
 ## Test
 
