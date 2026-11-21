@@ -2,7 +2,7 @@ version: 2
 # Controllo giornaliero alle 01:00 (come ComunicaPA): l'auto-merge delle minor/patch finisce prima
 # del rebuild-check delle 04:30 UTC (docker-publish.yml), che ricostruisce latest solo se c'e' una
 # causa reale (es. un merge dependabot). Il cooldown non si applica ai security update: le
-# correzioni di advisory arrivano subito. Ecosistema docker-compose non usato: docker-compose.yml
+# correzioni di advisory arrivano subito. Ecosistema docker-compose solo per e2e/: docker-compose.yml
 # referenzia solo immagini GIL (${APP_VERSION}), nessuna immagine di terzi da aggiornare.
 updates:
   - package-ecosystem: "github-actions"
@@ -111,3 +111,37 @@ updates:
     groups:
       minor-patch:
         update-types: ["minor", "patch"]
+
+  # Pacchetto e2e Playwright (e2e/package.json). @playwright/test escluso: va aggiornato insieme
+  # all'immagine mcr.microsoft.com/playwright (stesse versioni dei browser), lo fa la gamba
+  # playwright di toolchain-version-check.yml.
+  - package-ecosystem: "npm"
+    directory: "/e2e"
+    schedule:
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "@playwright/test"
+
+  # Immagini di terzi dei finti e2e (php, Prism, Mailpit, mock-oauth2-server) in
+  # e2e/docker-compose.e2e.yml. Playwright escluso per lo stesso motivo del pacchetto npm.
+  - package-ecosystem: "docker-compose"
+    directory: "/e2e"
+    schedule:
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
+    cooldown:
+      default-days: 7
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "mcr.microsoft.com/playwright"

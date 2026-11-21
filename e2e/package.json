@@ -1,0 +1,15 @@
+{
+  "name": "gil-e2e",
+  "private": true,
+  "description": "Test end-to-end GIL (Playwright) sullo stack di produzione con dipendenze esterne finte. Avvio: e2e/run.sh",
+  "license": "EUPL-1.2",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

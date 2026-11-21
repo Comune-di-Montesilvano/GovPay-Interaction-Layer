@@ -1,0 +1,77 @@
+# Stack e2e: override di docker-compose.yml (mai docker-compose.override.yml) per e2e/run.sh,
+# progetto compose dedicato (default gil-e2e). Le immagini GIL arrivano da E2E_IMAGES_FILE
+# (digest firmati del run in docker-publish.yml). Dipendenze esterne finte:
+#   fake-govpay  GovPay/pagoPA con stato (tests/Fakes/GovPay), route non gestite → prism
+#   prism        mock dalle spec OpenAPI vendorizzate di GovPay Backoffice
+#   mailpit      SMTP finto + API REST per leggere le mail
+#   playwright   runner (profilo `runner`, avviato con `run --rm`)
+# Nessuna porta pubblicata: tutto passa dalla rete govpay-network. Worker mai avviato.
+# Path relativi alla directory del PRIMO file -f (root del repo), non a e2e/.
+# Immagini di terze parti fissate tag@digest (aggiornamento: toolchain-version-check per
+# Playwright, a mano per le altre).
+services:
+  backoffice:
+    ports: !reset []
+    container_name: gil-e2e-backoffice
+  frontoffice:
+    ports: !reset []
+    container_name: gil-e2e-frontoffice
+  db:
+    container_name: gil-e2e-db
+
+  fake-govpay:
+    image: php:8.5-cli-trixie@sha256:f324fcb4dc009ac0470a7d614cd122499dcee3ca47a9bab620fc14c0eb759ba2
+    command: ["php", "-S", "0.0.0.0:8080", "/fakes/router.php"]
+    working_dir: /fakes
+    user: "33:33"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    environment:
+      - PRISM_URL=http://prism:4010
+      - FAKE_GOVPAY_STATE=/tmp/fake-govpay.json
+    volumes:
+      - ./tests/Fakes/GovPay:/fakes:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - govpay-network
+
+  prism:
+    image: stoplight/prism:5.15.10@sha256:586d1f0f94f8d0eaf20b26b8b41f985f2a2d494bea297bd3988c3de3eb87094e
+    command: ["mock", "-h", "0.0.0.0", "-p", "4010", "/specs/backoffice.bundled.yaml"]
+    volumes:
+      - ./govpay-clients/generated-clients/backoffice-v1:/specs:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - govpay-network
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=1
+      - MP_SMTP_AUTH_ALLOW_INSECURE=1
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - govpay-network
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
+    profiles: ["runner"]
+    working_dir: /e2e
+    command: ["sh", "-c", "npm ci --no-audit --no-fund && npx playwright test"]
+    environment:
+      - CI=${CI:-}
+      - "E2E_ADMIN_PASSWORD=${E2E_ADMIN_PASSWORD:?E2E_ADMIN_PASSWORD obbligatoria: avviare con e2e/run.sh}"
+    ipc: host
+    volumes:
+      - ./e2e:/e2e
+      # node_modules del container, mai quelli dell'host (Windows/macOS diversi da Linux).
+      - e2e_node_modules:/e2e/node_modules
+    networks:
+      - govpay-network
+
+volumes:
+  e2e_node_modules:
