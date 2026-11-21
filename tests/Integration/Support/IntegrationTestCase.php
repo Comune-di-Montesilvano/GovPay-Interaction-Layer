@@ -48,7 +48,6 @@ abstract class IntegrationTestCase extends DbTestCase
         putenv('APP_ENCRYPTION_KEY=' . bin2hex(random_bytes(16)));
         putenv('FRONTOFFICE_LINK_SIGNING_KEY=' . bin2hex(random_bytes(32)));
         ini_set('session.use_cookies', '0');
-        ini_set('session.use_only_cookies', '0');
         ini_set('session.use_strict_mode', '0');
         ini_set('session.cache_limiter', '');
         ini_set('session.save_path', sys_get_temp_dir());
