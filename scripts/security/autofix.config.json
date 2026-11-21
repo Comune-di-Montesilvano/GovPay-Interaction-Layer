@@ -1,0 +1,10 @@
+{
+  "_comment": "Configurazione di security-autofix.yml. minAgeHours: età minima della versione corretta (eccezione al cooldown dependabot di 7 giorni, non abolizione). images: immagine pubblicata -> Dockerfile e immagine base di runtime (FROM name:tag@sha256) da aggiornare. Solo i file di allowedFiles possono finire in un commit del bot.",
+  "minAgeHours": 48,
+  "allowedFiles": ["composer.lock", "Dockerfile", "docker/db/Dockerfile"],
+  "images": {
+    "backoffice": { "dockerfile": "Dockerfile", "base": "php" },
+    "frontoffice": { "dockerfile": "Dockerfile", "base": "php" },
+    "db": { "dockerfile": "docker/db/Dockerfile", "base": "mariadb" }
+  }
+}
