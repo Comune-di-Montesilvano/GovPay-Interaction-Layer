@@ -12,3 +12,6 @@ docker-setup.sh text eol=lf
 # Dockerfile in LF (diff e blame puliti anche da Windows con core.autocrlf=true)
 Dockerfile text eol=lf
 **/Dockerfile text eol=lf
+
+# PDF di fixture dei test: binari (con autocrlf verrebbero alterati)
+*.pdf binary
