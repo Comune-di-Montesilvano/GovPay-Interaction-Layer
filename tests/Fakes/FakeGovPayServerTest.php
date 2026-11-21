@@ -64,6 +64,7 @@ final class FakeGovPayServerTest extends TestCase
             'causale' => 'Pendenza di test',
             'importo' => 10.0,
             'soggettoPagatore' => ['tipo' => 'F', 'identificativo' => $cf, 'anagrafica' => 'Mario Rossi'],
+            'voci' => [['idVocePendenza' => '1', 'descrizione' => 'Voce di test', 'importo' => 10.0]],
         ]);
         self::assertSame(201, $r['status'], $r['body']);
         return json_decode($r['body'], true);
@@ -109,6 +110,17 @@ final class FakeGovPayServerTest extends TestCase
         self::assertStringStartsWith('%PDF', $r['body']);
         $p = json_decode($this->http('GET', '/backoffice/pendenze/A2A-TEST/PND-1')['body'], true);
         self::assertSame('ESEGUITA', $p['stato']);
+        $rpp = $p['voci'][0]['riscossioni'][0]['rpp'] ?? '';
+        self::assertSame('/rpp/' . self::DOMINIO . '/00000000000000001/CCP-FAKE', $rpp);
+        self::assertSame(200, $this->http('GET', '/backoffice' . $rpp . '/rt')['status']);
+    }
+
+    public function testInfo(): void
+    {
+        $r = $this->http('GET', '/backoffice/info');
+        self::assertSame(200, $r['status']);
+        self::assertArrayHasKey('versione', json_decode($r['body'], true));
+        self::assertSame([], self::$fake->unmatched());
     }
 
     public function testAvvisoPdf(): void

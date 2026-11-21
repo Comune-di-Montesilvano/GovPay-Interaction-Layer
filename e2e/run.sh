@@ -11,6 +11,8 @@
 # Uso:
 #   E2E_IMAGES_FILE=/percorso/override-immagini.yml e2e/run.sh
 #   E2E_GREP='operatore' E2E_IMAGES_FILE=... e2e/run.sh   # solo i test che corrispondono
+#   E2E_KEEP=1 ...   # solo in locale: stack lasciato attivo per il debug (poi
+#                    # `docker compose -p gil-e2e down -v`); mai in CI
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -58,8 +60,13 @@ cleanup() {
     "${COMPOSE[@]}" ps -a || true
     "${COMPOSE[@]}" logs --no-color --tail 80 backoffice frontoffice fake-govpay || true
   fi
-  "${COMPOSE[@]}" --profile runner down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -rf "$TMP_DIR"
+  if [ "${E2E_KEEP:-}" = 1 ] && [ -z "${CI:-}" ]; then
+    echo "E2E_KEEP=1: stack $PROJECT lasciato attivo (env in $ENV_FILE); fermarlo con:"
+    echo "  docker compose -p $PROJECT --env-file $ENV_FILE -f docker-compose.yml -f $IMAGES_FILE -f e2e/docker-compose.e2e.yml --profile runner down -v"
+  else
+    "${COMPOSE[@]}" --profile runner down -v --remove-orphans >/dev/null 2>&1 || true
+    rm -rf "$TMP_DIR"
+  fi
   exit "$rc"
 }
 trap cleanup EXIT
@@ -80,6 +87,18 @@ for ((i = 0; i < TIMEOUT; i += 5)); do
 done
 [ "$status" = healthy ] || fail "backoffice non healthy entro ${TIMEOUT}s (stato: $status)"
 echo "OK  stack e2e pronto"
+
+# Tipologia di test (dati sintetici) direttamente nel DB e2e: la sincronizzazione delle entrate
+# da GovPay (Configurazione) non e' ancora coperta dal finto. Tabella creata dalle migrazioni
+# all'avvio del backoffice (healthy sopra).
+DB_ROOT_PASSWORD=$(sed -n 's/^DB_ROOT_PASSWORD=//p' "$ENV_FILE")
+"${COMPOSE[@]}" exec -T db mariadb -uroot -p"$DB_ROOT_PASSWORD" "$DB_NAME" -e "
+  INSERT INTO entrate_tipologie
+    (id_dominio, id_entrata, descrizione, iban_accredito, codice_contabilita, tipo_contabilita,
+     abilitato_backoffice, effective_enabled, sorgente, updated_at, created_at)
+  VALUES ('00000000000', 'TEST_SERVIZIO', 'Servizio di test e2e', 'IT60X0542811101000000123456',
+     'TEST_SERVIZIO', '9', 1, 1, 'backoffice', NOW(), NOW())" || fail "seed tipologia di test fallito"
+echo "OK  tipologia di test TEST_SERVIZIO"
 
 rm -rf e2e/playwright-report e2e/test-results
 rc=0

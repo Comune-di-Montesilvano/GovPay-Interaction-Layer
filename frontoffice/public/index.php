@@ -73,7 +73,10 @@ register_shutdown_function(static function (): void {
     if ($raw !== false && $status === 200 && $curlErr === '') {
         $data = json_decode((string)$raw, true);
         if (is_array($data)) {
-            if (file_put_contents($cacheFile, json_encode($data)) !== false) {
+            // Config incompleta (setup wizard non ancora concluso): non metterla in cache,
+            // altrimenti il portale resterebbe "Configurazione mancante" per $cacheTtl dopo il setup.
+            $complete = trim((string)($data['ID_DOMINIO'] ?? '')) !== '';
+            if ($complete && file_put_contents($cacheFile, json_encode($data)) !== false) {
                 chmod($cacheFile, 0600);
             }
             foreach ($data as $k => $v) {
