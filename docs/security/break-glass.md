@@ -1,9 +1,13 @@
 # Procedura break-glass
 
-Con PR obbligatoria, nessun bypass e due check richiesti bloccanti (`ci.yml` → `build-test`
-con `composer audit`, `trivy-fs` con Trivy HIGH/CRITICAL), un advisory pubblicato un giorno
-qualsiasi blocca anche un hotfix non correlato. Questa procedura dice come sbloccare un merge
-urgente senza indebolire le protezioni in modo permanente.
+Su PR e merge queue `composer audit`, Trivy fs e Trivy immagine sono **differenziali**
+(`scripts/security/diff-gate.mjs`, gate preso dalla base): bloccano solo le vulnerabilità che la
+PR introduce, quindi un advisory pubblicato su una dipendenza già presente in `main` **non**
+blocca più gli hotfix non correlati (lo segnalano il giro giornaliero di `ci.yml` e
+`security-alerts.yml`). Segreti e misconfig restano assoluti. Questa procedura serve quando a
+bloccare è proprio la PR urgente: la vulnerabilità la introduce lei (es. bump forzato di una
+dipendenza) oppure il tag `v*`, dove Trivy resta assoluto. Dice come sbloccare il merge senza
+indebolire le protezioni in modo permanente.
 
 ```sh
 R=repos/Comune-di-Montesilvano/GovPay-Interaction-Layer

@@ -434,10 +434,33 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.image_suffix }}.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          # Tag v*: bloccante assoluto. Rebuild di latest (schedule/dispatch da main): decide lo
+          # step successivo, nessuna regressione rispetto alla latest pubblicata (ComunicaPA).
+          exit-code: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
           limit-severities-for-sarif: true
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore.yaml
+
+      # Rebuild: fallisce solo per CVE assenti dalla latest attuale (stesso run, stesso DB). Una
+      # CVE gia' in produzione senza fix nell'immagine base non ferma il rebuild che porta le
+      # altre patch; una CVE nuova (dipendenza, pacchetto di sistema) lo ferma come prima.
+      - name: Trivy differenziale · ${{ matrix.image_suffix }} (nuove rispetto a latest)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+          IMAGE: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+          LATEST: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}:latest
+        run: |
+          opts=(image --quiet --skip-db-update --image-src remote --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile .trivyignore.yaml --format json)
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/head.json" "$IMAGE"
+          if trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" "$LATEST"; then
+            base=(--base "$RUNNER_TEMP/base.json")
+          else
+            echo "::warning::$LATEST non disponibile: tutte le vulnerabilita' contano come nuove"
+            base=(--base-empty)
+          fi
+          node scripts/security/diff-gate.mjs --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
 
       # Da qui in poi solo se Trivy (step prima) e' passato.
       # SBOM CycloneDX dell'immagine (stesso Trivy della scansione), attestato sotto.
@@ -655,10 +678,33 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          # Tag v*: bloccante assoluto. Rebuild di latest (schedule/dispatch da main): decide lo
+          # step successivo, nessuna regressione rispetto alla latest pubblicata (ComunicaPA).
+          exit-code: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
           limit-severities-for-sarif: true
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore.yaml
+
+      # Rebuild: fallisce solo per CVE assenti dalla latest attuale (stesso run, stesso DB). Una
+      # CVE gia' in produzione senza fix nell'immagine base non ferma il rebuild che porta le
+      # altre patch; una CVE nuova (dipendenza, pacchetto di sistema) lo ferma come prima.
+      - name: Trivy differenziale · ${{ matrix.image }} (nuove rispetto a latest)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+          IMAGE: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          LATEST: ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}:latest
+        run: |
+          opts=(image --quiet --skip-db-update --image-src remote --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile .trivyignore.yaml --format json)
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/head.json" "$IMAGE"
+          if trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" "$LATEST"; then
+            base=(--base "$RUNNER_TEMP/base.json")
+          else
+            echo "::warning::$LATEST non disponibile: tutte le vulnerabilita' contano come nuove"
+            base=(--base-empty)
+          fi
+          node scripts/security/diff-gate.mjs --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
 
       # Da qui in poi solo se Trivy (step prima) e' passato.
       # SBOM CycloneDX dell'immagine (stesso Trivy della scansione), attestato sotto.

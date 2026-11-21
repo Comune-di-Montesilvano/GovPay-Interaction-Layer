@@ -1,0 +1,66 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "ghcr.io/example/db:latest",
+  "ArtifactType": "container_image",
+  "Results": [
+    {
+      "Target": "usr/local/bin/gosu",
+      "Class": "lang-pkgs",
+      "Type": "gobinary",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2025-68121",
+          "VendorIDs": [
+            "GO-2026-4337"
+          ],
+          "PkgName": "stdlib",
+          "InstalledVersion": "v1.24.6",
+          "FixedVersion": "1.24.13, 1.25.7, 1.26.0-rc.3",
+          "Status": "fixed",
+          "Severity": "CRITICAL",
+          "Title": "crypto/tls: crypto/tls: Incorrect certificate validation during TLS session resumption"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-97031",
+          "VendorIDs": [
+            "GO-2026-6607"
+          ],
+          "PkgName": "stdlib",
+          "InstalledVersion": "v1.24.6",
+          "FixedVersion": "1.26.9, 1.27.2",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "crypto/tls: golang: crypto/tls: Denial of Service via multiple ECH outer extension references"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-97054",
+          "VendorIDs": [
+            "GO-2026-6859"
+          ],
+          "PkgName": "stdlib",
+          "InstalledVersion": "v1.24.6",
+          "FixedVersion": "1.26.11, 1.27.4",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "For HTTP/1 servers, when MaxBytesReader's limit is exceeded, \"Connecti ..."
+        }
+      ]
+    },
+    {
+      "Target": "ghcr.io/example/db:latest (ubuntu 24.04)",
+      "Class": "os-pkgs",
+      "Type": "ubuntu",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-109518",
+          "PkgName": "apt",
+          "InstalledVersion": "2.8.3",
+          "FixedVersion": "2.8.4ubuntu0.1",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "apt"
+        }
+      ]
+    }
+  ]
+}

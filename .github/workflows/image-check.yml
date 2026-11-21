@@ -196,6 +196,7 @@ jobs:
 
       # Immagine locale (docker daemon del runner). Output table: nessun upload SARIF qui,
       # il tab Security e' alimentato da docker-publish.yml sulle immagini pubblicate.
+      # In merge queue decide lo step differenziale (exit 0 qui); in dispatch resta assoluto.
       - name: Trivy scan · ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -204,6 +205,42 @@ jobs:
           image-ref: gil-check-${{ matrix.image }}:local
           format: table
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: ${{ github.event_name == 'merge_group' && '0' || '1' }}
           ignore-unfixed: true
           trivyignores: ${{ github.workspace }}/.trivyignore.yaml
+
+      # Dopo il build: .base non deve finire nel contesto Docker. Serve solo per prendere il
+      # gate dalla base (una PR non puo' indebolire il gate che la giudica).
+      - name: Checkout base
+        if: github.event_name == 'merge_group'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.merge_group.base_sha }}
+          path: .base
+          persist-credentials: false
+          sparse-checkout: scripts/security
+          sparse-checkout-cone-mode: false
+
+      # In merge queue il gate e' differenziale rispetto alla `latest` pubblicata (stesso run,
+      # stesso DB, come ComunicaPA): una CVE gia' in produzione non blocca le PR, la corregge
+      # il rebuild giornaliero (causa "Trivy HIGH/CRITICAL con fix su latest") o l'autofix.
+      # Una CVE introdotta dalla PR (Dockerfile, immagine base, dipendenze) blocca.
+      - name: Trivy differenziale · ${{ matrix.image }} (nuove rispetto a latest)
+        if: github.event_name == 'merge_group'
+        env:
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+          LATEST: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-${{ matrix.image }}:latest
+          IMAGE: gil-check-${{ matrix.image }}:local
+        run: |
+          opts=(image --quiet --skip-db-update --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile .trivyignore.yaml --format json)
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/head.json" "$IMAGE"
+          if docker pull --quiet "$LATEST" >/dev/null 2>&1; then
+            trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" "$LATEST"
+            base=(--base "$RUNNER_TEMP/base.json")
+          else
+            echo "::warning::$LATEST non disponibile: tutte le vulnerabilita' contano come nuove"
+            base=(--base-empty)
+          fi
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
