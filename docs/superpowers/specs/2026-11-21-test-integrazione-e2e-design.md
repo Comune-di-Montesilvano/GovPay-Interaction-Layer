@@ -1,6 +1,6 @@
 # Test di integrazione e end-to-end (modello ComunicaPA) — design (bozza)
 
-Data: 2026-11-21 · Stato: **bozza da discutere** (PR draft), nessuna implementazione.
+Data: 2026-11-21 · Stato: **decisioni prese** (2026-11-21), nessuna implementazione.
 
 ## Contesto
 
@@ -64,7 +64,7 @@ URL dei finti nei settings del DB (`SettingsRepository`), impostati dal setup de
 
 ### B. Integrazione PHP (`integration-tests`, solo `merge_group`)
 
-- Gruppo PHPUnit `integration` (o suite separata), escluso da `build-test` sulle PR per tenerle veloci.
+- Gruppo PHPUnit `integration` (suite separata), escluso da `build-test`; gira solo nel job `integration-tests`.
 - MariaDB: immagine letta da `docker-compose.yml` (come ComunicaPA: il job fallisce se non è
   fissata per digest), DB vuoto, `run-migrations.php` eseguito dal bootstrap del test (verifica
   anche che le migrazioni partano da zero, oggi mai provato in CI).
@@ -101,25 +101,40 @@ URL dei finti nei settings del DB (`SettingsRepository`), impostati dal setup de
   npm per il pacchetto e2e).
 - Artefatti: report HTML e trace dei soli test falliti, `retention-days: 7`.
 
-## Decisioni aperte
+## Decisioni (2026-11-21)
 
-1. **Finto GovPay**: Prism (zero codice, senza stato) o server di fixture con stato (più
-   lavoro, flussi realistici)? Proposta: server di fixture minimale in PHP per i 6–8 endpoint
-   usati dai flussi, Prism per il resto.
-2. **Dove gira l'integrazione**: job separato in coda (come ComunicaPA) o dentro `build-test`
-   in `merge_group`? Proposta: job separato, required check proprio.
-3. **OIDC nella prima fase** o dopo? Il provider finto aggiunge un container e un flusso
-   fragile (redirect, cookie). Proposta: fase 2.
-4. **Bloccante su publish fin da subito** o un periodo report-only? Proposta: report-only per
-   2 settimane (flakiness), poi bloccante.
-5. Pacchetto e2e in TypeScript con `@playwright/test` (nuovo ecosistema npm da tenere
-   aggiornato con Dependabot) — accettabile? Alternativa: Playwright for Python.
+1. **Finto GovPay**: server di fixture minimale in PHP, con stato, per i 6–8 endpoint usati dai
+   flussi (crea pendenza → leggi pendenza → avviso/ricevuta PDF); Prism dalle spec OpenAPI
+   vendorizzate per il resto.
+2. **Integrazione**: job separato `integration-tests` in `ci.yml`, **solo `merge_group`**,
+   required check proprio con lo schema `!cancelled()` di ComunicaPA. Sulla PR un job
+   segnaposto con lo stesso nome (solo `echo`, senza harden-runner, come `image-check.yml`).
+3. **OIDC**: fase 2 (flusso 4). La prima fase copre il tipo `none`.
+4. **E2E su publish**: report-only per 2 settimane (`continue-on-error`, esito nel summary del
+   run) per misurare la flakiness, poi bloccante: `publish` richiede smoke verde ed e2e verde o
+   saltato.
+5. **Playwright**: pacchetto `e2e/` in TypeScript con `@playwright/test`; ecosistema `npm`
+   (directory `/e2e`) aggiunto a Dependabot con cooldown 7 giorni, come gli altri.
+6. **E2E solo in `docker-publish.yml`** (tra smoke e publish, sulle immagini firmate), mai in
+   `image-check.yml`: la coda non si allunga, un flusso rotto blocca il rilascio, non il merge.
+7. **PR leggere: test unit solo in coda.** `build-test` (composer validate/audit, PHPStan,
+   PHPUnit unit + gruppo `db`) passa a `merge_group` + schedule; sulla PR un segnaposto
+   `build-test` (solo `echo`) tiene soddisfatto il required check. Sulla PR restano `trivy-fs`,
+   `semgrep`, `dependency-review`.
+   - Conseguenza accettata: un test, PHPStan o un `composer audit` rotti si scoprono solo
+     quando la PR entra in coda (scartata, auto-merge da rilanciare). Verifica locale prima del
+     push: `php vendor/bin/phpunit` e PHPStan.
+   - `dependabot-automerge.yml` non cambia: accoda e la coda esegue i test.
 
-## Piano per fasi (indicativo)
+## Piano per fasi
 
-1. Finti (GovPay fixture server, Mailpit) + `e2e/docker-compose.e2e.yml` + `e2e/run.sh` eseguibile in locale.
-2. Integrazione PHP in coda (B), required check.
-3. E2E flussi 1–3 e 5 in `docker-publish.yml`, report-only.
+0. `build-test` solo in coda + segnaposto sulla PR (decisione 7): indipendente dal resto,
+   può andare per primo.
+1. Finti (server di fixture GovPay + Prism, Mailpit) + `e2e/docker-compose.e2e.yml` +
+   `e2e/run.sh` eseguibile in locale.
+2. Integrazione PHP (B) nel job `integration-tests` in coda, required check (ruleset `8751474`
+   aggiornato a mano, `integration_id` 15368).
+3. E2E flussi 1–3 e 5 in `docker-publish.yml`, report-only per 2 settimane.
 4. OIDC (flusso 4), poi e2e bloccante su publish.
 
 ## Rischi
