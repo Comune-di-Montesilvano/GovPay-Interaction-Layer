@@ -56,8 +56,9 @@ test('tutto valido con gh → OK per le 3 immagini, digest firmato, provenance e
   const att = r.calls.filter((c) => c.startsWith('gh attestation verify'));
   assert.equal(att.length, 6);
   assert.ok(att.every((c) => c.includes(`@${DIGEST}`) && c.includes('--signer-workflow Comune-di-Montesilvano/GovPay-Interaction-Layer/.github/workflows/docker-publish.yml')));
-  assert.equal(att.filter((c) => c.includes('https://slsa.dev/provenance/v1')).length, 3);
-  assert.equal(att.filter((c) => c.includes('https://cyclonedx.org/bom')).length, 3);
+  // Tipo di predicato = argomento esatto dopo --predicate-type (non sottostringa della riga).
+  const predicate = (c) => { const a = c.split(' '); return a[a.indexOf('--predicate-type') + 1]; };
+  assert.deepEqual(att.map(predicate).sort(), [...Array(3).fill('https://cyclonedx.org/bom'), ...Array(3).fill('https://slsa.dev/provenance/v1')]);
 });
 
 test('cosign: identità limitata a docker-publish.yml del repo su tag v* o main, issuer GitHub', () => {
