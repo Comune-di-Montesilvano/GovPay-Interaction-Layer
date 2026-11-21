@@ -6,7 +6,10 @@ version: 2
 # referenzia solo immagini GIL (${APP_VERSION}), nessuna immagine di terzi da aggiornare.
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" copre solo .github/workflows: le composite action locali vanno elencate a parte.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "daily"
       time: "01:00"
