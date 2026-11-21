@@ -136,13 +136,13 @@ test('composer: errore Packagist → non correggibile, gli altri pacchetti conti
 // --- immagini base (copie fisse delle righe FROM) ---
 
 test('FROM: solo name:tag@sha256, stage compresi', () => {
-  const php = parseFrom(fxText('Dockerfile.php'));
+  const php = parseFrom(fxText('from-php.txt'));
   assert.deepEqual(php.map((f) => f.name), ['node', 'composer', 'php']);
-  assert.equal(parseFrom(fxText('Dockerfile.db'))[0].name, 'mariadb');
+  assert.equal(parseFrom(fxText('from-db.txt'))[0].name, 'mariadb');
 });
 
 test('sostituzione digest: una sola occorrenza, digest valido', () => {
-  const t = fxText('Dockerfile.db');
+  const t = fxText('from-db.txt');
   const [b] = parseFrom(t);
   const out = replaceFromDigest(t, { name: 'mariadb', tag: b.tag, from: b.digest, to: D('e') });
   assert.match(out, new RegExp(`FROM mariadb:${b.tag.replace('.', '\\.')}@${D('e')}`));
@@ -150,7 +150,7 @@ test('sostituzione digest: una sola occorrenza, digest valido', () => {
   assert.throws(() => replaceFromDigest(t, { name: 'mariadb', tag: b.tag, from: b.digest, to: 'sha256:xyz' }), /digest non valido/);
 });
 
-const dockerfiles = { Dockerfile: fxText('Dockerfile.php'), 'docker/db/Dockerfile': fxText('Dockerfile.db') };
+const dockerfiles = { Dockerfile: fxText('from-php.txt'), 'docker/db/Dockerfile': fxText('from-db.txt') };
 const config = loadConfig();
 const f = (id, ecosystem = 'os') => ({ id, ecosystem, pkg: 'p' });
 const pinned = (name) => parseFrom(dockerfiles[name === 'php' ? 'Dockerfile' : 'docker/db/Dockerfile']).find((x) => x.name === name).digest;
