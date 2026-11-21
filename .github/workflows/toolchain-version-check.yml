@@ -51,6 +51,7 @@ jobs:
         env:
           TOOL: ${{ matrix.tool }}
           COOLDOWN_DAYS: "7"
+          READ_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           digest="" digest_dev=""
@@ -73,9 +74,10 @@ jobs:
             done
             grep -qE 'cosign:v[0-9.]+-dev@' docker-compose.yml || { echo "::error::docker-compose.yml: attesa variante -dev"; exit 1; }
             pinned=$(grep -hoE "$pin_re" docker-compose.yml scripts/verify-images.sh | sed -E 's/.*:(v[0-9]+\.[0-9]+\.[0-9]+)(-dev)?@.*/\1/' | sort -u)
-            release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-              https://api.github.com/repos/sigstore/cosign/releases/latest \
-              | jq -r '[.tag_name, .published_at] | @tsv')
+            # Autenticata (GITHUB_TOKEN): l'anonima ha 60 richieste/h per IP, condivise con gli
+            # altri job dello stesso runner -> 403 intermittente. sigstore non ha IP allow list.
+            release=$(GH_TOKEN="$READ_TOKEN" gh api repos/sigstore/cosign/releases/latest \
+              --jq '[.tag_name, .published_at] | @tsv')
             notes="https://github.com/sigstore/cosign/releases/tag/"
             ver_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
           else
