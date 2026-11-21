@@ -3106,10 +3106,7 @@ $routes = [
         $challengeHash = hash('sha256', $codeVerifier, true);
         $codeChallenge = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($challengeHash));
 
-        $returnTo = (string)($_GET['return_to'] ?? '/');
-        if ($returnTo === '' || $returnTo[0] !== '/') {
-            $returnTo = '/';
-        }
+        $returnTo = \App\Security\SafeReturnPath::normalize((string)($_GET['return_to'] ?? '/'));
         $_SESSION['spid_return_to'] = $returnTo;
 
         $redirectUri = rtrim($frontofficeBaseUrl, '/') . '/oidc/callback';
@@ -3314,11 +3311,9 @@ $routes = [
 
         $_SESSION['frontoffice_user'] = $user;
 
-        $returnTo = (string)($_SESSION['spid_return_to'] ?? '/');
+        // Ricontrollato anche qui: il valore in sessione resta un input del client.
+        $returnTo = \App\Security\SafeReturnPath::normalize((string)($_SESSION['spid_return_to'] ?? '/'));
         unset($_SESSION['spid_return_to']);
-        if ($returnTo === '' || $returnTo[0] !== '/') {
-            $returnTo = '/';
-        }
 
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_regenerate_id(true);
@@ -3363,10 +3358,7 @@ $routes = [
 
         unset($_SESSION['frontoffice_user']);
 
-        $returnTo = trim((string)($_GET['return_to'] ?? '/'));
-        if ($returnTo === '' || $returnTo[0] !== '/') {
-            $returnTo = '/';
-        }
+        $returnTo = \App\Security\SafeReturnPath::normalize(trim((string)($_GET['return_to'] ?? '/')));
 
         $frontofficeBase = rtrim((string)$frontofficeBaseUrl, '/');
         $redirectUri = $frontofficeBase !== '' ? ($frontofficeBase . $returnTo) : '';
