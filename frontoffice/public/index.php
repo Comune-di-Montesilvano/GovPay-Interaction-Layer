@@ -42,7 +42,9 @@ register_shutdown_function(static function (): void {
         $cacheDir = sys_get_temp_dir();
     }
     $cacheFile = $cacheDir . '/frontoffice_config_cache.json';
-    $cacheTtl  = 300; // 5 minuti
+    // 5 minuti; FRONTOFFICE_CONFIG_CACHE_TTL (secondi, bootstrap) per cambiarla, 0 = nessuna cache.
+    $ttlEnv   = getenv('FRONTOFFICE_CONFIG_CACHE_TTL');
+    $cacheTtl = ($ttlEnv !== false && ctype_digit(trim($ttlEnv))) ? (int)trim($ttlEnv) : 300;
 
     // Usa cache su file per non chiamare il backoffice ad ogni request
     if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
@@ -76,7 +78,7 @@ register_shutdown_function(static function (): void {
             // Config incompleta (setup wizard non ancora concluso): non metterla in cache,
             // altrimenti il portale resterebbe "Configurazione mancante" per $cacheTtl dopo il setup.
             $complete = trim((string)($data['ID_DOMINIO'] ?? '')) !== '';
-            if ($complete && file_put_contents($cacheFile, json_encode($data)) !== false) {
+            if ($complete && $cacheTtl > 0 && file_put_contents($cacheFile, json_encode($data)) !== false) {
                 chmod($cacheFile, 0600);
             }
             foreach ($data as $k => $v) {

@@ -74,7 +74,7 @@ trap cleanup EXIT
 fail() { echo "::error::$*"; exit 1; }
 
 # Mai `worker`: i flussi non lo usano e lo copre smoke-stack.sh.
-"${COMPOSE[@]}" up -d --quiet-pull db backoffice frontoffice fake-govpay prism mailpit \
+"${COMPOSE[@]}" up -d --quiet-pull db backoffice frontoffice fake-govpay oidc prism mailpit \
   || fail "avvio stack e2e fallito"
 
 bo_id=$("${COMPOSE[@]}" ps -q backoffice)
