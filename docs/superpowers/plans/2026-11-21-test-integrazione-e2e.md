@@ -235,7 +235,7 @@ Condizione (verificata, non presunta): ≥ 2 settimane dal merge di PR C e nessu
 
 ---
 
-## Stato al 2026-11-22
+## Stato al 2026-11-22 (aggiornato)
 
 | PR | Contenuto | Stato |
 |---|---|---|
@@ -246,7 +246,11 @@ Condizione (verificata, non presunta): ≥ 2 settimane dal merge di PR C e nessu
 | #209 | fix open redirect `return_to` login/logout (trovato dall'e2e OIDC) | mergiata |
 | #210 | D — flusso 4 OIDC | mergiata |
 | #211 | `AutostartImporterTest` salta pulito senza DB | mergiata |
-| #212 | egress job e2e: `production.cloudfront.docker.com` (primo giro reale, run 44998465924) | in coda |
+| #212 | egress job e2e: `production.cloudfront.docker.com` (primo giro reale, run 44998465924) | mergiata |
+| #215 | browser e2e ermetico (Google Fonts appeso con egress bloccato) | mergiata |
+| #217 | font self-hosted nell'immagine + e2e `06-asset-locali` | mergiata |
+| — | v1.11.3 (run 45041659885): primo e2e verde in CI, 8/8 | rilasciata |
+| E | Task 10: e2e bloccante, anticipato su decisione dell'utente (2026-11-22) | questa PR |
 
 Deviazioni:
 - Task 3: niente `JobsAgainstFakeTest`.
@@ -256,4 +260,4 @@ Deviazioni:
 
 Da fare:
 - Primo giro reale del job `e2e` (run 44998465924, 2026-11-22): fallito al pull per egress bloccato → #212. Nuovo giro dopo il merge (`rebuild_latest` o prossimo tag `v*`): possibili altri host (npm, MCR); aggiungerli dall'output harden-runner.
-- Task 10 (PR E) non prima del 2026-12-05.
+- Task 10 anticipato al 2026-11-22 (decisione dell'utente) invece del 2026-12-05: un solo giro verde in CI come base. Se emergono flaky, valutare `retries` o tornare a report-only.

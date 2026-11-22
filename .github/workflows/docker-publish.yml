@@ -883,8 +883,8 @@ jobs:
         run: scripts/smoke-stack.sh
 
   # ── E2E: Playwright sullo stack con le immagini appena buildate (e2e/run.sh) ─────────
-  # Report-only (continue-on-error, fuori dai needs di publish/report-failure) fino al passaggio
-  # a bloccante. GovPay/pagoPA/OIDC sono finti nello stack (tests/Fakes/GovPay, Prism, Mailpit):
+  # Bloccante: publish parte solo con e2e verde o saltato (rebuild per sole CVE/apt, vedi sotto).
+  # GovPay/pagoPA/OIDC sono finti nello stack (tests/Fakes/GovPay, Prism, Mailpit):
   # nessun host pagoPA/GovPay in allowlist, un redirect verso il reale verrebbe bloccato.
   # Gira solo se cambia il codice (setup.code_changed), non sui rebuild per sole CVE/apt.
   e2e:
@@ -892,7 +892,6 @@ jobs:
     if: needs.setup.outputs.skip != 'true' && needs.setup.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     permissions:
       contents: read
       packages: read
@@ -969,7 +968,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
           {
-            echo "## E2E Playwright (report-only)"
+            echo "## E2E Playwright"
             echo
             echo "Esito: **${OUTCOME}**"
             if [ -n "${ARTIFACT_URL:-}" ]; then
@@ -987,9 +986,16 @@ jobs:
   # ogni imagetools create con 3 tentativi: un errore prima dell'ultima fase non sposta latest
   # (resta la revisione precedente per tutte e 3); solo un errore persistente durante l'ultima
   # fase puo' lasciare latest misto (rilanciare la run: i tag gia' applicati non cambiano).
+  # e2e e' bloccante ma puo' essere saltato (setup.code_changed false: rebuild per sole CVE/apt):
+  # `skipped` non deve fermare publish, quindi !cancelled() e controllo esplicito degli esiti
+  # (con la condizione di default un needs saltato salterebbe anche publish).
   publish:
-    needs: [setup, build-php, build-services, smoke]
-    if: needs.setup.outputs.skip != 'true'
+    needs: [setup, build-php, build-services, smoke, e2e]
+    if: >-
+      !cancelled() && needs.setup.outputs.skip != 'true'
+      && needs.build-php.result == 'success' && needs.build-services.result == 'success'
+      && needs.smoke.result == 'success'
+      && (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -1142,7 +1148,7 @@ jobs:
   # harden-runner, build rotto, firma/attestazione, smoke test, publish. Una sola issue aperta
   # alla volta, aggiornata a ogni fallimento.
   report-failure:
-    needs: [setup, build-php-base, build-php, build-services, smoke, publish]
+    needs: [setup, build-php-base, build-php, build-services, smoke, e2e, publish]
     # Anche sullo schedule: se setup fallisce prima di "mode", auto resta vuoto.
     if: failure() && (needs.setup.outputs.auto == 'true' || github.event_name == 'schedule')
     runs-on: ubuntu-latest
