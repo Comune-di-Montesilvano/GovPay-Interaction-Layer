@@ -1,4 +1,5 @@
-import { test, expect, request } from '@playwright/test';
+import { request } from '@playwright/test';
+import { test, expect } from './support/test';
 import { EMAIL_CITTADINO, MAILPIT } from './support/env';
 import { pendenze, unmatched } from './support/fake';
 import { waitForMail } from './support/mailpit';

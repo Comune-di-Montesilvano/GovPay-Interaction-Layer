@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, isolate } from './support/test';
 import { CF_CITTADINO, FRONTOFFICE, OIDC } from './support/env';
 import { pendenze, unmatched } from './support/fake';
 import { loginOperatore } from './support/login';
@@ -18,6 +18,7 @@ test('cittadino entra con OIDC e vede le sue pendenze', async ({ page }) => {
   expect((await saved).ok()).toBeTruthy();
 
   const cittadino = await page.context().browser()!.newContext();
+  await isolate(cittadino);
   const fo = await cittadino.newPage();
   await fo.goto(`${FRONTOFFICE}/login?return_to=/pendenze`);
   await expect(fo).toHaveURL(new RegExp(`^${OIDC}/OIDC/authorization`));
