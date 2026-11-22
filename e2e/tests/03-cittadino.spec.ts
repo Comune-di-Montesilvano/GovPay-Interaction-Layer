@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './support/test';
 import { CF_CITTADINO, FAKE, FRONTOFFICE, ID_DOMINIO } from './support/env';
 import { pendenze, setPaid, unmatched } from './support/fake';
 

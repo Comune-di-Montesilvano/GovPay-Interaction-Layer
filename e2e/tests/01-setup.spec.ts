@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/test';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, BACKOFFICE, FAKE, FRONTOFFICE, ID_DOMINIO } from './support/env';
 import { unmatched } from './support/fake';
 

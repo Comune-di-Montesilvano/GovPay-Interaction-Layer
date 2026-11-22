@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/test';
 import { BACKOFFICE, FRONTOFFICE, FAKE, MAILPIT } from './support/env';
 
 test('stack e2e raggiungibile', async ({ request }) => {

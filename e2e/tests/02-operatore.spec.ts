@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './support/test';
 import { CF_CITTADINO, EMAIL_CITTADINO, ID_DOMINIO } from './support/env';
 import { pendenze, unmatched } from './support/fake';
 import { loginOperatore } from './support/login';
