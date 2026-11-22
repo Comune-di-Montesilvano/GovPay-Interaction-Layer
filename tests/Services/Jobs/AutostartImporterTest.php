@@ -14,7 +14,7 @@ final class AutostartImporterTest extends DbTestCase
 {
     protected static array $tables = ['gil_jobs'];
 
-    private string $dir;
+    private string $dir = '';
     private JobStateRepository $state;
 
     protected function setUp(): void
@@ -27,10 +27,13 @@ final class AutostartImporterTest extends DbTestCase
 
     protected function tearDown(): void
     {
-        foreach (glob($this->dir . '/*') ?: [] as $f) {
-            unlink($f);
+        // Senza DB_HOST parent::setUp() salta il test prima di creare la directory.
+        if ($this->dir !== '') {
+            foreach (glob($this->dir . '/*') ?: [] as $f) {
+                unlink($f);
+            }
+            @rmdir($this->dir);
         }
-        @rmdir($this->dir);
         parent::tearDown();
     }
 
