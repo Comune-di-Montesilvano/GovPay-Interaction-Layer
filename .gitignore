@@ -62,7 +62,7 @@ metadata/cieoidc-keys/*
 backup/
 
 # Piani e note locali
-plans/
+/plans/
 
 # Local directory for runtime data (outside repository)
 .local/
