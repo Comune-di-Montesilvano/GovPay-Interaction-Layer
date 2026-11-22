@@ -8,6 +8,7 @@ WORKDIR /app
 # Versioni esatte in package.json/package-lock.json (root repo): le aggiorna dependabot
 # (ecosistema npm). Niente ARG di versione qui: dependabot non li vedrebbe.
 COPY package.json package-lock.json ./
+COPY docker/assets/build-fonts.sh /usr/local/bin/build-fonts
 
 # --ignore-scripts: nessun postinstall di terze parti in build (supply-chain).
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
@@ -22,9 +23,10 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     cp node_modules/litepicker/dist/litepicker.js \
        node_modules/litepicker/dist/css/litepicker.css /app/dist/litepicker/ && \
     cp node_modules/tom-select/dist/js/tom-select.complete.min.js \
-       node_modules/tom-select/dist/css/tom-select.bootstrap5.min.css /app/dist/tom-select/
+       node_modules/tom-select/dist/css/tom-select.bootstrap5.min.css /app/dist/tom-select/ &&     sh /usr/local/bin/build-fonts node_modules/@fontsource /app/dist/fonts
 
-# Risultato in /app/dist/{fontawesome,chartjs,litepicker,tom-select} -> /assets/* runtime
+# Risultato in /app/dist/{fontawesome,chartjs,litepicker,tom-select,fonts} -> /assets/* runtime
+# (fonts: font self-hosted, nessuna richiesta a Google Fonts dal browser)
 
 
 ######################################################################
@@ -83,6 +85,7 @@ RUN mkdir -p public/assets/fontawesome
 COPY --chown=www-app:www-data --from=asset_builder /app/dist/fontawesome/ /var/www/html/public/assets/fontawesome/
 COPY --chown=www-app:www-data --from=asset_builder /app/dist/litepicker/ /var/www/html/public/assets/litepicker/
 COPY --chown=www-app:www-data --from=asset_builder /app/dist/tom-select/ /var/www/html/public/assets/tom-select/
+COPY --chown=www-app:www-data --from=asset_builder /app/dist/fonts/ /var/www/html/public/assets/fonts/
 RUN chmod -R 755 public/assets
 
 # composer.json/lock: solo inventario delle dipendenze installate (vendor/ arriva gia' pronto

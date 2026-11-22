@@ -424,6 +424,8 @@ Non modificare questa logica senza aggiornare anche la soglia e il rendering UI 
 
 ## Asset frontend (`assets/`)
 
+**Font self-hosted** (mai CDN/Google Fonts: il browser di cittadini e operatori non contatta terzi): pacchetti `@fontsource/*` (OFL) nel `package.json` di root, `docker/assets/build-fonts.sh` nello stage `asset_builder` genera `/assets/fonts/fonts.css` + woff2 (sottoinsiemi latin/latin-ext, pesi del design system), importato da `assets/css/tokens.css`. Nuovo peso/famiglia → aggiungerlo nello script. `.dockerignore` esclude `docker/` tranne `docker/assets/`. Guardia: e2e `06-asset-locali` (nessuna richiesta a host esterni, font serviti).
+
 Librerie frontend vendored: `litepicker/` (date picker contabile), `tom-select/` (select avanzati), `css/` e `js/` (CSS/JS compilati del backoffice). Non generati da build step — aggiornare manualmente alla nuova versione se necessario.
 
 ## Generazione API client

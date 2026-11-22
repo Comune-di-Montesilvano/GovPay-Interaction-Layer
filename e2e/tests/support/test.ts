@@ -4,7 +4,7 @@ import { test as base, expect, type BrowserContext } from '@playwright/test';
 // (es. Google Fonts importato da assets/css/tokens.css) vengono interrotte subito. In CI
 // harden-runner blocca l'egress e una connessione appesa terrebbe `page.goto` in attesa di
 // `load` fino al timeout; e un test non deve mai contattare servizi reali.
-const INTERNAL_HOSTS = new Set(['backoffice', 'frontoffice', 'fake-govpay', 'oidc', 'mailpit']);
+export const INTERNAL_HOSTS = new Set(['backoffice', 'frontoffice', 'fake-govpay', 'oidc', 'mailpit']);
 
 export async function isolate(context: BrowserContext): Promise<void> {
   await context.route(

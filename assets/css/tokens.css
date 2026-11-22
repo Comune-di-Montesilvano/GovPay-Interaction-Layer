@@ -16,7 +16,9 @@
    Mono:     JetBrains Mono — administrative data, codice fiscale, protocollo.
    Fallback: Figtree from ProntoPA is kept as a secondary sans for dashboards.
 */
-@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;600;700;900&family=Lora:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Figtree:wght@400;500;600;700&display=swap');
+/* Font self-hosted (pacchetti @fontsource, generati nello stage asset_builder del Dockerfile
+   da docker/assets/build-fonts.sh): nessuna richiesta a Google dal browser. */
+@import url('../fonts/fonts.css');
 
 :root {
   /* ============= COLOR — BRAND (dallo stemma) ============= */

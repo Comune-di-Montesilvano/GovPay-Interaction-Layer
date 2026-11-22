@@ -30,6 +30,7 @@ Thumbs.db
 # Directory con build context separato in CI (non usate da Dockerfile root)
 master/
 docker/
+!docker/assets/
 
 # Non usate nel build principale
 debug/
