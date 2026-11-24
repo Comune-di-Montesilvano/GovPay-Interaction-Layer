@@ -220,16 +220,23 @@ pdc_rc=$(docker inspect -f '{{.State.ExitCode}}' "$("${COMPOSE[@]}" ps -aq post-
 [ "$pdc_rc" = 0 ] || fail "post-deploy-check fallito dopo l'upgrade (exit $pdc_rc)"
 echo "OK  post-deploy-check"
 
-dump=$("${COMPOSE[@]}" exec -T backoffice sh -c 'ls -1 /backups/pre-migrazione/*.sql.gz 2>/dev/null | sort | tail -n 1') || true
-[ -n "$dump" ] || fail "nessun backup pre-migrazione in /backups/pre-migrazione"
-echo "OK  backup pre-migrazione: $dump"
+# Backup pre-migrazione solo se c'erano migrazioni da applicare: partendo da una release che ha
+# gia' il registro (>= 1.12.0) e senza migrazioni nuove il runner non fa backup (corretto) e
+# non c'e' nulla da ripristinare. Con migrazioni nuove il backup e' obbligatorio.
+if grep -q 'migrazioni: 0 da applicare' <<<"$bolog"; then
+  echo "OK  nessuna migrazione nuova: backup pre-migrazione non previsto"
+else
+  dump=$("${COMPOSE[@]}" exec -T backoffice sh -c 'ls -1 /backups/pre-migrazione/*.sql.gz 2>/dev/null | sort | tail -n 1') || true
+  [ -n "$dump" ] || fail "nessun backup pre-migrazione in /backups/pre-migrazione"
+  echo "OK  backup pre-migrazione: $dump"
 
-sql -e "DROP DATABASE IF EXISTS restore_check; CREATE DATABASE restore_check" || fail "creazione restore_check fallita"
-"${COMPOSE[@]}" exec -T backoffice sh -c "gzip -dc '$dump'" | sql restore_check || fail "ripristino del backup fallito"
-after=$(counts restore_check) || fail "conteggi sul backup ripristinato falliti"
-[ "$after" = "$before" ] || fail "backup ripristinato diverso dal DB pre-upgrade: '$after' invece di '$before'"
-sql -e "DROP DATABASE restore_check" || true
-echo "OK  backup ripristinato: stessi conteggi ($after)"
+  sql -e "DROP DATABASE IF EXISTS restore_check; CREATE DATABASE restore_check" || fail "creazione restore_check fallita"
+  "${COMPOSE[@]}" exec -T backoffice sh -c "gzip -dc '$dump'" | sql restore_check || fail "ripristino del backup fallito"
+  after=$(counts restore_check) || fail "conteggi sul backup ripristinato falliti"
+  [ "$after" = "$before" ] || fail "backup ripristinato diverso dal DB pre-upgrade: '$after' invece di '$before'"
+  sql -e "DROP DATABASE restore_check" || true
+  echo "OK  backup ripristinato: stessi conteggi ($after)"
+fi
 
 playwright '@post-upgrade' 1
 [ "$rc" = 0 ] && echo "OK  flussi @post-upgrade sulle immagini nuove"
