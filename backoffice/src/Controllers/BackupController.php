@@ -10,6 +10,7 @@ namespace App\Controllers;
 
 use App\Config\SettingsRepository;
 use App\Database\Connection;
+use App\Database\DatabaseDumper;
 use App\Database\EntrateRepository;
 use App\Database\ExternalPaymentTypeRepository;
 use App\Logger;
@@ -766,8 +767,8 @@ class BackupController
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Esegue il dump del DB via PDO e lo scrive in streaming nel file compresso,
-     * consumando pochissima memoria ed evitando fetchAll su grandi volumi.
+     * Dump del DB (formato di App\Database\DatabaseDumper) in un file temporaneo gzip.
+     * null (+ warning) se DB_NAME manca o il dump fallisce: il backup prosegue senza DB.
      */
     private function runMysqldump(): ?string
     {
@@ -777,81 +778,11 @@ class BackupController
             return null;
         }
 
-        $outFile = null;
-        $gz = null;
+        $outFile = sys_get_temp_dir() . '/gil-dbdump-' . bin2hex(random_bytes(6)) . '.sql.gz';
         try {
-            $pdo = Connection::getPDO();
-            $tables = $pdo->query("SHOW TABLES")->fetchAll(\PDO::FETCH_COLUMN);
-
-            // Raccoglie DDL per tutte le tabelle prima di generare il dump
-            $ddls = [];
-            foreach ($tables as $table) {
-                $row = $pdo->query("SHOW CREATE TABLE `{$table}`")->fetch(\PDO::FETCH_ASSOC);
-                $ddls[$table] = $row['Create Table'] ?? $row[array_keys($row)[1]] ?? '';
-            }
-
-            // Ordina: tabelle senza FK prima, con FK dopo — così durante il ripristino
-            // le tabelle referenziate esistono già quando si creano i vincoli.
-            usort($tables, function (string $a, string $b) use ($ddls): int {
-                $aFk = str_contains($ddls[$a], 'FOREIGN KEY');
-                $bFk = str_contains($ddls[$b], 'FOREIGN KEY');
-                if ($aFk === $bFk) {
-                    return 0;
-                }
-                return $aFk ? 1 : -1;
-            });
-
-            $outFile = sys_get_temp_dir() . '/gil-dbdump-' . bin2hex(random_bytes(6)) . '.sql.gz';
-            $gz = gzopen($outFile, 'wb9');
-            if ($gz === false) {
-                Logger::getInstance()->warning('mysqldump: impossibile aprire file gz di output');
-                return null;
-            }
-
-            gzwrite($gz, "SET FOREIGN_KEY_CHECKS=0;\n\n");
-
-            foreach ($tables as $table) {
-                $ddl = $ddls[$table];
-                gzwrite($gz, "DROP TABLE IF EXISTS `{$table}`;\n");
-                gzwrite($gz, $ddl . ";\n\n");
-
-                $stmt = $pdo->query("SELECT * FROM `{$table}`");
-                $cols      = '';
-                $batchRows = [];
-                $batchSize = 500;
-
-                while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                    if ($cols === '') {
-                        $cols = '`' . implode('`, `', array_keys($row)) . '`';
-                    }
-                    $vals        = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $row);
-                    $batchRows[] = '(' . implode(', ', $vals) . ')';
-
-                    if (count($batchRows) >= $batchSize) {
-                        gzwrite($gz, "INSERT IGNORE INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
-                        $batchRows = [];
-                    }
-                }
-                if (!empty($batchRows)) {
-                    gzwrite($gz, "INSERT IGNORE INTO `{$table}` ({$cols}) VALUES\n" . implode(",\n", $batchRows) . ";\n");
-                }
-                if ($cols !== '') {
-                    gzwrite($gz, "\n");
-                }
-            }
-
-            gzwrite($gz, "SET FOREIGN_KEY_CHECKS=1;\n");
-            gzclose($gz);
-            $gz = null;
-
+            DatabaseDumper::dumpToGzip(Connection::getPDO(), $outFile);
             return $outFile;
         } catch (\Throwable $e) {
-            if ($gz !== null) {
-                @gzclose($gz);
-            }
-            if ($outFile !== null) {
-                @unlink($outFile);
-            }
             Logger::getInstance()->warning('mysqldump PDO fallito', ['error' => $e->getMessage()]);
             return null;
         }
