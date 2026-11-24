@@ -5,7 +5,7 @@ import { loginOperatore } from './support/login';
 
 // Flusso 2: operatore crea una pendenza (tipologia di test seminata da run.sh), la vede nel
 // dettaglio e scarica l'avviso PDF (dal GovPay finto).
-test('operatore crea pendenza e scarica l\'avviso', async ({ page }) => {
+test('@pre-upgrade operatore crea pendenza e scarica l\'avviso', async ({ page }) => {
   await loginOperatore(page);
 
   await page.goto('/pendenze/inserimento');

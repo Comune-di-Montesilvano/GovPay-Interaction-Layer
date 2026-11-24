@@ -979,6 +979,119 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # ── Upgrade: release precedente → immagini appena buildate sullo stesso DB (e2e/run.sh) ──
+  # Bloccante come e2e. Dati creati con l'ultima release (wizard + operatore), poi db/backoffice/
+  # frontoffice ricreati con i digest nuovi: migrazioni senza errori (nemmeno tollerati),
+  # post-deploy-check OK, backup pre-migrazione presente e ripristinabile, flussi @post-upgrade.
+  # Release di partenza: scripts/ci/previous-release.sh (ultima non pre-release diversa dal tag).
+  upgrade:
+    needs: [setup, build-php, build-services]
+    if: needs.setup.outputs.skip != 'true' && needs.setup.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            mcr.microsoft.com:443
+            *.data.mcr.microsoft.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            registry.npmjs.org:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: handoff
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Genera override immagini (precedente e nuove)
+        id: images
+        env:
+          ORG: ${{ env.ORG }}
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          set -euo pipefail
+          prev=$(scripts/ci/previous-release.sh "$CURRENT_TAG")
+          echo "previous=$prev" >> "$GITHUB_OUTPUT"
+          echo "Release di partenza: $prev"
+          {
+            echo "services:"
+            for img in backoffice frontoffice db; do
+              echo "  $img:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img:$prev"
+            done
+          } > docker-compose.upgrade-from.yml
+          {
+            echo "services:"
+            for img in backoffice frontoffice db; do
+              digest=$(cat "handoff/$img.digest")
+              [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::digest non valido per $img"; exit 1; }
+              echo "  $img:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img@$digest"
+            done
+            for svc in worker post-deploy-check; do
+              echo "  $svc:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice@$(cat handoff/backoffice.digest)"
+            done
+          } > docker-compose.e2e-images.yml
+          cat docker-compose.upgrade-from.yml docker-compose.e2e-images.yml
+      - name: Upgrade
+        id: run
+        env:
+          CI: '1'
+          E2E_PROJECT: gil-upgrade
+          E2E_UPGRADE_FROM_FILE: docker-compose.upgrade-from.yml
+          E2E_IMAGES_FILE: docker-compose.e2e-images.yml
+        run: e2e/run.sh
+      - name: Report Playwright
+        id: upload
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: upgrade-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Riepilogo
+        if: always()
+        env:
+          OUTCOME: ${{ steps.run.outcome }}
+          PREVIOUS: ${{ steps.images.outputs.previous }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "## Upgrade da ${PREVIOUS:-?}"
+            echo
+            echo "Esito: **${OUTCOME}**"
+            if [ -n "${ARTIFACT_URL:-}" ]; then
+              echo
+              echo "Report e trace: ${ARTIFACT_URL} (7 giorni)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ── Publish: tag su tutte e 3 le immagini insieme, solo dopo Trivy + firma + smoke ─
   # Mai un tag misto tra revisioni (frontoffice usa le API /api/frontoffice/* del backoffice
   # della stessa revisione): si controllano prima tutti i digest, poi si tagga.
@@ -988,16 +1101,17 @@ jobs:
   # ogni imagetools create con 3 tentativi: un errore prima dell'ultima fase non sposta latest
   # (resta la revisione precedente per tutte e 3); solo un errore persistente durante l'ultima
   # fase puo' lasciare latest misto (rilanciare la run: i tag gia' applicati non cambiano).
-  # e2e e' bloccante ma puo' essere saltato (setup.code_changed false: rebuild per sole CVE/apt):
+  # e2e e upgrade sono bloccanti ma possono essere saltati (setup.code_changed false: rebuild per sole CVE/apt):
   # `skipped` non deve fermare publish, quindi !cancelled() e controllo esplicito degli esiti
   # (con la condizione di default un needs saltato salterebbe anche publish).
   publish:
-    needs: [setup, build-php, build-services, smoke, e2e]
+    needs: [setup, build-php, build-services, smoke, e2e, upgrade]
     if: >-
       !cancelled() && needs.setup.outputs.skip != 'true'
       && needs.build-php.result == 'success' && needs.build-services.result == 'success'
       && needs.smoke.result == 'success'
       && (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
+      && (needs.upgrade.result == 'success' || needs.upgrade.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -1150,7 +1264,7 @@ jobs:
   # harden-runner, build rotto, firma/attestazione, smoke test, publish. Una sola issue aperta
   # alla volta, aggiornata a ogni fallimento.
   report-failure:
-    needs: [setup, build-php-base, build-php, build-services, smoke, e2e, publish]
+    needs: [setup, build-php-base, build-php, build-services, smoke, e2e, upgrade, publish]
     # Anche sullo schedule: se setup fallisce prima di "mode", auto resta vuoto.
     if: failure() && (needs.setup.outputs.auto == 'true' || github.event_name == 'schedule')
     runs-on: ubuntu-latest

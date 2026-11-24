@@ -11,6 +11,9 @@
 # Uso:
 #   E2E_IMAGES_FILE=/percorso/override-immagini.yml e2e/run.sh
 #   E2E_GREP='operatore' E2E_IMAGES_FILE=... e2e/run.sh   # solo i test che corrispondono
+#   E2E_UPGRADE_FROM_FILE=/percorso/override-release-precedente.yml E2E_IMAGES_FILE=... e2e/run.sh
+#                    # test di aggiornamento: dati creati con la release precedente, poi immagini
+#                    # nuove sullo stesso DB (migrazioni, post-deploy-check, backup, flussi @post-upgrade)
 #   E2E_KEEP=1 ...   # solo in locale: stack lasciato attivo per il debug (poi
 #                    # `docker compose -p gil-e2e down -v`); mai in CI
 set -euo pipefail
@@ -74,36 +77,118 @@ trap cleanup EXIT
 fail() { echo "::error::$*"; exit 1; }
 
 # Mai `worker`: i flussi non lo usano e lo copre smoke-stack.sh.
-"${COMPOSE[@]}" up -d --quiet-pull db backoffice frontoffice fake-govpay oidc prism mailpit \
-  || fail "avvio stack e2e fallito"
+STACK=(db backoffice frontoffice fake-govpay oidc prism mailpit)
+DB_ROOT_PASSWORD=$(sed -n 's/^DB_ROOT_PASSWORD=//p' "$ENV_FILE")
 
-bo_id=$("${COMPOSE[@]}" ps -q backoffice)
-[ -n "$bo_id" ] || fail "container backoffice non creato"
-status=
-for ((i = 0; i < TIMEOUT; i += 5)); do
-  status=$(docker inspect -f '{{.State.Health.Status}}' "$bo_id" 2>/dev/null || echo missing)
-  [ "$status" = healthy ] || [ "$status" = unhealthy ] && break
-  sleep 5
-done
-[ "$status" = healthy ] || fail "backoffice non healthy entro ${TIMEOUT}s (stato: $status)"
-echo "OK  stack e2e pronto"
+# $1.. = comando compose (array espanso); attende backoffice healthy (container attuale).
+wait_backoffice() {
+  local bo_id status=
+  bo_id=$("$@" ps -q backoffice)
+  [ -n "$bo_id" ] || fail "container backoffice non creato"
+  for ((i = 0; i < TIMEOUT; i += 5)); do
+    status=$(docker inspect -f '{{.State.Health.Status}}' "$bo_id" 2>/dev/null || echo missing)
+    [ "$status" = healthy ] || [ "$status" = unhealthy ] && break
+    sleep 5
+  done
+  [ "$status" = healthy ] || fail "backoffice non healthy entro ${TIMEOUT}s (stato: $status)"
+}
+
+sql() { "${COMPOSE[@]}" exec -T db mariadb -uroot -p"$DB_ROOT_PASSWORD" "$@"; }
 
 # Tipologia di test (dati sintetici) direttamente nel DB e2e: la sincronizzazione delle entrate
 # da GovPay (Configurazione) non e' ancora coperta dal finto. Tabella creata dalle migrazioni
 # all'avvio del backoffice (healthy sopra).
-DB_ROOT_PASSWORD=$(sed -n 's/^DB_ROOT_PASSWORD=//p' "$ENV_FILE")
-"${COMPOSE[@]}" exec -T db mariadb -uroot -p"$DB_ROOT_PASSWORD" "$DB_NAME" -e "
-  INSERT INTO entrate_tipologie
-    (id_dominio, id_entrata, descrizione, iban_accredito, codice_contabilita, tipo_contabilita,
-     abilitato_backoffice, effective_enabled, sorgente, updated_at, created_at)
-  VALUES ('00000000000', 'TEST_SERVIZIO', 'Servizio di test e2e', 'IT60X0542811101000000123456',
-     'TEST_SERVIZIO', '9', 1, 1, 'backoffice', NOW(), NOW())" || fail "seed tipologia di test fallito"
-echo "OK  tipologia di test TEST_SERVIZIO"
+seed() {
+  sql "$DB_NAME" -e "
+    INSERT INTO entrate_tipologie
+      (id_dominio, id_entrata, descrizione, iban_accredito, codice_contabilita, tipo_contabilita,
+       abilitato_backoffice, effective_enabled, sorgente, updated_at, created_at)
+    VALUES ('00000000000', 'TEST_SERVIZIO', 'Servizio di test e2e', 'IT60X0542811101000000123456',
+       'TEST_SERVIZIO', '9', 1, 1, 'backoffice', NOW(), NOW())" || fail "seed tipologia di test fallito"
+  echo "OK  tipologia di test TEST_SERVIZIO"
+}
 
-rm -rf e2e/playwright-report e2e/test-results
+# playwright <grep o ''> <E2E_UPGRADE>: exit code di Playwright in $rc.
 rc=0
-grep_args=()
-[ -n "${E2E_GREP:-}" ] && grep_args=(--grep "$E2E_GREP")
-"${COMPOSE[@]}" --profile runner run --rm -T playwright \
-  sh -c 'npm ci --no-audit --no-fund && npx playwright test "$@"' sh "${grep_args[@]}" || rc=$?
+playwright() {
+  local grep_args=()
+  [ -n "$1" ] && grep_args=(--grep "$1")
+  rm -rf e2e/playwright-report e2e/test-results
+  rc=0
+  "${COMPOSE[@]}" --profile runner run --rm -T -e E2E_UPGRADE="$2" playwright \
+    sh -c 'npm ci --no-audit --no-fund && npx playwright test "$@"' sh "${grep_args[@]}" || rc=$?
+}
+
+if [ -z "${E2E_UPGRADE_FROM_FILE:-}" ]; then
+  "${COMPOSE[@]}" up -d --quiet-pull "${STACK[@]}" || fail "avvio stack e2e fallito"
+  wait_backoffice "${COMPOSE[@]}"
+  echo "OK  stack e2e pronto"
+  seed
+  playwright "${E2E_GREP:-}" ""
+  exit "$rc"
+fi
+
+# ── Modalita' upgrade: release precedente → immagini nuove sullo stesso DB ──────────────────
+# Fase 1 con E2E_UPGRADE_FROM_FILE (override delle immagini della release precedente), dati
+# creati dal wizard e dall'operatore (@pre-upgrade); fase 2: db/backoffice/frontoffice ricreati
+# con E2E_IMAGES_FILE (volumi tenuti, finti non ricreati: il loro stato resta), poi migrazioni,
+# post-deploy-check, backup pre-migrazione, ripristino del backup e flussi @post-upgrade.
+[ -f "$E2E_UPGRADE_FROM_FILE" ] || fail "override release precedente $E2E_UPGRADE_FROM_FILE assente"
+OLD=(docker compose -p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.yml -f "$E2E_UPGRADE_FROM_FILE" -f e2e/docker-compose.e2e.yml)
+
+"${OLD[@]}" up -d --quiet-pull "${STACK[@]}" || fail "avvio stack con la release precedente fallito"
+wait_backoffice "${OLD[@]}"
+echo "OK  stack con la release precedente pronto"
+seed
+saved=("${COMPOSE[@]}")
+COMPOSE=("${OLD[@]}")
+playwright '@pre-upgrade' ""
+COMPOSE=("${saved[@]}")
+[ "$rc" = 0 ] || fail "flussi @pre-upgrade falliti sulla release precedente (exit $rc)"
+echo "OK  dati creati sulla release precedente"
+
+TABLES=(users settings entrate_tipologie gil_jobs)
+counts() {
+  local db=$1 t out=
+  for t in "${TABLES[@]}"; do
+    out+="$t=$(sql -N "$db" -e "SELECT COUNT(*) FROM \`$t\`")" || return 1
+    out+=" "
+  done
+  echo "$out"
+}
+before=$(counts "$DB_NAME") || fail "conteggi pre-upgrade falliti"
+echo "OK  conteggi pre-upgrade: $before"
+
+"${COMPOSE[@]}" up -d --no-deps --quiet-pull db backoffice frontoffice || fail "passaggio alle immagini nuove fallito"
+wait_backoffice "${COMPOSE[@]}"
+bolog=$("${COMPOSE[@]}" logs --no-color backoffice)
+grep -q 'migrazioni: ' <<<"$bolog" || fail "runner migrazioni non eseguito dalle immagini nuove"
+if grep -E 'ERRORE|❌' <<<"$bolog"; then fail "errori di migrazione nei log del backoffice"; fi
+# Il bootstrap del registro (primo avvio con gil_schema_migrations) tollera gli errori per i file
+# gia' applicati dal vecchio runner: le migrazioni attuali sono tutte rieseguibili, quindi qui un
+# errore tollerato e' una migrazione nuova rotta che in produzione passerebbe inosservata.
+if grep -E 'errore tollerato' <<<"$bolog"; then fail "migrazioni con errori tollerati nel bootstrap del registro"; fi
+grep -E 'migrazioni: |registro migrazioni|backup pre-migrazione|errore tollerato' <<<"$bolog" | sed 's/^[^|]*| //' || true
+echo "OK  backoffice healthy con le immagini nuove, migrazioni senza errori"
+
+pdc_rc=0
+"${COMPOSE[@]}" up --no-deps --quiet-pull post-deploy-check >/dev/null 2>&1 || true
+pdc_rc=$(docker inspect -f '{{.State.ExitCode}}' "$("${COMPOSE[@]}" ps -aq post-deploy-check)" 2>/dev/null || echo missing)
+"${COMPOSE[@]}" logs --no-color post-deploy-check | sed 's/^[^|]*| //'
+[ "$pdc_rc" = 0 ] || fail "post-deploy-check fallito dopo l'upgrade (exit $pdc_rc)"
+echo "OK  post-deploy-check"
+
+dump=$("${COMPOSE[@]}" exec -T backoffice sh -c 'ls -1 /backups/pre-migrazione/*.sql.gz 2>/dev/null | sort | tail -n 1') || true
+[ -n "$dump" ] || fail "nessun backup pre-migrazione in /backups/pre-migrazione"
+echo "OK  backup pre-migrazione: $dump"
+
+sql -e "DROP DATABASE IF EXISTS restore_check; CREATE DATABASE restore_check" || fail "creazione restore_check fallita"
+"${COMPOSE[@]}" exec -T backoffice sh -c "gzip -dc '$dump'" | sql restore_check || fail "ripristino del backup fallito"
+after=$(counts restore_check) || fail "conteggi sul backup ripristinato falliti"
+[ "$after" = "$before" ] || fail "backup ripristinato diverso dal DB pre-upgrade: '$after' invece di '$before'"
+sql -e "DROP DATABASE restore_check" || true
+echo "OK  backup ripristinato: stessi conteggi ($after)"
+
+playwright '@post-upgrade' 1
+[ "$rc" = 0 ] && echo "OK  flussi @post-upgrade sulle immagini nuove"
 exit "$rc"
