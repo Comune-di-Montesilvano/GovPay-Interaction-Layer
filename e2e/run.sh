@@ -15,6 +15,7 @@
 #                    # test di aggiornamento: dati creati con la release precedente, poi immagini
 #                    # nuove sullo stesso DB (migrazioni, post-deploy-check, backup, flussi @post-upgrade)
 #   E2E_ZAP=1 ...    # dopo Playwright: ZAP baseline (report-only) in e2e/zap-report
+#   E2E_LOAD=1 ...   # flussi @pre-upgrade + k6 (load/scenari.js, LOAD_VUS/LOAD_DURATION), exit = k6
 #   E2E_KEEP=1 ...   # solo in locale: stack lasciato attivo per il debug (poi
 #                    # `docker compose -p gil-e2e down -v`); mai in CI
 set -euo pipefail
@@ -139,11 +140,28 @@ zap_scan() {
   done
 }
 
+# k6 (E2E_LOAD=1) con load/scenari.js; soglie nello script, exit code di k6 in $rc.
+load_test() {
+  rm -rf e2e/load-report
+  mkdir -p e2e/load-report
+  chmod 777 e2e/load-report
+  rc=0
+  "${COMPOSE[@]}" --profile load run --rm -T k6 run --quiet     --summary-export ../load-report/summary.json scenari.js || rc=$?
+  [ "$rc" = 0 ] && echo "OK  test di carico entro le soglie" || echo "::error::test di carico fuori soglia o fallito (exit $rc)"
+}
+
 if [ -z "${E2E_UPGRADE_FROM_FILE:-}" ]; then
   "${COMPOSE[@]}" up -d --quiet-pull "${STACK[@]}" || fail "avvio stack e2e fallito"
   wait_backoffice "${COMPOSE[@]}"
   echo "OK  stack e2e pronto"
   seed
+  if [ "${E2E_LOAD:-}" = 1 ]; then
+    # Solo i flussi che creano i dati (wizard + pendenza), poi k6: exit = esito di k6.
+    playwright "${E2E_GREP:-@pre-upgrade}" ""
+    [ "$rc" = 0 ] || fail "flussi @pre-upgrade falliti prima del test di carico (exit $rc)"
+    load_test
+    exit "$rc"
+  fi
   playwright "${E2E_GREP:-}" ""
   [ "${E2E_ZAP:-}" = 1 ] && zap_scan
   exit "$rc"
