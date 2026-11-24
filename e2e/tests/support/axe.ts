@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
 import type { Page, TestInfo } from '@playwright/test';
 import { expect } from './test';
@@ -22,8 +22,11 @@ export async function analizza(page: Page, testInfo: TestInfo, nome: string): Pr
   }
   const regole = results.violations.map((v) => `\`${v.id}\``).join(', ') || '—';
   mkdirSync(REPORT_DIR, { recursive: true });
-  if (!existsSync(SUMMARY)) {
-    writeFileSync(SUMMARY, '| Pagina | Critiche | Gravi | Moderate | Minori | Regole |\n|---|---|---|---|---|---|\n');
+  // Intestazione solo alla prima pagina: 'wx' crea il file in modo atomico, EEXIST = gia' scritta.
+  try {
+    writeFileSync(SUMMARY, '| Pagina | Critiche | Gravi | Moderate | Minori | Regole |\n|---|---|---|---|---|---|\n', { flag: 'wx' });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
   }
   writeFileSync(`${REPORT_DIR}/${nome.replace(/[^a-z0-9]+/gi, '-')}.json`, JSON.stringify(results.violations, null, 2));
   appendFileSync(SUMMARY, `| ${nome} | ${IMPATTI.map((i) => perImpatto[i]).join(' | ')} | ${regole} |\n`);
