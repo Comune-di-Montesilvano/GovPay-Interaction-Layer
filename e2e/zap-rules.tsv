@@ -1,0 +1,3 @@
+# Regole ZAP baseline (e2e/run.sh, E2E_ZAP=1): <id>	IGNORE|INFO|WARN|FAIL	(motivo).
+# Ogni regola ignorata va motivata (stack e2e su HTTP interno: le regole sul trasporto TLS
+# non si applicano, il TLS di produzione sta al reverse proxy). Nessuna regola ignorata per ora.

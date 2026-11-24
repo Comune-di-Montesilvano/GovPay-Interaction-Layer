@@ -946,12 +946,25 @@ jobs:
             done
           } > docker-compose.e2e-images.yml
           cat docker-compose.e2e-images.yml
+      # Accessibilita' (07-accessibilita, axe) e ZAP baseline: REPORT-ONLY, nel riepilogo e
+      # nell'artifact axe-zap; non cambiano l'esito del job.
       - name: Playwright
         id: run
         env:
           CI: '1'
+          E2E_ZAP: '1'
           E2E_IMAGES_FILE: docker-compose.e2e-images.yml
         run: e2e/run.sh
+      - name: Report accessibilita' e ZAP
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: axe-zap
+          path: |
+            e2e/a11y-report
+            e2e/zap-report
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Report Playwright
         id: upload
         if: failure()
@@ -977,6 +990,21 @@ jobs:
               echo
               echo "Report e trace: ${ARTIFACT_URL} (7 giorni)"
             fi
+            echo
+            echo "### Accessibilita' (axe, WCAG 2.1 AA, report-only)"
+            echo
+            if [ -f e2e/a11y-report/axe-summary.md ]; then cat e2e/a11y-report/axe-summary.md; else echo "Nessun risultato."; fi
+            echo
+            echo "### ZAP baseline (report-only): alert per rischio"
+            echo
+            for n in frontoffice backoffice; do
+              f="e2e/zap-report/$n.json"
+              if [ -f "$f" ]; then
+                echo "- **$n**: $(jq -r '[.site[].alerts[].riskdesc | split(" ")[0]] | group_by(.) | map("\(.[0]) \(length)") | join(", ")' "$f")"
+              else
+                echo "- **$n**: nessun report"
+              fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Upgrade: release precedente → immagini appena buildate sullo stesso DB (e2e/run.sh) ──
