@@ -22,6 +22,9 @@
 # I container_name fissi del compose (gil-*) vanno rinominati nell'override, altrimenti
 # collidono con lo stack locale: vedi il blocco generato nel job smoke.
 #
+# SMOKE_VERIFY_IMAGES=true (+ SMOKE_APP_VERSION): verify-images controlla davvero le firme
+# delle immagini di quella versione e il log deve dire "Firme verificate".
+#
 # SMOKE_WORKER: `new` (default, immagini appena buildate: bin/worker obbligatorio), `legacy`
 # (immagine senza bin/worker) o `auto` (decide dall'immagine: compose-compat con le release).
 #
@@ -66,6 +69,10 @@ DB_NAME=govpay
   echo "TRUSTED_PROXIES="
   echo "SENTRY_DSN="
   echo "SENTRY_ENVIRONMENT=smoke"
+  # Default false: il job smoke di docker-publish usa digest non ancora taggati. compose-compat
+  # (immagini di release) verifica davvero: SMOKE_VERIFY_IMAGES=true + SMOKE_APP_VERSION.
+  echo "VERIFY_IMAGES=${SMOKE_VERIFY_IMAGES:-false}"
+  if [ -n "${SMOKE_APP_VERSION:-}" ]; then echo "APP_VERSION=$SMOKE_APP_VERSION"; fi
 } > "$ENV_FILE"
 
 # Porte privilegiate: Docker >=20.10 mette ip_unprivileged_port_start=0 nel netns del container,
@@ -103,6 +110,17 @@ for ((i = 0; i < TIMEOUT; i += 5)); do
 done
 [ "$status" = healthy ] || fail "backoffice non healthy entro ${TIMEOUT}s (stato: $status)"
 ok "db e backoffice healthy"
+
+# verify-images (one-shot, gia' terminato: backoffice/db ne dipendono con
+# service_completed_successfully). Con la verifica attiva deve aver verificato davvero.
+vi_log=$("${COMPOSE[@]}" logs --no-color verify-images 2>/dev/null | sed 's/^[^|]*| //')
+if [ "${SMOKE_VERIFY_IMAGES:-false}" = true ]; then
+  grep -q '^Firme verificate: ' <<<"$vi_log" || { echo "$vi_log"; fail "verify-images senza 'Firme verificate'"; }
+  ok "verify-images: $(grep '^Firme verificate: ' <<<"$vi_log")"
+else
+  grep -q '^Verifica firme disattivata' <<<"$vi_log" || { echo "$vi_log"; fail "verify-images non disattivato nonostante VERIFY_IMAGES=false"; }
+  ok "verify-images disattivato (VERIFY_IMAGES=false)"
+fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$BO_PORT/health" || true)
 [ "$code" = 200 ] || fail "backoffice /health: HTTP $code"

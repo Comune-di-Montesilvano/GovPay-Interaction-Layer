@@ -18,6 +18,7 @@ runs:
         APP_ENCRYPTION_KEY=ci_encryption_key_32_characters_
         MASTER_TOKEN=ci_master_token
         FRONTOFFICE_LINK_SIGNING_KEY=ci_link_signing_key
+        VERIFY_IMAGES=false
         ENV
 
     - name: Cache DB image

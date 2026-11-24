@@ -38,6 +38,8 @@ jobs:
             api.github.com:443
             ghcr.io:443
             pkg-containers.githubusercontent.com:443
+            tuf-repo-cdn.sigstore.dev:443
+            rekor.sigstore.dev:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -85,7 +87,11 @@ jobs:
 
       # auto: release senza bin/worker -> worker inerte (nessun crash loop, 0 riavvii); release
       # con bin/worker -> worker avviato come nel job smoke di docker-publish.yml.
+      # Verifica firme VERA (come il default del compose in produzione) sulle immagini di
+      # release: tag firmati, host Sigstore nell'allowlist sopra.
       - name: Smoke test
         env:
           SMOKE_WORKER: auto
+          SMOKE_VERIFY_IMAGES: 'true'
+          SMOKE_APP_VERSION: ${{ steps.release.outputs.version }}
         run: scripts/smoke-stack.sh

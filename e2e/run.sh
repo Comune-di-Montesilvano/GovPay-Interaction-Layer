@@ -54,6 +54,8 @@ E2E_ADMIN_PASSWORD="E2e-$(openssl rand -hex 12)"
   echo "TRUSTED_PROXIES="
   echo "SENTRY_DSN="
   echo "SENTRY_ENVIRONMENT=e2e"
+  # Immagini per digest non ancora taggate: verify-images verifica i tag di APP_VERSION.
+  echo "VERIFY_IMAGES=false"
   echo "E2E_ADMIN_PASSWORD=$E2E_ADMIN_PASSWORD"
 } > "$ENV_FILE"
 
