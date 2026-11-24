@@ -30,15 +30,14 @@ x-php-runtime: &php-runtime
 # circuit breaker GovPay, gia' per container).
 
 services:
-  # Verifica delle firme cosign delle 3 immagini di ${APP_VERSION} prima di avviarle
-  # (VERIFY_IMAGES=true): firmate da docker-publish.yml di questo repo su un tag v* o su main.
-  # Se fallisce (firma assente, tag inesistente), backoffice, frontoffice e db restano creati
-  # ma non avviati e il deploy da Portainer va in errore: rimettere il tag precedente.
-  # Spenta (default), esce subito con successo. Serve HTTPS verso ghcr.io e i servizi
-  # Sigstore (tuf-repo-cdn.sigstore.dev, rekor.sigstore.dev). Le ripartenze dei container
-  # gia' creati (riavvio host, restart policy) non passano di qui.
-  # Le immagini pubblicate prima del primo rilascio firmato NON sono firmate: attivare
-  # VERIFY_IMAGES solo dopo averlo installato.
+  # Verifica delle firme cosign delle 3 immagini di ${APP_VERSION} prima di avviarle, ATTIVA
+  # di default (VERIFY_IMAGES non impostata = true): firmate da docker-publish.yml di questo
+  # repo su un tag v* o su main. Se fallisce (firma assente, tag inesistente, rete), backoffice,
+  # frontoffice e db restano creati ma non avviati e il deploy da Portainer va in errore; il
+  # messaggio distingue rete non raggiungibile da firma assente. Serve HTTPS verso ghcr.io e i
+  # servizi Sigstore (tuf-repo-cdn.sigstore.dev, rekor.sigstore.dev). VERIFY_IMAGES=false solo
+  # per sbloccare un'emergenza, poi riattivare. Le ripartenze dei container gia' creati
+  # (riavvio host, restart policy) non passano di qui.
   verify-images:
     <<: *hardening
     # Variante -dev (con shell busybox) per il toggle VERIFY_IMAGES; fissata per digest.
@@ -48,7 +47,7 @@ services:
     tmpfs:
       - /home/nonroot:mode=1777
     environment:
-      VERIFY_IMAGES: ${VERIFY_IMAGES:-false}
+      VERIFY_IMAGES: ${VERIFY_IMAGES:-true}
       APP_VERSION: ${APP_VERSION:-latest}
     entrypoint: ["/busybox/sh", "-ec"]
     command:
@@ -58,11 +57,20 @@ services:
           exit 0
         fi
         R=ghcr.io/comune-di-montesilvano/govpay-interaction-layer
-        cosign verify \
+        if ! out=$$(cosign verify \
           --certificate-identity-regexp '^https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/\.github/workflows/docker-publish\.yml@refs/(tags/v.*|heads/main)$$' \
           --certificate-oidc-issuer https://token.actions.githubusercontent.com \
           "$$R-backoffice:$$APP_VERSION" "$$R-frontoffice:$$APP_VERSION" \
-          "$$R-db:$$APP_VERSION" >/dev/null
+          "$$R-db:$$APP_VERSION" 2>&1 >/dev/null); then
+          if echo "$$out" | grep -qiE 'no such host|dial tcp|timeout|connection refused'; then
+            echo "Verifica firme: rete verso Sigstore/GHCR non raggiungibile"
+          else
+            echo "Verifica firme: firma assente o non valida per $$APP_VERSION"
+          fi
+          echo "$$out" | tail -n 5
+          echo "Emergenza: VERIFY_IMAGES=false nello stack, poi riattivare"
+          exit 1
+        fi
         echo "Firme verificate: $$APP_VERSION"
     # Rete dello stack: senza, compose creerebbe la rete <progetto>_default solo per lui.
     networks:
