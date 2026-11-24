@@ -62,7 +62,10 @@ abstract class DbTestCase extends TestCase
     private static function runPhp(string $script, array $phpArgs): array
     {
         $cmd = array_merge([PHP_BINARY], $phpArgs, [$script]);
-        $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, dirname(__DIR__, 2));
+        // Nessun backup pre-migrazione sul DB usa-e-getta dei test (andrebbe in /backups dell'host).
+        $env = getenv();
+        $env['MIGRATION_BACKUP'] = 'skip';
+        $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, dirname(__DIR__, 2), $env);
         if (!is_resource($proc)) {
             self::fail('Impossibile avviare ' . basename($script));
         }
