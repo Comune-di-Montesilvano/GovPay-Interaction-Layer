@@ -110,6 +110,22 @@
 /* ------------------------------------------------------------------ */
 /* SR-ONLY (accessibility)                                              */
 /* ------------------------------------------------------------------ */
+/* Link "Salta al contenuto" (WCAG 2.4.1): fuori schermo finche' non riceve il focus da tastiera. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -100px;
+  z-index: 1000;
+  padding: 8px 16px;
+  background: #fff;
+  color: var(--ms-ink, #17324D);
+  font-weight: 600;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+}
+.skip-link:focus { top: 8px; }
+#main:focus { outline: none; }
+
 .sr-only {
   position: absolute !important;
   width: 1px !important;

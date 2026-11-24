@@ -18,7 +18,7 @@
     .importo-box .lbl { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
     .importo-box .amount { font-size: 40px; font-weight: 700; color: #0066cc; line-height: 1; }
     .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
-    .field .lbl { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+    .field .lbl { font-size: 11px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
     .field .val { font-size: 13px; color: #1a1a1a; word-break: break-all; font-family: monospace; }
     .field.full { grid-column: 1 / -1; }
     .field.full .val { font-family: inherit; }
@@ -33,11 +33,11 @@
     .qr-info { flex: 1; }
     .qr-info h2 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
     .qr-info p { margin: 0 0 8px; font-size: 12px; color: #555; line-height: 1.5; }
-    .qr-string { font-family: monospace; font-size: 10px; color: #888; word-break: break-all; background: #f5f5f5; padding: 5px 7px; border-radius: 4px; margin-top: 6px; }
+    .qr-string { font-family: monospace; font-size: 10px; color: #666; word-break: break-all; background: #f5f5f5; padding: 5px 7px; border-radius: 4px; margin-top: 6px; }
     .actions { text-align: center; margin-top: 28px; }
     .btn-print { background: #0066cc; color: #fff; border: none; padding: 11px 28px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
     .btn-print:hover { background: #0052a3; }
-    .footer-note { margin-top: 24px; font-size: 11px; color: #aaa; border-top: 1px solid #e8e8e8; padding-top: 12px; text-align: center; line-height: 1.5; }
+    .footer-note { margin-top: 24px; font-size: 11px; color: #666; border-top: 1px solid #e8e8e8; padding-top: 12px; text-align: center; line-height: 1.5; }
     @media print {
       body { background: #fff; }
       .page { margin: 0; border: none; border-radius: 0; padding: 16px; max-width: 100%; }
@@ -114,7 +114,7 @@
 
   <div class="qr-section">
     <div id="qrcode-wrap">
-      <div id="qrcode"></div>
+      <div id="qrcode" role="img" aria-label="{{ 'Codice QR del pagamento pagoPA'|trans }}"></div>
     </div>
     <div class="qr-info">
       <h2>{{ 'Paga con il QR code'|trans }}</h2>
@@ -149,6 +149,8 @@
       colorLight: '#ffffff',
       correctLevel: QRCode.CorrectLevel.M
     });
+    // Il nome accessibile e' sul contenitore (role=img): immagine e canvas generati sono decorativi.
+    Array.prototype.forEach.call(el.querySelectorAll('img'), function (img) { img.alt = ''; });
   } else if (el) {
     el.innerHTML = '<p style="font-size:11px;color:#c00;">{{ 'QR non disponibile. Usa il numero avviso sopra.'|trans|escape('js') }}</p>';
   }

@@ -77,9 +77,9 @@
   /* ============= COLOR — SEMANTIC (.italia alignment) ============= */
   --ms-success:    #00744B;   /* .italia success scurito: 5.2:1 su --ms-success-bg (WCAG AA) */
   --ms-success-bg: #E6F5EE;
-  --ms-warning:    #A66300;
+  --ms-warning:    #945700;   /* scurito: 5.3:1 su --ms-warning-bg (WCAG AA) */
   --ms-warning-bg: #FFF4D9;
-  --ms-danger:     #D9364F;   /* .italia danger */
+  --ms-danger:     #BA2B42;   /* .italia danger scurito: 5.0:1 su --ms-danger-bg (WCAG AA) */
   --ms-danger-bg:  #FCE6E9;
   --ms-info:       #0062C4;   /* scurito: 5.2:1 su --ms-info-bg (WCAG AA) */
   --ms-info-bg:    #E5F1FC;
@@ -87,7 +87,7 @@
   /* ============= SEMANTIC FOREGROUND / BACKGROUND ============= */
   --fg-1: var(--ms-ink);        /* primary text */
   --fg-2: var(--ms-slate-700);  /* secondary text */
-  --fg-3: var(--ms-slate-500);  /* muted / meta */
+  --fg-3: #5C6B7A;  /* muted / meta: >= 4.5:1 anche su --ms-slate-100/bianco (WCAG AA) */
   --fg-inverse: var(--ms-white);
   --fg-link: var(--bi-primary);
   --fg-link-hover: var(--bi-primary-h);

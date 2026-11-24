@@ -11,8 +11,9 @@
     {% block head %}{% endblock %}
   </head>
   <body>
+    <a class="skip-link" href="#main">{{ 'Salta al contenuto principale'|trans }}</a>
     {% include 'partials/header.html.twig' %}
-    <main id="main">
+    <main id="main" tabindex="-1">
       {% block content %}{% endblock %}
     </main>
     {% include 'partials/footer.html.twig' %}
