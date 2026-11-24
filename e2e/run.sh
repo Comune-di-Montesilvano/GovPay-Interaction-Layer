@@ -115,10 +115,11 @@ rc=0
 playwright() {
   local grep_args=()
   [ -n "$1" ] && grep_args=(--grep "$1")
-  rm -rf e2e/playwright-report e2e/test-results e2e/a11y-report
+  # Pulizia DENTRO il container: i file del giro precedente (modalita' upgrade: 2 giri) li ha
+  # creati il container Playwright come root, sul runner Linux l'host non puo' cancellarli.
   rc=0
   "${COMPOSE[@]}" --profile runner run --rm -T -e E2E_UPGRADE="$2" playwright \
-    sh -c 'npm ci --no-audit --no-fund && npx playwright test "$@"' sh "${grep_args[@]}" || rc=$?
+    sh -c 'rm -rf playwright-report test-results a11y-report && npm ci --no-audit --no-fund && npx playwright test "$@"' sh "${grep_args[@]}" || rc=$?
 }
 
 # ZAP baseline (E2E_ZAP=1) dopo Playwright, sullo stack gia' configurato: REPORT-ONLY, l'esito
