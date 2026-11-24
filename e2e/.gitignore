@@ -3,3 +3,4 @@ playwright-report/
 test-results/
 a11y-report/
 zap-report/
+load-report/

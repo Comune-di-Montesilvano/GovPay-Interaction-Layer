@@ -106,5 +106,24 @@ services:
     networks:
       - govpay-network
 
+  # Test di carico (load/scenari.js) solo con E2E_LOAD=1 (e2e/run.sh). Target: solo i servizi di
+  # questa rete (mai la produzione). Riepilogo in e2e/load-report/summary.json.
+  k6:
+    image: grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276
+    profiles: ["load"]
+    working_dir: /load
+    environment:
+      - LOAD_VUS=${LOAD_VUS:-10}
+      - LOAD_DURATION=${LOAD_DURATION:-2m}
+      - K6_NO_USAGE_REPORT=true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    volumes:
+      - ./load:/load:ro
+      - ./e2e/load-report:/load-report
+    networks:
+      - govpay-network
+
 volumes:
   e2e_node_modules:

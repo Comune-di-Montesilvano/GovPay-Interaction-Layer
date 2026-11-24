@@ -1,0 +1,133 @@
+name: Load test
+# Test di carico k6 (load/scenari.js) sullo stack e2e con GovPay/pagoPA finti, immagini GHCR del
+# tag scelto. Solo manuale: misura GIL, non GovPay; il target sono solo i servizi della rete
+# compose del runner, MAI la produzione. Soglie (errori < 1%, p95 < 800 ms) nello script:
+# fuori soglia = run fallita. Numeri nel summary, summary.json k6 nell'artifact load-report.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag immagini GHCR (latest, X.Y.Z, X.Y.Z-rcN, latest-YYYYMMDD)"
+        type: string
+        default: latest
+      vus:
+        description: "Utenti virtuali dello scenario pagine"
+        type: string
+        default: "10"
+      duration:
+        description: "Durata (formato k6: 30s, 2m, 5m)"
+        type: string
+        default: 2m
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  ORG: comune-di-montesilvano
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            mcr.microsoft.com:443
+            *.data.mcr.microsoft.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            registry.npmjs.org:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Valida input e genera override immagini
+        env:
+          VERSION: ${{ inputs.version }}
+          VUS: ${{ inputs.vus }}
+          DURATION: ${{ inputs.duration }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(latest|latest-[0-9]{8}|[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$ ]] || { echo "::error::version non valida: $VERSION"; exit 1; }
+          [[ "$VUS" =~ ^[1-9][0-9]{0,2}$ ]] || { echo "::error::vus non valido (1-999): $VUS"; exit 1; }
+          [[ "$DURATION" =~ ^[1-9][0-9]*(s|m)$ ]] || { echo "::error::duration non valida (es. 30s, 2m): $DURATION"; exit 1; }
+          {
+            echo "services:"
+            for img in backoffice frontoffice db; do
+              echo "  $img:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img:$VERSION"
+            done
+            for svc in worker post-deploy-check; do
+              echo "  $svc:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice:$VERSION"
+            done
+          } > docker-compose.load-images.yml
+          cat docker-compose.load-images.yml
+      - name: k6
+        id: run
+        env:
+          CI: '1'
+          E2E_LOAD: '1'
+          E2E_PROJECT: gil-load
+          E2E_IMAGES_FILE: docker-compose.load-images.yml
+          LOAD_VUS: ${{ inputs.vus }}
+          LOAD_DURATION: ${{ inputs.duration }}
+        run: e2e/run.sh
+      - name: Report k6
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: load-report
+          path: e2e/load-report
+          retention-days: 30
+          if-no-files-found: ignore
+      - name: Riepilogo
+        if: always()
+        env:
+          OUTCOME: ${{ steps.run.outcome }}
+          VERSION: ${{ inputs.version }}
+          VUS: ${{ inputs.vus }}
+          DURATION: ${{ inputs.duration }}
+        run: |
+          f=e2e/load-report/summary.json
+          {
+            echo "## Test di carico: $VERSION ($VUS VU, $DURATION)"
+            echo
+            echo "Esito: **${OUTCOME}**"
+            echo
+            if [ -f "$f" ]; then
+              jq -r '.metrics as $m | [
+                "| Metrica | Valore | Soglia |", "|---|---|---|",
+                "| richieste | \($m.http_reqs.count) (\($m.http_reqs.rate | floor)/s) | |",
+                "| errori HTTP | \($m.http_req_failed.value * 100 | . * 100 | round / 100)% | < 1% |",
+                "| durata p95 | \($m.http_req_duration["p(95)"] | round) ms | < 800 ms |",
+                "| durata mediana | \($m.http_req_duration.med | round) ms | |",
+                "| durata max | \($m.http_req_duration.max | round) ms | |",
+                "| check riusciti | \($m.checks.value * 100 | . * 100 | round / 100)% | > 99% |"
+              ] | .[]' "$f"
+            else
+              echo "Nessun summary.json (k6 non eseguito)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
