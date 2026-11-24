@@ -87,6 +87,11 @@ services:
       - gil_backups:/backups
     environment:
       - APP_SUITE=backoffice
+      # Backup automatico prima delle migrazioni nuove (backoffice/bin/run-migrations.php) in
+      # gil_backups/pre-migrazione, ultimi MIGRATION_BACKUP_KEEP. MIGRATION_BACKUP=skip solo per
+      # un'emergenza (disco pieno): le migrazioni partono senza backup.
+      - MIGRATION_BACKUP=${MIGRATION_BACKUP:-}
+      - MIGRATION_BACKUP_KEEP=${MIGRATION_BACKUP_KEEP:-3}
       - SSL=${SSL:-off}
       - DB_HOST=db
       - DB_PORT=3306
