@@ -229,6 +229,41 @@ services:
     networks:
       - govpay-network
 
+  # Verifica dopo il deploy (one-shot, immagine backoffice): parte quando backoffice e' healthy,
+  # attende il frontoffice e controlla versioni (= APP_VERSION se semver), DB, migrazioni
+  # registrate, frontoffice -> backoffice col MASTER_TOKEN. Exit 1 = qualcosa non va: visibile in
+  # Portainer (servizio "exited (1)") e, con SENTRY_DSN, in GlitchTip. Non ferma lo stack.
+  # Immagini senza bin/post-deploy-check.php (<= 1.11.x): riga di guardia ed exit 0.
+  post-deploy-check:
+    <<: *hardening
+    image: ghcr.io/comune-di-montesilvano/govpay-interaction-layer-backoffice:${APP_VERSION:-latest}
+    user: "www-data"
+    read_only: true
+    restart: "no"
+    tmpfs:
+      - /tmp:mode=1777
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -f /var/www/html/bin/post-deploy-check.php ]; then
+          exec php /var/www/html/bin/post-deploy-check.php
+        fi
+        echo "post-deploy-check: immagine senza bin/post-deploy-check.php, nessuna verifica"
+    environment:
+      - APP_SUITE=post-deploy-check
+      - APP_VERSION=${APP_VERSION:-latest}
+      - SSL=${SSL:-off}
+      - "MASTER_TOKEN=${MASTER_TOKEN:?MASTER_TOKEN obbligatoria: vedi .env.example}"
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-}
+    depends_on:
+      backoffice:
+        condition: service_healthy
+      frontoffice:
+        condition: service_started
+    networks:
+      - govpay-network
+
   db:
     <<: *hardening
     # L'entrypoint mariadb parte come root, fa chown della datadir e scende a `mysql` (gosu).

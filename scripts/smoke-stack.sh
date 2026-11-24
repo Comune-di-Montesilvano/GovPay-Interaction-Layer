@@ -8,6 +8,7 @@
 #   - worker (servizio `worker`, stessa immagine del backoffice) healthy, nessun riavvio,
 #     www-data senza capability ne' porte; immagine nuova: riga di avvio + marker
 #     `__import__` in gil_jobs; immagine vecchia (senza bin/worker): attesa inerte;
+#   - post-deploy-check terminato con OK (immagini nuove) o riga di guardia (release vecchie);
 #   - nessun `Fatal`/`Parse error` nei log;
 # con porte privilegiate riservate a root+NET_BIND_SERVICE come sull'host di produzione.
 # e lo distrugge sempre (down -v) all'uscita.
@@ -36,6 +37,10 @@ BO_PORT=${SMOKE_BACKOFFICE_PORT:-18443}
 FO_PORT=${SMOKE_FRONTOFFICE_PORT:-18444}
 TIMEOUT=${SMOKE_TIMEOUT:-300}
 WORKER_MODE=${SMOKE_WORKER:-new}
+# post-deploy-check: con `new` (immagini appena buildate) lo script e' obbligatorio; con `auto`
+# e `legacy` si decide dall'immagine (le release <= 1.11.x non lo hanno: riga di guardia).
+PDC_REQUIRED=0
+[ "$WORKER_MODE" = new ] && PDC_REQUIRED=1
 case "$WORKER_MODE" in new | legacy | auto) ;; *) echo "::error::SMOKE_WORKER=$WORKER_MODE (new|legacy|auto)"; exit 1 ;; esac
 
 [ -f "$SMOKE_FILE" ] || { echo "::error::override $SMOKE_FILE assente"; exit 1; }
@@ -191,6 +196,27 @@ else
   wlog=$("${COMPOSE[@]}" logs --no-color worker)
   grep -q 'immagine senza bin/worker, nessuna azione' <<<"$wlog" || fail "riga di attesa (immagine vecchia) assente"
   ok "worker inerte con immagine senza bin/worker"
+fi
+
+# post-deploy-check: one-shot avviato da `up -d` dopo backoffice healthy; attende il frontoffice.
+pdc_id=$("${COMPOSE[@]}" ps -aq post-deploy-check)
+[ -n "$pdc_id" ] || fail "container post-deploy-check non creato"
+pdc_state=
+for ((i = 0; i < 180; i += 3)); do
+  pdc_state=$(docker inspect -f '{{.State.Status}}' "$pdc_id" 2>/dev/null || echo missing)
+  [ "$pdc_state" = exited ] && break
+  sleep 3
+done
+pdc_log=$("${COMPOSE[@]}" logs --no-color post-deploy-check)
+[ "$pdc_state" = exited ] || { echo "$pdc_log"; fail "post-deploy-check non terminato entro 180s (stato: $pdc_state)"; }
+pdc_rc=$(docker inspect -f '{{.State.ExitCode}}' "$pdc_id")
+if grep -q 'immagine senza bin/post-deploy-check.php' <<<"$pdc_log"; then
+  [ "$PDC_REQUIRED" = 0 ] || { echo "$pdc_log"; fail "immagine backoffice senza bin/post-deploy-check.php"; }
+  [ "$pdc_rc" = 0 ] || fail "post-deploy-check (guardia) exit $pdc_rc"
+  ok "post-deploy-check: immagine senza script, riga di guardia"
+else
+  [ "$pdc_rc" = 0 ] && grep -q 'post-deploy-check: OK' <<<"$pdc_log" || { echo "$pdc_log"; fail "post-deploy-check fallito (exit $pdc_rc)"; }
+  ok "post-deploy-check OK"
 fi
 
 # Ultimo controllo dopo tutti gli altri: nessun riavvio dall'avvio (crash loop).

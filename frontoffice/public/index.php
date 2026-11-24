@@ -24,6 +24,38 @@ register_shutdown_function(static function (): void {
     }
 });
 
+// ─── /health/deploy: solo per il servizio compose post-deploy-check ──────────
+// Prima di config/sessione: risponde anche se la configurazione non si carica, e la sonda verso
+// il backoffice e' fatta qui, senza cache. Bearer MASTER_TOKEN obbligatorio (401 altrimenti).
+if ((parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/') === '/health/deploy') {
+    $deployToken = (string)($_ENV['MASTER_TOKEN'] ?? getenv('MASTER_TOKEN') ?: '');
+    $deployAuth = $_SERVER['HTTP_AUTHORIZATION'] ?? (function_exists('getallheaders') ? (getallheaders()['Authorization'] ?? null) : null);
+    $deploy = \App\Services\Deploy\FrontofficeDeployStatus::respond(
+        is_string($deployAuth) ? $deployAuth : null,
+        $deployToken,
+        \App\Config\Config::getVersionInfo(),
+        static function () use ($deployToken): bool {
+            $url = rtrim((string)($_ENV['BACKOFFICE_INTERNAL_URL'] ?? getenv('BACKOFFICE_INTERNAL_URL') ?: 'http://backoffice'), '/');
+            $ch = curl_init($url . '/api/frontoffice/config');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 5,
+                CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $deployToken, 'Accept: application/json'],
+            ]);
+            $raw = curl_exec($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            unset($ch);
+            return $raw !== false && $status === 200 && is_array(json_decode((string)$raw, true));
+        },
+    );
+    http_response_code($deploy['status']);
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store');
+    echo $deploy['body'] === [] ? '{}' : json_encode($deploy['body'], JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 // ─── Bootstrap config dal backoffice sidecar ─────────────────────────────────
 // Carica all'avvio le variabili di configurazione dall'endpoint /api/frontoffice/config
 // e le inietta in $_ENV. frontoffice_env_value() le troverà senza toccare il DB.
