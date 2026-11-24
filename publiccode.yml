@@ -1,7 +1,7 @@
 publiccodeYmlVersion: "0"
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
-softwareVersion: 1.12.1
+softwareVersion: 1.13.0
 releaseDate: 2026-11-24
 platforms:
   - web
@@ -50,6 +50,8 @@ description:
       - Immagini firmate (cosign) con SBOM e attestazioni di provenienza, firme verificate di default prima di ogni avvio
       - Container applicativi eseguiti come utente non privilegiato su filesystem in sola lettura
       - Aggiornamenti sicuri con backup automatico del database prima delle migrazioni, avvio bloccato su migrazione fallita e verifica dello stack dopo il deploy
+      - Frontoffice accessibile (WCAG 2.1 AA verificato con axe-core su desktop, mobile e navigazione da tastiera)
+      - Header di sicurezza HTTP con Content-Security-Policy, cookie di sessione protetti e scansione DAST OWASP ZAP in CI
     screenshots:
       - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/FrontOffice.png
       - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/BackOffice.png
