@@ -1,8 +1,8 @@
 publiccodeYmlVersion: "0"
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
-softwareVersion: 1.11.3
-releaseDate: 2026-11-22
+softwareVersion: 1.12.0
+releaseDate: 2026-11-24
 platforms:
   - web
 categories:
@@ -49,6 +49,7 @@ description:
       - Deploy containerizzato pronto all'uso tramite Docker Compose e Portainer (GHCR)
       - Immagini firmate (cosign) con SBOM e attestazioni di provenienza verificabili al deploy
       - Container applicativi eseguiti come utente non privilegiato su filesystem in sola lettura
+      - Aggiornamenti sicuri con backup automatico del database prima delle migrazioni, avvio bloccato su migrazione fallita e verifica dello stack dopo il deploy
     screenshots:
       - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/FrontOffice.png
       - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/BackOffice.png
