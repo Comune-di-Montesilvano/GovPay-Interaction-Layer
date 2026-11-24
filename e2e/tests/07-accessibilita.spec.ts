@@ -56,3 +56,18 @@ for (const [nome, path] of BACKOFFICE_PAGINE) {
     await analizza(page, testInfo, nome);
   });
 }
+
+// Stato "GovPay: Offline" (badge rosso in alto + testo in sidebar): in CI il controllo di stato a
+// volte risponde offline e axe misurava il badge a meta' transizione di colore. Qui lo stato e'
+// forzato e l'analisi parte appena compare il testo, cioe' nel momento peggiore.
+test('axe backoffice dashboard con GovPay offline', async ({ page }, testInfo) => {
+  await page.route('**/api/govpay/status', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"online":false,"error":"test"}' }));
+  await loginOperatore(page);
+  await page.goto('/');
+  await expect(page.locator('.bo-govpay-status-text')).toHaveText(/Offline/);
+  // Niente transizione sullo sfondo del badge: il testo bianco cambia subito, lo sfondo passerebbe
+  // da chiaro a rosso in 0,3 s con il contrasto sotto 4,5:1 nel mezzo.
+  const transizione = await page.locator('#bo-govpay-status-badge').evaluate((el) => getComputedStyle(el).transitionProperty);
+  expect(transizione).not.toMatch(/background|all/);
+  await analizza(page, testInfo, 'backoffice dashboard GovPay offline');
+});

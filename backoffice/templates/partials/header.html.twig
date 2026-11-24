@@ -180,7 +180,7 @@
 
     <div class="bo-topbar-actions">
       <!-- Badge Stato GovPay -->
-      <div id="bo-govpay-status-badge" class="bo-govpay-status" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 6px 14px; border-radius: 16px; background: var(--bg-3); border: 1px solid var(--border-1); margin-right: 12px; transition: border-color 0.3s, background 0.3s;">
+      <div id="bo-govpay-status-badge" class="bo-govpay-status" style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 6px 14px; border-radius: 16px; background: var(--bg-3); border: 1px solid var(--border-1); margin-right: 12px; transition: border-color 0.3s;">
         <span class="bo-govpay-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; display: inline-block; transition: background 0.3s, box-shadow 0.3s;"></span>
         <span class="bo-govpay-status-text" style="color: var(--fg-2);">GovPay: ...</span>
       </div>
@@ -245,8 +245,8 @@
                           }
                       } else {
                           // Offline ad alta visibilità: rosso pieno, testo bianco e animazione pulse
-                          badge.style.background = '#e11d48';
-                          badge.style.borderColor = '#be123c';
+                          badge.style.background = '#be123c'; // 6,3:1 col testo bianco (WCAG AA)
+                          badge.style.borderColor = '#9f1239';
                           text.style.color = '#ffffff';
                           dot.style.background = '#ffffff';
                           dot.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.4)';
@@ -270,8 +270,8 @@
                   })
                   .catch(function(err) {
                       // Stato di errore ad alta visibilità
-                      badge.style.background = '#e11d48';
-                      badge.style.borderColor = '#be123c';
+                      badge.style.background = '#be123c'; // 6,3:1 col testo bianco (WCAG AA)
+                      badge.style.borderColor = '#9f1239';
                       text.style.color = '#ffffff';
                       dot.style.background = '#ffffff';
                       dot.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.4)';
