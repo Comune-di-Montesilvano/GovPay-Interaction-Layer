@@ -14,6 +14,7 @@
 #   E2E_UPGRADE_FROM_FILE=/percorso/override-release-precedente.yml E2E_IMAGES_FILE=... e2e/run.sh
 #                    # test di aggiornamento: dati creati con la release precedente, poi immagini
 #                    # nuove sullo stesso DB (migrazioni, post-deploy-check, backup, flussi @post-upgrade)
+#   E2E_ZAP=1 ...    # dopo Playwright: ZAP baseline (report-only) in e2e/zap-report
 #   E2E_KEEP=1 ...   # solo in locale: stack lasciato attivo per il debug (poi
 #                    # `docker compose -p gil-e2e down -v`); mai in CI
 set -euo pipefail
@@ -113,10 +114,29 @@ rc=0
 playwright() {
   local grep_args=()
   [ -n "$1" ] && grep_args=(--grep "$1")
-  rm -rf e2e/playwright-report e2e/test-results
+  rm -rf e2e/playwright-report e2e/test-results e2e/a11y-report
   rc=0
   "${COMPOSE[@]}" --profile runner run --rm -T -e E2E_UPGRADE="$2" playwright \
     sh -c 'npm ci --no-audit --no-fund && npx playwright test "$@"' sh "${grep_args[@]}" || rc=$?
+}
+
+# ZAP baseline (E2E_ZAP=1) dopo Playwright, sullo stack gia' configurato: REPORT-ONLY, l'esito
+# non cambia l'exit code. Regole ignorate in e2e/zap-rules.tsv (ognuna col suo motivo).
+zap_scan() {
+  rm -rf e2e/zap-report
+  mkdir -p e2e/zap-report
+  chmod 777 e2e/zap-report
+  cp e2e/zap-rules.tsv e2e/zap-report/zap-rules.tsv
+  local name target zrc
+  for name in frontoffice backoffice; do
+    target=http://frontoffice/
+    [ "$name" = backoffice ] && target=http://backoffice/login
+    zrc=0
+    "${COMPOSE[@]}" --profile zap run --rm -T zap zap-baseline.py -t "$target" -I -m 1       -c zap-rules.tsv -r "$name.html" -J "$name.json" -z "-silent" >"e2e/zap-report/$name.log" 2>&1 || zrc=$?
+    # 0 ok, 1/2 alert (report-only), 3 errore di ZAP.
+    if [ "$zrc" -ge 3 ]; then echo "::warning::ZAP $name: errore di esecuzione (exit $zrc), vedi zap-report/$name.log"; fi
+    echo "OK  ZAP baseline $name (exit $zrc, report in e2e/zap-report)"
+  done
 }
 
 if [ -z "${E2E_UPGRADE_FROM_FILE:-}" ]; then
@@ -125,6 +145,7 @@ if [ -z "${E2E_UPGRADE_FROM_FILE:-}" ]; then
   echo "OK  stack e2e pronto"
   seed
   playwright "${E2E_GREP:-}" ""
+  [ "${E2E_ZAP:-}" = 1 ] && zap_scan
   exit "$rc"
 fi
 

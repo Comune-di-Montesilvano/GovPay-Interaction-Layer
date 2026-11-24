@@ -92,5 +92,19 @@ services:
     networks:
       - govpay-network
 
+  # OWASP ZAP baseline (solo scansione passiva + spider, nessun attacco attivo) contro frontoffice e
+  # login backoffice, solo con E2E_ZAP=1 (e2e/run.sh). Report in e2e/zap-report, report-only.
+  # -silent: nessuna richiesta di ZAP verso internet (aggiornamenti, call home).
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:2.17.0@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+    profiles: ["zap"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    volumes:
+      - ./e2e/zap-report:/zap/wrk
+    networks:
+      - govpay-network
+
 volumes:
   e2e_node_modules:
