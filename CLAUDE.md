@@ -317,7 +317,13 @@ Il frontoffice gestisce autonomamente: sessione PHP, autenticazione OIDC esterna
 
 ## Migrazioni DB
 
-File SQL in `migrations/` (numerati `003_...sql` → `030_...sql`). Nessun runner automatico — migrazioni applicate dal backoffice all'avvio (`run-migrations.php`); l'immagine `db` non ha script di init.
+File SQL in `migrations/` (numerati `003_...sql` → `038_...sql`), applicati all'avvio del **solo backoffice** (`docker-setup.sh` → `backoffice/bin/run-migrations.php` → `App\Database\MigrationRunner`); l'immagine `db` non ha script di init.
+
+- **Registro** `gil_schema_migrations` (filename, checksum sha256, applied_at), creato dal runner: si eseguono solo i file non registrati, in ordine naturale. Mai modificare un file già rilasciato: con checksum diverso NON si riesegue (solo avviso). Correzioni = file nuovo.
+- **Regola stretta**: il primo file che fallisce ferma tutto, non viene registrato, exit 1 → `docker-setup.sh` esce, backoffice mai healthy (crash loop per restart policy), frontoffice/worker non partono. Rollback = `APP_VERSION` precedente + restore del dump.
+- **Bootstrap** (registro assente, primo avvio dopo l'introduzione): su DB con dati (`users` non vuota) tutti i file rigirano tollerando gli errori come il vecchio runner (riga `errore tollerato`) e vengono registrati; su DB senza dati (installazione nuova) regola stretta. Verificato 2026-11-24: oggi tutte le 37 migrazioni sono idempotenti su MariaDB 11.
+- **Backup pre-migrazione**: se ci sono file pendenti e `users` ha righe, dump (`App\Database\DatabaseDumper`, stesso formato del backup manuale) in `gil_backups/pre-migrazione/<Ymd-His>-<versione>.sql.gz` (+ `.key`), ultimi `MIGRATION_BACKUP_KEEP` (default 3). Stessi file pendenti = stesso dump riusato (in crash loop la rotazione non toglie il dump pulito). Backup fallito → nessuna migrazione, exit 1. `MIGRATION_BACKUP=skip` solo emergenza (disco pieno). I test DB (`DbTestCase`, `MigrationsFromScratchTest`) lanciano il runner con `skip`.
+- Le migrazioni devono restare idempotenti (`IF NOT EXISTS`, `INSERT IGNORE`): il bootstrap le rigira tutte.
 
 ## Test end-to-end (Playwright)
 

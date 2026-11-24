@@ -22,6 +22,8 @@ final class MigrationRunnerTest extends DbTestCase
     /** @var list<string> */
     private array $log = [];
     private int $backups = 0;
+    /** @var list<string> */
+    private array $keys = [];
 
     protected function setUp(): void
     {
@@ -60,8 +62,9 @@ final class MigrationRunnerTest extends DbTestCase
 
     private function runner(bool $backupFails = false): MigrationRunner
     {
-        $backup = function () use ($backupFails): string {
+        $backup = function (string $key) use ($backupFails): string {
             $this->backups++;
+            $this->keys[] = $key;
             if ($backupFails) {
                 throw new \RuntimeException('disco pieno');
             }
@@ -142,6 +145,31 @@ final class MigrationRunnerTest extends DbTestCase
         self::assertSame(1, $r->applied);
         self::assertSame(1, $this->backups);
         self::assertSame('/backups/pre-migrazione/finto.sql.gz', $r->backupFile);
+    }
+
+    public function testChiaveBackupStabileFinchePendentiUguali(): void
+    {
+        $this->file('001_a.sql', 'CREATE TABLE zz_mig_t1 (id INT)');
+        $this->registerExisting();
+        $this->withData();
+        $this->file('002_b.sql', 'QUESTO NON E SQL');
+
+        foreach ([1, 2] as $_) {
+            try {
+                $this->runner()->run();
+            } catch (MigrationFailedException) {
+            }
+        }
+        $this->file('003_c.sql', 'CREATE TABLE zz_mig_t3 (id INT)');
+        try {
+            $this->runner()->run();
+        } catch (MigrationFailedException) {
+        }
+
+        self::assertCount(3, $this->keys);
+        self::assertSame($this->keys[0], $this->keys[1]);
+        self::assertNotSame($this->keys[1], $this->keys[2]);
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $this->keys[0]);
     }
 
     public function testFileFallitoBloccaENonRegistra(): void

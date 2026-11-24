@@ -46,6 +46,25 @@ final class PreMigrationBackupTest extends DbTestCase
         self::assertMatchesRegularExpression('/^\d{8}-\d{6}-1\.12\.0\.sql\.gz$/', basename($file));
     }
 
+    public function testStessaChiaveRiusaIlBackup(): void
+    {
+        // Crash loop su una migrazione rotta: ogni riavvio non deve ruotare via il dump buono.
+        $primo = PreMigrationBackup::create(self::pdo(), $this->dir, '1.12.0', 3, 'chiave-a');
+        $secondo = PreMigrationBackup::create(self::pdo(), $this->dir, '1.12.0', 3, 'chiave-a');
+
+        self::assertSame($primo, $secondo);
+        self::assertCount(1, glob($this->dir . '/*.sql.gz') ?: []);
+    }
+
+    public function testChiaveDiversaNuovoBackup(): void
+    {
+        $primo = PreMigrationBackup::create(self::pdo(), $this->dir, '1.12.0', 3, 'chiave-a');
+        $secondo = PreMigrationBackup::create(self::pdo(), $this->dir, '1.12.0', 3, 'chiave-b');
+
+        self::assertNotSame($primo, $secondo);
+        self::assertCount(2, glob($this->dir . '/*.sql.gz') ?: []);
+    }
+
     public function testVersioneSanificata(): void
     {
         $file = PreMigrationBackup::create(self::pdo(), $this->dir, '1.12.0/../x', 3);

@@ -23,7 +23,8 @@ final class MigrationRunner
     public const REGISTRY_TABLE = 'gil_schema_migrations';
 
     /**
-     * @param \Closure(): string|null $backup crea il backup e ne ritorna il path; null = disattivato
+     * @param \Closure(string): string|null $backup crea il backup e ne ritorna il path; riceve la
+     *        chiave dei file pendenti (stessa chiave = stesso backup, vedi PreMigrationBackup); null = disattivato
      * @param \Closure(string): void   $log
      */
     public function __construct(
@@ -77,7 +78,10 @@ final class MigrationRunner
                 ($this->log)('backup pre-migrazione DISATTIVATO (MIGRATION_BACKUP=skip)');
             } else {
                 try {
-                    $backupFile = ($this->backup)();
+                    $files = $this->files();
+                    $key = hash('sha256', implode("
+", array_map(static fn(string $n): string => $n . ':' . $files[$n], $pending)));
+                    $backupFile = ($this->backup)($key);
                 } catch (\Throwable $e) {
                     throw new MigrationFailedException('backup pre-migrazione fallito, nessuna migrazione eseguita: ' . $e->getMessage(), 0, $e);
                 }

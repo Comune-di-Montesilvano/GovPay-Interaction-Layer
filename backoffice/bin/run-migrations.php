@@ -40,7 +40,7 @@ $backupDir = (string)(getenv('MIGRATION_BACKUP_DIR') ?: '/backups/pre-migrazione
 $keep = max(1, (int)(getenv('MIGRATION_BACKUP_KEEP') ?: 3));
 $backup = getenv('MIGRATION_BACKUP') === 'skip'
 	? null
-	: static fn(): string => PreMigrationBackup::create($pdo, $backupDir, Config::getVersion(), $keep);
+	: static fn(string $key): string => PreMigrationBackup::create($pdo, $backupDir, Config::getVersion(), $keep, $key);
 
 $runner = new MigrationRunner($pdo, $dir, $backup, static function (string $line): void {
 	echo $line, "\n";

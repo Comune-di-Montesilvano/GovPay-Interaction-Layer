@@ -151,61 +151,14 @@ if [ "$APP_SUITE" != "frontoffice" ]; then
   fi
 fi
 
-if [ "$APP_SUITE" != "frontoffice" ]; then
-  # Additional SQL migrations runner: execute SQL files in migrations/ using mysql client if available
-  MIG_DIR="/var/www/html/migrations"
-  if [ -d "$MIG_DIR" ] && [ "$(ls -A "$MIG_DIR" | wc -l)" -gt 0 ]; then
-    echo "--- Trovate migrazioni SQL in $MIG_DIR ---"
-    DB_HOST=${DB_HOST:-db}
-    DB_PORT=${DB_PORT:-3306}
-    DB_NAME=${DB_NAME:-govpay}
-    DB_USER=${DB_USER:-govpay}
-    DB_PASS=${DB_PASSWORD:-}
-
-    # Preferiamo usare il client mysql se disponibile
-    if command -v mysql >/dev/null 2>&1; then
-      echo "Eseguo migrazioni via client mysql..."
-      for f in $(ls -1 "$MIG_DIR"/*.sql 2>/dev/null | sort); do
-        echo "Eseguo $f"
-        if ! mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" ${DB_PASS:+-p$DB_PASS} "$DB_NAME" < "$f"; then
-          echo "⚠️  Fallito l'import di $f via mysql client; proseguo." >&2
-        fi
-      done
-
-    # Fallback: PHP CLI può eseguire gli SQL
-    elif command -v php >/dev/null 2>&1; then
-      echo "Eseguo migrazioni via fallback PHP..."
-      php -r '
-        $dir = getenv("PWD") . "/migrations";
-        $files = glob($dir."/*.sql");
-        if(!$files) { exit(0); }
-        $host = getenv("DB_HOST") ?: "db";
-        $port = getenv("DB_PORT") ?: "3306";
-        $db = getenv("DB_NAME") ?: "govpay";
-        $user = getenv("DB_USER") ?: "govpay";
-        $pass = getenv("DB_PASSWORD") ?: "";
-        $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4";
-        try {
-          $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-          sort($files);
-          foreach($files as $f) {
-            echo "Eseguo PHP $f\n";
-            try {
-              $sql = file_get_contents($f);
-              $pdo->exec($sql);
-            } catch (Throwable $e) {
-              echo "⚠️ Importazione fallita per $f via PHP: ". $e->getMessage() ."; proseguo.\n";
-            }
-          }
-        } catch (Throwable $e) {
-          echo "⚠️ Connessione DB fallita: ". $e->getMessage() ."\n";
-          echo "⚠️ Il DB potrebbe non essere ancora pronto. Continuo avvio.\n";
-          exit(0);
-        }
-      '
-    else
-      echo "⚠️  Nessun metodo disponibile per eseguire migrazioni SQL (mysql client e PHP mancanti)." >&2
-    fi
+if [ "$APP_SUITE" = "backoffice" ]; then
+  # Migrazioni SQL (backoffice/bin/run-migrations.php, App\Database\MigrationRunner): solo i file
+  # non ancora in gil_schema_migrations, backup in /backups/pre-migrazione prima di applicarli.
+  # Migrazione o backup falliti -> il container esce: backoffice mai healthy, frontoffice e worker
+  # non partono (depends_on), Portainer segnala il deploy fallito. Mai Apache su uno schema a meta'.
+  if ! php /var/www/html/bin/run-migrations.php; then
+    echo "❌ Migrazioni fallite: backoffice NON avviato (causa e via d'uscita nelle righe sopra)." >&2
+    exit 1
   fi
 fi
 
