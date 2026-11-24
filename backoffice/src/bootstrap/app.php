@@ -25,6 +25,9 @@ use App\Auth\UserRepository;
 use App\Logger;
 
 return (function (): array {
+    // Prima di qualunque session_start(): CurrentPathMiddleware gira prima di SessionMiddleware
+    // (ordine LIFO) e altrimenti aprirebbe la sessione con i default PHP (no HttpOnly/SameSite).
+    SessionMiddleware::configureCookieParams($_SERVER);
     $app = AppFactory::create();
     $app->setBasePath('');
 

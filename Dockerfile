@@ -118,9 +118,11 @@ RUN a2ensite 000-default.conf
 # ufficiale sono gia' symlink a stdout/stderr.
 RUN chown www-data:www-data /var/run/apache2 /var/lock/apache2 /var/log/apache2
 
-# Hardening Apache: rimuove Indexes e aggiunge security headers
-RUN sed -i 's/Options Indexes FollowSymLinks/Options FollowSymLinks/g' /etc/apache2/apache2.conf && \
-    printf '\n<IfModule mod_headers.c>\n  Header always set X-Content-Type-Options "nosniff"\n  Header always set X-Frame-Options "SAMEORIGIN"\n  Header always set Referrer-Policy "strict-origin-when-cross-origin"\n  Header always set X-XSS-Protection "1; mode=block"\n</IfModule>\n' > /etc/apache2/conf-enabled/security-headers.conf
+# Hardening Apache/PHP: niente Indexes, security headers + CSP, nessuna versione esposta
+# (apache/security-headers.conf), expose_php Off e cookie di sessione sicuri (docker/php).
+RUN sed -i 's/Options Indexes FollowSymLinks/Options FollowSymLinks/g' /etc/apache2/apache2.conf     && sed -i -E 's/^(ServerTokens|ServerSignature) /#&/' /etc/apache2/conf-available/security.conf
+COPY --chown=root:root --link apache/security-headers.conf /etc/apache2/conf-enabled/security-headers.conf
+COPY --chown=root:root --link docker/php/gil-security.ini /usr/local/etc/php/conf.d/gil-security.ini
 
 RUN useradd -r -d /var/www -g www-data www-app
 

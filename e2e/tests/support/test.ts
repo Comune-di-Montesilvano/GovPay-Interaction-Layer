@@ -13,11 +13,27 @@ export async function isolate(context: BrowserContext): Promise<void> {
   );
 }
 
-export const test = base.extend<{ hermetic: void }>({
+// Violazioni della Content-Security-Policy (apache/security-headers.conf) nella console del
+// browser: una risorsa o uno script bloccato rompe l'interfaccia in modo silenzioso, il test
+// deve fallire. Vale per ogni pagina del contesto del test (anche popup).
+const CSP_VIOLATION = /Content Security Policy/i;
+
+export const test = base.extend<{ hermetic: void; cspGuard: void }>({
   hermetic: [
     async ({ context }, use) => {
       await isolate(context);
       await use();
+    },
+    { auto: true },
+  ],
+  cspGuard: [
+    async ({ context }, use) => {
+      const violations: string[] = [];
+      context.on('console', (msg) => {
+        if (CSP_VIOLATION.test(msg.text())) violations.push(`${msg.location().url}: ${msg.text()}`);
+      });
+      await use();
+      expect(violations, 'violazioni CSP nella console').toEqual([]);
     },
     { auto: true },
   ],
