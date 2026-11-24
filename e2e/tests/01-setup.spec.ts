@@ -6,7 +6,7 @@ import { unmatched } from './support/fake';
 // successivi partono da questo stato (stesso DB del run).
 test.describe.configure({ mode: 'serial' });
 
-test('wizard di primo avvio con GovPay e pagoPA finti', async ({ page }) => {
+test('@pre-upgrade wizard di primo avvio con GovPay e pagoPA finti', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/setup/);
 

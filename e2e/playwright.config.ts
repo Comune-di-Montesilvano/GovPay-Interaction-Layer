@@ -4,6 +4,8 @@ import { defineConfig } from '@playwright/test';
 // servizi compose. File in ordine (prefisso numerico), un worker: lo stato passa dal DB del run.
 export default defineConfig({
   testDir: './tests',
+  // 08-upgrade solo nella modalita' upgrade di run.sh (stato creato dalla release precedente).
+  testIgnore: process.env.E2E_UPGRADE === '1' ? [] : ['**/08-upgrade.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

@@ -13,7 +13,7 @@ async function cercaAvviso(page: Page, numeroAvviso: string): Promise<void> {
   await page.getByRole('button', { name: /Cerca avviso/ }).click();
 }
 
-test('cittadino paga un avviso e scarica la ricevuta', async ({ page }) => {
+test('@post-upgrade cittadino paga un avviso e scarica la ricevuta', async ({ page }) => {
   const [p] = await pendenze();
   expect(p, 'pendenza del flusso 2 assente').toBeTruthy();
 

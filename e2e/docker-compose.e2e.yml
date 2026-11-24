@@ -82,6 +82,7 @@ services:
     command: ["sh", "-c", "npm ci --no-audit --no-fund && npx playwright test"]
     environment:
       - CI=${CI:-}
+      - E2E_UPGRADE=${E2E_UPGRADE:-}
       - "E2E_ADMIN_PASSWORD=${E2E_ADMIN_PASSWORD:?E2E_ADMIN_PASSWORD obbligatoria: avviare con e2e/run.sh}"
     ipc: host
     volumes:

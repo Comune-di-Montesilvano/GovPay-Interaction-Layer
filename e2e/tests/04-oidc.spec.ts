@@ -6,7 +6,7 @@ import { loginOperatore } from './support/login';
 // Flusso 4: l'operatore attiva il login OIDC esterno (Impostazioni → Frontoffice) verso l'IdP
 // finto (tests/Fakes/Oidc); il cittadino entra (Authorization Code + PKCE) e vede in area
 // personale la pendenza a suo nome creata nel flusso 2.
-test('cittadino entra con OIDC e vede le sue pendenze', async ({ page }) => {
+test('@post-upgrade cittadino entra con OIDC e vede le sue pendenze', async ({ page }) => {
   await loginOperatore(page);
   await page.goto('/impostazioni?tab=frontoffice');
   await page.locator('select[name="auth_proxy_type"]').selectOption('external');
