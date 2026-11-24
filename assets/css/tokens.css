@@ -75,13 +75,13 @@
   --ms-white:     #FFFFFF;
 
   /* ============= COLOR — SEMANTIC (.italia alignment) ============= */
-  --ms-success:    #008758;   /* .italia success */
+  --ms-success:    #00744B;   /* .italia success scurito: 5.2:1 su --ms-success-bg (WCAG AA) */
   --ms-success-bg: #E6F5EE;
   --ms-warning:    #A66300;
   --ms-warning-bg: #FFF4D9;
   --ms-danger:     #D9364F;   /* .italia danger */
   --ms-danger-bg:  #FCE6E9;
-  --ms-info:       #0073E6;
+  --ms-info:       #0062C4;   /* scurito: 5.2:1 su --ms-info-bg (WCAG AA) */
   --ms-info-bg:    #E5F1FC;
 
   /* ============= SEMANTIC FOREGROUND / BACKGROUND ============= */

@@ -15,7 +15,8 @@
       {% set fo_langs = {'it': 'Italiano', 'en': 'English', 'fr': 'Français', 'es': 'Español', 'de': 'Deutsch'} %}
       {% set fo_cur_lang = current_locale in fo_langs|keys ? current_locale : 'it' %}
       <details class="lang-menu">
-        <summary aria-label="{{ 'Seleziona lingua'|trans }}">
+        <summary>
+          <span class="sr-only">{{ 'Seleziona lingua'|trans }}: </span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
           <span>{{ fo_langs[fo_cur_lang] }}</span>
           <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>

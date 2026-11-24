@@ -9,7 +9,7 @@
   --bo-surface-soft: #f8fafc;
   --bo-ink-1: #0f1b2d;
   --bo-ink-2: #38465b;
-  --bo-ink-3: #6b7a90;
+  --bo-ink-3: #5c6b7a; /* >= 4.5:1 su bianco e sfondi chiari (WCAG AA) */
   --bo-border: #e2e7ee;
   --bo-border-strong: #c9d1dc;
   --bo-accent: #0066cc;
