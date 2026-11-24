@@ -73,6 +73,13 @@ return function (App $app, Twig $twig): void {
         return (new SetupController($twig))->restoreConfirm($request, $response);
     });
 
+    // ── Stato per il servizio compose post-deploy-check (solo GET, Bearer MASTER_TOKEN) ──
+    $app->group('/api/internal', function (\Slim\Routing\RouteCollectorProxy $group) {
+        $group->get('/deploy-check', function (Request $request, Response $response): Response {
+            return (new \App\Controllers\DeployCheckController())->status($request, $response);
+        });
+    })->add(new \App\Middleware\BearerTokenMiddleware(false));
+
     // ── API interna ed API frontoffice: endpoint protetti da BearerTokenMiddleware ──
     $app->group('/api/frontoffice', function (\Slim\Routing\RouteCollectorProxy $group) use ($twig) {
         $group->get('/config', function (Request $request, Response $response) use ($twig): Response {

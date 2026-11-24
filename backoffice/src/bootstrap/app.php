@@ -208,7 +208,9 @@ return (function (): array {
 
     // Percorsi pubblici che non richiedono sessione (AuthMiddleware li salta).
     // Sostituiamo il wildcard '/api/*' con percorsi specifici così da non bypassare l'AuthMiddleware per API interne ad accesso sessione (es. /api/dashboard/*, /api/biz-event)
-    $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health', '/api/frontoffice/*'];
+    $publicPaths = ['/login', '/logout', '/assets/*', '/debug/*', '/guida', '/password-dimenticata', '/reset-password', '/setup', '/setup/*', '/health', '/api/frontoffice/*',
+        // Bearer MASTER_TOKEN (gruppo /api/internal in web.php), chiamato da post-deploy-check: path esatto, mai wildcard.
+        '/api/internal/deploy-check'];
     $app->add(new ReleaseSessionLockMiddleware());
     $app->add(new AuthMiddleware($publicPaths));
     // SetupMiddleware deve essere PRIMA di AuthMiddleware nello stack

@@ -42,6 +42,12 @@ final class MigrationRunner
         }
     }
 
+    /** Directory `migrations/` (repo: root; immagine: /var/www/html/migrations, accanto ad app/). */
+    public static function migrationsDir(): string
+    {
+        return dirname(__DIR__, 2) . '/migrations';
+    }
+
     /** @return array{pending: list<string>, mismatched: list<string>} */
     public function status(): array
     {
