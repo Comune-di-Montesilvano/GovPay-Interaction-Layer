@@ -13,7 +13,8 @@
   <button type="button" class="bo-sidebar-backdrop" data-bo-sidebar-close aria-label="Chiudi menu laterale"></button>
 
   <aside class="bo-sidebar" id="boSidebar" aria-label="Navigazione principale backoffice">
-    <a class="bo-sidebar-brand" href="/" aria-label="Vai alla dashboard">
+    <a class="bo-sidebar-brand" href="/">
+      <span class="visually-hidden">Dashboard: </span>
       <span class="bo-sidebar-brand-mark" aria-hidden="true">
         {% if app_logo.type == 'img' %}
           <img src="{{ app_logo.src }}" alt="" class="bo-brand-logo-img">
@@ -263,7 +264,7 @@
                           }
                           if (sidebarText) {
                               sidebarText.textContent = 'GovPay offline';
-                              sidebarText.style.color = '#e11d48';
+                              sidebarText.style.color = '#fb7185'; // rosso chiaro: 6.1:1 sulla sidebar scura (WCAG AA)
                           }
                       }
                   })
@@ -288,7 +289,7 @@
                       }
                       if (sidebarText) {
                           sidebarText.textContent = 'Errore sistema';
-                          sidebarText.style.color = '#e11d48';
+                          sidebarText.style.color = '#fb7185'; // rosso chiaro: 6.1:1 sulla sidebar scura (WCAG AA)
                       }
                   });
           }
@@ -296,7 +297,8 @@
       </script>
 
       <details class="bo-user-menu">
-        <summary aria-label="Apri menu utente">
+        <summary>
+          <span class="visually-hidden">Menu utente: </span>
           <span class="bo-user-avatar">{{ initials }}</span>
           <span class="bo-user-copy">
             <strong>{{ display_name }}</strong>

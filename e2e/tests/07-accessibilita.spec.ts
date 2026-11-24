@@ -1,13 +1,14 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
 import type { Page, TestInfo } from '@playwright/test';
 import { test, expect, isolate } from './support/test';
 import { FRONTOFFICE, OIDC } from './support/env';
 import { loginOperatore } from './support/login';
 
-// Accessibilita' (WCAG 2.1 AA, axe-core) delle pagine principali. REPORT-ONLY: nessuna asserzione
-// sulle violazioni, il test fallisce solo se la pagina non si carica. Risultati per pagina in
-// a11y-report/axe-summary.md (riepilogo del job) e come allegato JSON del test.
+// Accessibilita' (WCAG 2.1 AA, axe-core) delle pagine principali. Gate: il test fallisce con
+// violazioni critiche o gravi (a zero su tutte le pagine dal 2026-11-24); moderate e minori solo
+// nel report. Risultati per pagina in a11y-report/axe-summary.md (riepilogo del job),
+// a11y-report/<pagina>.json (nodi da correggere) e come allegato JSON del test.
 // Gira dopo 04 (login OIDC gia' configurato) e 02 (pendenza esistente).
 const REPORT_DIR = 'a11y-report';
 const SUMMARY = `${REPORT_DIR}/axe-summary.md`;
@@ -24,7 +25,10 @@ async function analizza(page: Page, testInfo: TestInfo, nome: string): Promise<v
   }
   const regole = results.violations.map((v) => `\`${v.id}\``).join(', ') || '—';
   mkdirSync(REPORT_DIR, { recursive: true });
+  writeFileSync(`${REPORT_DIR}/${nome.replace(/[^a-z0-9]+/gi, '-')}.json`, JSON.stringify(results.violations, null, 2));
   appendFileSync(SUMMARY, `| ${nome} | ${IMPATTI.map((i) => perImpatto[i]).join(' | ')} | ${regole} |\n`);
+  const bloccanti = results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+  expect(bloccanti.map((v) => `${v.id} (${v.nodes.length})`), `violazioni axe critiche/gravi su ${nome}: dettaglio in ${REPORT_DIR}/`).toEqual([]);
 }
 
 test.beforeAll(() => {

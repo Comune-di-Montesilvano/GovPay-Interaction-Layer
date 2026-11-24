@@ -13,7 +13,7 @@
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --border-color: #d9e2ec;
-  --text-muted: #6c7a89;
+  --text-muted: #5c6b7a; /* >= 4.5:1 su bianco e sfondi chiari (WCAG AA) */
   --primary: #0066cc;
   --danger: #b7283c;
   --success: #1f7a4d;
