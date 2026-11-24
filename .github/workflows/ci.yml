@@ -125,6 +125,24 @@ jobs:
         # Gruppo integration escluso: gira nel job integration-tests (stessa coda, in parallelo).
         run: vendor/bin/phpunit --exclude-group integration --coverage-text --coverage-html coverage/html --coverage-clover coverage/clover.xml
 
+      # Copertura delle righe PHP modificate (solo in coda): >= 70% delle righe misurate dal
+      # clover rispetto a merge_group.base_sha, altrimenti build-test fallisce. Il clover misura
+      # solo app/ (<source> di phpunit.xml) e senza il gruppo integration: file fuori dal report
+      # (backoffice/src, controller coperti solo dai test di integrazione) sono ignorati, non
+      # contati come scoperti. Nessuna riga misurata nel diff → passa.
+      - name: Copertura righe modificate (diff-cover)
+        if: github.event_name == 'merge_group'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet --depth=50 origin "$BASE_SHA"
+          python3 -m venv "$RUNNER_TEMP/diffcover"
+          "$RUNNER_TEMP/diffcover/bin/pip" install --quiet --require-hashes -r scripts/ci/requirements-diffcover.txt
+          rc=0
+          "$RUNNER_TEMP/diffcover/bin/diff-cover" coverage/clover.xml             --compare-branch="$BASE_SHA" --diff-range-notation=.. --fail-under=70             --include 'app/**' --markdown-report coverage/diff.md || rc=$?
+          cat coverage/diff.md >> "$GITHUB_STEP_SUMMARY"
+          [ "$rc" = 0 ] || echo "::error::copertura delle righe PHP modificate sotto il 70% (dettaglio nel summary)"
+          exit "$rc"
+
       # Solo in coda (come ComunicaPA): il commit che verra' unito. Sulle PR basta il log.
       - name: Upload report di copertura
         if: ${{ !cancelled() && github.event_name == 'merge_group' }}
