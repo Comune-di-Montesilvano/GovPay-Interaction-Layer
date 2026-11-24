@@ -49,7 +49,7 @@ description:
       - Deploy containerizzato pronto all'uso tramite Docker Compose e Portainer (GHCR)
       - Immagini firmate (cosign) con SBOM e attestazioni di provenienza verificabili al deploy
       - Container applicativi eseguiti come utente non privilegiato su filesystem in sola lettura
-      - Aggiornamenti sicuri: backup automatico del database prima delle migrazioni, avvio bloccato su migrazione fallita e verifica automatica dello stack dopo il deploy
+      - Aggiornamenti sicuri con backup automatico del database prima delle migrazioni, avvio bloccato su migrazione fallita e verifica dello stack dopo il deploy
     screenshots:
       - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/FrontOffice.png
       - https://raw.githubusercontent.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/main/docs/images/BackOffice.png
