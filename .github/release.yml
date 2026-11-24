@@ -1,0 +1,15 @@
+# Categorie delle note di rilascio generate (`gh release create --generate-notes`, job `release`
+# di docker-publish.yml). Etichette assegnate dal titolo della PR (pr-labels.yml) e da dependabot.
+# Fonte unica delle novita': GitHub Releases (il vecchio .github/CHANGELOG.md e' stato rimosso).
+changelog:
+  categories:
+    - title: Sicurezza
+      labels: [security]
+    - title: Funzionalità
+      labels: [enhancement]
+    - title: Correzioni
+      labels: [bug]
+    - title: Dipendenze
+      labels: [dependencies]
+    - title: Altro
+      labels: ['*']

@@ -1,0 +1,52 @@
+name: PR labels
+# Etichette dal titolo Conventional Commits della PR, per le categorie delle note di rilascio
+# (.github/release.yml): feat → enhancement, fix → bug, sec / fix(security) / "security" nel
+# titolo → anche security. Solo aggiunta, mai rimozione (un'etichetta messa a mano resta).
+#
+# pull_request_target per avere il permesso di scrittura anche sulle PR da fork: NESSUN checkout
+# (il codice della PR non viene mai eseguito) e il titolo arriva solo via env, mai interpolato
+# nello script.
+on:
+  pull_request_target:
+    types: [opened, edited]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+      - name: Etichette dal titolo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          labels=()
+          shopt -s nocasematch
+          [[ "$TITLE" =~ ^feat(\(|!|:) ]] && labels+=(enhancement)
+          [[ "$TITLE" =~ ^fix(\(|!|:) ]] && labels+=(bug)
+          if [[ "$TITLE" =~ ^sec(\(|!|:) || "$TITLE" =~ ^fix\(security\) || "$TITLE" =~ security ]]; then
+            labels+=(security)
+          fi
+          if [ "${#labels[@]}" -eq 0 ]; then
+            echo "Nessuna etichetta dal titolo."
+            exit 0
+          fi
+          joined=$(IFS=,; echo "${labels[*]}")
+          echo "Etichette: $joined"
+          gh pr edit "$PR" --add-label "$joined"

@@ -371,6 +371,8 @@ Per un server di produzione sono sufficienti: il `docker-compose.yml` e le varia
 
 ### Flusso di rilascio
 
+Novità di ogni versione: [GitHub Releases](https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer/releases) (note generate dalle PR, per categoria: Sicurezza, Funzionalità, Correzioni, Dipendenze, Altro).
+
 Ogni release è associata a un tag Git `vX.Y.Z`, creato su un commit già presente su `main` (altrimenti il workflow rifiuta il rilascio). Al push del tag, il workflow GitHub Actions `.github/workflows/docker-publish.yml`:
 
 1. builda le 3 immagini e le pusha su GHCR **solo per digest** (nessun tag);
