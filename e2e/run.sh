@@ -80,6 +80,14 @@ trap cleanup EXIT
 
 fail() { echo "::error::$*"; exit 1; }
 
+# Righe d'errore del runner migrazioni (App\Database\MigrationRunner: "- <file>: ERRORE ...") e
+# di docker-setup.sh ("❌ ..."), tolto il prefisso "servizio-1  | " di compose logs. Mai un grep su
+# tutto il log: access log e log applicativi contengono "ERRORE" legittimo (es. stato
+# rendicontazione). Stampa le righe trovate, exit 0 se ce n'e' almeno una.
+errori_migrazione() {
+  sed 's/^[^|]*| //' | grep -E '^- [^ ]+: ERRORE |^❌ '
+}
+
 # Mai `worker`: i flussi non lo usano e lo copre smoke-stack.sh.
 STACK=(db backoffice frontoffice fake-govpay oidc prism mailpit)
 DB_ROOT_PASSWORD=$(sed -n 's/^DB_ROOT_PASSWORD=//p' "$ENV_FILE")
@@ -205,7 +213,7 @@ echo "OK  conteggi pre-upgrade: $before"
 wait_backoffice "${COMPOSE[@]}"
 bolog=$("${COMPOSE[@]}" logs --no-color backoffice)
 grep -q 'migrazioni: ' <<<"$bolog" || fail "runner migrazioni non eseguito dalle immagini nuove"
-if grep -E 'ERRORE|❌' <<<"$bolog"; then fail "errori di migrazione nei log del backoffice"; fi
+if errori_migrazione <<<"$bolog"; then fail "errori di migrazione nei log del backoffice"; fi
 # Il bootstrap del registro (primo avvio con gil_schema_migrations) tollera gli errori per i file
 # gia' applicati dal vecchio runner: le migrazioni attuali sono tutte rieseguibili, quindi qui un
 # errore tollerato e' una migrazione nuova rotta che in produzione passerebbe inosservata.
