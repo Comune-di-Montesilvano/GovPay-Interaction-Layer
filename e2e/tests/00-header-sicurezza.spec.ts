@@ -26,3 +26,12 @@ for (const [nome, url] of [['backoffice', `${BACKOFFICE}/login`], ['frontoffice'
     expect(h['strict-transport-security']).toMatch(/^max-age=\d{7,}$/);
   });
 }
+
+// Nessun elenco dei file nelle directory (Options senza Indexes nel vhost): trovato da ZAP attivo
+// su /assets/, /assets/css/, /assets/js/, /img/ del frontoffice.
+test('nessun directory listing', async ({ request }) => {
+  for (const url of [`${FRONTOFFICE}/assets/`, `${FRONTOFFICE}/assets/js/`, `${FRONTOFFICE}/img/`, `${BACKOFFICE}/assets/`]) {
+    const r = await request.get(url, { maxRedirects: 0 });
+    expect(await r.text(), url).not.toContain('Index of /');
+  }
+});
