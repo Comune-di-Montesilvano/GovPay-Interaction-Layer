@@ -197,8 +197,8 @@
                 </div>
                 <div class="field">
                   <label for="identificativo">{{ 'Codice fiscale'|trans }}<span class="required">*</span></label>
-                  <input class="input mono" type="text" id="identificativo" name="soggettoPagatore[identificativo]" value="{{ payer.identificativo|default('') }}" maxlength="16" placeholder="RSSMRA00A01H501Z" autocomplete="off">
-                  <p class="hint">{{ '16 caratteri.'|trans }}</p>
+                  <input class="input mono" type="text" id="identificativo" aria-describedby="identificativo-hint" name="soggettoPagatore[identificativo]" value="{{ payer.identificativo|default('') }}" maxlength="16" placeholder="RSSMRA00A01H501Z" autocomplete="off">
+                  <p class="hint" id="identificativo-hint">{{ '16 caratteri.'|trans }}</p>
                 </div>
               </div>
 
@@ -218,8 +218,8 @@
               <div class="field-row">
                 <div class="field">
                   <label for="email">{{ 'Email di contatto'|trans }}<span class="required">*</span></label>
-                  <input class="input" type="email" id="email" name="soggettoPagatore[email]" value="{{ payer.email|default('') }}" required placeholder="esempio@dominio.it">
-                  <p class="hint">{{ 'Riceverai qui l\'avviso e la ricevuta con la marca da bollo.'|trans }}</p>
+                  <input class="input" type="email" id="email" aria-describedby="email-hint" name="soggettoPagatore[email]" value="{{ payer.email|default('') }}" required placeholder="esempio@dominio.it">
+                  <p class="hint" id="email-hint">{{ 'Riceverai qui l\'avviso e la ricevuta con la marca da bollo.'|trans }}</p>
                 </div>
               </div>
 
@@ -231,8 +231,8 @@
               <div class="field-row">
                 <div class="field" style="max-width:140px;">
                   <label for="provinciaResidenza">{{ 'Provincia residenza'|trans }}<span class="required">*</span></label>
-                  <input class="input mono" type="text" id="provinciaResidenza" name="provinciaResidenza" value="{{ old.provinciaResidenza|default('') }}" maxlength="2" placeholder="PE" autocomplete="off" style="text-transform:uppercase;">
-                  <p class="hint">{{ 'Sigla 2 lettere (es. PE, RM).'|trans }}</p>
+                  <input class="input mono" type="text" id="provinciaResidenza" aria-describedby="provinciaResidenza-hint" name="provinciaResidenza" value="{{ old.provinciaResidenza|default('') }}" maxlength="2" placeholder="PE" autocomplete="off" style="text-transform:uppercase;">
+                  <p class="hint" id="provinciaResidenza-hint">{{ 'Sigla 2 lettere (es. PE, RM).'|trans }}</p>
                 </div>
                 <div class="field" style="max-width:180px;">
                   {% set selected_year = old.annoRiferimento|default(default_year|default('now'|date('Y'))) %}

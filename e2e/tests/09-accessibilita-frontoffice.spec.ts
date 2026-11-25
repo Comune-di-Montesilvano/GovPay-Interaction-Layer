@@ -174,3 +174,31 @@ test('tastiera: paga un avviso con focus sempre visibile', async ({ page }) => {
   }
   expect([...new Set(senzaFocus)], 'elementi senza indicatore di focus').toEqual([]);
 });
+
+// Suggerimenti dei campi (<p class="hint">) collegati al controllo con aria-describedby: lo screen
+// reader li legge quando il campo riceve il focus. axe non lo controlla (non e' una violazione
+// WCAG automatica), quindi lo verifica questo test. Esclusi i suggerimenti nascosti.
+async function hintNonCollegati(page: Page): Promise<string[]> {
+  return page.locator('.field').evaluateAll((fields) =>
+    fields.flatMap((f) => {
+      const hint = f.querySelector(':scope > p.hint, :scope > * > p.hint');
+      const ctrl = f.querySelector('input:not([type=hidden]):not([type=checkbox]), select, textarea');
+      if (!hint || !ctrl || (hint as HTMLElement).offsetParent === null) return [];
+      const ids = (ctrl.getAttribute('aria-describedby') ?? '').split(/\s+/);
+      return hint.id && ids.includes(hint.id) ? [] : [`#${ctrl.id || ctrl.getAttribute('name')}`];
+    }),
+  );
+}
+
+test('frontoffice: suggerimenti dei campi letti dallo screen reader', async ({ page }) => {
+  await page.goto(`${FRONTOFFICE}/pagamento-avviso`);
+  expect(await hintNonCollegati(page), 'paga un avviso').toEqual([]);
+  await expect(page.locator('#codiceAvviso')).toHaveAccessibleDescription(/bollettino/);
+
+  await page.goto(`${FRONTOFFICE}/pagamento-spontaneo`);
+  await page.locator('a[href^="/pagamento-spontaneo?tipologia="]').first().click();
+  expect(await hintNonCollegati(page), 'pagamento spontaneo').toEqual([]);
+
+  await page.goto(`${FRONTOFFICE}/pagamento-bollo`);
+  expect(await hintNonCollegati(page), 'marca da bollo').toEqual([]);
+});
