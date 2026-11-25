@@ -275,6 +275,7 @@ if (is_string($prism) && $prism !== '') {
         CURLOPT_HEADER => false,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: ' . ($_SERVER['HTTP_ACCEPT'] ?? 'application/json')],
         CURLOPT_POSTFIELDS => $rawBody === '' ? null : $rawBody,
+        CURLOPT_CONNECTTIMEOUT => 2,
         CURLOPT_TIMEOUT => 10,
     ]);
     $out = curl_exec($ch);

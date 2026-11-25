@@ -422,24 +422,47 @@ class GovPayClientFactory
      */
     public static function checkGovPayStatusCached(int $ttlSeconds = 30): array
     {
-        $cacheFile = sys_get_temp_dir() . '/govpay_status_cache.json';
+        return self::cachedStatus(
+            rtrim((string)SettingsRepository::get('govpay', 'backoffice_url', ''), '/'),
+            $ttlSeconds,
+            sys_get_temp_dir() . '/govpay_status_cache.json',
+            static fn (): array => self::checkGovPayStatusDetails()
+        );
+    }
+
+    /**
+     * Cache su file dell'esito del controllo, legata all'URL configurato: cambiare (o salvare per la
+     * prima volta) l'URL invalida subito l'esito precedente. "URL non configurato" non viene mai
+     * messo in cache: altrimenti un controllo fatto prima del wizard restava valido per $ttlSeconds
+     * anche dopo il salvataggio (badge "GovPay: Offline" su un GovPay raggiungibile).
+     *
+     * @param callable(): array{online: bool, error: ?string} $probe controllo reale
+     * @return array{online: bool, error: ?string}
+     */
+    public static function cachedStatus(string $url, int $ttlSeconds, string $cacheFile, callable $probe): array
+    {
+        if ($url === '') {
+            return ['online' => false, 'error' => 'GovPay Backoffice URL non configurato nel database.'];
+        }
+        $urlKey = hash('sha256', $url);
+
         if (file_exists($cacheFile)) {
             $data = json_decode((string)@file_get_contents($cacheFile), true);
-            if (is_array($data) && isset($data['status'], $data['time'])) {
-                if (time() - $data['time'] < $ttlSeconds) {
-                    return [
-                        'online' => $data['status'] === 'online',
-                        'error'  => $data['error'] ?? null,
-                    ];
-                }
+            if (is_array($data) && isset($data['status'], $data['time'], $data['url'])
+                && $data['url'] === $urlKey && time() - (int)$data['time'] < $ttlSeconds) {
+                return [
+                    'online' => $data['status'] === 'online',
+                    'error'  => $data['error'] ?? null,
+                ];
             }
         }
 
-        $res = self::checkGovPayStatusDetails();
+        $res = $probe();
         @file_put_contents($cacheFile, json_encode([
             'status' => $res['online'] ? 'online' : 'offline',
             'error'  => $res['error'],
             'time'   => time(),
+            'url'    => $urlKey,
         ]));
 
         return $res;

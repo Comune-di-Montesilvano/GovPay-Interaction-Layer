@@ -310,4 +310,35 @@ final class GovPayClientFactoryTest extends DbTestCase
         self::assertSame(200, $status);
         self::assertCount(1, $this->history);
     }
+
+    public function testStatusCachedSenzaUrlNonConfiguratoENonInCache(): void
+    {
+        $cache = sys_get_temp_dir() . '/govpay_status_cache.json';
+        @unlink($cache);
+        try {
+            $res = \App\Services\GovPayClientFactory::checkGovPayStatusCached();
+            self::assertFalse($res['online']);
+            self::assertStringContainsString('non configurato', (string)$res['error']);
+            self::assertFileDoesNotExist($cache);
+        } finally {
+            @unlink($cache);
+        }
+    }
+
+    public function testStatusCachedLegatoAllUrlConfigurato(): void
+    {
+        $cache = sys_get_temp_dir() . '/govpay_status_cache.json';
+        @unlink($cache);
+        try {
+            // Porta 1: connessione rifiutata subito, nessuna rete reale.
+            SettingsRepository::set('govpay', 'backoffice_url', 'http://127.0.0.1:1/');
+            SettingsRepository::flush();
+            $res = \App\Services\GovPayClientFactory::checkGovPayStatusCached();
+            self::assertFalse($res['online']);
+            $data = json_decode((string)file_get_contents($cache), true);
+            self::assertSame(hash('sha256', 'http://127.0.0.1:1'), $data['url']);
+        } finally {
+            @unlink($cache);
+        }
+    }
 }

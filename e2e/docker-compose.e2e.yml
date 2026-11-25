@@ -33,6 +33,9 @@ services:
     tmpfs:
       - /tmp:mode=1777
     environment:
+      # php -S serve una richiesta alla volta: con piu' worker una richiesta lenta (es. inoltro a
+      # Prism) non blocca le altre. Lo stato e' su file sotto flock (FakeState), sicuro in parallelo.
+      - PHP_CLI_SERVER_WORKERS=4
       - PRISM_URL=http://prism:4010
       - FAKE_GOVPAY_STATE=/tmp/fake-govpay.json
     volumes:
@@ -57,7 +60,9 @@ services:
 
   prism:
     image: stoplight/prism:5.15.10@sha256:586d1f0f94f8d0eaf20b26b8b41f985f2a2d494bea297bd3988c3de3eb87094e
-    command: ["mock", "-h", "0.0.0.0", "-p", "4010", "/specs/backoffice.bundled.yaml"]
+    # -m false: la modalita' multiprocesso (default) di Prism 5.15 termina all'avvio con
+    # "Cannot read properties of undefined (reading 'isPrimary')". 00-health verifica che risponda.
+    command: ["mock", "-m", "false", "-h", "0.0.0.0", "-p", "4010", "/specs/backoffice.bundled.yaml"]
     volumes:
       - ./govpay-clients/generated-clients/backoffice-v1:/specs:ro
     cap_drop: [ALL]

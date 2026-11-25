@@ -42,6 +42,15 @@ test('axe backoffice login', async ({ page }, testInfo) => {
   await analizza(page, testInfo, 'backoffice login');
 });
 
+// Le pagine backoffice si analizzano con GovPay raggiungibile (fake): se il controllo di stato
+// risponde offline il test fallisce qui, col motivo, invece che come contrasto del badge rosso.
+test('backoffice: GovPay risulta online', async ({ page }) => {
+  await loginOperatore(page);
+  const res = await page.request.get('/api/govpay/status');
+  const body = await res.json();
+  expect(body.status, `GovPay offline nello stack e2e: ${body.error}`).toBe('online');
+});
+
 const BACKOFFICE_PAGINE: Array<[string, string]> = [
   ['backoffice dashboard', '/'],
   ['backoffice lista pendenze', '/pendenze'],
