@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
 import type { Page, TestInfo } from '@playwright/test';
 import { expect } from './test';
@@ -8,8 +8,35 @@ import { expect } from './test';
 // a11y-report/axe-summary.md (riepilogo del job), a11y-report/<pagina>.json (nodi con selettore e
 // colori, per correggere) e come allegato JSON del test.
 export const REPORT_DIR = 'a11y-report';
-const SUMMARY = `${REPORT_DIR}/axe-summary.md`;
 const IMPATTI = ['critical', 'serious', 'moderate', 'minor'] as const;
+
+type Riga = { celle: number[]; regole: string; ritentata: boolean };
+
+// Una riga per pagina in axe-summary.md, nell'ordine della prima analisi: un retry (retries: 1 in
+// CI) sostituisce la riga della pagina invece di aggiungerne un'altra. Righe in axe-righe.json,
+// riepilogo riscritto per intero via file temporaneo + rename (mai un file a meta').
+export function aggiornaRiepilogo(dir: string, nome: string, celle: number[], regole: string, retry: number): void {
+  mkdirSync(dir, { recursive: true });
+  const fileRighe = `${dir}/axe-righe.json`;
+  let righe: Record<string, Riga> = {};
+  try {
+    righe = JSON.parse(readFileSync(fileRighe, 'utf8')) as Record<string, Riga>;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+  }
+  righe[nome] = { celle, regole, ritentata: retry > 0 };
+  scriviAtomico(fileRighe, JSON.stringify(righe, null, 2));
+  const md = ['| Pagina | Critiche | Gravi | Moderate | Minori | Regole |', '|---|---|---|---|---|---|'];
+  for (const [n, r] of Object.entries(righe)) {
+    md.push(`| ${n}${r.ritentata ? ' (ritentata)' : ''} | ${r.celle.join(' | ')} | ${r.regole} |`);
+  }
+  scriviAtomico(`${dir}/axe-summary.md`, md.join('\n') + '\n');
+}
+
+function scriviAtomico(file: string, contenuto: string): void {
+  writeFileSync(`${file}.tmp`, contenuto);
+  renameSync(`${file}.tmp`, file);
+}
 
 export async function analizza(page: Page, testInfo: TestInfo, nome: string): Promise<void> {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
@@ -21,15 +48,8 @@ export async function analizza(page: Page, testInfo: TestInfo, nome: string): Pr
     perImpatto[i] += v.nodes.length;
   }
   const regole = results.violations.map((v) => `\`${v.id}\``).join(', ') || '—';
-  mkdirSync(REPORT_DIR, { recursive: true });
-  // Intestazione solo alla prima pagina: 'wx' crea il file in modo atomico, EEXIST = gia' scritta.
-  try {
-    writeFileSync(SUMMARY, '| Pagina | Critiche | Gravi | Moderate | Minori | Regole |\n|---|---|---|---|---|---|\n', { flag: 'wx' });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-  }
+  aggiornaRiepilogo(REPORT_DIR, nome, IMPATTI.map((i) => perImpatto[i]), regole, testInfo.retry);
   writeFileSync(`${REPORT_DIR}/${nome.replace(/[^a-z0-9]+/gi, '-')}.json`, JSON.stringify(results.violations, null, 2));
-  appendFileSync(SUMMARY, `| ${nome} | ${IMPATTI.map((i) => perImpatto[i]).join(' | ')} | ${regole} |\n`);
   const bloccanti = results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
   expect(bloccanti.map((v) => `${v.id} (${v.nodes.length})`), `violazioni axe critiche/gravi su ${nome}: dettaglio in ${REPORT_DIR}/`).toEqual([]);
 }
