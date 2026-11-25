@@ -62,14 +62,14 @@
 
             <div class="field">
               <label for="codiceAvviso">{{ 'Codice avviso / IUV'|trans }} <span class="required">*</span></label>
-              <input type="text" class="input mono" id="codiceAvviso" name="codiceAvviso" value="{{ old.codiceAvviso|default('') }}" maxlength="35" required placeholder="0123 4567 8901 2345" autocomplete="off">
-              <p class="hint">{{ 'Lo trovi sul bollettino o sulla comunicazione inviata dall\'ente.'|trans }}</p>
+              <input type="text" class="input mono" id="codiceAvviso" aria-describedby="codiceAvviso-hint" name="codiceAvviso" value="{{ old.codiceAvviso|default('') }}" maxlength="35" required placeholder="0123 4567 8901 2345" autocomplete="off">
+              <p class="hint" id="codiceAvviso-hint">{{ 'Lo trovi sul bollettino o sulla comunicazione inviata dall\'ente.'|trans }}</p>
             </div>
 
             <div class="field">
               <label for="codiceFiscale">{{ 'Codice fiscale / Partita IVA del soggetto pagatore'|trans }} <span class="required">*</span></label>
-              <input type="text" class="input mono" id="codiceFiscale" name="codiceFiscale" value="{{ old.codiceFiscale|default('') }}" maxlength="16" required placeholder="RSSMRA00A01H501Z oppure 01234567890" autocomplete="off">
-              <p class="hint">{{ 'Inserisci il codice fiscale (16 caratteri) oppure la partita IVA (11 cifre) del soggetto pagatore.'|trans }}</p>
+              <input type="text" class="input mono" id="codiceFiscale" aria-describedby="codiceFiscale-hint" name="codiceFiscale" value="{{ old.codiceFiscale|default('') }}" maxlength="16" required placeholder="RSSMRA00A01H501Z oppure 01234567890" autocomplete="off">
+              <p class="hint" id="codiceFiscale-hint">{{ 'Inserisci il codice fiscale (16 caratteri) oppure la partita IVA (11 cifre) del soggetto pagatore.'|trans }}</p>
             </div>
 
             <div class="alert alert-info" style="margin-top:var(--sp-4);" role="note">
