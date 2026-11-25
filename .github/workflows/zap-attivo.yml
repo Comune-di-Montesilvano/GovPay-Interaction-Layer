@@ -112,7 +112,10 @@ jobs:
               echo "|---|---|---|"
               jq -r '[.site[].alerts[]] | sort_by(-(.riskcode|tonumber)) | .[]
                 | "| \(.riskdesc) | \(.alert) | \(.count) |"' "$f"
-              high=$(jq '[.site[].alerts[] | select(.riskcode == "3")] | length' "$f")
+              # Gli ID IGNORE di e2e/zap-rules.tsv (ognuno motivato) non contano per il gate.
+              ign=$(awk -F'	' '$2=="IGNORE"{print $1}' e2e/zap-rules.tsv | jq -Rsc 'split("
+") | map(select(length>0))')
+              high=$(jq --argjson ign "$ign" '[.site[].alerts[] | select(.riskcode == "3" and (.pluginid | IN($ign[]) | not))] | length' "$f")
             else
               echo "Nessun report ZAP (scansione non eseguita)."
             fi

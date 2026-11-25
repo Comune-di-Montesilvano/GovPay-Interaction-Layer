@@ -1,4 +1,5 @@
-# Regole ZAP baseline (e2e/run.sh, E2E_ZAP=1): <id>	IGNORE|INFO|WARN|FAIL	(motivo).
+# Regole ZAP (e2e/run.sh, E2E_ZAP=1 baseline e E2E_ZAP=full attiva): <id>	IGNORE|INFO|WARN|FAIL	(motivo).
 # Ogni regola ignorata va motivata (stack e2e su HTTP interno: le regole sul trasporto TLS
 # non si applicano, il TLS di produzione sta al reverse proxy).
 10096	IGNORE	(Timestamp Disclosure: sono i ?v=<mtime> di cache-busting degli asset (helper Twig asset()), non dati)
+40018	IGNORE	(SQL Injection: falso positivo su /guida?lang=, il parametro passa solo da in_array strict sulla whitelist delle lingue e il frontoffice non ha accesso al DB, vincolo in tests/Architecture/FrontofficeNoDatabaseTest.php)
