@@ -313,9 +313,11 @@ jobs:
           cache-from: |
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main
             type=gha,scope=php-common
+          # ignore-error: un errore della cache (es. 504 della cache GHA, pipeline v1.13.0) non deve
+          # far fallire la build: l'immagine e' gia' costruita, si perde solo la cache del prossimo giro.
           cache-to: |
-            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main,mode=max
-            type=gha,mode=max,scope=php-common
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-php-common-cache:main,mode=max,ignore-error=true
+            type=gha,mode=max,scope=php-common,ignore-error=true
 
   # ── PHP apps: backoffice + frontoffice (parallel matrix) ─────────────────
   # Shared layers are warmed by build-php-base and then reused per app.
@@ -443,9 +445,11 @@ jobs:
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main
           # mode=max protegge cache di composer e npm (stage intermedi); inline aggiunge
           # metadati cache nell'immagine per fallback registry su cache GHA evict
+          # ignore-error: un errore della cache (es. 504 della cache GHA, pipeline v1.13.0) non deve
+          # far fallire la build: l'immagine e' gia' costruita, si perde solo la cache del prossimo giro.
           cache-to: |
-            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main,mode=max
-            type=gha,mode=max,scope=${{ matrix.scope }}
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image_suffix }}-buildcache:main,mode=max,ignore-error=true
+            type=gha,mode=max,scope=${{ matrix.scope }},ignore-error=true
             type=inline
 
       - name: Trivy scan · ${{ matrix.app }}
@@ -688,9 +692,11 @@ jobs:
             type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}-cache:main
           # GHA cache: max per layer costosi (pip/git/curl), min per immagini triviali
           # Registry fallback: sopravvive all'eviction GHA (10GB limit)
+          # ignore-error: un errore della cache (es. 504 della cache GHA, pipeline v1.13.0) non deve
+          # far fallire la build: l'immagine e' gia' costruita, si perde solo la cache del prossimo giro.
           cache-to: |
-            type=gha,mode=${{ matrix.cache_mode }},scope=${{ matrix.scope }}
-            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}-cache:main,mode=max
+            type=gha,mode=${{ matrix.cache_mode }},scope=${{ matrix.scope }},ignore-error=true
+            type=registry,ref=ghcr.io/${{ env.ORG }}/govpay-interaction-layer-${{ matrix.image }}-cache:main,mode=max,ignore-error=true
 
       - name: Trivy scan · ${{ matrix.image }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
