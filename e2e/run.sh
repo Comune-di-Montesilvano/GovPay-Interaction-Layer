@@ -15,6 +15,8 @@
 #                    # test di aggiornamento: dati creati con la release precedente, poi immagini
 #                    # nuove sullo stesso DB (migrazioni, post-deploy-check, backup, flussi @post-upgrade)
 #   E2E_ZAP=1 ...    # dopo Playwright: ZAP baseline (report-only) in e2e/zap-report
+#   E2E_ZAP=full ... # dopo Playwright: scansione ZAP ATTIVA del frontoffice (zap-full-scan, attacchi
+#                    # reali contro lo stack e2e con GovPay finto: mai contro un'istanza vera)
 #   E2E_LOAD=1 ...   # flussi @pre-upgrade + k6 (load/scenari.js, LOAD_VUS/LOAD_DURATION), exit = k6
 #   E2E_KEEP=1 ...   # solo in locale: stack lasciato attivo per il debug (poi
 #                    # `docker compose -p gil-e2e down -v`); mai in CI
@@ -140,6 +142,15 @@ zap_scan() {
   chmod 777 e2e/zap-report
   cp e2e/zap-rules.tsv e2e/zap-report/zap-rules.tsv
   local name target zrc
+  if [ "${E2E_ZAP:-}" = full ]; then
+    # Spider + scansione attiva (SQLi, XSS, path traversal, ...) del solo frontoffice, il servizio
+    # esposto ai cittadini; -m spider in minuti, -T durata massima totale in minuti.
+    zrc=0
+    "${COMPOSE[@]}" --profile zap run --rm -T zap zap-full-scan.py -t http://frontoffice/ -I -m 3 -T 40       -c zap-rules.tsv -r frontoffice-attivo.html -J frontoffice-attivo.json -z "-silent"       >e2e/zap-report/frontoffice-attivo.log 2>&1 || zrc=$?
+    if [ "$zrc" -ge 3 ]; then echo "::warning::ZAP attivo: errore di esecuzione (exit $zrc), vedi zap-report/frontoffice-attivo.log"; fi
+    echo "OK  ZAP scansione attiva frontoffice (exit $zrc, report in e2e/zap-report)"
+    return
+  fi
   for name in frontoffice backoffice; do
     target=http://frontoffice/
     [ "$name" = backoffice ] && target=http://backoffice/login
@@ -174,7 +185,7 @@ if [ -z "${E2E_UPGRADE_FROM_FILE:-}" ]; then
     exit "$rc"
   fi
   playwright "${E2E_GREP:-}" ""
-  [ "${E2E_ZAP:-}" = 1 ] && zap_scan
+  [ -n "${E2E_ZAP:-}" ] && zap_scan
   exit "$rc"
 fi
 

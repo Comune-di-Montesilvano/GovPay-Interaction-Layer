@@ -1,0 +1,121 @@
+name: ZAP attivo
+# Scansione DAST ATTIVA del frontoffice (zap-full-scan: spider + attacchi SQLi/XSS/path traversal,
+# ...) sullo stack e2e con GovPay/pagoPA finti, immagini GHCR del tag scelto (default latest).
+# Target: solo i servizi della rete compose del runner, MAI un'istanza vera. Settimanale e non su
+# ogni PR (dura decine di minuti). Run rossa se ZAP trova alert di rischio High; Medium e inferiori
+# nel riepilogo e nell'artifact zap-attivo. Regole ignorate in e2e/zap-rules.tsv (con motivo).
+on:
+  schedule:
+    - cron: '30 2 * * 1'  # lunedi' 02:30 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag immagini GHCR (latest, X.Y.Z, X.Y.Z-rcN, latest-YYYYMMDD)"
+        type: string
+        default: latest
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  ORG: comune-di-montesilvano
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            mcr.microsoft.com:443
+            *.data.mcr.microsoft.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            docker-images-prod.s3.dualstack.us-east-1.amazonaws.com:443
+            registry.npmjs.org:443
+            results-receiver.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Valida input e genera override immagini
+        env:
+          VERSION: ${{ inputs.version || 'latest' }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(latest|latest-[0-9]{8}|[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$ ]] || { echo "::error::version non valida: $VERSION"; exit 1; }
+          {
+            echo "services:"
+            for img in backoffice frontoffice db; do
+              echo "  $img:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-$img:$VERSION"
+            done
+            for svc in worker post-deploy-check; do
+              echo "  $svc:"
+              echo "    image: ghcr.io/$ORG/govpay-interaction-layer-backoffice:$VERSION"
+            done
+          } > docker-compose.zap-images.yml
+          cat docker-compose.zap-images.yml
+      # Playwright completo prima di ZAP: crea i dati (pendenze, carrello) che lo spider visita.
+      - name: Stack e2e + ZAP attivo
+        id: run
+        env:
+          CI: '1'
+          E2E_ZAP: full
+          E2E_PROJECT: gil-zap
+          E2E_IMAGES_FILE: docker-compose.zap-images.yml
+        run: e2e/run.sh
+      - name: Report ZAP
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zap-attivo
+          path: e2e/zap-report
+          retention-days: 30
+          if-no-files-found: ignore
+      - name: Riepilogo e gate High
+        if: always()
+        env:
+          OUTCOME: ${{ steps.run.outcome }}
+          VERSION: ${{ inputs.version || 'latest' }}
+        run: |
+          f=e2e/zap-report/frontoffice-attivo.json
+          high=0
+          {
+            echo "## ZAP attivo frontoffice: $VERSION"
+            echo
+            echo "Stack e Playwright: **${OUTCOME}**"
+            echo
+            if [ -f "$f" ]; then
+              echo "| Rischio | Alert | Istanze |"
+              echo "|---|---|---|"
+              jq -r '[.site[].alerts[]] | sort_by(-(.riskcode|tonumber)) | .[]
+                | "| \(.riskdesc) | \(.alert) | \(.count) |"' "$f"
+              high=$(jq '[.site[].alerts[] | select(.riskcode == "3")] | length' "$f")
+            else
+              echo "Nessun report ZAP (scansione non eseguita)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ ! -f "$f" ]; then echo "::error::report ZAP assente"; exit 1; fi
+          if [ "$high" -gt 0 ]; then echo "::error::ZAP: $high alert di rischio High sul frontoffice (dettaglio nell'artifact zap-attivo)"; exit 1; fi
