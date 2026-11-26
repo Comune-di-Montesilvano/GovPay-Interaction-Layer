@@ -243,6 +243,8 @@ Nel pannello di amministrazione del tuo proxy OIDC registra il client con:
 
 L'URL esatto della Redirect URI è visibile nella card informativa del tab Frontoffice in Impostazioni.
 
+Il frontoffice chiede i dati dell'utente in modo esplicito con il parametro OIDC `claims` (`fiscal_number` obbligatorio, `given_name`, `family_name`, `email`; per l'impresa anche `company_name`, `iva_code` obbligatori e `registered_office`), come la pagina `/verifica` di pa-sso-proxy: il proxy rilascia solo i claim richiesti e compresi negli *Allowed Scopes* del client. Un dato che manca dopo il login = scope mancante nel client del proxy.
+
 ### Accesso persona giuridica (imprese)
 
 Con **Abilita accesso persona giuridica** attivo (Impostazioni → Frontoffice, blocco OIDC esterno) il pulsante *Accedi* offre anche *Accedi come impresa*: `/login?subject=pg` chiede al proxy lo scope `legal_entity` (SPID per uso professionale della persona giuridica, solo SPID — niente CIE/eIDAS). L'utente opera **a nome dell'impresa**: pendenze cercate e spontanei intestati alla partita IVA (`iva_code`) con la ragione sociale (`company_name`); il codice fiscale ricevuto è quello dell'operatore ed è mostrato solo nel profilo. Se il proxy non restituisce una partita IVA valida l'accesso viene rifiutato (mai ricaduta sulla persona fisica).

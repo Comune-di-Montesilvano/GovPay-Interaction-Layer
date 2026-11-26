@@ -12,6 +12,8 @@ declare(strict_types=1);
  * Issuer = origine della richiesta (es. http://oidc:8080). Nessuno stato: il codice porta con se'
  * challenge PKCE, client_id e redirect_uri; il token endpoint verifica il code_verifier (S256).
  * Utente sintetico fisso (CF di test, mai dati reali).
+ * Come pa-sso-proxy, rilascia solo i claim chiesti col parametro `claims` (userinfo/id_token):
+ * senza, id_token e UserInfo hanno solo `sub` e i claim di protocollo.
  */
 
 const FAKE_OIDC_USER = [
@@ -31,6 +33,32 @@ function oidc_b64url(string $raw): string
 function oidc_b64url_decode(string $s): string
 {
     return (string)base64_decode(strtr($s, '-_', '+/'), true);
+}
+
+/**
+ * Nomi dei claim chiesti nel parametro `claims` (JSON con chiavi userinfo/id_token).
+ *
+ * @return list<string>
+ */
+function oidc_requested_claims(string $raw): array
+{
+    $req = json_decode($raw, true);
+    if (!is_array($req)) {
+        return [];
+    }
+    $names = [];
+    foreach (['userinfo', 'id_token'] as $target) {
+        if (isset($req[$target]) && is_array($req[$target])) {
+            $names = array_merge($names, array_map('strval', array_keys($req[$target])));
+        }
+    }
+    return array_values(array_unique($names));
+}
+
+/** Utente filtrato sui claim chiesti; `sub` sempre presente. */
+function oidc_released_user(array $requested): array
+{
+    return ['sub' => FAKE_OIDC_USER['sub']] + array_intersect_key(FAKE_OIDC_USER, array_flip($requested));
 }
 
 function oidc_json(int $status, array $body): void
@@ -64,6 +92,7 @@ if ($method === 'GET' && $path === '/OIDC/authorization') {
         'redirect_uri' => $redirect,
         'challenge' => $q['code_challenge'],
         'scope' => (string)($q['scope'] ?? ''),
+        'claims' => oidc_requested_claims((string)($q['claims'] ?? '')),
     ]));
     $back = $redirect . (str_contains($redirect, '?') ? '&' : '?')
         . http_build_query(['code' => $code, 'state' => (string)($q['state'] ?? '')]);
@@ -92,10 +121,11 @@ if ($method === 'POST' && $path === '/OIDC/token') {
         return true;
     }
     $now = time();
-    $claims = FAKE_OIDC_USER + ['iss' => $issuer, 'aud' => $clientId, 'iat' => $now, 'exp' => $now + 300, 'jti' => bin2hex(random_bytes(8))];
+    $requested = is_array($code['claims'] ?? null) ? $code['claims'] : [];
+    $claims = oidc_released_user($requested) + ['iss' => $issuer, 'aud' => $clientId, 'iat' => $now, 'exp' => $now + 300, 'jti' => bin2hex(random_bytes(8))];
     $idToken = oidc_b64url(json_encode(['alg' => 'none', 'typ' => 'JWT'])) . '.' . oidc_b64url(json_encode($claims)) . '.';
     oidc_json(200, [
-        'access_token' => 'fake-at-' . oidc_b64url(json_encode(['sub' => FAKE_OIDC_USER['sub']])),
+        'access_token' => 'fake-at-' . oidc_b64url(json_encode(['sub' => FAKE_OIDC_USER['sub'], 'claims' => $requested])),
         'token_type' => 'Bearer',
         'expires_in' => 300,
         'id_token' => $idToken,
@@ -109,7 +139,8 @@ if ($method === 'GET' && $path === '/OIDC/userinfo') {
         oidc_json(401, ['error' => 'invalid_token']);
         return true;
     }
-    oidc_json(200, FAKE_OIDC_USER);
+    $at = json_decode(oidc_b64url_decode(substr($auth, strlen('Bearer fake-at-'))), true);
+    oidc_json(200, oidc_released_user(is_array($at['claims'] ?? null) ? $at['claims'] : []));
     return true;
 }
 

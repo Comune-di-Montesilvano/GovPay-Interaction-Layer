@@ -58,6 +58,29 @@ final class OidcUserMapper
         return $user;
     }
 
+    /**
+     * Parametro `claims` dell'authorization request. pa-sso-proxy rilascia solo i claim chiesti
+     * esplicitamente (e solo dentro gli scope consentiti al client): senza questo parametro la
+     * sessione resterebbe senza codice fiscale. Stesso contratto della pagina /verifica del proxy.
+     *
+     * @return array{userinfo: array<string, array{essential: true}|null>}
+     */
+    public static function requestedClaims(bool $legalEntity): array
+    {
+        $userinfo = [
+            'fiscal_number' => ['essential' => true],
+            'given_name'    => null,
+            'family_name'   => null,
+            'email'         => null,
+        ];
+        if ($legalEntity) {
+            $userinfo['company_name']      = ['essential' => true];
+            $userinfo['registered_office'] = null;
+            $userinfo['iva_code']          = ['essential' => true];
+        }
+        return ['userinfo' => $userinfo];
+    }
+
     public static function normalizeFiscalNumber(string $raw): string
     {
         $value = (string)preg_replace('/\s+/', '', strtoupper(trim($raw)));
