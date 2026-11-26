@@ -74,6 +74,33 @@ final class RateizzazioneSceltaService
         return $orig;
     }
 
+    /**
+     * Ripartisce $totaleCents in proporzione a $basisCents (stesso criterio delle rate):
+     * arrotondamento per voce, poi la differenza a +-1 centesimo dalla prima voce in giro.
+     * Base a somma zero = divisione uguale. Somma del risultato = $totaleCents.
+     *
+     * @param list<int> $basisCents
+     * @return list<int>
+     */
+    public static function allocaCentesimi(array $basisCents, int $totaleCents): array
+    {
+        $n = count($basisCents);
+        if ($n === 0) {
+            return [];
+        }
+        $sum = array_sum($basisCents);
+        $out = [];
+        foreach ($basisCents as $i => $b) {
+            $out[$i] = $sum > 0 ? (int)round($b / $sum * $totaleCents) : intdiv($totaleCents, $n);
+        }
+        $diff = $totaleCents - array_sum($out);
+        $step = $diff > 0 ? 1 : -1;
+        for ($k = 0; $k < abs($diff); $k++) {
+            $out[$k % $n] += $step;
+        }
+        return array_values($out);
+    }
+
     /** @return 'ANNULLA'|'DOPPIO_PAGAMENTO'|'NESSUNA' */
     public static function azione(string $statoControparte): string
     {

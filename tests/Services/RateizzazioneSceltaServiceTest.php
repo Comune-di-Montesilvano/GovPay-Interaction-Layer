@@ -81,6 +81,22 @@ final class RateizzazioneSceltaServiceTest extends TestCase
         );
     }
 
+    public function testAllocaCentesimiProporzionale(): void
+    {
+        // voci 100 + 50 (somma 150) su totale 300: proporzioni mantenute
+        $this->assertSame([20000, 10000], S::allocaCentesimi([10000, 5000], 30000));
+        // resto di arrotondamento distribuito, somma esatta
+        $r = S::allocaCentesimi([1, 1, 1], 100);
+        $this->assertSame(100, array_sum($r));
+        $this->assertSame([34, 33, 33], $r);
+    }
+
+    public function testAllocaCentesimiBaseZeroDivisioneUguale(): void
+    {
+        $this->assertSame([50, 50], S::allocaCentesimi([0, 0], 100));
+        $this->assertSame([], S::allocaCentesimi([], 100));
+    }
+
     public function testAzione(): void
     {
         $this->assertSame('ANNULLA', S::azione('NON_ESEGUITA'));
