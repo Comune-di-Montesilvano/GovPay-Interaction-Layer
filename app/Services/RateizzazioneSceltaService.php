@@ -55,6 +55,25 @@ final class RateizzazioneSceltaService
         return in_array($idPagata, $rate, true) ? [$ru] : [];
     }
 
+    /**
+     * I flag della rata unica valgono solo dal POST corrente: original_params puo' portarne
+     * di stantii (checkbox tolta dopo un passaggio precedente). Rimuove quelli di $orig e,
+     * se la checkbox e' nel POST, rimette i valori del POST.
+     *
+     * @param array<string,mixed> $orig
+     * @param array<string,mixed> $post
+     * @return array<string,mixed>
+     */
+    public static function conFlagDalPost(array $orig, array $post): array
+    {
+        unset($orig['crea_rata_unica'], $orig['rata_unica_scadenza']);
+        if (!empty($post['crea_rata_unica'])) {
+            $orig['crea_rata_unica'] = '1';
+            $orig['rata_unica_scadenza'] = is_scalar($post['rata_unica_scadenza'] ?? null) ? trim((string)$post['rata_unica_scadenza']) : '';
+        }
+        return $orig;
+    }
+
     /** @return 'ANNULLA'|'DOPPIO_PAGAMENTO'|'NESSUNA' */
     public static function azione(string $statoControparte): string
     {

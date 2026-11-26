@@ -1086,6 +1086,9 @@ class PendenzeController
             if (is_array($v)) continue; // parts or nested arrays handled elsewhere
             $orig[$k] = $v;
         }
+        // Flag rata unica solo dal POST corrente (original_params puo' essere stantio):
+        // vale anche per i re-render d'errore, che usano $orig.
+        $orig = \App\Services\RateizzazioneSceltaService::conFlagDalPost(is_array($orig) ? $orig : [], $params);
         $parts = $params['parts'] ?? [];
         // Normalizza importi
         $sumCents = 0;
@@ -1185,10 +1188,9 @@ class PendenzeController
     }
 
     // ── Rata unica a scelta (<base>-RU) ─────────────────────────────────────
-    // Flag letto solo dal POST corrente: original_params puo' essere stantio
-    // (checkbox tolta dopo un passaggio precedente).
+    // Flag in $orig gia' normalizzati dal POST corrente (conFlagDalPost).
     $ruResult = null;
-    if (!empty($params['crea_rata_unica'])) {
+    if (!empty($orig['crea_rata_unica'])) {
         $idRate = [];
         foreach ($parts as $idx => $p) {
             $idRate[] = $baseId . '-R' . (isset($p['indice']) ? (int)$p['indice'] : ($idx + 1));
@@ -1198,7 +1200,7 @@ class PendenzeController
             \App\Services\RateizzazioneSceltaService::buildMarker($idRu, $idRate);
 
         $ruErrors = [];
-        $ruPayload = $this->buildRataUnicaPayload($merged, $orig, $parts, $rateIdTipo, $originalTotal, trim((string)($params['rata_unica_scadenza'] ?? '')), $ruErrors);
+        $ruPayload = $this->buildRataUnicaPayload($merged, $orig, $parts, $rateIdTipo, $originalTotal, (string)($orig['rata_unica_scadenza'] ?? ''), $ruErrors);
         if (empty($ruErrors)) {
             $ruRes = $this->sendPendenzaToBackoffice($this->preparaPayloadRata($ruPayload), $idRu);
             if (!empty($ruRes['success'])) {
@@ -1216,7 +1218,7 @@ class PendenzeController
         if (!empty($ruErrors)) {
             // Piano "a scelta" mai parziale: nessuna rata se la rata unica non e' creata.
             return $this->twig->render($response, 'pendenze/rateizzazione.html.twig', [
-                'params' => array_merge($orig, ['crea_rata_unica' => '1', 'rata_unica_scadenza' => (string)($params['rata_unica_scadenza'] ?? '')]),
+                'params' => $orig,
                 'importo' => $originalTotal,
                 'parts' => $parts,
                 'errors' => array_map(static fn($e): string => 'Rata unica: ' . (string)$e, $ruErrors),

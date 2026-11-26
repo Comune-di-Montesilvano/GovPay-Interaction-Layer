@@ -205,10 +205,16 @@ class RendicontazioneEngineService
                 if ($azione !== 'ANNULLA') {
                     continue;
                 }
-                $this->govPayClient->request('PATCH', $patchBase . $path, [
+                $patch = $this->govPayClient->request('PATCH', $patchBase . $path, [
                     'headers' => ['Content-Type' => 'application/json', 'Accept' => '*/*'],
                     'body' => json_encode([['op' => 'REPLACE', 'path' => '/stato', 'value' => 'ANNULLATA']]),
                 ]);
+                // La factory non segue i redirect e non lancia su 3xx: solo 2xx = annullata.
+                $code = $patch->getStatusCode();
+                if ($code < 200 || $code >= 300) {
+                    Logger::getInstance()->warning('Rateizzazione a scelta: annullamento controparte fallito', $ctx + ['errore' => 'HTTP ' . $code]);
+                    continue;
+                }
                 Logger::getInstance()->info('Rateizzazione a scelta: controparte annullata', $ctx);
             } catch (\Throwable $e) {
                 Logger::getInstance()->warning('Rateizzazione a scelta: annullamento controparte fallito', $ctx + ['errore' => ThrowableSummary::of($e)]);

@@ -1435,6 +1435,22 @@ final class RendicontazioneJobTest extends DbTestCase
         self::assertStringNotContainsString('RSSMRA', (string)($r['rendicontazione_note'] ?? ''));
     }
 
+    public function testPatchRispostaNon2xxNonContaComeAnnullata(): void
+    {
+        $this->rigaPiano(1, self::PIANO . '-R1');
+        $this->pendenze[self::PIANO . '-RU'] = self::pianoPendenza('NON_ESEGUITA');
+        $this->patchResponses[self::PIANO . '-RU'] = new Response(302, ['Location' => 'https://altrove.example.test/']);
+        $log = \App\Logger::getLogFilePath();
+        $before = is_file($log) ? (int)filesize($log) : 0;
+
+        $this->runJob();
+
+        self::assertSame([self::PIANO . '-RU'], $this->patchedIds());
+        $nuovo = (string)substr((string)@file_get_contents($log), $before);
+        self::assertStringContainsString('annullamento controparte fallito', $nuovo);
+        self::assertStringNotContainsString('controparte annullata', $nuovo);
+    }
+
     public function testSenzaMarkerNessunaChiamataExtra(): void
     {
         $this->setting('scansioni_quiete_soglia', '99');

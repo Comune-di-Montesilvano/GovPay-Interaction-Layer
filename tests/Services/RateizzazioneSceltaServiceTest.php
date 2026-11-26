@@ -69,6 +69,18 @@ final class RateizzazioneSceltaServiceTest extends TestCase
         $this->assertSame([], S::controparti($dati, $idPagata));
     }
 
+    public function testConFlagDalPostIgnoraFlagStantii(): void
+    {
+        $orig = ['causale' => 'x', 'crea_rata_unica' => '1', 'rata_unica_scadenza' => '2026-12-31'];
+        // checkbox tolta nel POST corrente: i flag stantii di original_params spariscono
+        $this->assertSame(['causale' => 'x'], S::conFlagDalPost($orig, ['causale' => 'y']));
+        // checkbox presente nel POST: valgono i valori del POST
+        $this->assertSame(
+            ['causale' => 'x', 'crea_rata_unica' => '1', 'rata_unica_scadenza' => ''],
+            S::conFlagDalPost(['causale' => 'x'], ['crea_rata_unica' => '1'])
+        );
+    }
+
     public function testAzione(): void
     {
         $this->assertSame('ANNULLA', S::azione('NON_ESEGUITA'));
