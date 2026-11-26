@@ -1,8 +1,8 @@
 publiccodeYmlVersion: "0"
 name: GovPay Interaction Layer
 url: https://github.com/Comune-di-Montesilvano/GovPay-Interaction-Layer
-softwareVersion: 1.13.0
-releaseDate: 2026-11-24
+softwareVersion: 1.14.0
+releaseDate: 2026-11-26
 platforms:
   - web
 categories:
@@ -32,7 +32,7 @@ description:
       e servizi @e.bollo. Il deployment è ottimizzato per Docker Compose e Portainer Stack
       con immagini pubblicate su GitHub Container Registry (GHCR).
     features:
-      - Backoffice operativo per la gestione completa delle pendenze pagoPA (creazione, lotti, annullamenti, avvisi PDF)
+      - Backoffice operativo per la gestione completa delle pendenze pagoPA (creazione, lotti, rateizzazioni anche con rata unica a scelta, annullamenti, avvisi PDF)
       - Motore di Rendicontazione avanzato con smarcamento automatico/manuale e regole per gestionali terzi
       - Ricevute pagoPA on-demand e tracciamento eventi via pagoPA Biz Events
       - Frontoffice cittadini e sportello per pagamenti spontanei e da avviso IUV
