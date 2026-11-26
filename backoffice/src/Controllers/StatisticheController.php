@@ -23,7 +23,7 @@ class StatisticheController
     {
         $this->exposeCurrentUser();
 
-        $params = (array)($request->getQueryParams() ?? []);
+        $params = $request->getQueryParams();
         $errors = [];
         $today = new \DateTimeImmutable('today');
         $defaultStart = $today->sub(new \DateInterval('P30D'));

@@ -299,6 +299,8 @@ class HomeController
                 'tipologie_stats' => $tipologieStats,
                 'tipologie_total' => $tipologieTotal,
             ];
+        // $failed riempito per riferimento dalla closure di calcolo: PHPStan non lo segue.
+        // @phpstan-ignore-next-line identical.alwaysTrue
         }, static function () use (&$failed): bool { return $failed === []; });
 
         $response->getBody()->write(json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
@@ -408,6 +410,8 @@ class HomeController
                 'tipologie' => $tipologieStats,
                 'periodo'   => $periodo,
             ];
+        // $failed riempito per riferimento dalla closure di calcolo: PHPStan non lo segue.
+        // @phpstan-ignore-next-line identical.alwaysTrue
         }, static function () use (&$failed): bool { return $failed === []; });
 
         $payload = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

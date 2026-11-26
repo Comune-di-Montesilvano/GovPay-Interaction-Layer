@@ -143,7 +143,7 @@ class SentryReporter
             'release' => self::resolveRelease($versionInfo),
             'traces_sample_rate' => 0,
             'send_default_pii' => false,
-            'before_send' => static function (Event $event): ?Event {
+            'before_send' => static function (Event $event): Event {
                 $extra = $event->getExtra();
                 if ($extra) {
                     $event->setExtra(self::scrubSensitiveKeys($extra));

@@ -57,7 +57,7 @@ class GovPayClientFactory
             $keyPass = SettingsRepository::get('govpay', 'tls_key_password') ?: null;
             if ($cert !== '' && $key !== '') {
                 $guzzleOptions['cert']    = $cert;
-                $guzzleOptions['ssl_key'] = ($keyPass !== null && $keyPass !== '') ? [$key, $keyPass] : $key;
+                $guzzleOptions['ssl_key'] = $keyPass !== null ? [$key, $keyPass] : $key;
             }
         }
 

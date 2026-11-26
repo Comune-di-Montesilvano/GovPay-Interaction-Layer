@@ -17,7 +17,7 @@ use App\Security\Crypto;
  */
 class SettingsRepository
 {
-    /** @var array<string, array<string, string|null>>|null */
+    /** @var array<string, string|null>|null chiave piatta "sezione.chiave" => valore grezzo (eventualmente cifrato) */
     private static ?array $cache = null;
 
     /** @var array<string, bool>|null flag encrypted per chiave */

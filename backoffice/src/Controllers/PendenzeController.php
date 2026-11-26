@@ -26,7 +26,6 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
 use App\Services\GovPayClientFactory;
-use App\Services\TracciatoService;
 use App\Services\ValidationService;
 
 class PendenzeController
@@ -34,7 +33,7 @@ class PendenzeController
     /** Timeout (s) della PUT di creazione/aggiornamento pendenza in sendPendenzaToBackoffice. */
     public const CREATE_PUT_TIMEOUT = 90;
 
-    public function __construct(private readonly Twig $twig, private ?TracciatoService $tracciatoService = null)
+    public function __construct(private readonly Twig $twig)
     {
     }
 
@@ -256,7 +255,6 @@ class PendenzeController
         }
 
         // Inject operator and source information
-        $payload['datiAllegati'] = $payload['datiAllegati'] ?? [];
         $payload['datiAllegati']['operatore'] = self::getCurrentOperatorString();
         $payload['datiAllegati']['sorgente'] = 'GIL-Backoffice';
 
@@ -266,7 +264,7 @@ class PendenzeController
             $accountingParams['idDominio'] = $payload['idDominio'] ?? ($params['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')));
         }
         if (!isset($accountingParams['idTipoPendenza'])) {
-            $accountingParams['idTipoPendenza'] = $payload['idTipoPendenza'] ?? $idTipo;
+            $accountingParams['idTipoPendenza'] = $payload['idTipoPendenza'];
         }
         $payload['voci'] = $this->buildVociWithAccounting($voci, $accountingParams, null, $errors, $warnings);
 
@@ -480,7 +478,7 @@ class PendenzeController
         $sessionKey = 'pendenze_last_search';
         $sessionContext = $_SESSION[$sessionKey] ?? null;
 
-        $params = (array)($request->getQueryParams() ?? []);
+        $params = $request->getQueryParams();
         $resetRequested = array_key_exists('reset', $params);
         if ($resetRequested) {
             unset($_SESSION[$sessionKey], $_SESSION['pendenze_last_highlight']);
@@ -638,7 +636,7 @@ class PendenzeController
                     $metadatiPaginazione = 'true';
                     $maxRisultati = 'true';
 
-                    if ($idA2AFilter === null || $idA2AFilter === '') {
+                    if ($idA2AFilter === null) {
                         $errors[] = 'Parametro idA2A obbligatorio per la ricerca pendenze';
                     } else {
                         $url = rtrim($backofficeUrl, '/') . '/pendenze';
@@ -666,7 +664,7 @@ class PendenzeController
 
                         $query = array_filter($query, static fn($v) => $v !== null && $v !== '');
 
-                        if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true' && $filters['q']) {
+                        if (\App\Config\SettingsRepository::get('app', 'debug', 'false') === 'true') {
                             error_log('[PendenzeController] GET ' . $url . '?' . http_build_query($query));
                         }
 
@@ -778,7 +776,7 @@ class PendenzeController
                     }
                 } catch (ClientException $ce) {
                     $errors[] = 'Errore chiamata Pendenze: ' . $ce->getMessage();
-                    $detailBody = $ce->getResponse() ? (string)$ce->getResponse()->getBody() : '';
+                    $detailBody = (string)$ce->getResponse()->getBody();
                     if ($detailBody !== '') {
                         $errors[] = 'Dettaglio API: ' . $detailBody;
                     }
@@ -798,8 +796,8 @@ class PendenzeController
                 'ordinamento' => $filters['ordinamento'],
             ];
             foreach (['idDominio','idA2A','idPendenza','idDebitore','stato','idPagamento','dataDa','dataA','direzione','divisione','iuv','tipologiaPendenza'] as $key) {
-                $val = $filters[$key] ?? null;
-                if ($val !== null && $val !== '') {
+                $val = $filters[$key];
+                if ($val !== '') {
                     $returnParams[$key] = $val;
                 }
             }
@@ -816,7 +814,7 @@ class PendenzeController
             $returnUrl = (string)$sessionContext['return_url'];
         }
 
-        if (!is_string($returnUrl) || $returnUrl === '' || strpos($returnUrl, '/pendenze/ricerca') !== 0) {
+        if ($returnUrl === '' || strpos($returnUrl, '/pendenze/ricerca') !== 0) {
             $returnUrl = '/pendenze/ricerca';
         }
 
@@ -1176,7 +1174,7 @@ class PendenzeController
     $created = [];
     $responses = [];
     $allErrors = [];
-    $baseId = $merged['idPendenza'] ?? '';
+    $baseId = $merged['idPendenza'];
     $totalParts = count($parts); // Numero totale delle rate
     $rateIdTipo = trim((string)($merged['idTipoPendenza'] ?? ($orig['idTipoPendenza'] ?? '')));
     if ($rateIdTipo === '') {
@@ -1236,7 +1234,7 @@ class PendenzeController
         $single['importo'] = is_numeric(str_replace(',', '.', (string)($p['importo'] ?? ''))) ? (float)str_replace(',', '.', (string)$p['importo']) : 0.0;
         if (!empty($p['dataValidita'])) $single['dataValidita'] = $p['dataValidita'];
         if (!empty($p['dataScadenza'])) $single['dataScadenza'] = $p['dataScadenza'];
-        $docSingle = is_array($single['documento'] ?? null) ? $single['documento'] : [];
+        $docSingle = $single['documento'];
         $docSingle['rata'] = $rIndex;
 
         // *** INIZIO MODIFICA DESCRIZIONE SINGOLA RATA ***
@@ -1247,7 +1245,7 @@ class PendenzeController
             $rIndex = $idx + 1;
         }
         // Assicurati che totalParts sia un intero valido
-        if (!is_int($totalParts) || $totalParts < 1) {
+        if ($totalParts < 1) {
             $totalParts = count($parts);
         }
         // Imposta la causale della singola rata
@@ -1272,7 +1270,7 @@ class PendenzeController
 
         // Ensure the sum of voce.importo equals the rata importo by allocating
         // amounts proportionally (in cents) based on the original voci basis.
-        $rateTotal = is_numeric(str_replace(',', '.', (string)($single['importo'] ?? 0))) ? (float)str_replace(',', '.', (string)$single['importo']) : 0.0;
+        $rateTotal = is_numeric(str_replace(',', '.', (string)$single['importo'])) ? (float)str_replace(',', '.', (string)$single['importo']) : 0.0;
         $rateCents = (int)round($rateTotal * 100);
         $allocatedCents = [];
         $numBuilt = count($single['voci']);
@@ -1373,8 +1371,8 @@ class PendenzeController
         // da poter stampare. Salviamo in sessione il documento sintetico con le
         // risposte per ogni rata (ad uso stampa/preview).
         $multi = [
-            'documento' => $merged['documento'] ?? null,
-            'proprieta' => $merged['proprieta'] ?? null,
+            'documento' => $merged['documento'],
+            'proprieta' => $merged['proprieta'],
             'soggettoPagatore' => $merged['soggettoPagatore'] ?? null,
             'voci' => $merged['voci'] ?? null,
             'idDominio' => $merged['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')),
@@ -1440,7 +1438,7 @@ class PendenzeController
                         ? $this->buildCheckoutStartUrl($frontofficeUrl, $payerCf, '', $rAvviso)
                         : '';
                     $ratesForEmail[] = [
-                        'indice'       => $rate['indice'] ?? null,
+                        'indice'       => $rate['indice'],
                         'importo'      => $rate['importo'] ?? null,
                         'dataScadenza' => $rate['dataScadenza'] ?? null,
                         'dataValidita' => $rate['dataValidita'] ?? null,
@@ -1743,20 +1741,18 @@ class PendenzeController
         } catch (ClientException $ce) {
             $detail = '';
             $resp = $ce->getResponse();
-            if ($resp) {
-                try {
-                    $stream = $resp->getBody();
-                    if (is_callable([$stream, 'rewind'])) {
-                        try { $stream->rewind(); } catch (\Throwable $_) { }
-                    }
-                    if (is_callable([$stream, 'getContents'])) {
-                        $detail = $stream->getContents();
-                    } else {
-                        $detail = (string)$stream;
-                    }
-                } catch (\Throwable $_) {
-                    try { $detail = (string)$resp->getBody(); } catch (\Throwable $_) { $detail = ''; }
+            try {
+                $stream = $resp->getBody();
+                if (is_callable([$stream, 'rewind'])) {
+                    try { $stream->rewind(); } catch (\Throwable $_) { }
                 }
+                if (is_callable([$stream, 'getContents'])) {
+                    $detail = $stream->getContents();
+                } else {
+                    $detail = (string)$stream;
+                }
+            } catch (\Throwable $_) {
+                try { $detail = (string)$resp->getBody(); } catch (\Throwable $_) { $detail = ''; }
             }
             $errors[] = $detail ?: $ce->getMessage();
             // Non esponiamo il raw_response alla UI; i log Guzzle con APP_DEBUG
@@ -1770,7 +1766,7 @@ class PendenzeController
                 'success' => false,
                 'errors' => $errors,
                 'response' => $parsed,
-                'httpStatus' => $resp ? $resp->getStatusCode() : null,
+                'httpStatus' => $resp->getStatusCode(),
                 'problem' => self::problemJsonFields($parsed),
             ];
         } catch (\Throwable $e) {
@@ -2459,7 +2455,7 @@ class PendenzeController
             ];
             $hasValue = false;
             foreach ($candidate as $val) {
-                if ($val !== '' && $val !== null) {
+                if ($val !== '') {
                     $hasValue = true;
                     break;
                 }
@@ -2819,16 +2815,6 @@ class PendenzeController
     // (no longer needed) fetchPendenzaDetailFromBackoffice removed
 
     /**
-     * Crea e invia un tracciato con le pendenze delle rate al Backoffice
-     * Restituisce ['success'=>bool, 'idTracciato'=>string|null, 'errors'=>[]]
-     */
-    private function sendTracciatoToBackoffice(array $merged, array $parts): array
-    {
-        $svc = $this->tracciatoService ?? new TracciatoService();
-        return $svc->sendTracciato($merged, $parts);
-    }
-
-    /**
      * Crea un Guzzle client con TLS, retry su cURL 35 e Connection:close.
      * Delega a GovPayClientFactory — unica implementazione condivisa.
      */
@@ -2995,7 +2981,7 @@ class PendenzeController
                     $pendenza = $data;
                 }
             } catch (ClientException $ce) {
-                $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
+                $code = $ce->getResponse()->getStatusCode();
                 $error = $code === 404 ? 'Pendenza non trovata (404)' : 'Errore client nella chiamata pendenza: ' . $ce->getMessage();
             } catch (\Throwable $e) {
                 $error = 'Errore chiamata pendenza: ' . $e->getMessage();
@@ -3048,7 +3034,7 @@ class PendenzeController
                         $page = 1;
                         $perPage = 100;
                         $maxPages = 50; // safety cap to avoid infinite loops
-                        while ($page > 0 && $page <= $maxPages) {
+                        while ($page <= $maxPages) {
                             $query = [
                                 'idDominio' => $pendenza['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')),
                                 'idA2A' => $idA2A,
@@ -3096,7 +3082,7 @@ class PendenzeController
 
         // Build a quick lookup of related pendenze keyed by their rata indice (if available)
         $relatedByRata = [];
-        if (is_array($relatedPendenze) && count($relatedPendenze) > 0) {
+        if (count($relatedPendenze) > 0) {
             foreach ($relatedPendenze as $rp) {
                 $indices = [];
                 if (isset($rp['documento']['rata'])) {
@@ -3274,7 +3260,7 @@ class PendenzeController
             $response->getBody()->write((string)$govResp->getBody());
             return $response;
         } catch (ClientException $ce) {
-            $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
+            $code = $ce->getResponse()->getStatusCode();
             $msg  = $code === 404 ? 'Avviso non trovato' : ('Errore client avviso: ' . \App\Services\ThrowableSummary::forDisplay($ce));
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
@@ -3344,8 +3330,8 @@ class PendenzeController
             $password = SettingsRepository::get('govpay', 'password', '');
             if ($username !== '' && $password !== '') {
                 // Some generated clients accept basic auth via Configuration setters
-                if (method_exists($config, 'setUsername')) $config->setUsername($username);
-                if (method_exists($config, 'setPassword')) $config->setPassword($password);
+                $config->setUsername($username);
+                $config->setPassword($password);
             }
             $guzzleOptions = [];
             $authMethod = SettingsRepository::get('govpay', 'authentication_method', '');
@@ -3391,7 +3377,7 @@ class PendenzeController
             return $response->withStatus(502);
         } catch (\GovPay\Pendenze\ApiException $e) {
             $code = $e->getCode() ?: 502;
-            $body = method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null;
+            $body = $e->getResponseBody();
             Logger::getInstance()->error('Errore getAvvisiDocumento (Pendenze v2 client)', ['code' => $code, 'body' => $body, 'exception' => $e->getMessage()]);
             $response->getBody()->write('Errore chiamata Pendenze v2: ' . \App\Services\ThrowableSummary::forDisplay($e));
             return $response->withStatus($code);
@@ -3428,7 +3414,7 @@ class PendenzeController
             $response->getBody()->write((string)$govResp->getBody());
             return $response;
         } catch (ClientException $ce) {
-            $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
+            $code = $ce->getResponse()->getStatusCode();
             $msg  = $code === 404 ? 'Ricevuta non trovata' : ('Errore client ricevuta: ' . \App\Services\ThrowableSummary::forDisplay($ce));
             $response->getBody()->write($msg);
             return $response->withStatus($code ?: 500);
@@ -3557,7 +3543,7 @@ class PendenzeController
                 return $response;
             }
 
-            if (is_string($logo) && str_starts_with($logo, '/')) {
+            if (str_starts_with($logo, '/')) {
                 try {
                     $http = new Client($guzzleOptions);
                     $url = rtrim($backofficeUrl, '/') . $logo;
@@ -3589,14 +3575,6 @@ class PendenzeController
         if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['user'])) {
             $this->twig->getEnvironment()->addGlobal('current_user', $_SESSION['user']);
         }
-    }
-
-    private function shouldFallbackToRaw(\Throwable $exception): bool
-    {
-        $message = strtolower($exception->getMessage());
-        return str_contains($message, 'invalid length')
-            || str_contains($message, 'must be smaller than or equal to')
-            || str_contains($message, 'length');
     }
 
     public function showEdit(Request $request, Response $response, array $args): Response
@@ -3668,7 +3646,7 @@ class PendenzeController
                     $pendenza = $data;
                 }
             } catch (ClientException $ce) {
-                $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
+                $code = $ce->getResponse()->getStatusCode();
                 $error = $code === 404 ? 'Pendenza non trovata (404)' : 'Errore client nella chiamata pendenza: ' . $ce->getMessage();
             } catch (\Throwable $e) {
                 $error = 'Errore chiamata pendenza: ' . $e->getMessage();
@@ -3746,7 +3724,7 @@ class PendenzeController
         }
 
         // Fallback error
-        $_SESSION['flash'][] = ['type' => 'error', 'text' => $responseData['error'] ?: 'Errore sconosciuto'];
+        $_SESSION['flash'][] = ['type' => 'error', 'text' => $responseData['error']];
         return $response->withHeader('Location', '/pendenze/dettaglio/' . rawurlencode($idPendenza))->withStatus(302);
     }
 
@@ -3789,7 +3767,7 @@ class PendenzeController
         }
 
         // Fallback error
-        $_SESSION['flash'][] = ['type' => 'error', 'text' => $responseData['error'] ?: 'Errore sconosciuto'];
+        $_SESSION['flash'][] = ['type' => 'error', 'text' => $responseData['error']];
         return $response->withHeader('Location', '/pendenze/dettaglio/' . rawurlencode($idPendenza))->withStatus(302);
     }
 
@@ -5141,7 +5119,7 @@ class PendenzeController
             $data = json_decode((string)$resp->getBody(), true);
             return is_array($data) ? $data : null;
         } catch (\GuzzleHttp\Exception\ClientException $e) {
-            if ($e->getResponse() && $e->getResponse()->getStatusCode() === 404) {
+            if ($e->getResponse()->getStatusCode() === 404) {
                 return null;
             }
             Logger::getInstance()->warning('fetchPendenzaByAvvisoRaw errore', [

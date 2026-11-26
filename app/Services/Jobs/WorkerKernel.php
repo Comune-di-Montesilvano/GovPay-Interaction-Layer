@@ -209,7 +209,9 @@ final class WorkerKernel
                 $this->state,
                 $this->scopedRegistry,
                 $this->clock,
-                fn(RunJob $m) => $this->bus->dispatch($m),
+                function (RunJob $m): void {
+                    $this->bus->dispatch($m);
+                },
                 fn(): bool => $this->stopRequested,
                 $line
             )],
@@ -226,7 +228,7 @@ final class WorkerKernel
     public static function defaultMassiveProcessor(): MassivePendenzeProcessor
     {
         // PendenzeController richiede un Twig nel costruttore: qui non renderizza nulla (solo chiamate GovPay).
-        $controller = new PendenzeController(Twig::create(dirname(__DIR__, 3) . '/backoffice/templates'), null);
+        $controller = new PendenzeController(Twig::create(dirname(__DIR__, 3) . '/backoffice/templates'));
         return new MassivePendenzeProcessor($controller, new MassivePendenzeRepository());
     }
 

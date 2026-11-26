@@ -73,7 +73,7 @@ return (function (): array {
         ? ['href' => '/img/favicon.ico', 'type' => 'image/x-icon']
         : (file_exists($customFaviconPng)
             ? ['href' => '/img/favicon.png', 'type' => 'image/png']
-            : ((($appLogo['type'] ?? '') === 'img' && !empty($appLogo['src']))
+            : (($appLogo['type'] === 'img' && !empty($appLogo['src']))
                 ? ['href' => $appLogo['src'], 'type' => 'image/png']
                 : ['href' => '/img/favicon_default.png', 'type' => 'image/png']));
 
@@ -195,14 +195,14 @@ return (function (): array {
         if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
             try {
                 $context = [
-                    'file' => $err['file'] ?? null,
-                    'line' => $err['line'] ?? null,
-                    'type' => $err['type'] ?? null,
-                    'message' => $err['message'] ?? null,
+                    'file' => $err['file'],
+                    'line' => $err['line'],
+                    'type' => $err['type'],
+                    'message' => $err['message'],
                     'request_uri' => $_SERVER['REQUEST_URI'] ?? null,
                     'user_id' => isset($_SESSION['user']['id']) ? $_SESSION['user']['id'] : null,
                 ];
-                Logger::getInstance()->error('Fatal shutdown error: ' . ($err['message'] ?? ''), $context);
+                Logger::getInstance()->error('Fatal shutdown error: ' . $err['message'], $context);
             } catch (\Throwable $_) {
                 // swallow
             }

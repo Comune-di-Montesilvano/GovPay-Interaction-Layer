@@ -72,7 +72,7 @@ final class TefaScanJob implements PeriodicJob, CountsRemaining
         }
 
         if ($ctx->shouldStop()) {
-            return new JobResult($processed, $ok, $skipped, $errors, $processed > 0, $details);
+            return new JobResult($processed, $ok, $skipped, $errors, false, $details);
         }
         $counts         = $this->repo->getCounts($idDominio);
         $pendingInScope = $this->repo->countPendingForProcessing($idDominio, $minDate);
@@ -173,7 +173,7 @@ final class TefaScanJob implements PeriodicJob, CountsRemaining
     }
 
     /** Righe tefa_ricevute PENDING in-scope + ricevute Biz PROCESSED non ancora in tefa_ricevute. */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         SettingsRepository::flush();
         $minDate = self::minDate();

@@ -233,7 +233,7 @@ class MassivePendenzeController
         }
         $repo = new MassivePendenzeRepository();
         $riga = 0;
-        $operatore = PendenzeController::getCurrentOperatorString() ?? 'Operatore Sconosciuto';
+        $operatore = PendenzeController::getCurrentOperatorString();
         foreach ($valid as $v) {
             $riga = (int)($v['_row'] ?? ++$riga);
             $payload = self::rowToPayload($v, $idTipo, $batchId, $operatore);
@@ -376,7 +376,7 @@ class MassivePendenzeController
         if ($last && in_array($last['stato'], ['PENDING', 'RUNNING'], true) && !self::isJobStale($last)) {
             return $this->json($response, ['ok' => true, 'job' => self::jobView($last)]);
         }
-        $operatore = PendenzeController::getCurrentOperatorString() ?? 'Operatore Sconosciuto';
+        $operatore = PendenzeController::getCurrentOperatorString();
         $jobId = $repo->create($batchId, $operatore);
         $cmd = sprintf(
             'php %s %d < /dev/null >> %s 2>&1 &',

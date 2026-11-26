@@ -473,4 +473,10 @@ final class MappingL1JobTest extends DbTestCase
         self::assertSame('PENDING', $this->stato($r)['mapping_stato']);
         self::assertSame([0, false], [$res->processed, $res->hadWork]);
     }
+
+    /** remaining() restituisce sempre un int (mai null): coda vuota = 0. */
+    public function testRemainingSenzaRighePronteEZero(): void
+    {
+        self::assertSame(0, $this->job()->remaining());
+    }
 }

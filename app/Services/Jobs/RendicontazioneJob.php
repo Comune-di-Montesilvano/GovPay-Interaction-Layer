@@ -60,7 +60,7 @@ final class RendicontazioneJob implements PeriodicJob, CountsRemaining
     }
 
     /** Righe GovPay PENDING/ERRORE nella finestra di retry (stessa selezione del motore). */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         SettingsRepository::flush();
         $maxGiorniRetry = max(1, (int)SettingsRepository::get('rendicontazione', 'max_giorni_retry', '14'));
@@ -241,7 +241,7 @@ final class RendicontazioneJob implements PeriodicJob, CountsRemaining
                 foreach ($gestite as $r) {
                     $idsDestinati[(int)$r['id']] = true;
                 }
-                $esitoAdmin = $this->mailer->sendRendicontazioneAdminDigest(array_values($adminEmails), $gestite);
+                $esitoAdmin = $this->mailer->sendRendicontazioneAdminDigest($adminEmails, $gestite);
                 if (($esitoAdmin['esito'] ?? '') === 'OK') {
                     $righeAdminInviate = count($gestite);
                     foreach ($gestite as $r) {

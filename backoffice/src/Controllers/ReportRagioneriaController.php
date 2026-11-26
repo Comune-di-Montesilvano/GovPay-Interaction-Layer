@@ -37,7 +37,7 @@ class ReportRagioneriaController
     {
         $this->exposeCurrentUser();
 
-        $params      = (array)($request->getQueryParams() ?? []);
+        $params      = $request->getQueryParams();
         $queryMade   = array_key_exists('q', $params);
         $errors      = [];
         $sessionUser = $_SESSION['user'] ?? [];
@@ -640,34 +640,4 @@ class ReportRagioneriaController
         return $rows;
     }
 
-
-    /**
-     * @param array<int,array<string,mixed>> $rows
-     * @return array{0:array<string,mixed>,1:array<int,array<string,mixed>>}
-     */
-    private function buildAggregations(array $rows): array
-    {
-        $totals = ['amount' => 0.0, 'count' => 0];
-        $byTipologia = [];
-
-        foreach ($rows as $row) {
-            $totals['amount'] += (float)($row['importo'] ?? 0);
-            $totals['count']++;
-
-            $tax = (string)($row['tassonomia'] ?? 'N/D');
-            $label = (string)($row['tassonomia_label'] ?? $tax);
-            if (!isset($byTipologia[$tax])) {
-                $byTipologia[$tax] = [
-                    'tassonomia' => $tax,
-                    'tassonomia_label' => $label,
-                    'count' => 0,
-                    'amount' => 0.0,
-                ];
-            }
-            $byTipologia[$tax]['count']++;
-            $byTipologia[$tax]['amount'] += (float)($row['importo'] ?? 0);
-        }
-
-        return [$totals, array_values($byTipologia)];
-    }
 }

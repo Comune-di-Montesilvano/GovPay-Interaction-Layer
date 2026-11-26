@@ -975,7 +975,7 @@ if (!function_exists('frontoffice_process_bollo_request')) {
         // Costruiamo l'URL del bollettino HTML stampabile come sostituto.
         $_descParams = '';
         foreach ($documenti as $_d) {
-            $_t = mb_substr(trim((string)($_d['titolo'] ?? '')), 0, 200);
+            $_t = mb_substr(trim((string)$_d['titolo']), 0, 200);
             if ($_t !== '') {
                 $_descParams .= '&desc[]=' . rawurlencode($_t);
             }
@@ -1387,15 +1387,6 @@ if (!function_exists('frontoffice_extract_ricevuta_identifiers_from_pendenza_det
             'idRicevuta' => $idRicevuta,
             'ccp' => $ccp,
         ];
-    }
-}
-
-if (!function_exists('frontoffice_fetch_ricevute_for_iuv')) {
-    // Con Backoffice v1 il ccp viene estratto dalla pendenza detail (riscossioni).
-    // Questo fallback non è più necessario — mantenuto come stub per compatibilità.
-    function frontoffice_fetch_ricevute_for_iuv(string $idDominio, string $iuv): ?array
-    {
-        return null;
     }
 }
 
@@ -1820,7 +1811,7 @@ if (!function_exists('frontoffice_cart_items')) {
      */
     function frontoffice_cart_items(): array
     {
-        if (!isset($_SESSION) || !is_array($_SESSION)) {
+        if (!isset($_SESSION)) {
             return [];
         }
         $cart = $_SESSION['frontoffice_cart'] ?? [];
@@ -2300,16 +2291,6 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
             }
         }
 
-        if (!is_array($pendenza) || $pendenza === []) {
-            Logger::getInstance()->info('Nessun avviso corrispondente trovato dal frontoffice', [
-                'requestedAvviso' => $normalizedAvviso,
-            ]);
-            return [
-                'success' => false,
-                'errors' => ['Nessun avviso trovato con i dati inseriti.'],
-            ];
-        }
-
         if (!frontoffice_pendenza_belongs_to_cf($pendenza, $normalizedInputId)) {
             Logger::getInstance()->warning('Identificativo pagatore/versante non coincide con l\'input', [
                 'identificativoInput' => $normalizedInputId,
@@ -2740,7 +2721,7 @@ $imgCandidates = [
 $imgDir = null;
 foreach ($imgCandidates as $candidate) {
     // nosemgrep: php.lang.security.injection.tainted-filename.tainted-filename
-    if ($candidate && is_dir($candidate)) {
+    if (is_dir($candidate)) {
         $imgDir = $candidate;
         break;
     }
@@ -2766,7 +2747,7 @@ $faviconCandidates = [
     ['href' => '/img/favicon.ico', 'path' => $imgDir . '/favicon.ico', 'type' => 'image/x-icon'],
     ['href' => '/img/favicon.png', 'path' => $imgDir . '/favicon.png', 'type' => 'image/png'],
 ];
-$appFavicon = (($appLogo['type'] ?? '') === 'img' && !empty($appLogo['src']))
+$appFavicon = ($appLogo['type'] === 'img' && !empty($appLogo['src']))
     ? ['href' => $appLogo['src'], 'type' => 'image/png']
     : ['href' => '/img/favicon_default.png', 'type' => 'image/png'];
 foreach ($faviconCandidates as $candidate) {
@@ -3325,7 +3306,7 @@ $routes = [
             }
         }
 
-        $claims = array_merge(is_array($payload) ? $payload : [], is_array($userinfo) ? $userinfo : []);
+        $claims = array_merge($payload, is_array($userinfo) ? $userinfo : []);
 
         $subject = (string)($_SESSION['oidc_subject'] ?? 'pf');
         unset($_SESSION['oidc_subject']);
@@ -3492,7 +3473,7 @@ $routes = [
         ];
 
         if ($method !== 'POST' && $selectedService) {
-            $baseContext['form_data'] = array_merge(['idTipoPendenza' => $selectedService['id']], $baseContext['form_data'] ?? []);
+            $baseContext['form_data'] = ['idTipoPendenza' => $selectedService['id']];
         }
 
         if ($method === 'POST') {
@@ -3537,9 +3518,7 @@ $routes = [
                     $defaultAnagrafica = $defaultEmail;
                 }
 
-                $existing = (isset($baseContext['form_data']['soggettoPagatore']) && is_array($baseContext['form_data']['soggettoPagatore']))
-                    ? $baseContext['form_data']['soggettoPagatore']
-                    : [];
+                $existing = []; // form_data qui ha solo idTipoPendenza: nessun soggettoPagatore da riprendere
 
                 $prefill = [
                     'tipo' => $defaultTipo,
@@ -3801,7 +3780,7 @@ $routes = [
                             'ente'     => $idDominio,
                             'importo'  => isset($pendenza['importo']) && is_numeric($pendenza['importo']) && (float)$pendenza['importo'] > 0 ? (int)round((float)$pendenza['importo'] * 100) : null,
                             'causale'  => ($pendenza['causale'] ?? '') !== '' ? mb_substr(trim((string)$pendenza['causale']), 0, 140) : null,
-                            'cf'       => $codiceFiscale !== '' ? $codiceFiscale : null,
+                            'cf'       => $codiceFiscale,
                             'scadenza' => ($pendenza['dataScadenza'] ?? '') !== '' ? $pendenza['dataScadenza'] : null,
                         ]), '', '&', PHP_QUERY_RFC3986))
                         : frontoffice_generate_pdf_link($codiceFiscale, $numeroAvviso))
@@ -3821,7 +3800,7 @@ $routes = [
         }
 
         // Populate session whitelist so /carrello/checkout can authorize these pendenze.
-        $fetchedIds = array_values(array_filter(array_map(static fn ($r) => $r['id_pendenza'] ?? '', $rows), static fn ($v) => $v !== ''));
+        $fetchedIds = array_values(array_filter(array_map(static fn ($r) => $r['id_pendenza'], $rows), static fn ($v) => $v !== ''));
         if (!empty($fetchedIds)) {
             $sessionActive = (session_status() === PHP_SESSION_ACTIVE);
             if (!$sessionActive) {
@@ -3904,7 +3883,7 @@ $routes = [
                     ]) ?? $page;
 
                     // Calcolo numPagine da numRisultati se non disponibile direttamente
-                    if ($numPag === null && $numRis !== null && $rpp > 0) {
+                    if ($numPag === null && $numRis !== null) {
                         $numPag = (int)ceil($numRis / $rpp);
                     }
 
@@ -5278,7 +5257,7 @@ $templateCandidates = [
 ];
 $templatePaths = [];
 foreach ($templateCandidates as $candidate) {
-    if ($candidate && is_dir($candidate) && !in_array($candidate, $templatePaths, true)) {
+    if (is_dir($candidate) && !in_array($candidate, $templatePaths, true)) {
         $templatePaths[] = $candidate;
     }
 }
@@ -5325,12 +5304,10 @@ if (file_exists($localeFile)) {
 class I18nExtension extends \Twig\Extension\AbstractExtension
 {
     private array $translations;
-    private string $currentLocale;
 
-    public function __construct(array $translations, string $currentLocale)
+    public function __construct(array $translations)
     {
         $this->translations = $translations;
-        $this->currentLocale = $currentLocale;
     }
 
     public function getFilters(): array
@@ -5346,7 +5323,7 @@ class I18nExtension extends \Twig\Extension\AbstractExtension
     }
 }
 
-$twig->addExtension(new I18nExtension($translations, $currentLocale));
+$twig->addExtension(new I18nExtension($translations));
 // ─────────────────────────────────────────────────────────────────────────────
 
 

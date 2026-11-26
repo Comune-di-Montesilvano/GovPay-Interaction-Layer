@@ -26,7 +26,7 @@ class IncassiTassonomiaController
     {
         $this->exposeCurrentUser();
 
-        $params = (array)($request->getQueryParams() ?? []);
+        $params = $request->getQueryParams();
         $queryMade = isset($params['q']) && trim((string)$params['q']) !== '';
         $errors = [];
         $sessionUser = $_SESSION['user'] ?? [];

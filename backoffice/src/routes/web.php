@@ -958,36 +958,36 @@ return function (App $app, Twig $twig): void {
     });
 
     // Backup di sistema (logica locale nel backoffice)
-    $app->post('/backup/sistema/crea', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupCreate($request, $response);
+    $app->post('/backup/sistema/crea', function ($request, $response) {
+        return (new BackupController())->systemBackupCreate($request, $response);
     });
 
-    $app->get('/backup/sistema/lista', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupList($request, $response);
+    $app->get('/backup/sistema/lista', function ($request, $response) {
+        return (new BackupController())->systemBackupList($request, $response);
     });
 
-    $app->get('/backup/sistema/download', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupDownload($request, $response);
+    $app->get('/backup/sistema/download', function ($request, $response) {
+        return (new BackupController())->systemBackupDownload($request, $response);
     });
 
-    $app->post('/backup/sistema/elimina', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupDelete($request, $response);
+    $app->post('/backup/sistema/elimina', function ($request, $response) {
+        return (new BackupController())->systemBackupDelete($request, $response);
     });
 
-    $app->post('/backup/sistema/ripristina', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupRestore($request, $response);
+    $app->post('/backup/sistema/ripristina', function ($request, $response) {
+        return (new BackupController())->systemBackupRestore($request, $response);
     });
 
-    $app->post('/backup/sistema/ripristina/chunk', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupRestoreChunk($request, $response);
+    $app->post('/backup/sistema/ripristina/chunk', function ($request, $response) {
+        return (new BackupController())->systemBackupRestoreChunk($request, $response);
     });
 
-    $app->post('/backup/sistema/ripristina/avvia', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupRestoreAvvia($request, $response);
+    $app->post('/backup/sistema/ripristina/avvia', function ($request, $response) {
+        return (new BackupController())->systemBackupRestoreAvvia($request, $response);
     });
 
-    $app->get('/backup/sistema/ripristina/status', function ($request, $response) use ($twig) {
-        return (new BackupController($twig))->systemBackupRestoreStatus($request, $response);
+    $app->get('/backup/sistema/ripristina/status', function ($request, $response) {
+        return (new BackupController())->systemBackupRestoreStatus($request, $response);
     });
 
     $app->get('/users/new', function($request, $response) use ($twig) {
@@ -1431,7 +1431,7 @@ return function (App $app, Twig $twig): void {
                 $response->getBody()->write($json);
                 return $response;
             } catch (\GuzzleHttp\Exception\ClientException $ce) {
-                $code = $ce->getResponse() ? $ce->getResponse()->getStatusCode() : 0;
+                $code = $ce->getResponse()->getStatusCode();
                 $response->getBody()->write('Errore client diag ricevute: ' . $ce->getMessage());
                 return $response->withStatus($code ?: 500);
             } catch (\Throwable $e) {

@@ -486,7 +486,7 @@ class TracciatoService
             // Lookup prefisso IUV vincolato per la tipologia
             $iuvPrefix = null;
             $idTipoPendenzaTr = trim((string)($merged['idTipoPendenza'] ?? ''));
-            if ($idTipoPendenzaTr !== '' && $idDominio !== '') {
+            if ($idTipoPendenzaTr !== '') {
                 try {
                     $details = (new EntrateRepository())->findDetails($idDominio, $idTipoPendenzaTr);
                     $iuvPrefix = ($details['iuv_prefix'] ?? null) ?: null;
@@ -685,21 +685,19 @@ class TracciatoService
                 // diagnostica completa: usiamo il middleware Guzzle per i log completi.
                 $resp = $ce->getResponse();
                 $body = '';
-                if ($resp) {
-                    try {
-                        $stream = $resp->getBody();
-                        if (is_callable([$stream, 'rewind'])) {
-                            try { $stream->rewind(); } catch (\Throwable $_) { }
-                        }
-                        if (is_callable([$stream, 'getContents'])) {
-                            $body = $stream->getContents();
-                        } else {
-                            $body = (string)$stream;
-                        }
-                    } catch (\Throwable $_) {
-                        // fallback
-                        try { $body = (string)$resp->getBody(); } catch (\Throwable $_) { $body = ''; }
+                try {
+                    $stream = $resp->getBody();
+                    if (is_callable([$stream, 'rewind'])) {
+                        try { $stream->rewind(); } catch (\Throwable $_) { }
                     }
+                    if (is_callable([$stream, 'getContents'])) {
+                        $body = $stream->getContents();
+                    } else {
+                        $body = (string)$stream;
+                    }
+                } catch (\Throwable $_) {
+                    // fallback
+                    try { $body = (string)$resp->getBody(); } catch (\Throwable $_) { $body = ''; }
                 }
                 $parsed = null;
                 if ($body !== '') {
@@ -708,7 +706,7 @@ class TracciatoService
                 }
                 // Log compatto qui: dettagli completi delle request/response sono già
                 // scritti dal middleware Guzzle quando APP_DEBUG è attivo.
-                Logger::getInstance()->error('Tracciato API ClientException (send)', ['status' => $resp ? $resp->getStatusCode() : null, 'message' => $ce->getMessage()]);
+                Logger::getInstance()->error('Tracciato API ClientException (send)', ['status' => $resp->getStatusCode(), 'message' => $ce->getMessage()]);
                 $errMsgFull = $parsed && is_array($parsed) && isset($parsed['dettaglio']) ? $parsed['dettaglio'] : ($body ?: $ce->getMessage());
                 $errMsgDisplay = \App\Logger::sanitizeErrorForDisplay((string)$errMsgFull);
 
