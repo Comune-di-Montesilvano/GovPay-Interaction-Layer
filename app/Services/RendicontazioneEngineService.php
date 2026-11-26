@@ -302,6 +302,19 @@ class RendicontazioneEngineService
         return in_array($statoFresco, ['INVIATO', 'NON_APPLICABILE'], true);
     }
 
+    /**
+     * Tipologia mostrata al cittadino (App IO, email ricevuta): descrizione della voce, altrimenti
+     * la descrizione della tipologia (TipologiaLabel), mai il codice tassonomia grezzo.
+     */
+    public static function etichettaTipologia(array $riga): string
+    {
+        $descrizione = trim((string)($riga['descrizione_entrata'] ?? ''));
+        if ($descrizione !== '') {
+            return $descrizione;
+        }
+        return TipologiaLabel::of((string)($riga['cod_entrata'] ?? ''), isset($riga['id_dominio']) ? (string)$riga['id_dominio'] : null);
+    }
+
     private function tentaNotificaAppIo(int $rigaId, array $pendenza, array $riga, string $idA2A, string $backofficeUrl): void
     {
         if ($this->appioGiaProcessata($rigaId)) {
@@ -351,9 +364,7 @@ class RendicontazioneEngineService
                 : '';
 
             $causale = (string)($pendenza['causale'] ?? '');
-            // Descrizione della voce; in mancanza la descrizione della tipologia, mai il codice grezzo.
-            $tipologia = (string)($riga['descrizione_entrata']
-                ?? TipologiaLabel::of((string)($riga['cod_entrata'] ?? ''), isset($riga['id_dominio']) ? (string)$riga['id_dominio'] : null));
+            $tipologia = self::etichettaTipologia($riga);
             $anagrafica = (string)($pendenza['soggettoPagatore']['anagrafica'] ?? '');
             $dataPagamentoRaw = (string)($pendenza['dataPagamento'] ?? '');
             $dataPagamento = $dataPagamentoRaw !== '' ? date('d/m/Y', strtotime($dataPagamentoRaw)) : '';
@@ -585,9 +596,7 @@ class RendicontazioneEngineService
                 : '';
 
             $toName = trim((string)($pendenza['soggettoPagatore']['anagrafica'] ?? ''));
-            // Descrizione della voce; in mancanza la descrizione della tipologia, mai il codice grezzo.
-            $tipologia = (string)($riga['descrizione_entrata']
-                ?? TipologiaLabel::of((string)($riga['cod_entrata'] ?? ''), isset($riga['id_dominio']) ? (string)$riga['id_dominio'] : null));
+            $tipologia = self::etichettaTipologia($riga);
             $dataPagamentoRaw = (string)($pendenza['dataPagamento'] ?? '');
             $dataPagamentoFormatted = $dataPagamentoRaw !== '' ? date('d/m/Y', strtotime($dataPagamentoRaw)) : '';
             $iuv = (string)($riga['iuv'] ?? '');

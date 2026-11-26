@@ -50,6 +50,16 @@ final class TipologiaLabelTest extends DbTestCase
         self::assertStringNotContainsString('AFFITTO_SALE', $html);
     }
 
+    /** Notifiche di rendicontazione: descrizione della voce, altrimenti della tipologia (prima: cod_entrata grezzo). */
+    public function testEtichettaRendicontazioneVoceOppureTipologia(): void
+    {
+        $this->insert('AFFITTO_SALE', 'Affitto sale comunali');
+        $riga = ['cod_entrata' => 'AFFITTO_SALE', 'id_dominio' => self::DOMINIO];
+        self::assertSame('Affitto sala consiliare', \App\Services\RendicontazioneEngineService::etichettaTipologia($riga + ['descrizione_entrata' => 'Affitto sala consiliare']));
+        self::assertSame('Affitto sale comunali', \App\Services\RendicontazioneEngineService::etichettaTipologia($riga + ['descrizione_entrata' => null]));
+        self::assertSame('Affitto sale comunali', \App\Services\RendicontazioneEngineService::etichettaTipologia($riga + ['descrizione_entrata' => '  ']));
+    }
+
     public function testTipologiaSconosciutaOVuotaRestaIlCodice(): void
     {
         $this->insert('VUOTA', '   ');
