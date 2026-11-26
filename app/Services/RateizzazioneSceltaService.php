@@ -12,6 +12,14 @@ namespace App\Services;
 final class RateizzazioneSceltaService
 {
     public const MARKER_KEY = 'rateizzazioneScelta';
+    /** Prefisso nota riga rendicontazione (badge in dettaglio flusso). */
+    public const NOTA_DOPPIO_PAGAMENTO = 'Doppio pagamento rateizzazione a scelta';
+
+    /** @param list<string> $idControparti controparti risultate gia' pagate */
+    public static function notaDoppioPagamento(array $idControparti): string
+    {
+        return self::NOTA_DOPPIO_PAGAMENTO . ': pagata anche ' . implode(', ', $idControparti) . ' (verificare rimborso)';
+    }
     private const SUFFIX = '-RU';
     private const MAX_ID = 35;
 
