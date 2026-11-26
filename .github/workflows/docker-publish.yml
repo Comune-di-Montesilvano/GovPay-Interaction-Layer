@@ -80,7 +80,7 @@ jobs:
       # job). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
       # Run fallita per "blocked" → host nel log del post-step harden-runner o nella pagina
       # insights della run: aggiungerlo qui se legittimo.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -258,7 +258,7 @@ jobs:
     steps:
       # Allowlist dei build: registry immagini base (Docker Hub), BuildKit, apt Debian, npm,
       # composer (packagist + dist GitHub), GHCR per la cache. Vedi commento nel job setup.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -352,7 +352,7 @@ jobs:
       # Come build-php-base, piu' gli host di Trivy (DB vulnerabilità) e di Sigstore (firma
       # cosign + attestazioni: Fulcio, Rekor e shard Rekor v2 *.rekor, TSA, TUF). Il binario cosign arriva dalle release
       # GitHub (release-assets/objects.githubusercontent.com, gia' presenti).
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -604,7 +604,7 @@ jobs:
     steps:
       # Immagine db: base mariadb (Docker Hub), apt Ubuntu + repo mariadb (HTTP, pacchetti
       # firmati GPG), script init, piu' Trivy, GHCR e Sigstore (firma + attestazioni, shard Rekor v2 *.rekor).
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -836,7 +836,7 @@ jobs:
     steps:
       # Solo GHCR: le 3 immagini e quella cosign di verify-images (ghcr.io/sigstore) sono tutte
       # li'; smoke-stack.sh scrive VERIFY_IMAGES=false (digest non ancora taggati), niente Sigstore.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -902,7 +902,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -1028,7 +1028,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -1154,7 +1154,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -1261,7 +1261,7 @@ jobs:
       contents: write
     steps:
       # API GitHub + host di upload degli asset delle release.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -1309,7 +1309,7 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
