@@ -114,14 +114,17 @@ class GovPayTaxonomyCollectionsService
                         null,
                         null,
                         $queryVariant['id_tipo_pendenza'],
+                        // StatoRiscossione/TipoRiscossione generati = classi di sole costanti stringa: il valore reale e' la stringa.
+                        // @phpstan-ignore-next-line argument.type
                         $stato,
                         $dataDa,
                         $dataA,
+                        // @phpstan-ignore-next-line argument.type
                         $tipiFilter,
                         null,
                         null,
                         null,
-                        $queryVariant['tassonomia'],
+                        $queryVariant['tassonomia'] !== null ? [$queryVariant['tassonomia']] : null,
                         true,
                         true,
                         null

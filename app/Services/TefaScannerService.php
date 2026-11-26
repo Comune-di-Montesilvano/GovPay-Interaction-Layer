@@ -47,7 +47,7 @@ class TefaScannerService
                 'iuv'                 => (string)($row['iuv'] ?? ''),
                 'data_pagamento'      => (string)($row['data_pagamento'] ?? ''),
                 'importo'             => (float)($row['importo'] ?? 0.0),
-                'is_govpay'           => 0,
+                'is_govpay'           => false,
                 'is_multibeneficiario' => null,
             ];
         }

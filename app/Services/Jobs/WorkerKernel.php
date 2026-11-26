@@ -209,7 +209,9 @@ final class WorkerKernel
                 $this->state,
                 $this->scopedRegistry,
                 $this->clock,
-                fn(RunJob $m) => $this->bus->dispatch($m),
+                function (RunJob $m): void {
+                    $this->bus->dispatch($m);
+                },
                 fn(): bool => $this->stopRequested,
                 $line
             )],
