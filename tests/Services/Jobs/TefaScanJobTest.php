@@ -450,4 +450,10 @@ final class TefaScanJobTest extends DbTestCase
             self::assertSame($expected, TefaScanJob::isEnabled(), "valore '{$value}'");
         }
     }
+
+    /** remaining() restituisce sempre un int (mai null): nulla da accodare o classificare = 0. */
+    public function testRemainingSenzaRicevuteEZero(): void
+    {
+        self::assertSame(0, $this->job()->remaining());
+    }
 }

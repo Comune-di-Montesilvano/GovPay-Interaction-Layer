@@ -968,4 +968,20 @@ final class RagioneriaSyncJobTest extends DbTestCase
         // l'ordine dei controlli e' quello dello script: prima id_dominio
         self::assertSame('ERRORE: id_dominio non configurato.', RagioneriaSyncJob::configError('', ''));
     }
+
+    /** Stop richiesto all'ingresso del ciclo di scan: nessun lavoro, nessuna chiamata GovPay. */
+    public function testStopAllIngressoDelCicloNonFaLavoro(): void
+    {
+        SettingsRepository::set('backoffice', 'ragioneria_scan_da', '2026-01-01');
+        $ctx = new class implements \App\Services\Jobs\JobContext {
+            private int $calls = 0;
+            public function shouldStop(): bool { return ++$this->calls > 1; }
+            public function debug(string $msg): void {}
+        };
+
+        $r = $this->job()->runOnce($ctx);
+
+        self::assertSame([0, false], [$r->processed, $r->hadWork]);
+        self::assertCount(0, $this->requests);
+    }
 }
