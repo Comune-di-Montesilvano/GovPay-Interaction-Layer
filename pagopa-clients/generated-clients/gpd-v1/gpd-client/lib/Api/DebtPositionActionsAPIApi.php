@@ -174,10 +174,10 @@ class DebtPositionActionsAPIApi
                 throw new ApiException(
                     "[{$e->getCode()}] {$e->getMessage()}",
                     (int) $e->getCode(),
-                    $e->getResponse() ? $e->getResponse()->getHeaders() : null,
-                    $e->getResponse() ? (string) $e->getResponse()->getBody() : null
+                    $e instanceof \GuzzleHttp\Exception\ResponseException ? $e->getResponse()->getHeaders() : null,
+                    $e instanceof \GuzzleHttp\Exception\ResponseException ? (string) $e->getResponse()->getBody() : null
                 );
-            } catch (ConnectException $e) {
+            } catch (\GuzzleHttp\Exception\NetworkException $e) {
                 throw new ApiException(
                     "[{$e->getCode()}] {$e->getMessage()}",
                     (int) $e->getCode(),
@@ -519,10 +519,10 @@ class DebtPositionActionsAPIApi
                 throw new ApiException(
                     "[{$e->getCode()}] {$e->getMessage()}",
                     (int) $e->getCode(),
-                    $e->getResponse() ? $e->getResponse()->getHeaders() : null,
-                    $e->getResponse() ? (string) $e->getResponse()->getBody() : null
+                    $e instanceof \GuzzleHttp\Exception\ResponseException ? $e->getResponse()->getHeaders() : null,
+                    $e instanceof \GuzzleHttp\Exception\ResponseException ? (string) $e->getResponse()->getBody() : null
                 );
-            } catch (ConnectException $e) {
+            } catch (\GuzzleHttp\Exception\NetworkException $e) {
                 throw new ApiException(
                     "[{$e->getCode()}] {$e->getMessage()}",
                     (int) $e->getCode(),

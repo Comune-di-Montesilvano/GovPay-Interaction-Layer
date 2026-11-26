@@ -11,6 +11,7 @@ use App\Config\SettingsRepository;
 use App\Logger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\ResponseException;
 
 /**
  * AppIoService — integrazione con le API App IO per l'invio di messaggi.
@@ -152,8 +153,10 @@ class AppIoService
             }
         } catch (RequestException $e) {
             // Errori di rete o risposta HTTP non 2xx
-            $statusCode = $e->getResponse()?->getStatusCode();
-            $body = $e->getResponse()?->getBody()->getContents() ?? '';
+            // Guzzle 8: solo ResponseException ha una risposta (getResponse() non nullable).
+            $response = $e instanceof ResponseException ? $e->getResponse() : null;
+            $statusCode = $response?->getStatusCode();
+            $body = $response?->getBody()->getContents() ?? '';
             $errorMsg = $e->getMessage();
 
             // Prova a estrarre un messaggio from il body della risposta

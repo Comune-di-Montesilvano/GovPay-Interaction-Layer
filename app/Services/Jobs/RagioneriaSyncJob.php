@@ -7,7 +7,7 @@ use App\Config\SettingsRepository;
 use App\Database\FlussiRendicontazioniRepository;
 use App\Services\GovPayClientFactory;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\ResponseException;
 
 /**
  * Una iterazione del lavoro `ragioneria` (eseguita dal worker tramite JobRunner): elenca i flussi di
@@ -463,7 +463,7 @@ final class RagioneriaSyncJob implements PeriodicJob
     /** Motivo d'errore sicuro per errorDetails: status HTTP se disponibile, mai corpi di risposta upstream. */
     private static function safeReason(\Throwable $e): string
     {
-        if ($e instanceof RequestException && $e->getResponse() !== null) {
+        if ($e instanceof ResponseException) {
             return 'HTTP ' . $e->getResponse()->getStatusCode();
         }
         return 'Errore chiamata GovPay';
@@ -483,7 +483,7 @@ final class RagioneriaSyncJob implements PeriodicJob
     /** Motivo errore della lista (pagina 1): status HTTP se c'e' una risposta, altrimenti classe eccezione. */
     private static function listReason(\Throwable $e): string
     {
-        if ($e instanceof RequestException && $e->getResponse() !== null) {
+        if ($e instanceof ResponseException) {
             return 'HTTP ' . $e->getResponse()->getStatusCode();
         }
         return 'Eccezione ' . get_class($e);

@@ -9,6 +9,10 @@ use GovPay\Backoffice\ApiException;
 use GovPay\Backoffice\Configuration;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\ConnectTimeoutException;
+use GuzzleHttp\Exception\NetworkException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
+use GuzzleHttp\Exception\ResponseTransferException;
 use GuzzleHttp\Exception\ServerException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Request;
@@ -104,17 +108,63 @@ final class GovPayClientFactoryTest extends DbTestCase
 
     public function testNetworkRetryOnCurl56StillWorks(): void
     {
-        $reset = new \GuzzleHttp\Exception\RequestException('cURL error 56: reset', new Request('GET', self::BASE), null, null, ['errno' => 56]);
-        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$reset, new Response(200, [], 'ok')]), $this->history);
+        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$this->networkFail('GET', 56), new Response(200, [], 'ok')]), $this->history);
 
         self::assertSame('ok', (string)$client->request('GET', self::BASE . '/info')->getBody());
         self::assertCount(2, $this->history);
         self::assertSame('close', $this->history[1]['request']->getHeaderLine('Connection'));
     }
 
+    /** Guzzle 8: 56 dopo una risposta parziale = ResponseTransferException (ResponseException), ritentata come il 56 senza risposta. */
+    public function testCurl56WithPartialResponseIsRetried(): void
+    {
+        $partial = new ResponseTransferException('cURL error 56: reset', new Request('GET', self::BASE . '/info'), new Response(200));
+        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$partial, new Response(200, [], 'ok')]), $this->history, $this->noDelay());
+
+        self::assertSame('ok', (string)$client->request('GET', self::BASE . '/info')->getBody());
+        self::assertCount(2, $this->history);
+    }
+
+    /** Guzzle 8: timeout senza risposta e non in fase di connessione = NetworkTimeoutException (non ConnectException). */
+    public function testGetNetworkTimeoutErrno28IsRetried(): void
+    {
+        $mock = new MockHandler([$this->networkFail('GET', 28), new Response(200, [], 'ok')]);
+        $client = FakeGovPayPendenzeController::factoryClient($mock, $this->history, $this->noDelay());
+
+        self::assertSame('ok', (string)$client->request('GET', self::BASE . '/info', ['timeout' => 10])->getBody());
+        self::assertCount(2, $this->history);
+    }
+
+    /** Guzzle 8: NetworkException (nessuna risposta) e' un guasto di trasporto per il circuit breaker. */
+    public function testNetworkExceptionCountsForCircuitBreaker(): void
+    {
+        $f = fn() => $this->networkFail('POST', 56);
+        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$f(), $f(), $f()]), $this->history, $this->noDelay());
+
+        for ($i = 0; $i < 3; $i++) {
+            try {
+                $client->request('POST', self::BASE . '/incassi');
+            } catch (NetworkException) {
+            }
+        }
+        $cb = json_decode((string)file_get_contents(FakeGovPayPendenzeController::circuitBreakerFile()), true);
+        self::assertSame(['OPEN', 3], [$cb['status'] ?? null, $cb['failures'] ?? null]);
+    }
+
+    /** Come CurlFactory di Guzzle 8: 28 in connessione = ConnectTimeoutException, gli altri = ConnectException. */
     private function connectFail(string $method, int $errno): ConnectException
     {
-        return new ConnectException("cURL error $errno: simulated", new Request($method, self::BASE . '/pendenze/A/B'), null, ['errno' => $errno]);
+        $request = new Request($method, self::BASE . '/pendenze/A/B');
+        $message = "cURL error $errno: simulated";
+        return $errno === 28 ? new ConnectTimeoutException($message, $request) : new ConnectException($message, $request);
+    }
+
+    /** Come CurlFactory di Guzzle 8: guasto senza risposta fuori dalla connessione (56 = NetworkException, 28 = NetworkTimeoutException). */
+    private function networkFail(string $method, int $errno): NetworkException
+    {
+        $request = new Request($method, self::BASE . '/pendenze/A/B');
+        $message = "cURL error $errno: simulated";
+        return $errno === 28 ? new NetworkTimeoutException($message, $request) : new NetworkException($message, $request);
     }
 
     /** @return list<array<string,mixed>> */
@@ -143,7 +193,8 @@ final class GovPayClientFactoryTest extends DbTestCase
             $client->request('PUT', self::BASE . '/pendenze/A/B', ['timeout' => 15]);
             self::fail('deve lanciare dopo i retry');
         } catch (ConnectException $e) {
-            self::assertSame(28, $e->getHandlerContext()['errno']);
+            self::assertInstanceOf(ConnectTimeoutException::class, $e);
+            self::assertStringStartsWith('cURL error 28:', $e->getMessage());
         }
         self::assertCount(3, $this->history, '1 invio + 2 retry');
         $cb = json_decode((string)file_get_contents(FakeGovPayPendenzeController::circuitBreakerFile()), true);
@@ -189,13 +240,12 @@ final class GovPayClientFactoryTest extends DbTestCase
 
     public function testPostCurl56ResetIsNotRetried(): void
     {
-        $reset = new \GuzzleHttp\Exception\RequestException('cURL error 56: reset', new Request('POST', self::BASE . '/incassi'), null, null, ['errno' => 56]);
-        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$reset, new Response(200)]), $this->history, $this->noDelay());
+        $client = FakeGovPayPendenzeController::factoryClient(new MockHandler([$this->networkFail('POST', 56), new Response(200)]), $this->history, $this->noDelay());
 
         try {
             $client->request('POST', self::BASE . '/incassi');
             self::fail('deve lanciare');
-        } catch (\GuzzleHttp\Exception\RequestException) {
+        } catch (NetworkException) {
         }
         self::assertCount(1, $this->history);
     }

@@ -925,18 +925,11 @@ class FrontofficeApiController
                 ],
                 'body' => (string)json_encode($data, JSON_UNESCAPED_UNICODE),
             ]);
-        } catch (\GuzzleHttp\Exception\ConnectException $e) {
+        } catch (\GuzzleHttp\Exception\NetworkTimeoutException | \GuzzleHttp\Exception\ResponseTimeoutException $e) {
             // Timeout (cURL 28) a connessione stabilita = richiesta consegnata, il target
             // continua da solo (ignore_user_abort): e' il comportamento atteso, non un errore.
-            $ctx = $e->getHandlerContext();
-            if (($ctx['errno'] ?? 0) === 28 && ($ctx['connect_time'] ?? 0) > 0) {
-                Logger::getInstance()->info('FrontofficeApi::fireAndForgetSelf detached', ['path' => $path]);
-                return;
-            }
-            Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf failed', [
-                'path'  => $path,
-                'error' => Logger::sanitizeErrorForDisplay($e->getMessage()),
-            ]);
+            // Guzzle 8: il timeout in fase di connessione e' ConnectTimeoutException (ramo sotto).
+            Logger::getInstance()->info('FrontofficeApi::fireAndForgetSelf detached', ['path' => $path]);
         } catch (\Throwable $e) {
             Logger::getInstance()->warning('FrontofficeApi::fireAndForgetSelf failed', [
                 'path'  => $path,

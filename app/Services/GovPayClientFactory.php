@@ -11,8 +11,10 @@ namespace App\Services;
 use App\Config\SettingsRepository;
 use App\Logger;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\NetworkException;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\ResponseException;
+use GuzzleHttp\Exception\ResponseTransferException;
 use GuzzleHttp\Middleware;
 use Psr\Http\Message\RequestInterface as HttpRequest;
 
@@ -135,25 +137,21 @@ class GovPayClientFactory
             return static function (HttpRequest $request, array $options) use ($next, $maxNetworkRetries, $maxTimeoutRetries, $maxTimeoutForRetry, $idempotentMethods, $retryDelay) {
                 $timeout = (float)($options['timeout'] ?? 0);
                 $decider = static function (int $retries, $request, $response = null, $exception = null) use ($maxNetworkRetries, $maxTimeoutRetries, $maxTimeoutForRetry, $idempotentMethods, $timeout): bool {
-                // Guzzle 7: cURL 35/28 arrivano come ConnectException (NON RequestException); 56 come RequestException.
-                if (!$exception instanceof ConnectException && !$exception instanceof RequestException) {
+                // Guzzle 8, senza risposta: 35 = ConnectException, 28 = ConnectTimeoutException o
+                // NetworkTimeoutException, 56 = NetworkException (tutte NetworkException). Dopo una
+                // risposta parziale: ResponseTransferException / ResponseTimeoutException (RequestException).
+                // Le risposte HTTP 4xx/5xx (BadResponseException) non arrivano qui: http_errors e' piu' esterno.
+                if (!$exception instanceof NetworkException && !$exception instanceof RequestException) {
                     return false;
                 }
                 if (!in_array(strtoupper($request->getMethod()), $idempotentMethods, true)) {
                     return false;
                 }
-                $context = method_exists($exception, 'getHandlerContext') ? $exception->getHandlerContext() : [];
-                $errno   = (int)($context['errno'] ?? 0);
-                $message = strtolower($exception->getMessage());
-                if ($errno === 0 && preg_match('/curl error (\d+)/', $message, $m)) {
-                    $errno = (int)$m[1];
-                }
+                // Guzzle 8 non espone piu' l'errno (getHandlerContext rimosso): si legge dal messaggio
+                // "cURL error N: ..." costruito da CurlFactory.
+                $errno = preg_match('/curl error (\d+)/', strtolower($exception->getMessage()), $m) ? (int)$m[1] : 0;
                 // 35 = TLS handshake, 28 = timeout, 56 = connection reset by peer.
-                if ($errno === 56) {
-                    if (!$exception instanceof RequestException) {
-                        return false;
-                    }
-                } elseif ($errno !== 35 && $errno !== 28) {
+                if ($errno !== 56 && $errno !== 35 && $errno !== 28) {
                     return false;
                 }
                 if ($errno === 28 && ($timeout <= 0.0 || $timeout > $maxTimeoutForRetry)) {
@@ -277,12 +275,12 @@ class GovPayClientFactory
                         return $response;
                     },
                     static function ($reason) use ($cbFile, $maxFailures) {
-                        $isNetworkError = false;
-                        if ($reason instanceof \GuzzleHttp\Exception\ConnectException) {
-                            $isNetworkError = true;
-                        } elseif ($reason instanceof RequestException && !$reason->hasResponse()) {
-                            $isNetworkError = true;
-                        }
+                        // Guasto di trasporto = nessuna risposta HTTP utilizzabile: NetworkException
+                        // (include ConnectException), trasferimento interrotto dopo una risposta parziale
+                        // (ResponseTransferException) o RequestException senza risposta. Un 4xx/5xx no.
+                        $isNetworkError = $reason instanceof NetworkException
+                            || $reason instanceof ResponseTransferException
+                            || ($reason instanceof RequestException && !$reason instanceof ResponseException);
 
                         if ($isNetworkError) {
                             $opened = 0;

@@ -54,9 +54,17 @@ for i in $(seq 0 $((NUM_APIS - 1))); do
         --invoker-package "$CLIENT_NAMESPACE" \
         --additional-properties packageName="$CLIENT_NAMESPACE"
 
+    # Tra apici singoli niente escape della shell: '\\' = un backslash letterale per sed.
     echo "   > Correzione output: GuzzleHttp\\Utils::jsonEncode() -> json_encode() nativo"
     find "$WORKING_DIR/$CLIENT_DIR" -name '*.php' -print0 | xargs -0 sed -i -E \
-        's/\\\\GuzzleHttp\\\\Utils::jsonEncode\(/json_encode(/g'
+        's/\\GuzzleHttp\\Utils::jsonEncode\(/json_encode(/g'
+
+    # Guzzle 8: getResponse() solo su ResponseException; i guasti senza risposta fuori dalla
+    # connessione (cURL 56, timeout) sono NetworkException, non ConnectException.
+    echo "   > Correzione output: eccezioni Guzzle 8 (ResponseException / NetworkException)"
+    find "$WORKING_DIR/$CLIENT_DIR" -name '*.php' -print0 | xargs -0 sed -i -E \
+        -e 's/\$e->getResponse\(\) \?/$e instanceof \\GuzzleHttp\\Exception\\ResponseException ?/g' \
+        -e 's/catch \(ConnectException \$e\)/catch (\\GuzzleHttp\\Exception\\NetworkException $e)/g'
 
     # Validazione output: proprietà duplicate nello spec (es. PaymentInfo.iur nel Biz Events
     # pagoPA) producono getter/setter duplicati -> PHP Fatal "Cannot redeclare" al primo

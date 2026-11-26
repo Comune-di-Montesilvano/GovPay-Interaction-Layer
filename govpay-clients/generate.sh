@@ -122,9 +122,21 @@ for i in $(seq 0 $((NUM_APIS - 1))); do
     # (rimosso in 8.0) — il template openapi-generator lo usa ancora (era il fix per la
     # deprecation precedente, \GuzzleHttp\json_encode(), risolta in openapi-generator v6.3.0).
     # Sostituiamo con json_encode() nativo nell'output generato, non nello spec.
+    # Tra apici singoli niente escape della shell: '\\' = un backslash letterale per sed (prima
+    # c'erano 4 backslash e la sostituzione non trovava mai nulla).
     echo "   > 🔧 Correzione output: GuzzleHttp\\Utils::jsonEncode() -> json_encode() nativo"
     find "$WORKING_DIR/$CLIENT_DIR" -name '*.php' -print0 | xargs -0 sed -i -E \
-        's/\\\\GuzzleHttp\\\\Utils::jsonEncode\(/json_encode(/g'
+        's/\\GuzzleHttp\\Utils::jsonEncode\(/json_encode(/g'
+
+    # 6.5b. CORREZIONE OUTPUT PHP per Guzzle 8: getResponse() esiste solo su ResponseException
+    # (una RequestException senza risposta va in fatal "undefined method" dentro il catch), e
+    # ConnectException non copre piu' i guasti senza risposta fuori dalla connessione (cURL 56,
+    # timeout dopo la connessione = NetworkException): senza, escono come eccezioni Guzzle grezze
+    # invece di ApiException.
+    echo "   > 🔧 Correzione output: eccezioni Guzzle 8 (ResponseException / NetworkException)"
+    find "$WORKING_DIR/$CLIENT_DIR" -name '*.php' -print0 | xargs -0 sed -i -E \
+        -e 's/\$e->getResponse\(\) \?/$e instanceof \\GuzzleHttp\\Exception\\ResponseException ?/g' \
+        -e 's/catch \(ConnectException \$e\)/catch (\\GuzzleHttp\\Exception\\NetworkException $e)/g'
 
     # 6.6. VALIDAZIONE OUTPUT PHP: alcune spec hanno proprietà duplicate (es. 'iur' due volte
     # nello spec Biz Events pagoPA con wire-name diverso) che openapi-generator riproduce come
