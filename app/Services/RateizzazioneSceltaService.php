@@ -12,6 +12,14 @@ namespace App\Services;
 final class RateizzazioneSceltaService
 {
     public const MARKER_KEY = 'rateizzazioneScelta';
+    /** Prefisso nota riga rendicontazione (badge in dettaglio flusso). */
+    public const NOTA_DOPPIO_PAGAMENTO = 'Doppio pagamento rateizzazione a scelta';
+
+    /** @param list<string> $idControparti controparti risultate gia' pagate */
+    public static function notaDoppioPagamento(array $idControparti): string
+    {
+        return self::NOTA_DOPPIO_PAGAMENTO . ': pagata anche ' . implode(', ', $idControparti) . ' (verificare rimborso)';
+    }
     private const SUFFIX = '-RU';
     private const MAX_ID = 35;
 
@@ -72,6 +80,33 @@ final class RateizzazioneSceltaService
             $orig['rata_unica_scadenza'] = is_scalar($post['rata_unica_scadenza'] ?? null) ? trim((string)$post['rata_unica_scadenza']) : '';
         }
         return $orig;
+    }
+
+    /**
+     * Ripartisce $totaleCents in proporzione a $basisCents (stesso criterio delle rate):
+     * arrotondamento per voce, poi la differenza a +-1 centesimo dalla prima voce in giro.
+     * Base a somma zero = divisione uguale. Somma del risultato = $totaleCents.
+     *
+     * @param list<int> $basisCents
+     * @return list<int>
+     */
+    public static function allocaCentesimi(array $basisCents, int $totaleCents): array
+    {
+        $n = count($basisCents);
+        if ($n === 0) {
+            return [];
+        }
+        $sum = array_sum($basisCents);
+        $out = [];
+        foreach ($basisCents as $i => $b) {
+            $out[$i] = $sum > 0 ? (int)round($b / $sum * $totaleCents) : intdiv($totaleCents, $n);
+        }
+        $diff = $totaleCents - array_sum($out);
+        $step = $diff > 0 ? 1 : -1;
+        for ($k = 0; $k < abs($diff); $k++) {
+            $out[$k % $n] += $step;
+        }
+        return array_values($out);
     }
 
     /** @return 'ANNULLA'|'DOPPIO_PAGAMENTO'|'NESSUNA' */

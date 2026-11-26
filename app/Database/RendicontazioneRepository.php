@@ -58,6 +58,16 @@ class RendicontazioneRepository
         )->execute([':id' => $id, ':handler' => $handler, ':note' => $note]);
     }
 
+    /** Aggiunge $nota a rendicontazione_note (separatore " | "), una sola volta. */
+    public function appendNota(int $id, string $nota): void
+    {
+        $this->pdo->prepare(
+            'UPDATE flussi_rendicontazioni
+             SET rendicontazione_note = CONCAT_WS(\' | \', NULLIF(rendicontazione_note, \'\'), :nota)
+             WHERE id = :id AND (rendicontazione_note IS NULL OR LOCATE(:nota2, rendicontazione_note) = 0)'
+        )->execute([':id' => $id, ':nota' => $nota, ':nota2' => $nota]);
+    }
+
     public function markErrore(int $id, string $note): void
     {
         $this->pdo->prepare(

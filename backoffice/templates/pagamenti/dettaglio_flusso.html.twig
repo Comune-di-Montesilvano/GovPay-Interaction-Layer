@@ -279,6 +279,13 @@
                         {% endif %}
                       </div>
                     {% endif %}
+                    {% set local_note = p._local_rendicontazione.rendicontazione_note|default('') %}
+                    {% if local_note and constant('App\\Services\\RateizzazioneSceltaService::NOTA_DOPPIO_PAGAMENTO') in local_note %}
+                      <div class="mt-1">
+                        <span class="badge bg-danger text-white" title="{{ local_note }}"><i class="fas fa-clone me-1" aria-hidden="true"></i>Doppio pagamento</span>
+                        <div class="small text-danger">{{ local_note }}</div>
+                      </div>
+                    {% endif %}
                   </td>
                   <td class="text-center">
                     {% if hasDetail %}

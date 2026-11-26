@@ -46,6 +46,8 @@ class RendicontazioneEngineService
             return;
         }
 
+        /** @var list<string> $doppiPagamenti controparti gia' pagate (rateizzazione a scelta) */
+        $doppiPagamenti = [];
         try {
             $iuvPrefixGil = (string)SettingsRepository::get('rendicontazione', 'iuv_prefix_gil', 'GIL');
             $regoleEsterne = $this->repo->getRegoleEsterneAttive($idDominio);
@@ -73,7 +75,7 @@ class RendicontazioneEngineService
 
             // Rateizzazione a scelta: il pagamento e' un fatto, va annullata la controparte
             // prima del routing (anche se la riga va poi in conferma manuale o al ponte).
-            $this->annullaControparti($pendenza, $idPendenza, $idA2A, $backofficeUrl);
+            $doppiPagamenti = $this->annullaControparti($pendenza, $idPendenza, $idA2A, $backofficeUrl);
 
             $idEntrata = (string)($riga['cod_entrata'] ?? '');
             if ($idEntrata === '') {
@@ -170,6 +172,16 @@ class RendicontazioneEngineService
             } catch (\Throwable $_) {
                 // ignore
             }
+        } finally {
+            // Dopo qualsiasi esito della riga (i mark* riscrivono la nota): l'operatore
+            // vede il doppio pagamento nel dettaglio flusso.
+            if ($doppiPagamenti !== []) {
+                try {
+                    $this->repo->appendNota($rigaId, RateizzazioneSceltaService::notaDoppioPagamento($doppiPagamenti));
+                } catch (\Throwable $e) {
+                    Logger::getInstance()->warning('Rateizzazione a scelta: nota doppio pagamento non salvata', ['riga_id' => $rigaId, 'errore' => ThrowableSummary::of($e)]);
+                }
+            }
         }
     }
 
@@ -180,12 +192,14 @@ class RendicontazioneEngineService
      * Best-effort: mai eccezioni verso il chiamante, una controparte in errore non ferma le altre.
      *
      * @param array<string,mixed> $pendenza
+     * @return list<string> controparti risultate gia' pagate (doppio pagamento)
      */
-    private function annullaControparti(array $pendenza, string $idPendenza, string $idA2A, string $backofficeUrl): void
+    private function annullaControparti(array $pendenza, string $idPendenza, string $idA2A, string $backofficeUrl): array
     {
+        $doppi = [];
         $controparti = RateizzazioneSceltaService::controparti($pendenza['datiAllegati'] ?? null, $idPendenza);
         if ($controparti === []) {
-            return;
+            return $doppi;
         }
         $patchBase = rtrim((string)(SettingsRepository::get('govpay', 'pendenze_patch_url', '') ?: $backofficeUrl), '/');
 
@@ -200,6 +214,7 @@ class RendicontazioneEngineService
 
                 if ($azione === 'DOPPIO_PAGAMENTO') {
                     Logger::getInstance()->warning('Rateizzazione a scelta: doppio pagamento', $ctx + ['stato_controparte' => $stato]);
+                    $doppi[] = $idControparte;
                     continue;
                 }
                 if ($azione !== 'ANNULLA') {
@@ -220,6 +235,7 @@ class RendicontazioneEngineService
                 Logger::getInstance()->warning('Rateizzazione a scelta: annullamento controparte fallito', $ctx + ['errore' => ThrowableSummary::of($e)]);
             }
         }
+        return $doppi;
     }
 
     /**

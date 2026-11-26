@@ -92,7 +92,7 @@ Dalla pagina di conferma di una nuova pendenza premi **Rateizza**:
 
 **Rata unica a scelta.** Spunta **Crea anche rata unica** quando il cittadino può scegliere se pagare tutto in una volta o a rate (es. istanze urbanistiche). Oltre alle rate nasce una pendenza per l'importo totale, nello stesso documento. L'avviso multirata mostra entrambe le opzioni. Se non indichi la **Scadenza rata unica**, vale la data della rata 1. Il cittadino riceve email e messaggi App IO sia per la rata unica sia per ogni rata.
 
-Quando GIL rendiconta un pagamento (di solito 1–2 giorni dopo), annulla da solo l'opzione non scelta: pagata la rata unica, annulla le rate; pagata una rata, annulla la rata unica. Se il cittadino paga entrambe le opzioni prima della rendicontazione, GIL annulla solo gli avvisi non ancora pagati e registra un avviso di doppio pagamento: l'eventuale rimborso va gestito a mano.
+Quando GIL rendiconta un pagamento (di solito 1–2 giorni dopo), annulla da solo l'opzione non scelta: pagata la rata unica, annulla le rate; pagata una rata, annulla la rata unica. Se il cittadino paga entrambe le opzioni prima della rendicontazione, GIL annulla solo gli avvisi non ancora pagati e segna il pagamento con il badge **Doppio pagamento** nel dettaglio del flusso di rendicontazione, indicando l'altro avviso pagato: l'eventuale rimborso va gestito a mano.
 
 ### Emettere una marca da bollo telematica
 

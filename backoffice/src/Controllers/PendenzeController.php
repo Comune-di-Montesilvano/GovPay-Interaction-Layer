@@ -2622,17 +2622,18 @@ class PendenzeController
             $errors[] = 'Nessuna voce definita.';
             return $ru;
         }
-        $sumCents = 0;
+        $voci = array_values($voci);
+        $basis = [];
         foreach ($voci as $i => $v) {
-            $sumCents += (int)round((float)str_replace(',', '.', (string)($v['importo'] ?? 0)) * 100);
+            $basis[] = (int)round((float)str_replace(',', '.', (string)($v['importo'] ?? 0)) * 100);
             $desc = trim((string)preg_replace('/\s*\(Rata \d+ di \d+\)$/', '', (string)($v['descrizione'] ?? $causale)));
             $voci[$i]['descrizione'] = $desc . ' (Rata unica)';
         }
-        if ($sumCents !== (int)round($totale * 100)) {
-            if (count($voci) === 1) {
-                $voci[0]['importo'] = $totale;
-            } else {
-                $errors[] = 'La somma delle voci non corrisponde all\'importo totale.';
+        // Voci che non sommano al totale: ripartizione proporzionale in centesimi, come per le rate.
+        $totaleCents = (int)round($totale * 100);
+        if (array_sum($basis) !== $totaleCents) {
+            foreach (\App\Services\RateizzazioneSceltaService::allocaCentesimi($basis, $totaleCents) as $i => $c) {
+                $voci[$i]['importo'] = $c / 100.0;
             }
         }
         $ru['voci'] = $voci;

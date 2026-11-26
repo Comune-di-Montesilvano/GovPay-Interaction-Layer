@@ -11,6 +11,7 @@ use App\Services\GovPayClientFactory;
 use App\Services\Jobs\RendicontazioneJob;
 use App\Services\LegacyRendicontazioneBridgeClient;
 use App\Services\MailerService;
+use App\Services\RateizzazioneSceltaService;
 use App\Services\RendicontazioneEngineService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
@@ -1416,6 +1417,22 @@ final class RendicontazioneJobTest extends DbTestCase
 
         self::assertSame([], $this->patchedIds());
         self::assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
+    }
+
+    public function testDoppioPagamentoAnnotatoSullaRigaUnaVolta(): void
+    {
+        $id = $this->rigaPiano(1, self::PIANO . '-R1');
+        $this->pendenze[self::PIANO . '-RU'] = self::pianoPendenza('ESEGUITA');
+        $repo = new RendicontazioneRepository(self::pdo());
+
+        $this->runJob();
+        $nota = (string)$this->row($id)['rendicontazione_note'];
+        self::assertStringContainsString(RateizzazioneSceltaService::NOTA_DOPPIO_PAGAMENTO, $nota);
+        self::assertStringContainsString(self::PIANO . '-RU', $nota);
+
+        // stessa nota riscritta (riga ripassata): nessun duplicato
+        $repo->appendNota($id, RateizzazioneSceltaService::notaDoppioPagamento([self::PIANO . '-RU']));
+        self::assertSame($nota, (string)$this->row($id)['rendicontazione_note']);
     }
 
     public function testErroreControparteNonBloccaRiga(): void
