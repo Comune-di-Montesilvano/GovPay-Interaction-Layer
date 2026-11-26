@@ -70,6 +70,16 @@ foreach ($api in $apis) {
         (Get-Content $_.FullName -Raw) -replace '\\GuzzleHttp\\Utils::jsonEncode\(', 'json_encode(' | Set-Content $_.FullName -NoNewline
     }
 
+    # Guzzle 8: getResponse() solo su ResponseException; i guasti senza risposta fuori dalla
+    # connessione (cURL 56, timeout) sono NetworkException, non ConnectException.
+    # .Replace() = sostituzione letterale (niente regex ne' token $ nella stringa di arrivo).
+    Write-Host "   > Correzione output: eccezioni Guzzle 8 (ResponseException / NetworkException)"
+    Get-ChildItem -Path $clientDirPath -Filter *.php -Recurse | ForEach-Object {
+        $src = Get-Content $_.FullName -Raw
+        $out = $src.Replace('$e->getResponse() ?', '$e instanceof \GuzzleHttp\Exception\ResponseException ?').Replace('catch (ConnectException $e)', 'catch (\GuzzleHttp\Exception\NetworkException $e)')
+        if ($out -ne $src) { Set-Content $_.FullName -Value $out -NoNewline }
+    }
+
     # Validazione output: proprietà duplicate nello spec (es. PaymentInfo.iur nel Biz Events
     # pagoPA) producono getter/setter duplicati -> PHP Fatal "Cannot redeclare" al primo
     # autoload. Meglio fallire qui che scoprirlo in produzione.
