@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace Tests\Fakes;
 
+use App\Security\OidcUserMapper;
 use PHPUnit\Framework\TestCase;
 
 /** IdP OIDC finto (tests/Fakes/Oidc/router.php) usato dall'e2e del frontoffice. */
@@ -75,13 +76,14 @@ final class FakeOidcServerTest extends TestCase
     }
 
     /** Percorre la pagina di login e ritorna [code, state] dal link verso redirect_uri. */
-    private function authorize(string $verifier, string $state = 'st-1'): array
+    private function authorize(string $verifier, string $state = 'st-1', ?array $claims = null): array
     {
+        $claims ??= OidcUserMapper::requestedClaims(false);
         $r = $this->http('GET', '/OIDC/authorization?' . http_build_query([
             'client_id' => 'gil-e2e', 'response_type' => 'code', 'scope' => 'openid profile email',
             'redirect_uri' => 'http://frontoffice/oidc/callback', 'state' => $state,
             'code_challenge' => self::b64url(hash('sha256', $verifier, true)), 'code_challenge_method' => 'S256',
-        ]));
+        ] + ($claims === [] ? [] : ['claims' => json_encode($claims)])));
         self::assertSame(200, $r['status'], $r['body']);
         self::assertSame(1, preg_match('#href="([^"]+)"#', $r['body'], $m));
         $url = html_entity_decode($m[1], ENT_QUOTES);
@@ -109,6 +111,25 @@ final class FakeOidcServerTest extends TestCase
         $u = $this->http('GET', '/OIDC/userinfo', [], ['Authorization: Bearer ' . $tok['access_token']]);
         self::assertSame(200, $u['status']);
         self::assertSame('cittadino@example.test', json_decode($u['body'], true)['email']);
+    }
+
+    /** Come pa-sso-proxy: senza parametro `claims` nessun dato utente, solo `sub`. */
+    public function testSenzaClaimsSoloSub(): void
+    {
+        [$code] = $this->authorize('v-senza-claims', 'st-1', []);
+        $r = $this->http('POST', '/OIDC/token', [
+            'grant_type' => 'authorization_code', 'code' => $code, 'client_id' => 'gil-e2e',
+            'redirect_uri' => 'http://frontoffice/oidc/callback', 'code_verifier' => 'v-senza-claims',
+        ]);
+        self::assertSame(200, $r['status'], $r['body']);
+        $tok = json_decode($r['body'], true);
+        $claims = json_decode((string)base64_decode(strtr(explode('.', $tok['id_token'])[1], '-_', '+/')), true);
+        self::assertSame('fake-oidc-user-1', $claims['sub']);
+        self::assertArrayNotHasKey('fiscal_number', $claims);
+        self::assertArrayNotHasKey('email', $claims);
+
+        $u = json_decode($this->http('GET', '/OIDC/userinfo', [], ['Authorization: Bearer ' . $tok['access_token']])['body'], true);
+        self::assertSame(['sub' => 'fake-oidc-user-1'], $u);
     }
 
     public function testVerifierSbagliatoRifiutato(): void
