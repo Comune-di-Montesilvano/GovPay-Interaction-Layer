@@ -544,8 +544,10 @@ HTML;
         $iuvInfo = $noticeCode !== '' ? "<p><strong>IUV:</strong> {$noticeCode}</p>" : '';
 
         // Tipologia pendenza (fix 7)
-        $tipologiaInfo = !empty($pendenzaData['idTipoPendenza'])
-            ? '<p><strong>Tipologia:</strong> ' . htmlspecialchars((string)$pendenzaData['idTipoPendenza'], ENT_QUOTES, 'UTF-8') . '</p>'
+        // Al cittadino la descrizione della tipologia, non il codice tassonomia.
+        $tipologiaLabel = TipologiaLabel::of((string)($pendenzaData['idTipoPendenza'] ?? ''), isset($pendenzaData['idDominio']) ? (string)$pendenzaData['idDominio'] : null);
+        $tipologiaInfo = $tipologiaLabel !== ''
+            ? '<p><strong>Tipologia:</strong> ' . htmlspecialchars($tipologiaLabel, ENT_QUOTES, 'UTF-8') . '</p>'
             : '';
 
         // Logo: preferisci embed cid:logo, fallback a src configurato, poi titolo testuale.

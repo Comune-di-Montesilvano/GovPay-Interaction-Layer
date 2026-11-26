@@ -351,7 +351,9 @@ class RendicontazioneEngineService
                 : '';
 
             $causale = (string)($pendenza['causale'] ?? '');
-            $tipologia = (string)($riga['descrizione_entrata'] ?? $riga['cod_entrata'] ?? '');
+            // Descrizione della voce; in mancanza la descrizione della tipologia, mai il codice grezzo.
+            $tipologia = (string)($riga['descrizione_entrata']
+                ?? TipologiaLabel::of((string)($riga['cod_entrata'] ?? ''), isset($riga['id_dominio']) ? (string)$riga['id_dominio'] : null));
             $anagrafica = (string)($pendenza['soggettoPagatore']['anagrafica'] ?? '');
             $dataPagamentoRaw = (string)($pendenza['dataPagamento'] ?? '');
             $dataPagamento = $dataPagamentoRaw !== '' ? date('d/m/Y', strtotime($dataPagamentoRaw)) : '';
@@ -583,7 +585,9 @@ class RendicontazioneEngineService
                 : '';
 
             $toName = trim((string)($pendenza['soggettoPagatore']['anagrafica'] ?? ''));
-            $tipologia = (string)($riga['descrizione_entrata'] ?? $riga['cod_entrata'] ?? '');
+            // Descrizione della voce; in mancanza la descrizione della tipologia, mai il codice grezzo.
+            $tipologia = (string)($riga['descrizione_entrata']
+                ?? TipologiaLabel::of((string)($riga['cod_entrata'] ?? ''), isset($riga['id_dominio']) ? (string)$riga['id_dominio'] : null));
             $dataPagamentoRaw = (string)($pendenza['dataPagamento'] ?? '');
             $dataPagamentoFormatted = $dataPagamentoRaw !== '' ? date('d/m/Y', strtotime($dataPagamentoRaw)) : '';
             $iuv = (string)($riga['iuv'] ?? '');
