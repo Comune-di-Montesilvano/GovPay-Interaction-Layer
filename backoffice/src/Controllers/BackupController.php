@@ -45,10 +45,6 @@ class BackupController
         'rendicontazione',
     ];
 
-    public function __construct(private readonly Twig $twig)
-    {
-    }
-
     // ──────────────────────────────────────────────────────────────────────
     // BACKUP DI SISTEMA (logica PHP diretta su volume gil_backups)
     // ──────────────────────────────────────────────────────────────────────
@@ -177,10 +173,10 @@ class BackupController
                 ],
             ]);
         } catch (\Throwable $e) {
-            if (isset($zip) && $zip instanceof \ZipArchive) {
+            if (isset($zip)) {
                 @$zip->close();
             }
-            if (isset($dbDumpFile) && $dbDumpFile !== null) {
+            if (isset($dbDumpFile)) {
                 @unlink($dbDumpFile);
             }
             @unlink($zipPath);
@@ -1090,11 +1086,6 @@ class BackupController
                 $zip->addFile((string) $file, $localPath);
             }
         }
-    }
-
-    private function jsonOk(string $message): Response
-    {
-        return $this->jsonResponse(['success' => true, 'message' => $message]);
     }
 
     private function jsonError(string $message, int $status = 400): Response

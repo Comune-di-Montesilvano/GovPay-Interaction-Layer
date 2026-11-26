@@ -949,7 +949,7 @@ class FlussiRendicontazioniRepository
         try {
             $this->pdo->query('SELECT 1 FROM flussi_rendicontazioni LIMIT 1');
         } catch (\Throwable $e) {
-            if (method_exists($e, 'getCode') && (string)$e->getCode() !== '42S02') {
+            if ((string)$e->getCode() !== '42S02') {
                 return;
             }
 
@@ -1129,39 +1129,6 @@ class FlussiRendicontazioniRepository
         }
 
         return ['WHERE ' . implode(' AND ', $conditions), $params];
-    }
-
-    /**
-     * @param array<int,string> $codEntrate
-     * @return array{0:string,1:array<string,mixed>}
-     */
-    private function buildReportWhere(string $idDominio, string $dataDa, string $dataA, array $codEntrate): array
-    {
-        $where = ['id_dominio = :id_dominio'];
-        $params = [':id_dominio' => $idDominio];
-
-        if ($dataDa !== '') {
-            $where[] = 'data_pagamento >= :data_da';
-            $params[':data_da'] = $dataDa;
-        }
-
-        if ($dataA !== '') {
-            $where[] = 'data_pagamento <= :data_a';
-            $params[':data_a'] = $dataA;
-        }
-
-        $codEntrate = array_values(array_filter(array_map(static fn(mixed $v): string => trim((string)$v), $codEntrate)));
-        if ($codEntrate !== []) {
-            $placeholders = [];
-            foreach ($codEntrate as $idx => $code) {
-                $key = ':cod_' . $idx;
-                $placeholders[] = $key;
-                $params[$key] = $code;
-            }
-            $where[] = 'cod_entrata IN (' . implode(', ', $placeholders) . ')';
-        }
-
-        return ['WHERE ' . implode(' AND ', $where), $params];
     }
 
     private function normalizeDate(mixed $value): ?string

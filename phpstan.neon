@@ -1,4 +1,7 @@
 parameters:
+    # I PHPDoc dei client generati (e di parte del codice) dichiarano non-null valori che GovPay/pagoPA
+    # a runtime omettono: i controlli difensivi su quei tipi sono voluti, non codice morto.
+    treatPhpDocTypesAsCertain: false
     level: 5
     paths:
         - app

@@ -29,7 +29,7 @@ final class MappingL2Job implements PeriodicJob, CountsRemaining
      * skipped = NO_MATCH; hadWork = classificate > 0.
      */
     /** Righe mapping PROCESSED con vocab PENDING. */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         return $this->repo->countPendingVocab($this->idDominio);
     }

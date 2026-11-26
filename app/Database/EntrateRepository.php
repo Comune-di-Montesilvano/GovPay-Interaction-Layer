@@ -162,17 +162,6 @@ class EntrateRepository
     }
 
     /**
-     * Sanitizza un valore di codice entrata per rispettare il pattern accettato dall'API
-     */
-    private static function sanitizeCodEntrata(?string $value): ?string
-    {
-        if ($value === null) return null;
-        $san = preg_replace('/[^A-Za-z0-9\-_.]/', '', $value);
-        $san = substr($san, 0, 35);
-        return $san === '' ? null : $san;
-    }
-
-    /**
      * Recupera i dettagli di una singola tipologia (iban, codice contabilita, tipo_bollo, descrizione)
      * @return array<string,mixed>|null
      */

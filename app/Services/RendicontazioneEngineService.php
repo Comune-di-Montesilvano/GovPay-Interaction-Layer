@@ -466,7 +466,7 @@ class RendicontazioneEngineService
         } catch (\Throwable $e) {
             if ($e instanceof \GuzzleHttp\Exception\BadResponseException) {
                 $resp = $e->getResponse();
-                if ($resp && $resp->getStatusCode() === 422) {
+                if ($resp->getStatusCode() === 422) {
                     Logger::getInstance()->warning("Bypass regolarizzazione incasso flusso {$idFlusso} da eccezione: status code 422 (versamento non esistente su GovPay).");
                     return true;
                 }

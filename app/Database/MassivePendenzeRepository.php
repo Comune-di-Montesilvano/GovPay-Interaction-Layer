@@ -363,7 +363,7 @@ class MassivePendenzeRepository
             } catch (\Throwable $e) {}
         } catch (\Throwable $e) {
             // Solo se table not found (42S02)
-            if (method_exists($e, 'getCode') && (string)$e->getCode() !== '42S02') {
+            if ((string)$e->getCode() !== '42S02') {
                 return; // altro errore, non forziamo
             }
             $sql = "CREATE TABLE IF NOT EXISTS pendenze_massive (

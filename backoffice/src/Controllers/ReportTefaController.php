@@ -31,7 +31,7 @@ class ReportTefaController
         $this->requireTefaEnabled($response);
         $this->exposeCurrentUser();
 
-        $params   = (array)($request->getQueryParams() ?? []);
+        $params   = $request->getQueryParams();
         $idDominio = SettingsRepository::get('entity', 'id_dominio', '');
         $today     = new \DateTimeImmutable('today');
 

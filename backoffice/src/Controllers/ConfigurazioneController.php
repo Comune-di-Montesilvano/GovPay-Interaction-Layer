@@ -41,7 +41,6 @@ class ConfigurazioneController
         }
 
         $canEditConfig = $role === 'superadmin';
-        $canManageUsers = in_array($role, ['admin', 'superadmin'], true);
 
         $errors = [];
         $cfgJson = null;
@@ -86,7 +85,7 @@ class ConfigurazioneController
                 return null;
             }
             if (str_contains($code, '/')) {
-                $parts = array_values(array_filter(explode('/', $code), static fn($segment) => $segment !== null && $segment !== ''));
+                $parts = array_values(array_filter(explode('/', $code), static fn($segment) => $segment !== ''));
                 if (!empty($parts)) {
                     $code = (string)end($parts);
                 }
@@ -292,8 +291,7 @@ class ConfigurazioneController
                                         'metadatiPaginazione.num_risultati',
                                     ]);
                                     if ($operatoriPagination['totalPages'] === null
-                                        && $operatoriPagination['totalResults'] !== null
-                                        && $operatoriPagination['perPage'] > 0) {
+                                        && $operatoriPagination['totalResults'] !== null) {
                                         $operatoriPagination['totalPages'] = (int)ceil($operatoriPagination['totalResults'] / $operatoriPagination['perPage']);
                                     }
 
@@ -301,7 +299,7 @@ class ConfigurazioneController
                                     $hasNext = false;
                                     if ($operatoriPagination['totalPages'] !== null) {
                                         $hasNext = $operatoriPagination['page'] < $operatoriPagination['totalPages'];
-                                    } elseif ($operatoriPagination['perPage'] > 0 && isset($operatoriArr['risultati']) && is_array($operatoriArr['risultati'])) {
+                                    } elseif (isset($operatoriArr['risultati']) && is_array($operatoriArr['risultati'])) {
                                         $hasNext = count($operatoriArr['risultati']) >= $operatoriPagination['perPage'];
                                     }
 
@@ -768,7 +766,7 @@ class ConfigurazioneController
 
         $usersList = [];
         $countSuperadmins = 0;
-        if ($tab === 'utenti' && $canManageUsers) {
+        if ($tab === 'utenti') {
             try {
                 $usersList = $this->userRepository->listAll();
                 $countSuperadmins = $this->userRepository->countByRole('superadmin', false);
@@ -792,7 +790,7 @@ class ConfigurazioneController
 
         $pendenzaTemplates = [];
         $tipologiePendenze = [];
-        if ($tab === 'templates' && $canManageUsers) {
+        if ($tab === 'templates') {
             try {
                 $idDominioEnv = SettingsRepository::get('entity', 'id_dominio', '');
                 if ($idDominioEnv !== '') {
@@ -885,7 +883,7 @@ class ConfigurazioneController
             $code = trim($code);
             if ($code === '') { return null; }
             if (str_contains($code, '/')) {
-                $parts = array_values(array_filter(explode('/', $code), static fn($s) => $s !== null && $s !== ''));
+                $parts = array_values(array_filter(explode('/', $code), static fn($s) => $s !== ''));
                 if (!empty($parts)) { $code = (string)end($parts); }
             }
             $sanitized = preg_replace('/[^A-Za-z0-9\-_.]/', '', $code);
@@ -1688,7 +1686,7 @@ class ConfigurazioneController
             $entiApi->addDominio($idDom, $dominioPost);
 
             // Persiste aux_digit in settings per il fallback IUV nel frontoffice
-            if (isset($payload['aux_digit']) && $payload['aux_digit'] !== '') {
+            if ($payload['aux_digit'] !== '') {
                 SettingsRepository::set('entity', 'aux_digit', $payload['aux_digit']);
             }
 
@@ -1696,7 +1694,7 @@ class ConfigurazioneController
             Logger::getInstance()->info('Dominio aggiornato', ['id_dominio' => $idDom, 'user_id' => $_SESSION['user']['id'] ?? null]);
         } catch (\GovPay\Backoffice\ApiException $e) {
             $code = $e->getCode();
-            $body = method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null;
+            $body = $e->getResponseBody();
             $msg = 'Errore Backoffice (' . $code . ') aggiornamento dominio';
             if ($body) {
                 $msg .= ': ' . (is_string($body) ? $body : json_encode($body));
@@ -1933,7 +1931,7 @@ class ConfigurazioneController
             Logger::getInstance()->info('Tipologia govpay enabled toggled', ['id_dominio' => $idDominio, 'id_entrata' => $idEntrata, 'user_id' => $_SESSION['user']['id'] ?? null, 'enabled' => $enable]);
         } catch (\GovPay\Backoffice\ApiException $e) {
             $code = $e->getCode();
-            $body = method_exists($e, 'getResponseBody') ? $e->getResponseBody() : null;
+            $body = $e->getResponseBody();
             $msg = 'Errore GovPay (' . $code . ')';
             if ($body) {
                 if (is_string($body)) {
@@ -2238,7 +2236,7 @@ class ConfigurazioneController
                 return null;
             }
             if (str_contains($code, '/')) {
-                $parts = array_values(array_filter(explode('/', $code), static fn($segment) => $segment !== null && $segment !== ''));
+                $parts = array_values(array_filter(explode('/', $code), static fn($segment) => $segment !== ''));
                 if (!empty($parts)) {
                     $code = (string)end($parts);
                 }
@@ -2777,7 +2775,7 @@ class ConfigurazioneController
                             'iban_appoggio' => $finalIbanAppoggio
                         ]);
                     } catch (\GovPay\Backoffice\ApiException $ae) {
-                        $aeBody = method_exists($ae, 'getResponseBody') ? $ae->getResponseBody() : null;
+                        $aeBody = $ae->getResponseBody();
                         $aeDetail = '';
                         if ($aeBody) {
                             if (is_string($aeBody)) {

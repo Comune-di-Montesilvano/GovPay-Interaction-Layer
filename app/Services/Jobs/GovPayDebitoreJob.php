@@ -36,7 +36,7 @@ final class GovPayDebitoreJob implements PeriodicJob, CountsRemaining
 
     /** @throws \Throwable se il recupero del batch fallisce */
     /** IUR GovPay che getBatch selezionerebbe ora (senza biz_ricevute o ERROR fuori backoff). */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         SettingsRepository::flush();
         $scanDa = trim((string)SettingsRepository::get('backoffice', 'ragioneria_scan_da', ''));

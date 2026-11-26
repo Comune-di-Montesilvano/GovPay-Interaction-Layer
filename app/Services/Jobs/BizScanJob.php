@@ -80,7 +80,7 @@ final class BizScanJob implements PeriodicJob, CountsRemaining
         }
 
         if ($ctx->shouldStop()) {
-            return new JobResult($processed, $ok, $skipped, $errors, $processed > 0, $details);
+            return new JobResult($processed, $ok, $skipped, $errors, false, $details);
         }
         $counts         = $this->repo->getCounts($idDominio);
         $pendingInScope = $this->repo->countPendingForProcessing($idDominio, $minDate);
@@ -207,7 +207,7 @@ final class BizScanJob implements PeriodicJob, CountsRemaining
     }
 
     /** Ricevute PENDING in-scope + IUR non-GovPay non ancora accodati in biz_ricevute. */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         SettingsRepository::flush();
         $minDate = self::minDate();

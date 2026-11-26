@@ -75,7 +75,7 @@ try {
     $log("Job $jobId batch $batchId: " . count($plan) . ' PDF da scaricare.');
 
     $idDominio = (string)SettingsRepository::get('entity', 'id_dominio', '');
-    $controller = new PendenzeController(Twig::create(dirname(__DIR__) . '/backoffice/templates'), null);
+    $controller = new PendenzeController(Twig::create(dirname(__DIR__) . '/backoffice/templates'));
 
     $safeBatch = preg_replace('/[^A-Za-z0-9\-_]/', '_', $batchId);
     $zipPath = EXPORT_DIR . '/avvisi_' . $safeBatch . '_' . $jobId . '.zip';

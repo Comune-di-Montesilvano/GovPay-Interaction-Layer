@@ -99,7 +99,7 @@ class CronLogRepository
         try {
             $this->pdo->query('SELECT 1 FROM cron_log LIMIT 1');
         } catch (\Throwable $e) {
-            if (method_exists($e, 'getCode') && (string)$e->getCode() !== '42S02') {
+            if ((string)$e->getCode() !== '42S02') {
                 return;
             }
             $sql = "CREATE TABLE IF NOT EXISTS cron_log (

@@ -37,7 +37,7 @@ final class MappingL1Job implements PeriodicJob, CountsRemaining
      * hadWork = assegnazioni > 0.
      */
     /** Righe PENDING pronte per L1 (Biz PROCESSED, e TEFA SKIPPED se abilitato). */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         return $this->repo->countReadyForMapping($this->idDominio);
     }

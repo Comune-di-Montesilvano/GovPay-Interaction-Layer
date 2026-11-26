@@ -29,15 +29,6 @@ use App\Controllers\ConfigurazioneController;
  */
 class ImpostazioniController
 {
-    // Path dei volumi montati sul container backoffice
-    private const INTERNAL_SPID_METADATA_PATH = '/var/www/html/metadata-sp/frontoffice_sp.xml';
-    private const PUBLIC_SPID_METADATA_PATH   = '/var/www/html/metadata-agid/satosa_spid_public_metadata.xml';
-    private const CIE_METADATA_PATH           = '/var/www/html/metadata-cieoidc/entity-configuration.json';
-    private const SPID_CERTS_DIR              = '/var/www/html/spid-certs';
-    private const CIEOIDC_KEYS_DIR            = '/var/www/html/cieoidc-keys';
-    private const CIEOIDC_META_DIR            = '/var/www/html/metadata-cieoidc';
-    private const SPID_PUBLIC_META_DIR        = '/var/www/html/metadata-agid';
-
     public function __construct(private readonly Twig $twig)
     {
     }
@@ -557,7 +548,7 @@ class ImpostazioniController
                    AND value IS NOT NULL
                    AND value <> ''
                  ORDER BY id ASC"
-            )?->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            )->fetchAll(\PDO::FETCH_ASSOC) ?: [];
 
             if ($rows === []) {
                 return $this->jsonOk('Nessun valore cifrato da migrare.', [
@@ -647,7 +638,7 @@ class ImpostazioniController
                 ]
             );
         } catch (\Throwable $e) {
-            if (isset($pdo) && $pdo instanceof \PDO && $pdo->inTransaction()) {
+            if (isset($pdo) && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             Logger::getInstance()->error('Rotazione APP_ENCRYPTION_KEY fallita', ['error' => $e->getMessage()]);
@@ -1113,14 +1104,6 @@ class ImpostazioniController
             $appName = SettingsRepository::get('entity', 'name', 'GIL') ?: 'GIL';
             $mailerService->sendTestEmail($recipient, $appName);
             return $this->jsonOk("Email di test inviata a {$recipient}.");
-            $email = (new \Symfony\Component\Mime\Email())
-                ->to(new \Symfony\Component\Mime\Address($recipient))
-                ->subject("[{$appName}] Email di test")
-                ->html("<p>Questo è un messaggio di test inviato dal backoffice di <strong>"
-                    . htmlspecialchars($appName, ENT_QUOTES) . "</strong>.</p>")
-                ->text("Questo è un messaggio di test inviato dal backoffice di {$appName}.");
-            $mailerService->send($email);
-            return $this->jsonOk("Email di test inviata a {$recipient}.");
         } catch (\Throwable $e) {
             return $this->jsonError('Invio fallito: ' . $e->getMessage());
         }
@@ -1218,45 +1201,6 @@ class ImpostazioniController
         }
         if ($httpCode >= 200 && $httpCode < 300) {
             return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — OK.");
-        }
-        return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile.");
-    }
-
-    private function pingUrl(string $url, string $label): Response
-    {
-        if (empty($url)) {
-            return $this->jsonError("URL {$label} non configurato.");
-        }
-        $ch = curl_init($url);
-        if ($ch === false) {
-            return $this->jsonError("URL {$label} non valido.");
-        }
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 5,
-            CURLOPT_NOBODY         => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 3,
-            CURLOPT_SSL_VERIFYPEER => false,
-        ]);
-        $result   = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-
-        if ($result === false || $curlErr) {
-            return $this->jsonError("Connessione {$label} fallita: {$curlErr}");
-        }
-        if ($httpCode === 0) {
-            return $this->jsonError("Connessione {$label}: nessuna risposta (timeout o host non raggiungibile).");
-        }
-        if ($httpCode >= 200 && $httpCode < 300) {
-            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — OK.");
-        }
-        if ($httpCode >= 300 && $httpCode < 400) {
-            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile (redirect).");
-        }
-        if ($httpCode >= 400 && $httpCode < 500) {
-            return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile (risponde con {$httpCode}).");
         }
         return $this->jsonOk("Connessione {$label}: HTTP {$httpCode} — server raggiungibile.");
     }
@@ -1734,30 +1678,6 @@ class ImpostazioniController
         $resp = new SlimResponse($status);
         $resp->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
         return $resp->withHeader('Content-Type', 'application/json');
-    }
-
-    /**
-     * Salva un file caricato via upload in un path del filesystem del container.
-     *
-     * @param string[] $allowedMimes MIME type accettati (lax: se vuoto accetta tutto)
-     */
-    private function saveUploadedFile(Request $request, string $fieldName, string $destPath, array $allowedMimes = []): Response
-    {
-        $files = $request->getUploadedFiles();
-        $file  = $files[$fieldName] ?? null;
-        if (!$file || $file->getError() !== UPLOAD_ERR_OK) {
-            return $this->jsonError('Nessun file ricevuto o errore upload.');
-        }
-        if ($allowedMimes && !in_array($file->getClientMediaType(), $allowedMimes, true)) {
-            return $this->jsonError('Tipo file non supportato.');
-        }
-        try {
-            @mkdir(dirname($destPath), 0755, true);
-            $file->moveTo($destPath);
-            return $this->jsonOk('File caricato correttamente.');
-        } catch (\Throwable $e) {
-            return $this->jsonError('Salvataggio fallito: ' . $e->getMessage());
-        }
     }
 
     private function handleCertUpload(

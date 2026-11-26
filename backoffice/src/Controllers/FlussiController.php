@@ -27,7 +27,7 @@ class FlussiController
     {
         $this->exposeCurrentUser();
 
-        $params = (array)($request->getQueryParams() ?? []);
+        $params = $request->getQueryParams();
         $errors = [];
         $highlightId = isset($params['highlight']) ? (string)$params['highlight'] : null;
         $filters = [
@@ -189,7 +189,7 @@ class FlussiController
                     }
                 } catch (ClientException $ce) {
                     $errors[] = 'Errore chiamata Flussi: ' . $ce->getMessage();
-                    $detailBody = $ce->getResponse() ? (string)$ce->getResponse()->getBody() : '';
+                    $detailBody = (string)$ce->getResponse()->getBody();
                     if ($detailBody !== '') {
                         $errors[] = 'Dettaglio API: ' . $detailBody;
                     }
@@ -365,7 +365,7 @@ class FlussiController
                     }
                 } catch (ClientException $ce) {
                     $errors[] = 'Errore recupero dettaglio flusso: ' . $ce->getMessage();
-                    $detailBody = $ce->getResponse() ? (string)$ce->getResponse()->getBody() : '';
+                    $detailBody = (string)$ce->getResponse()->getBody();
                     if ($detailBody !== '') {
                         $errors[] = 'Dettaglio API: ' . $detailBody;
                     }

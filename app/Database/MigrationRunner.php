@@ -149,7 +149,7 @@ final class MigrationRunner
     private function registered(): array
     {
         $rows = $this->pdo->query("SELECT filename, checksum FROM `{$this->registryTable}`")->fetchAll(\PDO::FETCH_KEY_PAIR);
-        return is_array($rows) ? array_map('strval', $rows) : [];
+        return array_map('strval', $rows);
     }
 
     private function register(string $name, string $checksum): void

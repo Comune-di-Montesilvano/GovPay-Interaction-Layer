@@ -166,7 +166,7 @@ final class RagioneriaSyncJob implements PeriodicJob
 
         while (true) {
             if ($ctx->shouldStop()) {
-                return new JobResult($processed, $ok, $skipped, $errors, ($newRows + $rawUpdated) > 0, $details);
+                return new JobResult($processed, $ok, $skipped, $errors, false, $details);
             }
 
             $query = [

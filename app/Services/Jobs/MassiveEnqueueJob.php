@@ -81,7 +81,7 @@ final class MassiveEnqueueJob implements PeriodicJob, CountsRemaining
      * piena (contropressione): il giro non prenderebbe nulla ed e' `silent`, nessuna riga
      * storico ne' stdout.
      */
-    public function remaining(): ?int
+    public function remaining(): int
     {
         if ($this->outstandingMessages() >= self::BATCH_SIZE) {
             return 0;
