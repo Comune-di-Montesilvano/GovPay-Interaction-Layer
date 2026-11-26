@@ -1380,6 +1380,35 @@ HTML;
                         . '</div>' . "\n";
         }
 
+        // Rateizzazione a scelta: card "Unica soluzione" prima delle rate
+        $ruCard = '';
+        $ru = is_array($data['rataUnica'] ?? null) ? $data['rataUnica'] : null;
+        if ($ru !== null) {
+            $ruImp    = number_format((float)str_replace(',', '.', (string)($ru['importo'] ?? 0)), 2, ',', '.');
+            $ruScad   = htmlspecialchars((string)(($ru['dataScadenza'] ?? '') ?: ($ru['dataValidita'] ?? '')), ENT_QUOTES, 'UTF-8');
+            $ruAvviso = htmlspecialchars((string)($ru['numeroAvviso'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $ruPdf    = htmlspecialchars((string)($ru['pdfUrl'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $ruPay    = htmlspecialchars((string)($ru['paymentUrl'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $ruBtns = '';
+            if ($ruPdf !== '') {
+                $ruBtns .= '<a href="' . $ruPdf . '" style="display:inline-block; margin:2px 4px 2px 0; padding:6px 12px; background:#6c757d; color:#fff; text-decoration:none; border-radius:4px; font-size:12px; font-weight:600;">Scarica PDF</a>';
+            }
+            if ($ruPay !== '') {
+                $ruBtns .= '<a href="' . $ruPay . '" style="display:inline-block; margin:2px 0; padding:6px 12px; background:#0b3d91; color:#fff; text-decoration:none; border-radius:4px; font-size:12px; font-weight:600;">Paga ora</a>';
+            }
+            $ruCard = '<p>' . htmlspecialchars("Puoi pagare in unica soluzione oppure a rate: pagata un'opzione, l'altra opzione verrà annullata.", ENT_QUOTES, 'UTF-8') . '</p>'
+                . '<div style="border:2px solid #0b3d91; border-radius:6px; padding:12px 16px; margin-bottom:16px;">'
+                . '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+                . '<span style="font-weight:700; color:#0b3d91;">Unica soluzione</span>'
+                . '<span style="font-weight:700; font-size:16px;">&euro; ' . $ruImp . '</span>'
+                . '</div>'
+                . ($ruScad !== '' ? '<div style="font-size:13px; color:#555; margin-bottom:4px;">Scadenza: ' . $ruScad . '</div>' : '')
+                . ($ruAvviso !== '' ? '<div style="font-size:11px; font-family:monospace; color:#888; margin-bottom:8px;">N. Avviso: ' . $ruAvviso . '</div>' : '')
+                . ($ruBtns !== '' ? '<div>' . $ruBtns . '</div>' : '')
+                . '</div>' . "\n";
+        }
+        $rateCards = $ruCard . $rateCards;
+
         return <<<HTML
         <!DOCTYPE html>
         <html lang="it">
@@ -1449,6 +1478,21 @@ HTML;
                 $rateLines .= "    Paga ora:    " . $rate['paymentUrl'] . "\n";
             }
             $rateLines .= "\n";
+        }
+
+        $ru = is_array($data['rataUnica'] ?? null) ? $data['rataUnica'] : null;
+        if ($ru !== null) {
+            $ruImp  = number_format((float)str_replace(',', '.', (string)($ru['importo'] ?? 0)), 2, ',', '.');
+            $ruScad = (string)(($ru['dataScadenza'] ?? '') ?: ($ru['dataValidita'] ?? '')) ?: '—';
+            $ruLines = "Puoi pagare in unica soluzione oppure a rate: pagata un'opzione, l'altra verrà annullata.\n\n"
+                . "  Unica soluzione: € {$ruImp} | Scadenza: {$ruScad} | N. Avviso: " . ((string)($ru['numeroAvviso'] ?? '') ?: '—') . "\n";
+            if (!empty($ru['pdfUrl'])) {
+                $ruLines .= "    Scarica PDF: " . $ru['pdfUrl'] . "\n";
+            }
+            if (!empty($ru['paymentUrl'])) {
+                $ruLines .= "    Paga ora:    " . $ru['paymentUrl'] . "\n";
+            }
+            $rateLines = $ruLines . "\n" . $rateLines;
         }
 
         $tipologiaLine    = $tipologia !== '' ? "Tipologia: {$tipologia}\n" : '';

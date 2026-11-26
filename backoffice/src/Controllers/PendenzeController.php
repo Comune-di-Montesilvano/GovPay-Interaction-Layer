@@ -1184,6 +1184,46 @@ class PendenzeController
         ]);
     }
 
+    // ── Rata unica a scelta (<base>-RU) ─────────────────────────────────────
+    // Flag letto solo dal POST corrente: original_params puo' essere stantio
+    // (checkbox tolta dopo un passaggio precedente).
+    $ruResult = null;
+    if (!empty($params['crea_rata_unica'])) {
+        $idRate = [];
+        foreach ($parts as $idx => $p) {
+            $idRate[] = $baseId . '-R' . (isset($p['indice']) ? (int)$p['indice'] : ($idx + 1));
+        }
+        $idRu = \App\Services\RateizzazioneSceltaService::idRataUnica((string)$baseId);
+        $merged['datiAllegati'][\App\Services\RateizzazioneSceltaService::MARKER_KEY] =
+            \App\Services\RateizzazioneSceltaService::buildMarker($idRu, $idRate);
+
+        $ruErrors = [];
+        $ruPayload = $this->buildRataUnicaPayload($merged, $orig, $parts, $rateIdTipo, $originalTotal, trim((string)($params['rata_unica_scadenza'] ?? '')), $ruErrors);
+        if (empty($ruErrors)) {
+            $ruRes = $this->sendPendenzaToBackoffice($this->preparaPayloadRata($ruPayload), $idRu);
+            if (!empty($ruRes['success'])) {
+                $ruResult = [
+                    'idPendenza'   => $ruRes['idPendenza'] ?? $idRu,
+                    'importo'      => $originalTotal,
+                    'dataValidita' => $ruPayload['dataValidita'] ?? null,
+                    'dataScadenza' => $ruPayload['dataScadenza'] ?? null,
+                    'numeroAvviso' => self::estraiNumeroAvviso($ruRes['response'] ?? null),
+                ];
+            } else {
+                $ruErrors = (array)($ruRes['errors'] ?? ['Errore invio pendenza']);
+            }
+        }
+        if (!empty($ruErrors)) {
+            // Piano "a scelta" mai parziale: nessuna rata se la rata unica non e' creata.
+            return $this->twig->render($response, 'pendenze/rateizzazione.html.twig', [
+                'params' => array_merge($orig, ['crea_rata_unica' => '1', 'rata_unica_scadenza' => (string)($params['rata_unica_scadenza'] ?? '')]),
+                'importo' => $originalTotal,
+                'parts' => $parts,
+                'errors' => array_map(static fn($e): string => 'Rata unica: ' . (string)$e, $ruErrors),
+            ]);
+        }
+    }
+
     foreach ($parts as $idx => $p) {
         $rIndex = isset($p['indice']) ? (int)$p['indice'] : ($idx + 1);
         $single = $merged;
@@ -1307,92 +1347,10 @@ class PendenzeController
             continue;
         }
 
-        // Sanitize top-level keys to avoid sending UI-only parameters (es. 'return')
-        $allowed = [
-            'idTipoPendenza','idDominio','causale','importo','annoRiferimento',
-            'soggettoPagatore','voci','documento','proprieta','allegati',
-            'dataValidita','dataScadenza','direzione','divisione','cartellaPagamento',
-            'numeroAvviso','tassonomia','dataPromemoriaScadenza','idUnitaOperativa',
-            'dataCaricamento','datiAllegati','tassonomiaAvviso','dataNotificaAvviso',
-            'nome'
-        ];
-        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
-        $isBollo = strcasecmp((string)($single['idTipoPendenza'] ?? ''), $bolloIdTipo) === 0;
-        if ($isBollo) {
-            $single['tassonomiaAvviso'] = 'Imposte e tasse';
-            if (empty($single['dataValidita'])) {
-                $single['dataValidita'] = date('Y-m-d');
-            }
-            if (empty($single['dataScadenza'])) {
-                $single['dataScadenza'] = (new \DateTimeImmutable('today'))->modify('+15 days')->format('Y-m-d');
-            }
-        }
+        $single = $this->preparaPayloadRata($single);
 
-        // Normalizza il soggettoPagatore: unisci nome+anagrafica e rimuovi 'nome'
-        if (isset($single['soggettoPagatore']) && is_array($single['soggettoPagatore'])) {
-            $s = $single['soggettoPagatore'];
-            $tipo = strtoupper((string)($s['tipo'] ?? 'F'));
-            $anag = trim((string)($s['anagrafica'] ?? ''));
-            $nome = trim((string)($s['nome'] ?? ''));
-
-            if ($tipo === 'F') {
-                $full = trim(($nome !== '' ? $nome . ' ' : '') . $anag);
-                $s['anagrafica'] = $full !== '' ? $full : $anag;
-            } else {
-                $s['anagrafica'] = $anag;
-            }
-            // Email: keep only if scalar and valid
-            if (array_key_exists('email', $s)) {
-                $raw = $s['email'];
-                if (!is_scalar($raw) || trim((string)$raw) === '' || filter_var(trim((string)$raw), FILTER_VALIDATE_EMAIL) === false) {
-                    unset($s['email']);
-                } else {
-                    $s['email'] = trim((string)$raw);
-                }
-            }
-            // Cellulare: keep only scalar non-empty
-            if (array_key_exists('cellulare', $s)) {
-                $raw = $s['cellulare'];
-                if (!is_scalar($raw) || trim((string)$raw) === '') {
-                    unset($s['cellulare']);
-                } else {
-                    $s['cellulare'] = trim((string)$raw);
-                }
-            }
-            if (isset($s['nome'])) unset($s['nome']);
-            $single['soggettoPagatore'] = $s;
-        }
-
-        // Rimuoviamo campi che possono essere passati come array vuoto dalla UI
-        // e che il Backoffice si aspetta come stringhe (es. cartellaPagamento).
-        $stringFields = ['cartellaPagamento', 'direzione', 'divisione'];
-        foreach ($stringFields as $sf) {
-            if (!array_key_exists($sf, $single)) continue;
-            $val = $single[$sf];
-            if (!is_scalar($val) || trim((string)$val) === '') {
-                unset($single[$sf]);
-            } else {
-                $single[$sf] = trim((string)$val);
-            }
-        }
-
-        // Sanitize 'proprieta' per evitare di inviare campi non supportati
-        if (isset($single['proprieta']) && is_array($single['proprieta'])) {
-            $allowedPropKeys = [
-                'descrizioneImporto', 'lineaTestoRicevuta1', 'lineaTestoRicevuta2',
-                'linguaSecondaria', 'linguaSecondariaCausale'
-            ];
-            $single['proprieta'] = array_intersect_key($single['proprieta'], array_flip($allowedPropKeys));
-            if (empty($single['proprieta'])) {
-                unset($single['proprieta']);
-            }
-        }
-
-        $single = array_intersect_key($single, array_flip($allowed));
-
-        // Rimuoviamo idPendenza dal body (deve essere passato solo nell'URL)
+        // idPendenza solo nell'URL
         $idForUrl = $idPForRate;
-        if (isset($single['idPendenza'])) unset($single['idPendenza']);
 
         // Invia singola pendenza
         $res = $this->sendPendenzaToBackoffice($single, $idForUrl);
@@ -1419,6 +1377,7 @@ class PendenzeController
             'idDominio' => $merged['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', '')),
             'rates' => [],
             'responses' => $responses,
+            'rataUnica' => $ruResult,
         ];
         foreach ($parts as $i => $p) {
             $rateId = $created[$i] ?? null;
@@ -1431,14 +1390,7 @@ class PendenzeController
         foreach ($created as $i => $cid) {
             $r = $parts[$i] ?? [];
             $resp = $responses[$i]['response'] ?? null;
-            $numeroAvviso = null;
-            if (is_array($resp)) {
-                if (!empty($resp['numeroAvviso'])) $numeroAvviso = $resp['numeroAvviso'];
-                elseif (!empty($resp['numero_avviso'])) $numeroAvviso = $resp['numero_avviso'];
-                elseif (!empty($resp['pendenza']['numeroAvviso'])) $numeroAvviso = $resp['pendenza']['numeroAvviso'];
-                elseif (!empty($resp['pendenza']['numero_avviso'])) $numeroAvviso = $resp['pendenza']['numero_avviso'];
-                elseif (!empty($resp['avvisi'][0]['numeroAvviso'])) $numeroAvviso = $resp['avvisi'][0]['numeroAvviso'];
-            }
+            $numeroAvviso = self::estraiNumeroAvviso($resp);
             $multi['rates'][] = [
                 'idPendenza' => $cid,
                 'indice' => $r['indice'] ?? ($i + 1),
@@ -1499,6 +1451,19 @@ class PendenzeController
                     'multiratePdfUrl' => $multiratePdfUrl,
                     'rates'           => $ratesForEmail,
                 ];
+                if ($ruResult !== null) {
+                    $ruAvviso = (string)($ruResult['numeroAvviso'] ?? '');
+                    $emailData['rataUnica'] = [
+                        'importo'      => $ruResult['importo'],
+                        'dataScadenza' => $ruResult['dataScadenza'],
+                        'dataValidita' => $ruResult['dataValidita'],
+                        'numeroAvviso' => $ruAvviso !== '' ? $ruAvviso : null,
+                        'pdfUrl'       => ($frontofficeUrl !== '' && $ruAvviso !== '')
+                            ? $this->buildPdfDownloadUrl($frontofficeUrl, $idDominioNotify, $payerCf, '', $ruAvviso) : '',
+                        'paymentUrl'   => ($frontofficeUrl !== '' && $ruAvviso !== '')
+                            ? $this->buildCheckoutStartUrl($frontofficeUrl, $payerCf, '', $ruAvviso) : '',
+                    ];
+                }
                 $notifResult = $mailer->sendRateizzazioneNotification(
                     $payerEmail,
                     $payerAnagrafica,
@@ -1531,9 +1496,17 @@ class PendenzeController
                     $ioSvc    = new \App\Services\AppIoService();
                     $numRates = count($multi['rates']);
                     $ioErrors       = 0;
+                    // Rateizzazione a scelta: un messaggio in piu' per la rata unica (N+1)
+                    $ioItems = $multi['rates'];
+                    if ($ruResult !== null) {
+                        array_unshift($ioItems, $ruResult + ['unica' => true]);
+                    }
+                    $numIo = count($ioItems);
 
-                    foreach ($multi['rates'] as $i => $rate) {
+                    foreach ($ioItems as $i => $rate) {
+                        $isUnica     = !empty($rate['unica']);
                         $rIdx        = $rate['indice'] ?? ($i + 1);
+                        $suffisso    = $isUnica ? ' (Rata unica)' : " (Rata {$rIdx} di {$numRates})";
                         $rateImporto = is_numeric(str_replace(',', '.', (string)($rate['importo'] ?? 0)))
                                        ? (float)str_replace(',', '.', (string)$rate['importo']) : 0.0;
                         $rateScadenza = $rate['dataScadenza'] ?? null;
@@ -1541,13 +1514,18 @@ class PendenzeController
                         $rateId       = (string)($rate['idPendenza'] ?? '');
 
                         $ioSubject = substr(
-                            'Pendenza PagoPA - ' . $originalCausaleForNotify . " (Rata {$rIdx} di {$numRates})",
+                            'Pendenza PagoPA - ' . $originalCausaleForNotify . $suffisso,
                             0, 120
                         );
                         $rateDataValidita = $rate['dataValidita'] ?? null;
 
                         $markdown  = "## Pendenza PagoPA\n\n";
-                        $markdown .= "**Causale**: {$originalCausaleForNotify} (Rata {$rIdx} di {$numRates})\n\n";
+                        $markdown .= "**Causale**: {$originalCausaleForNotify}{$suffisso}\n\n";
+                        if ($ruResult !== null) {
+                            $markdown .= $isUnica
+                                ? "Puoi pagare in unica soluzione oppure a rate: pagata un'opzione, l'altra verrà annullata.\n\n"
+                                : "In alternativa puoi pagare in unica soluzione: pagata un'opzione, l'altra verrà annullata.\n\n";
+                        }
                         if ($idTipoPendenzaNotify !== '') {
                             $markdown .= "**Tipologia**: {$idTipoPendenzaNotify}\n\n";
                         }
@@ -1599,7 +1577,7 @@ class PendenzeController
                                 'destinatario' => $ioResult['id'] ?? 'N/A',
                                 'message_id'   => $ioResult['id'] ?? null,
                             ];
-                            $this->addNotificationToPendenza($rateId, $ioNotification, "Notifica App IO rata {$rIdx}");
+                            $this->addNotificationToPendenza($rateId, $ioNotification, ($isUnica ? "Notifica App IO rata unica" : "Notifica App IO rata {$rIdx}"));
                         } else {
                             $ioErrors++;
                             Logger::getInstance()->warning('Errore notifica App IO rata rateizzazione', [
@@ -1610,9 +1588,9 @@ class PendenzeController
                         }
                     }
 
-                    $sent = $numRates - $ioErrors;
+                    $sent = $numIo - $ioErrors;
                     if ($sent > 0) {
-                        $_SESSION['flash'][] = ['type' => 'info', 'text' => "Notifiche App IO inviate per {$sent} di {$numRates} rate"];
+                        $_SESSION['flash'][] = ['type' => 'info', 'text' => "Notifiche App IO inviate per {$sent} di {$numIo} avvisi"];
                     }
                     if ($ioErrors > 0) {
                         $_SESSION['flash'][] = ['type' => 'warning', 'text' => "{$ioErrors} notifiche App IO non inviate"];
@@ -1625,6 +1603,9 @@ class PendenzeController
         }
         // ─────────────────────────────────────────────────────────────────────
 
+        if ($ruResult !== null) {
+            $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Rata unica creata: ' . $ruResult['idPendenza']];
+        }
         if (!empty($created)) {
             foreach ($created as $c) {
                 $_SESSION['flash'][] = ['type' => 'success', 'text' => 'Pendenza creata: ' . $c];
@@ -1642,6 +1623,10 @@ class PendenzeController
     }
 
     // Se siamo qui, almeno una rata ha fallito: ritorniamo al form con errori
+    if ($ruResult !== null) {
+        $allErrors[] = 'Attenzione: la rata unica ' . $ruResult['idPendenza']
+            . ' e le rate senza errori sono state create comunque: verificarle prima di riprovare.';
+    }
     return $this->twig->render($response, 'pendenze/rateizzazione.html.twig', [
         'params' => $orig,
         'importo' => $originalTotal,
@@ -2573,6 +2558,178 @@ class PendenzeController
             }
         }
         return strtoupper($trimmed);
+    }
+
+    /** Numero avviso dalla risposta PUT GovPay (formati osservati). */
+    private static function estraiNumeroAvviso(mixed $resp): ?string
+    {
+        if (!is_array($resp)) {
+            return null;
+        }
+        foreach ([
+            $resp['numeroAvviso'] ?? null,
+            $resp['numero_avviso'] ?? null,
+            $resp['pendenza']['numeroAvviso'] ?? null,
+            $resp['pendenza']['numero_avviso'] ?? null,
+            $resp['avvisi'][0]['numeroAvviso'] ?? null,
+        ] as $v) {
+            if (!empty($v)) {
+                return (string)$v;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Payload GovPay della rata unica di una rateizzazione a scelta: stesso documento delle rate
+     * ma senza documento.rata (= unica soluzione), importo totale, voci originali non ripartite.
+     * Date: $scadenza se valida (Y-m-d), altrimenti quelle della rata 1.
+     *
+     * @param array<string,mixed> $merged payload base del piano (con marker in datiAllegati)
+     * @param array<string,mixed> $orig parametri originali del form
+     * @param array<int|string,mixed> $parts rate dal form
+     * @param array<mixed> $errors messaggi d'errore (stringhe), riempito per riferimento
+     * @return array<string,mixed>
+     */
+    private function buildRataUnicaPayload(array $merged, array $orig, array $parts, string $idTipo, float $totale, string $scadenza, array &$errors): array
+    {
+        $ru = $merged;
+        $ru['idTipoPendenza'] = $idTipo;
+        $ru['importo'] = $totale;
+        $causale = trim((string)($orig['causale'] ?? 'Pagamento rateizzato'));
+        $ru['causale'] = $causale . ' (Rata unica)';
+        $doc = is_array($ru['documento'] ?? null) ? $ru['documento'] : [];
+        unset($doc['rata']);
+        $doc['descrizione'] = $causale . ' (Rate ' . count($parts) . ')';
+        $ru['documento'] = $doc;
+
+        $first = is_array(reset($parts)) ? reset($parts) : [];
+        if ($scadenza !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $scadenza) === 1) {
+            $ru['dataValidita'] = $scadenza;
+            $ru['dataScadenza'] = $scadenza;
+        } else {
+            $dv = (string)($first['dataValidita'] ?? ($first['data_validita'] ?? ''));
+            $ds = (string)($first['dataScadenza'] ?? ($first['data_scadenza'] ?? ''));
+            if ($dv !== '') $ru['dataValidita'] = $dv;
+            if ($ds !== '') $ru['dataScadenza'] = $ds;
+        }
+
+        $idDominio = (string)($ru['idDominio'] ?? SettingsRepository::get('entity', 'id_dominio', ''));
+        $voci = $this->buildVociForInsertionFromMerged($ru, is_array($ru['voci'] ?? null) ? $ru['voci'] : [], $idDominio, $errors);
+        if ($voci === []) {
+            $errors[] = 'Nessuna voce definita.';
+            return $ru;
+        }
+        $sumCents = 0;
+        foreach ($voci as $i => $v) {
+            $sumCents += (int)round((float)str_replace(',', '.', (string)($v['importo'] ?? 0)) * 100);
+            $desc = trim((string)preg_replace('/\s*\(Rata \d+ di \d+\)$/', '', (string)($v['descrizione'] ?? $causale)));
+            $voci[$i]['descrizione'] = $desc . ' (Rata unica)';
+        }
+        if ($sumCents !== (int)round($totale * 100)) {
+            if (count($voci) === 1) {
+                $voci[0]['importo'] = $totale;
+            } else {
+                $errors[] = 'La somma delle voci non corrisponde all\'importo totale.';
+            }
+        }
+        $ru['voci'] = $voci;
+        return $ru;
+    }
+
+    /**
+     * Sanitizza il payload di una singola pendenza del piano rateale (rata o rata unica)
+     * prima della PUT GovPay: bollo, soggettoPagatore, campi stringa, proprieta, chiavi ammesse.
+     * idPendenza escluso (va solo nell'URL).
+     *
+     * @param array<string,mixed> $single
+     * @return array<string,mixed>
+     */
+    private function preparaPayloadRata(array $single): array
+    {
+        // Sanitize top-level keys to avoid sending UI-only parameters (es. 'return')
+        $allowed = [
+            'idTipoPendenza','idDominio','causale','importo','annoRiferimento',
+            'soggettoPagatore','voci','documento','proprieta','allegati',
+            'dataValidita','dataScadenza','direzione','divisione','cartellaPagamento',
+            'numeroAvviso','tassonomia','dataPromemoriaScadenza','idUnitaOperativa',
+            'dataCaricamento','datiAllegati','tassonomiaAvviso','dataNotificaAvviso',
+            'nome'
+        ];
+        $bolloIdTipo = SettingsRepository::get('frontoffice', 'bollo_tipo_pendenza', '') ?: 'BOLLOT';
+        $isBollo = strcasecmp((string)($single['idTipoPendenza'] ?? ''), $bolloIdTipo) === 0;
+        if ($isBollo) {
+            $single['tassonomiaAvviso'] = 'Imposte e tasse';
+            if (empty($single['dataValidita'])) {
+                $single['dataValidita'] = date('Y-m-d');
+            }
+            if (empty($single['dataScadenza'])) {
+                $single['dataScadenza'] = (new \DateTimeImmutable('today'))->modify('+15 days')->format('Y-m-d');
+            }
+        }
+
+        // Normalizza il soggettoPagatore: unisci nome+anagrafica e rimuovi 'nome'
+        if (isset($single['soggettoPagatore']) && is_array($single['soggettoPagatore'])) {
+            $s = $single['soggettoPagatore'];
+            $tipo = strtoupper((string)($s['tipo'] ?? 'F'));
+            $anag = trim((string)($s['anagrafica'] ?? ''));
+            $nome = trim((string)($s['nome'] ?? ''));
+
+            if ($tipo === 'F') {
+                $full = trim(($nome !== '' ? $nome . ' ' : '') . $anag);
+                $s['anagrafica'] = $full !== '' ? $full : $anag;
+            } else {
+                $s['anagrafica'] = $anag;
+            }
+            // Email: keep only if scalar and valid
+            if (array_key_exists('email', $s)) {
+                $raw = $s['email'];
+                if (!is_scalar($raw) || trim((string)$raw) === '' || filter_var(trim((string)$raw), FILTER_VALIDATE_EMAIL) === false) {
+                    unset($s['email']);
+                } else {
+                    $s['email'] = trim((string)$raw);
+                }
+            }
+            // Cellulare: keep only scalar non-empty
+            if (array_key_exists('cellulare', $s)) {
+                $raw = $s['cellulare'];
+                if (!is_scalar($raw) || trim((string)$raw) === '') {
+                    unset($s['cellulare']);
+                } else {
+                    $s['cellulare'] = trim((string)$raw);
+                }
+            }
+            if (isset($s['nome'])) unset($s['nome']);
+            $single['soggettoPagatore'] = $s;
+        }
+
+        // Rimuoviamo campi che possono essere passati come array vuoto dalla UI
+        // e che il Backoffice si aspetta come stringhe (es. cartellaPagamento).
+        $stringFields = ['cartellaPagamento', 'direzione', 'divisione'];
+        foreach ($stringFields as $sf) {
+            if (!array_key_exists($sf, $single)) continue;
+            $val = $single[$sf];
+            if (!is_scalar($val) || trim((string)$val) === '') {
+                unset($single[$sf]);
+            } else {
+                $single[$sf] = trim((string)$val);
+            }
+        }
+
+        // Sanitize 'proprieta' per evitare di inviare campi non supportati
+        if (isset($single['proprieta']) && is_array($single['proprieta'])) {
+            $allowedPropKeys = [
+                'descrizioneImporto', 'lineaTestoRicevuta1', 'lineaTestoRicevuta2',
+                'linguaSecondaria', 'linguaSecondariaCausale'
+            ];
+            $single['proprieta'] = array_intersect_key($single['proprieta'], array_flip($allowedPropKeys));
+            if (empty($single['proprieta'])) {
+                unset($single['proprieta']);
+            }
+        }
+
+        // idPendenza non e' tra le chiavi ammesse: va solo nell'URL
+        return array_intersect_key($single, array_flip($allowed));
     }
 
     /**

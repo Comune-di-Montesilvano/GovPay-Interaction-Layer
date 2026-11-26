@@ -148,6 +148,17 @@
       {% if params.parts is defined and params.parts is iterable %}
         <hr>
         <h3>Rate</h3>
+        {% if params.crea_rata_unica is defined and params.crea_rata_unica %}
+          {% set _ru_scad = params.rata_unica_scadenza|default('') %}
+          {% set _p1 = params.parts|first %}
+          {% set _ru_scad = _ru_scad ?: (_p1.dataScadenza|default(_p1.dataValidita|default(''))) %}
+          <div class="alert alert-info py-2">
+            <strong>Rata unica a scelta:</strong>
+            {{ params.importo|default(0)|replace({',': '.'})|number_format(2, ',', '.') }} €
+            {% if _ru_scad %}— scadenza {{ _ru_scad|date('d/m/Y') }}{% endif %}.
+            Il cittadino paga la rata unica oppure le rate; GIL annulla l'altra opzione dopo la rendicontazione.
+          </div>
+        {% endif %}
         <div class="table-responsive">
           <table class="table table-sm align-middle">
             <thead><tr><th>#</th><th class="text-end">Importo</th><th>Validità</th><th>Scadenza</th></tr></thead>
