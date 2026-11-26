@@ -218,6 +218,8 @@ USER www-data
 ######################################################################
 FROM runtime-base AS runtime-frontoffice
 USER root
+# CSP del frontoffice senza 'unsafe-inline' negli script (sostituisce quella di security-headers.conf).
+COPY --chown=root:root --link apache/frontoffice-csp.conf /etc/apache2/conf-enabled/zz-frontoffice-csp.conf
 COPY --chown=www-app:www-data frontoffice/ /var/www/html/frontoffice/
 RUN mkdir -p /var/www/html/frontoffice/storage/logs \
     && touch /var/www/html/frontoffice/storage/logs/app.log \

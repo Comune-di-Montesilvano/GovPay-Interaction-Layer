@@ -35,3 +35,11 @@ test('nessun directory listing', async ({ request }) => {
     expect(await r.text(), url).not.toContain('Index of /');
   }
 });
+
+// Frontoffice: CSP propria (apache/frontoffice-csp.conf), nessuno script inline ammesso. Il
+// backoffice resta con 'unsafe-inline' finche' i suoi template hanno script inline.
+test('frontoffice: CSP senza unsafe-inline negli script', async ({ request }) => {
+  const csp = (await request.get(`${FRONTOFFICE}/`, { maxRedirects: 0 })).headers()['content-security-policy'] ?? '';
+  const scriptSrc = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('script-src')) ?? '';
+  expect(scriptSrc).toBe("script-src 'self'");
+});

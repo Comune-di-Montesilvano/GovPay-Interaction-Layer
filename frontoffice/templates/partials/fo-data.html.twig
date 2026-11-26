@@ -1,0 +1,32 @@
+{#
+  Dati per gli script del frontoffice. La CSP vieta gli script inline ('unsafe-inline' assente in
+  script-src): token, traduzioni e dati di pagina passano da questo blocco JSON, che il browser
+  non esegue, e sono letti da /assets/js/fo/i18n.js (GovPayUi.t/th/csrf/data).
+  Nuova stringa usata da un .js in assets/js/fo/ -> aggiungerla qui (chiave = testo italiano).
+  JSON_HEX_*: nessun "<", ">", "&" o apice nel blocco, quindi niente chiusura anticipata di </script>.
+#}
+<script type="application/json" id="fo-data">
+{# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag #}
+{{ {
+  csrf: csrf_token|default(''),
+  qr: fo_qr|default(null),
+  t: {
+    "Aggiungi al carrello": "Aggiungi al carrello"|trans,
+    "Allega file per legarlo alla marca": "Allega file per legarlo alla marca"|trans,
+    "Attendere...": "Attendere..."|trans,
+    "Documento": "Documento"|trans,
+    "Es. Certificato anagrafico prot. 12345": "Es. Certificato anagrafico prot. 12345"|trans,
+    "Il file non viene salvato, serve solo per calcolare l'impronta.": "Il file non viene salvato, serve solo per calcolare l'impronta."|trans,
+    "Nel carrello": "Nel carrello"|trans,
+    "Nel carrello ✓": "Nel carrello ✓"|trans,
+    "QR non disponibile. Usa il numero avviso sopra.": "QR non disponibile. Usa il numero avviso sopra."|trans,
+    "Rimuovi": "Rimuovi"|trans,
+    "Rimuovi dal carrello": "Rimuovi dal carrello"|trans,
+    "Servizio non disponibile": "Servizio non disponibile"|trans,
+    "Servizio temporaneamente non disponibile. Riprova tra poco.": "Servizio temporaneamente non disponibile. Riprova tra poco."|trans,
+    "avvisi": "avvisi"|trans,
+    "avviso": "avviso"|trans
+  }
+}|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP') b-or constant('JSON_HEX_APOS') b-or constant('JSON_HEX_QUOT') b-or constant('JSON_UNESCAPED_UNICODE'))|raw }}
+</script>
+<script src="{{ asset('/assets/js/fo/i18n.js') }}"></script>
