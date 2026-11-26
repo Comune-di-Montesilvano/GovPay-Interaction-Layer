@@ -84,6 +84,9 @@ final class RendicontazioneJobTest extends DbTestCase
     /** @var list<array<string,mixed>|\Throwable> */
     private array $solResults = [];
 
+    /** @var array<string,Response|\Throwable> idPendenza => risposta PATCH (default 200) */
+    private array $patchResponses = [];
+
     private MailerService $mailer;
 
     protected function setUp(): void
@@ -160,6 +163,9 @@ final class RendicontazioneJobTest extends DbTestCase
             } elseif ($req->getMethod() === 'GET' && str_contains($path, '/flussiRendicontazione')) {
                 $kind = 'flusso';
                 $resp = $this->flussoResponse ?? new Response(200, [], '{"risultati":[]}');
+            } elseif ($req->getMethod() === 'PATCH' && preg_match('#/pendenze/[^/]+/([^/]+)$#', $path, $m) === 1) {
+                $kind = 'patch';
+                $resp = $this->patchResponses[rawurldecode($m[1])] ?? new Response(200);
             } elseif ($req->getMethod() === 'POST' && str_contains($path, '/incassi/')) {
                 $kind = 'incasso';
                 $resp = $this->incassoResponse;
@@ -1327,5 +1333,132 @@ final class RendicontazioneJobTest extends DbTestCase
         $this->riga(5, ['is_govpay' => 0]);
 
         self::assertSame(2, $this->job()->remaining());
+    }
+
+    // ------------------------------------------- rateizzazione con rata unica a scelta
+
+    private const PIANO = 'GIL-0000000000000001';
+
+    /** Pendenza GovPay del piano a scelta (marker su tutte), stato a scelta. @return array<string,mixed> */
+    private static function pianoPendenza(string $stato = 'NON_ESEGUITA'): array
+    {
+        return [
+            'tipoPendenza' => ['idTipoPendenza' => 'TIPO'], 'importo' => 10.5, 'dataPagamento' => '2026-01-01',
+            'stato' => $stato,
+            'datiAllegati' => ['rateizzazioneScelta' => [
+                'idRataUnica' => self::PIANO . '-RU',
+                'idRate' => [self::PIANO . '-R1', self::PIANO . '-R2', self::PIANO . '-R3'],
+            ]],
+        ];
+    }
+
+    /** @return list<string> idPendenza delle PATCH inviate */
+    private function patchedIds(): array
+    {
+        $ids = [];
+        foreach ($this->calls as $c) {
+            if ($c['kind'] === 'patch') {
+                self::assertSame('[{"op":"REPLACE","path":"\/stato","value":"ANNULLATA"}]', $c['body']);
+                $ids[] = rawurldecode((string)preg_replace('#^.*/#', '', $c['path']));
+            }
+        }
+        return $ids;
+    }
+
+    private function rigaPiano(int $n, string $idPagata): int
+    {
+        $this->setting('scansioni_quiete_soglia', '99');
+        $this->pendenze[$idPagata] = self::pianoPendenza('ESEGUITA');
+        return $this->riga($n, ['id_pendenza' => $idPagata]);
+    }
+
+    public function testPagataRataUnicaAnnullaTutteLeRate(): void
+    {
+        $id = $this->rigaPiano(1, self::PIANO . '-RU');
+        foreach ([1, 2, 3] as $i) {
+            $this->pendenze[self::PIANO . "-R{$i}"] = self::pianoPendenza('NON_ESEGUITA');
+        }
+
+        $this->runJob();
+
+        self::assertSame([self::PIANO . '-R1', self::PIANO . '-R2', self::PIANO . '-R3'], $this->patchedIds());
+        self::assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
+    }
+
+    public function testPagataRataAnnullaRataUnica(): void
+    {
+        $id = $this->rigaPiano(1, self::PIANO . '-R1');
+        $this->pendenze[self::PIANO . '-RU'] = self::pianoPendenza('SCADUTA');
+
+        $this->runJob();
+
+        self::assertSame([self::PIANO . '-RU'], $this->patchedIds());
+        self::assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
+    }
+
+    public function testControparteGiaAnnullataNessunaPatch(): void
+    {
+        $id = $this->rigaPiano(1, self::PIANO . '-R2');
+        $this->pendenze[self::PIANO . '-RU'] = self::pianoPendenza('ANNULLATA');
+
+        $this->runJob();
+
+        self::assertSame([], $this->patchedIds());
+        self::assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
+    }
+
+    public function testDoppioPagamentoNessunaPatch(): void
+    {
+        $id = $this->rigaPiano(1, self::PIANO . '-R1');
+        $this->pendenze[self::PIANO . '-RU'] = self::pianoPendenza('ESEGUITA');
+
+        $this->runJob();
+
+        self::assertSame([], $this->patchedIds());
+        self::assertSame('GESTITO', $this->row($id)['rendicontazione_stato']);
+    }
+
+    public function testErroreControparteNonBloccaRiga(): void
+    {
+        $getKo = $this->rigaPiano(1, self::PIANO . '-RU');
+        $this->pendenze[self::PIANO . '-R1'] = new Response(500, [], '{"descrizione":"segreto RSSMRA"}');
+        $this->pendenze[self::PIANO . '-R2'] = self::pianoPendenza('NON_ESEGUITA');
+        $this->pendenze[self::PIANO . '-R3'] = self::pianoPendenza('NON_ESEGUITA');
+        $this->patchResponses[self::PIANO . '-R2'] = new Response(500, [], '{"descrizione":"segreto RSSMRA"}');
+
+        $this->runJob();
+
+        // R1: GET fallita, nessuna PATCH; R2: PATCH fallita; R3: annullata comunque (il loop continua)
+        self::assertSame([self::PIANO . '-R2', self::PIANO . '-R3'], $this->patchedIds());
+        $r = $this->row($getKo);
+        self::assertSame('GESTITO', $r['rendicontazione_stato']);
+        self::assertStringNotContainsString('RSSMRA', (string)($r['rendicontazione_note'] ?? ''));
+    }
+
+    public function testPatchRispostaNon2xxNonContaComeAnnullata(): void
+    {
+        $this->rigaPiano(1, self::PIANO . '-R1');
+        $this->pendenze[self::PIANO . '-RU'] = self::pianoPendenza('NON_ESEGUITA');
+        $this->patchResponses[self::PIANO . '-RU'] = new Response(302, ['Location' => 'https://altrove.example.test/']);
+        $log = \App\Logger::getLogFilePath();
+        $before = is_file($log) ? (int)filesize($log) : 0;
+
+        $this->runJob();
+
+        self::assertSame([self::PIANO . '-RU'], $this->patchedIds());
+        $nuovo = (string)substr((string)@file_get_contents($log), $before);
+        self::assertStringContainsString('annullamento controparte fallito', $nuovo);
+        self::assertStringNotContainsString('controparte annullata', $nuovo);
+    }
+
+    public function testSenzaMarkerNessunaChiamataExtra(): void
+    {
+        $this->setting('scansioni_quiete_soglia', '99');
+        $this->riga(1, ['id_pendenza' => self::PIANO . '-R1']);
+
+        $this->runJob();
+
+        self::assertSame(1, $this->callsOf('pendenza'));
+        self::assertSame(0, $this->callsOf('patch'));
     }
 }

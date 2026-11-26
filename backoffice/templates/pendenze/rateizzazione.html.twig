@@ -14,7 +14,9 @@
     <input type="hidden" name="original_params" value="{{ params|json_encode|e }}">
     {# Reincludi i principali campi originali come hidden per sicurezza (soggettoPagatore, idTipoPendenza, ecc.) #}
     {% for k,v in params %}
-      {% if v is iterable and k == 'voci' %}
+      {% if k in ['crea_rata_unica', 'rata_unica_scadenza'] %}
+        {# campi propri di questo form: resi sotto, mai duplicati come hidden #}
+      {% elseif v is iterable and k == 'voci' %}
         {# Include anche le voci originali come hidden così il Preview le può mostrare se torni indietro #}
         {% for idx, vv in v %}
           <input type="hidden" name="voci[{{ idx }}][idVocePendenza]" value="{{ vv.idVocePendenza|e }}">
@@ -79,6 +81,18 @@
           <div class="d-flex justify-content-end mt-2">
             <div id="partsSum" class="fw-semibold">Totale rate: €<span id="partsSumValue">0.00</span></div>
           </div>
+
+        <hr>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="crea_rata_unica" value="1" id="creaRataUnica" {{ params.crea_rata_unica is defined and params.crea_rata_unica ? 'checked' : '' }}>
+          <label class="form-check-label" for="creaRataUnica">Crea anche rata unica</label>
+          <div class="form-text">Il cittadino sceglie se pagare in unica soluzione (€ {{ importo|number_format(2, ',', '.') }}) o a rate. Quando GIL rendiconta il pagamento di un'opzione, annulla automaticamente l'altra.</div>
+        </div>
+        <div id="rataUnicaScadenzaWrap" class="d-flex gap-2 align-items-center" {{ params.crea_rata_unica is defined and params.crea_rata_unica ? '' : 'hidden' }}>
+          <label for="rataUnicaScadenza" class="mb-0 small text-muted">Scadenza rata unica</label>
+          <input type="date" id="rataUnicaScadenza" name="rata_unica_scadenza" value="{{ params.rata_unica_scadenza|default('') }}" class="form-control form-control-sm" style="width:170px">
+          <span class="small text-muted">vuota = stesse date della rata 1</span>
+        </div>
       </div>
     </div>
 
@@ -389,6 +403,15 @@
       });
     }
 
+    const creaRu = document.getElementById('creaRataUnica');
+    const ruWrap = document.getElementById('rataUnicaScadenzaWrap');
+    if (creaRu && ruWrap) {
+      creaRu.addEventListener('change', function(){
+        ruWrap.hidden = !creaRu.checked;
+        if (!creaRu.checked) document.getElementById('rataUnicaScadenza').value = '';
+      });
+    }
+
     const annullaBtn = document.getElementById('btnAnnulla');
     if (annullaBtn) {
       annullaBtn.addEventListener('click', function(){
@@ -400,7 +423,7 @@
         Array.from(origForm.elements).forEach(function(el){
           if (!el.name) return;                        
           if (el.name.indexOf('parts[') === 0) return;
-          if (el.name === 'rate') return;
+          if (el.name === 'rate' || el.name === 'crea_rata_unica' || el.name === 'rata_unica_scadenza') return;
           if (el.type === 'button' || el.type === 'submit' || el.disabled) return;
           if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
           if (el.tagName === 'SELECT') {
