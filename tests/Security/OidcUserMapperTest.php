@@ -158,4 +158,57 @@ final class OidcUserMapperTest extends TestCase
     {
         self::assertSame(['a', 'b'], OidcUserMapper::claimNames(['b' => 1, 'a' => 2]));
     }
+
+    /** pa-sso-proxy rilascia solo i claim chiesti col parametro `claims` (contratto di /verifica). */
+    public function testRequestedClaimsPersonaFisica(): void
+    {
+        $claims = OidcUserMapper::requestedClaims(false);
+
+        self::assertSame(['userinfo'], array_keys($claims));
+        self::assertSame([
+            'fiscal_number' => ['essential' => true],
+            'given_name'    => null,
+            'family_name'   => null,
+            'email'         => null,
+        ], $claims['userinfo']);
+        self::assertSame(
+            '{"userinfo":{"fiscal_number":{"essential":true},"given_name":null,"family_name":null,"email":null}}',
+            json_encode($claims),
+        );
+    }
+
+    public function testRequestedClaimsPersonaGiuridica(): void
+    {
+        $userinfo = OidcUserMapper::requestedClaims(true)['userinfo'];
+
+        self::assertSame(['essential' => true], $userinfo['fiscal_number']);
+        self::assertSame(['essential' => true], $userinfo['company_name']);
+        self::assertSame(['essential' => true], $userinfo['iva_code']);
+        self::assertArrayHasKey('registered_office', $userinfo);
+        self::assertNull($userinfo['registered_office']);
+        self::assertArrayHasKey('email', $userinfo);
+    }
+
+    /** Ogni claim letto da map() per l'impresa viene anche chiesto. */
+    public function testRequestedClaimsCopronoMap(): void
+    {
+        $userinfo = OidcUserMapper::requestedClaims(true)['userinfo'];
+        $claims = array_fill_keys(array_keys($userinfo), null);
+        $claims['fiscal_number'] = 'TINIT-' . self::CF;
+        $claims['iva_code'] = 'VATIT-' . self::PIVA;
+        $claims['company_name'] = 'ACME SRL';
+        $claims['registered_office'] = 'Via Roma 1';
+        $claims['given_name'] = 'Mario';
+        $claims['family_name'] = 'Rossi';
+        $claims['email'] = 'impresa@example.org';
+
+        $user = OidcUserMapper::map($claims, true);
+
+        self::assertNotNull($user);
+        self::assertSame(self::PIVA, $user['fiscal_number']);
+        self::assertSame(self::CF, $user['operator_fiscal_number']);
+        self::assertSame('ACME SRL', $user['company_name']);
+        self::assertSame('Via Roma 1', $user['registered_office']);
+        self::assertSame('impresa@example.org', $user['email']);
+    }
 }

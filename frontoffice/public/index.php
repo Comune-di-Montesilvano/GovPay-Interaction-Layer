@@ -3153,6 +3153,8 @@ $routes = [
             'state'                 => $state,
             'code_challenge'        => $codeChallenge,
             'code_challenge_method' => 'S256',
+            // pa-sso-proxy rilascia solo i claim chiesti qui (vedi OidcUserMapper::requestedClaims).
+            'claims'                => json_encode(\App\Security\OidcUserMapper::requestedClaims($subject === 'pg'), JSON_THROW_ON_ERROR),
         ]);
 
         header('Location: ' . $authUrl, true, 302);
