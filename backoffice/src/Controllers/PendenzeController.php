@@ -1418,6 +1418,8 @@ class PendenzeController
         $notifyAppName        = (string)(SettingsRepository::get('entity', 'name', 'GIL'));
         $frontofficeUrl       = $this->resolveFrontofficePublicBaseUrl($request);
         $idDominioNotify      = $merged['idDominio'] ?? (SettingsRepository::get('entity', 'id_dominio', ''));
+        // Al cittadino la descrizione della tipologia, non il codice tassonomia.
+        $tipologiaNotify      = \App\Services\TipologiaLabel::of($idTipoPendenzaNotify, (string)$idDominioNotify);
         $numeroDocumento      = (string)($multi['documento']['identificativo'] ?? '');
         $multiratePdfUrl      = ($frontofficeUrl !== '' && $numeroDocumento !== '')
             ? $this->buildMultiratePdfUrl($frontofficeUrl, $numeroDocumento)
@@ -1448,7 +1450,7 @@ class PendenzeController
                 }
                 $emailData = [
                     'causale'         => $originalCausaleForNotify,
-                    'tipologia'       => $idTipoPendenzaNotify,
+                    'tipologia'       => $tipologiaNotify,
                     'importo_totale'  => $originalTotal,
                     'multiratePdfUrl' => $multiratePdfUrl,
                     'rates'           => $ratesForEmail,
@@ -1528,8 +1530,8 @@ class PendenzeController
                                 ? "Puoi pagare in unica soluzione oppure a rate: pagata un'opzione, l'altra verrà annullata.\n\n"
                                 : "In alternativa puoi pagare in unica soluzione: pagata un'opzione, l'altra verrà annullata.\n\n";
                         }
-                        if ($idTipoPendenzaNotify !== '') {
-                            $markdown .= "**Tipologia**: {$idTipoPendenzaNotify}\n\n";
+                        if ($tipologiaNotify !== '') {
+                            $markdown .= "**Tipologia**: {$tipologiaNotify}\n\n";
                         }
                         $markdown .= "**Importo**: € " . number_format($rateImporto, 2, ',', '.') . "\n\n";
                         if ($rateAvviso !== null && $rateAvviso !== '') {
