@@ -71,6 +71,10 @@ class RendicontazioneEngineService
                 return;
             }
 
+            // Rateizzazione a scelta: il pagamento e' un fatto, va annullata la controparte
+            // prima del routing (anche se la riga va poi in conferma manuale o al ponte).
+            $this->annullaControparti($pendenza, $idPendenza, $idA2A, $backofficeUrl);
+
             $idEntrata = (string)($riga['cod_entrata'] ?? '');
             if ($idEntrata === '') {
                 // tipoPendenza.idTipoPendenza (struttura standard GET /pendenze/{idA2A}/{idPendenza})
@@ -165,6 +169,49 @@ class RendicontazioneEngineService
                 $this->repo->markErrore($rigaId, 'Errore elaborazione riga: ' . ThrowableSummary::of($e));
             } catch (\Throwable $_) {
                 // ignore
+            }
+        }
+    }
+
+    /**
+     * Rateizzazione con rata unica a scelta (marker datiAllegati.rateizzazioneScelta):
+     * pagata la rata unica annulla le rate, pagata una rata annulla la rata unica.
+     * Idempotente (controparte gia' ANNULLATA = nulla). Doppio pagamento = solo warning.
+     * Best-effort: mai eccezioni verso il chiamante, una controparte in errore non ferma le altre.
+     *
+     * @param array<string,mixed> $pendenza
+     */
+    private function annullaControparti(array $pendenza, string $idPendenza, string $idA2A, string $backofficeUrl): void
+    {
+        $controparti = RateizzazioneSceltaService::controparti($pendenza['datiAllegati'] ?? null, $idPendenza);
+        if ($controparti === []) {
+            return;
+        }
+        $patchBase = rtrim((string)(SettingsRepository::get('govpay', 'pendenze_patch_url', '') ?: $backofficeUrl), '/');
+
+        foreach ($controparti as $idControparte) {
+            $path = '/pendenze/' . rawurlencode($idA2A) . '/' . rawurlencode($idControparte);
+            $ctx = ['id_pagata' => $idPendenza, 'id_controparte' => $idControparte];
+            try {
+                $resp = $this->govPayClient->request('GET', rtrim($backofficeUrl, '/') . $path);
+                $controparte = json_decode((string)$resp->getBody(), true);
+                $stato = is_array($controparte) ? (string)($controparte['stato'] ?? '') : '';
+                $azione = RateizzazioneSceltaService::azione($stato);
+
+                if ($azione === 'DOPPIO_PAGAMENTO') {
+                    Logger::getInstance()->warning('Rateizzazione a scelta: doppio pagamento', $ctx + ['stato_controparte' => $stato]);
+                    continue;
+                }
+                if ($azione !== 'ANNULLA') {
+                    continue;
+                }
+                $this->govPayClient->request('PATCH', $patchBase . $path, [
+                    'headers' => ['Content-Type' => 'application/json', 'Accept' => '*/*'],
+                    'body' => json_encode([['op' => 'REPLACE', 'path' => '/stato', 'value' => 'ANNULLATA']]),
+                ]);
+                Logger::getInstance()->info('Rateizzazione a scelta: controparte annullata', $ctx);
+            } catch (\Throwable $e) {
+                Logger::getInstance()->warning('Rateizzazione a scelta: annullamento controparte fallito', $ctx + ['errore' => ThrowableSummary::of($e)]);
             }
         }
     }
