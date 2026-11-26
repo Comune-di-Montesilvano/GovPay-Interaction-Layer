@@ -2284,6 +2284,18 @@ if (!function_exists('frontoffice_lookup_pagopa_avviso')) {
                 }
             }
             if (!is_array($pendenza) || $pendenza === []) {
+                // La ricerca di fallback risponde success=true anche a zero risultati (GovPay raggiungibile):
+                // l'avviso non esiste. Solo se fallisce anche lei il sistema dei pagamenti non e' interrogabile.
+                // Il byAvviso del backoffice non aiuta a distinguere: ogni errore diventa 404.
+                if ($fallbackResult['success']) {
+                    Logger::getInstance()->info('Nessun avviso corrispondente trovato dal frontoffice', [
+                        'requestedAvviso' => $normalizedAvviso,
+                    ]);
+                    return [
+                        'success' => false,
+                        'errors'  => ['Nessun avviso trovato con i dati inseriti.'],
+                    ];
+                }
                 return [
                     'success' => false,
                     'errors'  => ['Al momento non riusciamo a interrogare il sistema dei pagamenti. Riprova più tardi.'],
