@@ -8,7 +8,8 @@ use App\Database\MassivePendenzeRepository;
 use App\Services\Jobs\JobResult;
 use App\Services\Jobs\MassivePendenzeProcessor;
 use GuzzleHttp\Exception\ConnectException;
-use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\NetworkException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
@@ -384,7 +385,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
     public function testNetworkErrorIsEsitoIncertoAndStoresIdPendenza(): void
     {
         $id = $this->insertRow('PENDING', self::payload(13));
-        $this->gp->mock->append(new ConnectException('cURL error 7: connessione rifiutata https://x/?q=segreto', new Request('PUT', self::BASE), null, ['errno' => 7]));
+        $this->gp->mock->append(new ConnectException('cURL error 7: connessione rifiutata https://x/?q=segreto', new Request('PUT', self::BASE)));
 
         $r = $this->processor()->processRow($id, $this->ctx);
 
@@ -404,7 +405,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
     public function testTimeoutThenRetryReusesStoredIdPendenza(): void
     {
         $id = $this->insertRow('PENDING', self::payload(17));
-        $this->gp->mock->append(new ConnectException('cURL error 28: Operation timed out', new Request('PUT', self::BASE), null, ['errno' => 28]));
+        $this->gp->mock->append(new NetworkTimeoutException('cURL error 28: Operation timed out', new Request('PUT', self::BASE)));
 
         $this->processor()->processRow($id, $this->ctx);
 
@@ -437,7 +438,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         self::pdo()->exec("INSERT INTO entrate_tipologie (id_dominio, id_entrata, iuv_prefix, updated_at, created_at) VALUES ('" . self::DOMINIO . "', 'AFFITTO', '07', NOW(), NOW())");
         $id = $this->insertRow('PENDING', self::payload(18, ['idTipoPendenza' => 'AFFITTO']));
         $this->queue(404, ['categoria' => 'OPERAZIONE']);
-        $this->gp->mock->append(new ConnectException('cURL error 28: timeout', new Request('PUT', self::BASE), null, ['errno' => 28]));
+        $this->gp->mock->append(new NetworkTimeoutException('cURL error 28: timeout', new Request('PUT', self::BASE)));
 
         $this->processor()->processRow($id, $this->ctx);
         $candidate = substr($this->gp->calls()[0], strlen('GET ' . self::P));
@@ -467,8 +468,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
 
     /**
      * P5 (fix 8b): la PUT di creazione passa da GovPayClientFactory (Connection: close, retry di rete).
-     * Nota: con Guzzle 7 cURL 35/28 arrivano come ConnectException (non RequestException) e il
-     * decider della factory oggi le scarta; qui si esercita il retry con cURL 56 (RequestException).
+     * Qui si esercita il retry con cURL 56 senza risposta (Guzzle 8: NetworkException).
      * PUT /pendenze/{idA2A}/{idPendenza} e' idempotente (spec GovPay addPendenza: stesso id -> update),
      * quindi il retry di rete riusa lo STESSO idPendenza: una sola creazione registrata, una notifica.
      */
@@ -477,7 +477,7 @@ final class MassivePendenzeProcessorTest extends DbTestCase
         $cb = dirname(__DIR__, 3) . '/backoffice/storage/tmp/govpay_circuit_breaker.json';
         @unlink($cb);
         $id = $this->insertRow('PENDING', self::payload(16));
-        $this->gp->mock->append(new RequestException('cURL error 56: Connection reset by peer', new Request('PUT', self::BASE), null, null, ['errno' => 56]));
+        $this->gp->mock->append(new NetworkException('cURL error 56: Connection reset by peer', new Request('PUT', self::BASE)));
         $this->queue(201, ['numeroAvviso' => '301000000000000160']);
 
         $r = $this->processor()->processRow($id, $this->ctx);

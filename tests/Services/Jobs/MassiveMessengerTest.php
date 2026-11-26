@@ -16,6 +16,7 @@ use App\Services\Jobs\Messenger\TransientOnlyRetryStrategy;
 use App\Services\Jobs\WorkerKernel;
 use Doctrine\DBAL\Connection as DbalConnection;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Group;
@@ -227,7 +228,7 @@ final class MassiveMessengerTest extends DbTestCase
     private function queueTimeout(int $times = 1): void
     {
         for ($i = 0; $i < $times; $i++) {
-            $this->gp->mock->append(new ConnectException('cURL error 28: Operation timed out https://x/?q=segreto', new Request('PUT', self::BASE), null, ['errno' => 28]));
+            $this->gp->mock->append(new NetworkTimeoutException('cURL error 28: Operation timed out https://x/?q=segreto', new Request('PUT', self::BASE)));
         }
     }
 

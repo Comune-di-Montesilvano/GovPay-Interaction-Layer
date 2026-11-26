@@ -13,8 +13,9 @@ use App\Database\EntrateRepository;
 use App\Logger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
-use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\NetworkException;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\ResponseException;
 use GuzzleHttp\Middleware;
 use GovPay\Backoffice\Api\PendenzeApi as BackofficePendenzeApi;
 use GovPay\Backoffice\Configuration as BackofficeConfiguration;
@@ -1775,18 +1776,18 @@ class PendenzeController
         } catch (\Throwable $e) {
             $errors[] = $e->getMessage();
             $out = ['success' => false, 'errors' => $errors, 'exceptionClass' => get_class($e)];
-            if ($e instanceof ConnectException || ($e instanceof RequestException && $e->getResponse() === null)) {
+            if ($e instanceof NetworkException || ($e instanceof RequestException && !$e instanceof ResponseException)) {
                 // Errore di trasporto senza risposta HTTP: la PUT puo' essere arrivata a GovPay
                 // (es. timeout cURL 28). Esito incerto: si restituisce l'idPendenza usato (e il
                 // numeroAvviso per IUV vincolato) cosi' un nuovo tentativo aggiorna la stessa
                 // pendenza (PUT idempotente) invece di crearne una nuova.
-                $handlerCtx = $e->getHandlerContext();
                 $out['esitoIncerto'] = true;
                 if ($e->getMessage() === GovPayClientFactory::CIRCUIT_OPEN_MESSAGE) {
                     // Rifiuto locale del circuit breaker: la PUT non e' partita (resta transitorio).
                     $out['circuitBreakerOpen'] = true;
                 }
-                $out['curlErrno'] = isset($handlerCtx['errno']) ? (int)$handlerCtx['errno'] : null;
+                // Guzzle 8 non espone l'errno (getHandlerContext rimosso): "cURL error N: ..." nel messaggio.
+                $out['curlErrno'] = preg_match('/cURL error (\d+):/', $e->getMessage(), $m) ? (int)$m[1] : null;
                 if ($idP !== '') {
                     $out['idPendenza'] = $idP;
                     if (isset($payload['numeroAvviso']) && is_scalar($payload['numeroAvviso']) && (string)$payload['numeroAvviso'] !== '') {
@@ -1794,7 +1795,7 @@ class PendenzeController
                     }
                 }
             }
-            if ($e instanceof RequestException && $e->getResponse() !== null) {
+            if ($e instanceof ResponseException) {
                 $out['httpStatus'] = $e->getResponse()->getStatusCode();
                 try {
                     $out['problem'] = self::problemJsonFields(json_decode((string)$e->getResponse()->getBody(), true));
@@ -4372,7 +4373,7 @@ class PendenzeController
                     return ['success' => false, 'error' => 'Errore nell\'aggiornamento dello stato: HTTP ' . $resp->getStatusCode() . ' - ' . $respBody];
                 }
             } catch (RequestException $e) {
-                $resp = $e->getResponse();
+                $resp = $e instanceof ResponseException ? $e->getResponse() : null;
                 $respBody = $resp ? (string)$resp->getBody() : null;
                 $respStatus = $resp ? $resp->getStatusCode() : null;
                 \App\Logger::getInstance()->error('PATCH status request failed (RequestException)', [

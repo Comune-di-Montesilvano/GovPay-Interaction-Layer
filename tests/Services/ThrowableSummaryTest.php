@@ -6,6 +6,7 @@ namespace Tests\Services;
 use App\Services\ThrowableSummary;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Exception\ServerException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
@@ -37,6 +38,14 @@ final class ThrowableSummaryTest extends TestCase
 
         $open = new \GovPay\Backoffice\ApiException('[0] ' . \App\Services\GovPayClientFactory::CIRCUIT_OPEN_MESSAGE, 0);
         self::assertSame(\App\Services\GovPayClientFactory::CIRCUIT_OPEN_MESSAGE, ThrowableSummary::forDisplay($open));
+    }
+
+    /** Guzzle 8: RequestException senza risposta non ha getResponse() (solo ResponseException). */
+    public function testRequestExceptionSenzaRispostaNonEsplode(): void
+    {
+        $e = new RequestException('cURL error 3 https://x.test/?cf=RSSMRA80A01H501U', new Request('GET', 'https://x.test'));
+        self::assertSame('RequestException', ThrowableSummary::of($e));
+        self::assertSame('RequestException', ThrowableSummary::forDisplay($e));
     }
 
     public function testStatusHttpQuandoCeUnaRisposta(): void

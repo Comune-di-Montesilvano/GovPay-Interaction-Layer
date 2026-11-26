@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\ResponseException;
 
 /**
  * Riassunto di un'eccezione adatto a essere persistito (note/errore su DB): solo il nome breve
@@ -17,7 +17,7 @@ final class ThrowableSummary
         $class = get_class($e);
         $pos = strrpos($class, '\\');
         $out = $pos === false ? $class : substr($class, $pos + 1);
-        if ($e instanceof RequestException && $e->getResponse() !== null) {
+        if ($e instanceof ResponseException) {
             $out .= ' (HTTP ' . $e->getResponse()->getStatusCode() . ')';
         }
         return $out;
@@ -36,7 +36,7 @@ final class ThrowableSummary
         }
         $status = 0;
         $body = null;
-        if ($e instanceof RequestException && $e->getResponse() !== null) {
+        if ($e instanceof ResponseException) {
             $status = $e->getResponse()->getStatusCode();
             $body = (string)$e->getResponse()->getBody();
         } elseif (method_exists($e, 'getResponseBody') && (int)$e->getCode() >= 100) {

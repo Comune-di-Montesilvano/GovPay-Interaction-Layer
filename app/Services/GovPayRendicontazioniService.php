@@ -94,7 +94,8 @@ class GovPayRendicontazioniService
             try {
                 $resp    = $client->request('GET', $baseUrl . '/flussiRendicontazione', ['query' => $query]);
                 $payload = json_decode((string)$resp->getBody(), true);
-            } catch (RequestException $e) {
+            } catch (RequestException | \GuzzleHttp\Exception\NetworkException $e) {
+                // Guzzle 8: i guasti senza risposta (es. cURL 56) sono NetworkException, non piu' RequestException.
                 throw new \RuntimeException('Errore lista flussi (p.' . $page . '): ' . $e->getMessage(), 0, $e);
             }
 
