@@ -273,7 +273,7 @@ final class JobControl
                 (int)$run['skipped'],
                 (int)$run['errors']
             );
-            if (($run['error_message'] ?? '') !== '' && $run['error_message'] !== null) {
+            if (($run['error_message'] ?? '') !== '') {
                 $lines[] = '    errore: ' . $run['error_message'];
             }
             foreach ($run['top_errors'] as $e) {
