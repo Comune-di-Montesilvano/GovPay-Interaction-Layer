@@ -388,12 +388,13 @@
 
 {% block scripts %}
 {{ parent() }}
-{# type="application/json" (mai eseguito come JS) + json_encode PHP default: escapa '/' come
-   '\/' (JSON_UNESCAPED_SLASHES non usato) — un valore contenente "</script>" diventa "<\/script>",
-   sequenza che non chiude il tag: pattern standard sicuro per embeddare JSON in una pagina. #}
+{# type="application/json" (mai eseguito come JS) + JSON_HEX_TAG/JSON_HEX_AMP: '<', '>', '&'
+   diventano </>/&, quindi nei dati non compare né "</script>" né "<!--" (che
+   farebbe entrare il parser HTML nello stato "script data escaped" e romperebbe la pagina).
+   JSON.parse in spontaneo.js li decodifica uguale. #}
 <script id="service-options-data" type="application/json">
   {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag #}
-  {{ service_options|json_encode|raw }}
+  {{ service_options|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP'))|raw }}
 </script>
 <script src="{{ asset('/assets/js/fo/spontaneo.js') }}"></script>
 {% endblock %}
